@@ -480,7 +480,7 @@ v9fs_vfs_getattr_dotl(const struct path *path, struct kstat *stat,
 
 	p9_debug(P9_DEBUG_VFS, "dentry: %p\n", dentry);
 	v9ses = v9fs_dentry2v9ses(dentry);
-	if (v9ses->cache == CACHE_LOOSE || v9ses->cache == CACHE_FSCACHE) {
+	if (!d_really_is_negative(dentry) || v9ses->cache == CACHE_LOOSE || v9ses->cache == CACHE_FSCACHE) {
 		generic_fillattr(d_inode(dentry), stat);
 		return 0;
 	}
