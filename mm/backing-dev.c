@@ -371,6 +371,158 @@ static void wb_exit(struct bdi_writeback *wb)
 
 #include <linux/memcontrol.h>
 
+struct memcg_blkcg_link {
+	struct list_head list;
+	struct rcu_head rcu;
+	struct cgroup_subsys_state *memcg_css;
+	struct cgroup_subsys_state *blkcg_css;
+};
+
+static RADIX_TREE(memcg_blkcg_tree, GFP_ATOMIC);
+static DEFINE_SPINLOCK(memcg_blkcg_tree_lock);
+
+int allocate_memcg_blkcg_links(int count, struct list_head *tmp_links)
+{
+	struct memcg_blkcg_link *link;
+	int i;
+
+	for (i = 0; i < count; i++) {
+		link = kzalloc(sizeof(*link), GFP_KERNEL);
+		if (!link) {
+			free_memcg_blkcg_links(tmp_links);
+			return -ENOMEM;
+		}
+		list_add(&link->list, tmp_links);
+	}
+	return 0;
+}
+
+static void link_free(struct rcu_head *head)
+{
+	struct memcg_blkcg_link *link = container_of(head,
+					struct memcg_blkcg_link, rcu);
+	kfree(link);
+}
+
+void insert_memcg_blkcg_link(struct cgroup_subsys *ss,
+			     struct list_head *tmp_links,
+			     struct css_set *cset)
+{
+	struct memcg_blkcg_link *link;
+	struct cgroup_subsys_state *blkcg_css;
+	struct cgroup_subsys_state *memcg_css;
+	int err;
+
+	if (ss->id != io_cgrp_id && ss->id != memory_cgrp_id)
+		return;
+
+	WARN_ON(list_empty(tmp_links));
+
+	memcg_css = cset->subsys[memory_cgrp_id];
+	blkcg_css = cset->subsys[io_cgrp_id];
+
+	if ((memcg_css == &root_mem_cgroup->css) ||
+	    (blkcg_css == blkcg_root_css))
+		return;
+
+	rcu_read_lock();
+	link = radix_tree_lookup(&memcg_blkcg_tree, memcg_css->id);
+	if (link && ((link->blkcg_css == blkcg_css) ||
+		     (link->blkcg_css == blkcg_root_css))) {
+		rcu_read_unlock();
+		return;
+	}
+	rcu_read_unlock();
+
+	spin_lock(&memcg_blkcg_tree_lock);
+	if (link) {
+		radix_tree_delete(&memcg_blkcg_tree, memcg_css->id);
+		call_rcu(&link->rcu, link_free);
+		blkcg_css = blkcg_root_css;
+	}
+
+	link = list_first_entry(tmp_links, struct memcg_blkcg_link, list);
+	list_del_init(&link->list);
+
+	link->memcg_css = memcg_css;
+	link->blkcg_css = blkcg_css;
+	err = radix_tree_insert(&memcg_blkcg_tree, memcg_css->id, link);
+	WARN_ON(err);
+
+	spin_unlock(&memcg_blkcg_tree_lock);
+}
+
+void free_memcg_blkcg_links(struct list_head *links_to_free)
+{
+	struct memcg_blkcg_link *link, *tmp_link;
+
+	list_for_each_entry_safe(link, tmp_link, links_to_free, list) {
+		list_del(&link->list);
+		kfree(link);
+	}
+}
+
+static void delete_memcg_link(struct cgroup_subsys_state *memcg_css)
+{
+	struct memcg_blkcg_link *link;
+
+	spin_lock(&memcg_blkcg_tree_lock);
+	link = radix_tree_lookup(&memcg_blkcg_tree, memcg_css->id);
+	if (link) {
+		radix_tree_delete(&memcg_blkcg_tree, memcg_css->id);
+		call_rcu(&link->rcu, link_free);
+	}
+	spin_unlock(&memcg_blkcg_tree_lock);
+}
+
+static void delete_blkcg_link(struct cgroup_subsys_state *blkcg_css)
+{
+	struct memcg_blkcg_link *link;
+	struct radix_tree_iter iter;
+	void **slot;
+
+	spin_lock(&memcg_blkcg_tree_lock);
+	radix_tree_for_each_slot(slot, &memcg_blkcg_tree, &iter, 0) {
+		link = *slot;
+		if (link->blkcg_css == blkcg_css) {
+			radix_tree_delete(&memcg_blkcg_tree, link->memcg_css->id);
+			call_rcu(&link->rcu, link_free);
+		}
+	}
+	spin_unlock(&memcg_blkcg_tree_lock);
+}
+
+void delete_memcg_blkcg_link(struct cgroup_subsys *ss,
+			     struct cgroup_subsys_state *css)
+{
+	if (ss->id != io_cgrp_id && ss->id != memory_cgrp_id)
+		return;
+
+	if (ss->id == io_cgrp_id)
+		delete_blkcg_link(css);
+	if (ss->id == memory_cgrp_id)
+		delete_memcg_link(css);
+}
+
+static struct cgroup_subsys_state *find_blkcg_css(struct cgroup_subsys_state *memcg_css)
+{
+	struct memcg_blkcg_link *link;
+	struct cgroup_subsys_state *blkcg_css;
+
+	rcu_read_lock();
+	link = radix_tree_lookup(&memcg_blkcg_tree, memcg_css->id);
+	if (link)
+		blkcg_css = link->blkcg_css;
+	else
+		blkcg_css = blkcg_root_css;
+
+	css_get(blkcg_css);
+
+	rcu_read_unlock();
+
+	return blkcg_css;
+}
+
 /*
  * cgwb_lock protects bdi->cgwb_tree, blkcg->cgwb_list, and memcg->cgwb_list.
  * bdi->cgwb_tree is also RCU protected.
@@ -436,7 +588,10 @@ static int cgwb_create(struct backing_dev_info *bdi,
 	int ret = 0;
 
 	memcg = mem_cgroup_from_css(memcg_css);
-	blkcg_css = cgroup_get_e_css(memcg_css->cgroup, &io_cgrp_subsys);
+	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		blkcg_css = cgroup_get_e_css(memcg_css->cgroup, &io_cgrp_subsys);
+	else
+		blkcg_css = find_blkcg_css(memcg_css);
 	blkcg = css_to_blkcg(blkcg_css);
 	memcg_cgwb_list = &memcg->cgwb_list;
 	blkcg_cgwb_list = &blkcg->cgwb_list;
@@ -555,7 +710,10 @@ struct bdi_writeback *wb_get_lookup(struct backing_dev_info *bdi,
 		struct cgroup_subsys_state *blkcg_css;
 
 		/* see whether the blkcg association has changed */
-		blkcg_css = cgroup_get_e_css(memcg_css->cgroup, &io_cgrp_subsys);
+		if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+			blkcg_css = cgroup_get_e_css(memcg_css->cgroup, &io_cgrp_subsys);
+		else
+			blkcg_css = find_blkcg_css(memcg_css);
 		if (unlikely(wb->blkcg_css != blkcg_css || !wb_tryget(wb)))
 			wb = NULL;
 		css_put(blkcg_css);

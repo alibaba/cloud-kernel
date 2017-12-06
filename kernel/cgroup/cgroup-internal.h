@@ -90,6 +90,7 @@ struct cgroup_taskset {
 	/* the src and dst cset list running through cset->mg_node */
 	struct list_head	src_csets;
 	struct list_head	dst_csets;
+	int			dst_count;
 
 	/* the number of tasks in the set */
 	int			nr_tasks;
@@ -134,6 +135,7 @@ struct cgroup_mgctx {
 	.src_csets		= LIST_HEAD_INIT(tset.src_csets),		\
 	.dst_csets		= LIST_HEAD_INIT(tset.dst_csets),		\
 	.csets			= &tset.src_csets,				\
+	.dst_count		= 0,						\
 }
 
 #define CGROUP_MGCTX_INIT(name)							\
