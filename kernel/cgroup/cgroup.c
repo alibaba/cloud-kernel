@@ -55,6 +55,7 @@
 #include <linux/nsproxy.h>
 #include <linux/file.h>
 #include <linux/sched/cputime.h>
+#include <linux/backing-dev.h>
 #include <net/sock.h>
 
 #define CREATE_TRACE_POINTS
@@ -2214,9 +2215,11 @@ static void cgroup_migrate_add_task(struct task_struct *task,
 	if (list_empty(&cset->mg_node))
 		list_add_tail(&cset->mg_node,
 			      &mgctx->tset.src_csets);
-	if (list_empty(&cset->mg_dst_cset->mg_node))
+	if (list_empty(&cset->mg_dst_cset->mg_node)) {
 		list_add_tail(&cset->mg_dst_cset->mg_node,
 			      &mgctx->tset.dst_csets);
+		mgctx->tset.dst_count++;
+	}
 }
 
 /**
@@ -2297,9 +2300,14 @@ static int cgroup_migrate_execute(struct cgroup_mgctx *mgctx)
 	struct task_struct *task, *tmp_task;
 	struct css_set *cset, *tmp_cset;
 	int ssid, failed_ssid, ret;
+	LIST_HEAD(tmp_links);
 
 	/* check that we can legitimately attach to the cgroup */
 	if (tset->nr_tasks) {
+		ret = allocate_memcg_blkcg_links(tset->dst_count*2, &tmp_links);
+		if (ret)
+			goto out_free_list;
+
 		do_each_subsys_mask(ss, ssid, mgctx->ss_mask) {
 			if (ss->can_attach) {
 				tset->ssid = ssid;
@@ -2345,6 +2353,8 @@ static int cgroup_migrate_execute(struct cgroup_mgctx *mgctx)
 				tset->ssid = ssid;
 				ss->attach(tset);
 			}
+			list_for_each_entry(cset, &tset->dst_csets, mg_node)
+				insert_memcg_blkcg_link(ss, &tmp_links, cset);
 		} while_each_subsys_mask();
 	}
 
@@ -2370,6 +2380,9 @@ out_release_tset:
 		list_del_init(&cset->mg_node);
 	}
 	spin_unlock_irq(&css_set_lock);
+
+out_free_list:
+	free_memcg_blkcg_links(&tmp_links);
 
 	/*
 	 * Re-initialize the cgroup_taskset structure in case it is reused
@@ -4592,6 +4605,8 @@ static void css_free_rwork_fn(struct work_struct *work)
 		/* css free path */
 		struct cgroup_subsys_state *parent = css->parent;
 		int id = css->id;
+
+		delete_memcg_blkcg_link(ss, css);
 
 		ss->css_free(css);
 		cgroup_idr_remove(&ss->css_idr, id);
