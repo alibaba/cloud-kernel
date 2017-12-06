@@ -193,9 +193,7 @@ static inline bool inode_cgwb_enabled(struct inode *inode)
 {
 	struct backing_dev_info *bdi = inode_to_bdi(inode);
 
-	return cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
-		cgroup_subsys_on_dfl(io_cgrp_subsys) &&
-		(bdi->capabilities & BDI_CAP_WRITEBACK) &&
+	return (bdi->capabilities & BDI_CAP_WRITEBACK) &&
 		(inode->i_sb->s_iflags & SB_I_CGROUPWB);
 }
 
@@ -338,6 +336,13 @@ static inline void unlocked_inode_to_wb_end(struct inode *inode,
 	rcu_read_unlock();
 }
 
+void insert_memcg_blkcg_link(struct cgroup_subsys *ss,
+			     struct list_head *tmp_links,
+			     struct css_set *cset);
+int allocate_memcg_blkcg_links(int count, struct list_head *tmp_links);
+void free_memcg_blkcg_links(struct list_head *links_to_free);
+void delete_memcg_blkcg_link(struct cgroup_subsys *ss,
+			     struct cgroup_subsys_state *css);
 #else	/* CONFIG_CGROUP_WRITEBACK */
 
 static inline bool inode_cgwb_enabled(struct inode *inode)
@@ -388,6 +393,26 @@ static inline void wb_blkcg_offline(struct blkcg *blkcg)
 static inline int inode_congested(struct inode *inode, int cong_bits)
 {
 	return wb_congested(&inode_to_bdi(inode)->wb, cong_bits);
+}
+
+static inline void insert_memcg_blkcg_link(struct cgroup_subsys *ss,
+					   struct list_head *tmp_links,
+					   struct css_set *cset)
+{
+}
+
+static inline int allocate_memcg_blkcg_links(int count, struct list_head *tmp_links)
+{
+	return 0;
+}
+
+static inline void free_memcg_blkcg_links(struct list_head *links_to_free)
+{
+}
+
+static inline void delete_memcg_blkcg_link(struct cgroup_subsys *ss,
+					   struct cgroup_subsys_state *css)
+{
 }
 
 #endif	/* CONFIG_CGROUP_WRITEBACK */
