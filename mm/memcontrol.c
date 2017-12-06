@@ -468,7 +468,7 @@ struct cgroup_subsys_state *mem_cgroup_css_from_page(struct page *page)
 
 	memcg = page->mem_cgroup;
 
-	if (!memcg || !cgroup_subsys_on_dfl(memory_cgrp_subsys))
+	if (!memcg)
 		memcg = root_mem_cgroup;
 
 	return &memcg->css;
