@@ -38,9 +38,22 @@ struct workqueue_struct *bdi_wq;
 
 static struct dentry *bdi_debug_root;
 
+#ifdef CONFIG_CGROUP_WRITEBACK
+static struct dentry *memcg_blkcg_file;
+static const struct file_operations memcg_blkcg_debug_fops;
+#endif
+
 static void bdi_debug_init(void)
 {
 	bdi_debug_root = debugfs_create_dir("bdi", NULL);
+
+#ifdef CONFIG_CGROUP_WRITEBACK
+	if (!bdi_debug_root)
+		return;
+
+	memcg_blkcg_file = debugfs_create_file("bdi_wb_link", 0444, bdi_debug_root,
+			NULL, &memcg_blkcg_debug_fops);
+#endif
 }
 
 static int bdi_debug_stats_show(struct seq_file *m, void *v)
@@ -381,6 +394,40 @@ struct memcg_blkcg_link {
 static RADIX_TREE(memcg_blkcg_tree, GFP_ATOMIC);
 static DEFINE_SPINLOCK(memcg_blkcg_tree_lock);
 
+static int memcg_blkcg_link_show(struct seq_file *m, void *v)
+{
+	struct memcg_blkcg_link *link;
+	struct radix_tree_iter iter;
+	void **slot;
+
+	seq_puts(m, "memory     <--->     blkio\n");
+	rcu_read_lock();
+	radix_tree_for_each_slot(slot, &memcg_blkcg_tree, &iter, 0) {
+		link = *slot;
+		seq_printf(m, "%s:%5lu <---> %s:%5lu\n",
+				link->memcg_css->cgroup->kn->name,
+				kernfs_ino(link->memcg_css->cgroup->kn),
+				(link->blkcg_css == blkcg_root_css) ?
+				"root" : link->blkcg_css->cgroup->kn->name,
+				kernfs_ino(link->blkcg_css->cgroup->kn));
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int memcg_blkcg_link_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, memcg_blkcg_link_show, inode->i_private);
+}
+
+static const struct file_operations memcg_blkcg_debug_fops = {
+	.open		= memcg_blkcg_link_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 int allocate_memcg_blkcg_links(int count, struct list_head *tmp_links)
 {
 	struct memcg_blkcg_link *link;
@@ -433,6 +480,9 @@ void insert_memcg_blkcg_link(struct cgroup_subsys *ss,
 		return;
 	}
 	rcu_read_unlock();
+
+	trace_insert_memcg_blkcg_link(memcg_css, blkcg_css,
+		link ? link->blkcg_css : NULL);
 
 	spin_lock(&memcg_blkcg_tree_lock);
 	if (link) {
