@@ -440,6 +440,27 @@ TRACE_EVENT(writeback_bdi_register,
 	)
 );
 
+TRACE_EVENT(insert_memcg_blkcg_link,
+	TP_PROTO(struct cgroup_subsys_state *memcg_css,
+		 struct cgroup_subsys_state *blkcg_css,
+		 struct cgroup_subsys_state *old_blkcg_css),
+	TP_ARGS(memcg_css, blkcg_css, old_blkcg_css),
+	TP_STRUCT__entry(
+		__field(unsigned int, memcg_ino)
+		__field(unsigned int, blkcg_ino)
+		__field(unsigned int, old_blkcg_ino)
+	),
+	TP_fast_assign(
+		__entry->memcg_ino = kernfs_ino(memcg_css->cgroup->kn);
+		__entry->blkcg_ino = kernfs_ino(blkcg_css->cgroup->kn);
+		__entry->old_blkcg_ino = old_blkcg_css ?
+				kernfs_ino(old_blkcg_css->cgroup->kn) : 0;
+	),
+	TP_printk("memcg_ino=%u blkcg_ino=%u old_blkcg_ino=%u",
+		  __entry->memcg_ino, __entry->blkcg_ino, __entry->old_blkcg_ino
+	)
+);
+
 DECLARE_EVENT_CLASS(wbc_class,
 	TP_PROTO(struct writeback_control *wbc, struct backing_dev_info *bdi),
 	TP_ARGS(wbc, bdi),
