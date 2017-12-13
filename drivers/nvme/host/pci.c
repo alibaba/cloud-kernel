@@ -3191,8 +3191,7 @@ static const struct pci_error_handlers nvme_err_handler = {
 
 static const struct pci_device_id nvme_id_table[] = {
 	{ PCI_VDEVICE(INTEL, 0x0953),	/* Intel 750/P3500/P3600/P3700 */
-		.driver_data = NVME_QUIRK_STRIPE_SIZE |
-				NVME_QUIRK_DEALLOCATE_ZEROES, },
+		.driver_data = NVME_QUIRK_STRIPE_SIZE, },
 	{ PCI_VDEVICE(INTEL, 0x0a53),	/* Intel P3520 */
 		.driver_data = NVME_QUIRK_STRIPE_SIZE |
 				NVME_QUIRK_DEALLOCATE_ZEROES, },
