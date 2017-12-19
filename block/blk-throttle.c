@@ -183,6 +183,10 @@ struct throtl_grp {
 
 	struct blkg_rwstat stat_bytes;
 	struct blkg_rwstat stat_ios;
+	/* total time spent on lower layer: scheduler, device and others */
+	struct blkg_rwstat service_time;
+	/* total time spent on block throttle */
+	struct blkg_rwstat wait_time;
 };
 
 /* We measure latency for request size from <= 4k to >= 1M */
@@ -498,11 +502,11 @@ static struct blkg_policy_data *throtl_pd_alloc(gfp_t gfp,
 	if (!tg)
 		return NULL;
 
-	if (blkg_rwstat_init(&tg->stat_bytes, gfp))
-		goto err_free_tg;
-
-	if (blkg_rwstat_init(&tg->stat_ios, gfp))
-		goto err_exit_stat_bytes;
+	if (blkg_rwstat_init(&tg->stat_bytes, gfp) ||
+	    blkg_rwstat_init(&tg->stat_ios, gfp) ||
+	    blkg_rwstat_init(&tg->service_time, gfp) ||
+	    blkg_rwstat_init(&tg->wait_time, gfp))
+		goto err;
 
 	throtl_service_queue_init(&tg->service_queue);
 
@@ -529,9 +533,11 @@ static struct blkg_policy_data *throtl_pd_alloc(gfp_t gfp,
 
 	return &tg->pd;
 
-err_exit_stat_bytes:
+err:
 	blkg_rwstat_exit(&tg->stat_bytes);
-err_free_tg:
+	blkg_rwstat_exit(&tg->stat_ios);
+	blkg_rwstat_exit(&tg->service_time);
+	blkg_rwstat_exit(&tg->wait_time);
 	kfree(tg);
 	return NULL;
 }
@@ -617,6 +623,8 @@ static void throtl_upgrade_state(struct throtl_data *td);
 static void throtl_pd_offline(struct blkg_policy_data *pd)
 {
 	struct throtl_grp *tg = pd_to_tg(pd);
+	struct blkcg_gq *blkg = pd_to_blkg(pd);
+	struct blkcg_gq *parent = blkg->parent;
 
 	tg->bps[READ][LIMIT_LOW] = 0;
 	tg->bps[WRITE][LIMIT_LOW] = 0;
@@ -627,6 +635,12 @@ static void throtl_pd_offline(struct blkg_policy_data *pd)
 
 	if (!tg->td->limit_valid[tg->td->limit_index])
 		throtl_upgrade_state(tg->td);
+	if (parent) {
+		blkg_rwstat_add_aux(&blkg_to_tg(parent)->service_time,
+				    &tg->service_time);
+		blkg_rwstat_add_aux(&blkg_to_tg(parent)->wait_time,
+				    &tg->wait_time);
+	}
 }
 
 static void throtl_pd_free(struct blkg_policy_data *pd)
@@ -636,7 +650,17 @@ static void throtl_pd_free(struct blkg_policy_data *pd)
 	del_timer_sync(&tg->service_queue.pending_timer);
 	blkg_rwstat_exit(&tg->stat_bytes);
 	blkg_rwstat_exit(&tg->stat_ios);
+	blkg_rwstat_exit(&tg->service_time);
+	blkg_rwstat_exit(&tg->wait_time);
 	kfree(tg);
+}
+
+static void throtl_pd_reset(struct blkg_policy_data *pd)
+{
+	struct throtl_grp *tg = pd_to_tg(pd);
+
+	blkg_rwstat_reset(&tg->service_time);
+	blkg_rwstat_reset(&tg->wait_time);
 }
 
 static struct throtl_grp *
@@ -1054,6 +1078,51 @@ static bool tg_may_dispatch(struct throtl_grp *tg, struct bio *bio,
 		throtl_extend_slice(tg, rw, jiffies + max_wait);
 
 	return false;
+}
+
+static void throtl_stats_update_completion(struct throtl_grp *tg,
+					   uint64_t start_time,
+					   uint64_t io_start_time,
+					   int op)
+{
+	unsigned long flags;
+	uint64_t now = sched_clock();
+
+	local_irq_save(flags);
+	if (time_after64(now, io_start_time))
+		blkg_rwstat_add(&tg->service_time, op, now - io_start_time);
+	if (time_after64(io_start_time, start_time))
+		blkg_rwstat_add(&tg->wait_time, op, io_start_time - start_time);
+	local_irq_restore(flags);
+}
+
+static void throtl_bio_end_io(struct bio *bio)
+{
+	struct throtl_grp *tg;
+
+	rcu_read_lock();
+	tg = (struct throtl_grp *)bio->bi_tg_private;
+	if (!tg)
+		goto out;
+
+	throtl_stats_update_completion(tg, bio_start_time_ns(bio),
+				       bio_io_start_time_ns(bio),
+				       bio_op(bio));
+	blkg_put(tg_to_blkg(tg));
+out:
+	rcu_read_unlock();
+}
+
+static inline void throtl_bio_stats_start(struct bio *bio, struct throtl_grp *tg)
+{
+	int op = bio_op(bio);
+
+	if (op == REQ_OP_READ || op == REQ_OP_WRITE) {
+		bio->bi_tg_end_io = throtl_bio_end_io;
+		bio->bi_tg_private = tg;
+		bio_set_start_time_ns(bio);
+		blkg_get(tg_to_blkg(tg));
+	}
 }
 
 static void throtl_charge_bio(struct throtl_grp *tg, struct bio *bio)
@@ -1529,6 +1598,34 @@ static int tg_print_rwstat_recursive(struct seq_file *sf, void *v)
 	return 0;
 }
 
+static u64 tg_prfill_rwstat_field(struct seq_file *sf,
+					struct blkg_policy_data *pd,
+					int off)
+{
+	struct throtl_grp *tg = pd_to_tg(pd);
+	struct blkg_rwstat_sample rwstat = { };
+
+	blkg_rwstat_read((void *)tg + off, &rwstat);
+
+	return __blkg_prfill_rwstat(sf, pd, &rwstat);
+}
+
+static int tg_print_service_time(struct seq_file *sf, void *v)
+{
+	blkcg_print_blkgs(sf, css_to_blkcg(seq_css(sf)),
+			 tg_prfill_rwstat_field, &blkcg_policy_throtl,
+			 seq_cft(sf)->private, true);
+	return 0;
+}
+
+static int tg_print_wait_time(struct seq_file *sf, void *v)
+{
+	blkcg_print_blkgs(sf, css_to_blkcg(seq_css(sf)),
+			 tg_prfill_rwstat_field, &blkcg_policy_throtl,
+			 seq_cft(sf)->private, true);
+	return 0;
+}
+
 static struct cftype throtl_legacy_files[] = {
 	{
 		.name = "throttle.read_bps_device",
@@ -1573,6 +1670,16 @@ static struct cftype throtl_legacy_files[] = {
 		.name = "throttle.io_serviced_recursive",
 		.private = offsetof(struct throtl_grp, stat_ios),
 		.seq_show = tg_print_rwstat_recursive,
+	},
+	{
+		.name = "throttle.io_service_time",
+		.private = offsetof(struct throtl_grp, service_time),
+		.seq_show = tg_print_service_time,
+	},
+	{
+		.name = "throttle.io_wait_time",
+		.private = offsetof(struct throtl_grp, wait_time),
+		.seq_show = tg_print_wait_time,
 	},
 	{ }	/* terminate */
 };
@@ -1799,6 +1906,7 @@ static struct blkcg_policy blkcg_policy_throtl = {
 	.pd_online_fn		= throtl_pd_online,
 	.pd_offline_fn		= throtl_pd_offline,
 	.pd_free_fn		= throtl_pd_free,
+	.pd_reset_stats_fn	= throtl_pd_reset,
 };
 
 static unsigned long __tg_last_low_overflow_time(struct throtl_grp *tg)
@@ -2227,6 +2335,7 @@ bool blk_throtl_bio(struct bio *bio)
 		blkg_rwstat_add(&tg->stat_ios, bio->bi_opf, 1);
 	}
 
+	throtl_bio_stats_start(bio, tg);
 	if (!tg->has_rules[rw])
 		goto out;
 
@@ -2314,6 +2423,8 @@ again:
 out_unlock:
 	spin_unlock_irq(&q->queue_lock);
 out:
+	if (!throttled)
+		bio_set_io_start_time_ns(bio);
 	bio_set_flag(bio, BIO_THROTTLED);
 
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW

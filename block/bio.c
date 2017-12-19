@@ -1460,6 +1460,10 @@ again:
 	blk_throtl_bio_endio(bio);
 	/* release cgroup info */
 	bio_uninit(bio);
+#ifdef CONFIG_BLK_DEV_THROTTLING
+	if (bio->bi_tg_end_io)
+		bio->bi_tg_end_io(bio);
+#endif
 	if (bio->bi_end_io)
 		bio->bi_end_io(bio);
 }
