@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/bvec.h>
 #include <linux/ktime.h>
+#include <linux/sched/clock.h>
 
 struct bio_set;
 struct bio;
@@ -228,6 +229,12 @@ struct bio {
 	 */
 	struct blkcg_gq		*bi_blkg;
 	struct bio_issue	bi_issue;
+#ifdef CONFIG_BLK_DEV_THROTTLING
+	unsigned long long	start_time_ns;	/* when passed to block throttle */
+	unsigned long long	io_start_time_ns;	/* when no more throttle */
+	bio_end_io_t		*bi_tg_end_io;
+	void			*bi_tg_private;
+#endif
 #ifdef CONFIG_BLK_CGROUP_IOCOST
 	u64			bi_iocost_cost;
 #endif
@@ -313,6 +320,32 @@ enum {
  * only BVEC_POOL_IDX()
  */
 #define BIO_RESET_BITS	BVEC_POOL_OFFSET
+
+#ifdef CONFIG_BLK_DEV_THROTTLING
+static inline void bio_set_start_time_ns(struct bio *bio)
+{
+	preempt_disable();
+	bio->start_time_ns = sched_clock();
+	preempt_enable();
+}
+
+static inline void bio_set_io_start_time_ns(struct bio *bio)
+{
+	preempt_disable();
+	bio->io_start_time_ns = sched_clock();
+	preempt_enable();
+}
+
+static inline uint64_t bio_start_time_ns(struct bio *bio)
+{
+	return bio->start_time_ns;
+}
+
+static inline uint64_t bio_io_start_time_ns(struct bio *bio)
+{
+	return bio->io_start_time_ns;
+}
+#endif
 
 typedef __u32 __bitwise blk_mq_req_flags_t;
 
