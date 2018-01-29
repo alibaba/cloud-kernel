@@ -561,15 +561,21 @@ static struct cgroup_subsys_state *find_blkcg_css(struct cgroup_subsys_state *me
 
 	rcu_read_lock();
 	link = radix_tree_lookup(&memcg_blkcg_tree, memcg_css->id);
-	if (link)
+	if (link) {
 		blkcg_css = link->blkcg_css;
-	else
-		blkcg_css = blkcg_root_css;
+		if (css_tryget_online(blkcg_css))
+			goto out;
+	}
 
+	/*
+	 * If not blkcg_root_css and tryget failed,
+	 * get a reference of blkcg_root_css and return.
+	 */
+	blkcg_css = blkcg_root_css;
 	css_get(blkcg_css);
 
+out:
 	rcu_read_unlock();
-
 	return blkcg_css;
 }
 
