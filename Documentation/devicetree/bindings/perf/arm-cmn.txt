@@ -1,0 +1,23 @@
+* ARM CMN (Coherent Mesh Network) Performance Monitor
+
+** Required properties:
+
+- compatible	: Should be "arm,cmn-600"
+
+- reg		: Physical address of the base (PERIPHBASE) and size
+		  (up to 64MB) of the configuration address space.
+
+- interrupts	: PMU overflow interrupts, one per implemented DTC.
+
+- arm,root-node	: Offset from PERIPHBASE of the configuration discovery
+		  node (see TRM definition of ROOTNODEBASE).
+
+Example:
+
+	cmn@50000000 {
+		compatible = "arm,cmn-600";
+		reg = <0x0 0x50000000 0x0 0x4000000>;
+		/* 4x2 mesh with one DTC, and CFG node at 0,1,1,0 */
+		interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
+		arm,root-node = <0x104000>;
+	};
