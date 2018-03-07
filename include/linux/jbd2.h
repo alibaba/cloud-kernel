@@ -859,6 +859,16 @@ struct journal_s
 	wait_queue_head_t	j_wait_commit;
 
 	/**
+	 * @j_wait_done_checkpoint: Wait queue for waiting for checkpoint to complete.
+	 */
+	wait_queue_head_t	j_wait_done_checkpoint;
+
+	/**
+	 * @j_wait_checkpoint: Wait queue to trigger checkpointing.
+	 */
+	wait_queue_head_t	j_wait_checkpoint;
+
+	/**
 	 * @j_wait_updates: Wait queue to wait for updates to complete.
 	 */
 	wait_queue_head_t	j_wait_updates;
@@ -1190,6 +1200,13 @@ struct journal_s
 	 */
 	int			(*j_finish_inode_data_buffers)
 					(struct jbd2_inode *);
+
+	/**
+	 * @j_checkpoint_task:
+	 *
+	 * Pointer to the current checkpoint thread for this journal.
+	 */
+	struct task_struct	*j_checkpoint_task;
 
 	/*
 	 * Journal statistics

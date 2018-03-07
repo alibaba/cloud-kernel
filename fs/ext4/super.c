@@ -4875,6 +4875,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
+	set_task_ioprio(sbi->s_journal->j_checkpoint_task, journal_ioprio);
 
 	sbi->s_journal->j_commit_callback = ext4_journal_commit_callback;
 	sbi->s_journal->j_submit_inode_data_buffers =
@@ -5863,6 +5864,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 	if (sbi->s_journal) {
 		ext4_init_journal_params(sb, sbi->s_journal);
 		set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
+		set_task_ioprio(sbi->s_journal->j_checkpoint_task,
+				journal_ioprio);
 	}
 
 	if ((bool)(*flags & SB_RDONLY) != sb_rdonly(sb)) {
