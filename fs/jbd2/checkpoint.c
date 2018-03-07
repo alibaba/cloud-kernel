@@ -144,7 +144,16 @@ __releases(&journal->j_state_lock)
 			spin_unlock(&journal->j_list_lock);
 			write_unlock(&journal->j_state_lock);
 			if (chkpt) {
-				jbd2_log_do_checkpoint(journal);
+				DEFINE_WAIT(wait);
+
+				prepare_to_wait(&journal->j_wait_done_checkpoint, &wait,
+						TASK_UNINTERRUPTIBLE);
+				mutex_unlock(&journal->j_checkpoint_mutex);
+				wake_up(&journal->j_wait_checkpoint);
+				schedule();
+				mutex_lock(&journal->j_checkpoint_mutex);
+				finish_wait(&journal->j_wait_done_checkpoint, &wait);
+				jbd_debug(1, "wake up checkpoint thread.\n");
 			} else if (jbd2_cleanup_journal_tail(journal) == 0) {
 				/* We were able to recover space; yay! */
 				;
