@@ -182,6 +182,10 @@ struct throtl_grp {
 	struct blkg_rwstat service_time;
 	/* total time spent on block throttle */
 	struct blkg_rwstat wait_time;
+	/* total bytes throttled */
+	struct blkg_rwstat total_bytes_queued;
+	/* total IOs throttled */
+	struct blkg_rwstat total_io_queued;
 };
 
 /* We measure latency for request size from <= 4k to >= 1M */
@@ -496,7 +500,9 @@ static struct blkg_policy_data *throtl_pd_alloc(gfp_t gfp,
 		return NULL;
 
 	if (blkg_rwstat_init(&tg->service_time, gfp) ||
-	    blkg_rwstat_init(&tg->wait_time, gfp))
+	    blkg_rwstat_init(&tg->wait_time, gfp) ||
+	    blkg_rwstat_init(&tg->total_bytes_queued, gfp) ||
+	    blkg_rwstat_init(&tg->total_io_queued, gfp))
 		goto err;
 
 	throtl_service_queue_init(&tg->service_queue);
@@ -527,6 +533,8 @@ static struct blkg_policy_data *throtl_pd_alloc(gfp_t gfp,
 err:
 	blkg_rwstat_exit(&tg->service_time);
 	blkg_rwstat_exit(&tg->wait_time);
+	blkg_rwstat_exit(&tg->total_bytes_queued);
+	blkg_rwstat_exit(&tg->total_io_queued);
 	kfree(tg);
 	return NULL;
 }
@@ -629,6 +637,10 @@ static void throtl_pd_offline(struct blkg_policy_data *pd)
 				    &tg->service_time);
 		blkg_rwstat_add_aux(&blkg_to_tg(parent)->wait_time,
 				    &tg->wait_time);
+		blkg_rwstat_add_aux(&blkg_to_tg(parent)->total_bytes_queued,
+				    &tg->total_bytes_queued);
+		blkg_rwstat_add_aux(&blkg_to_tg(parent)->total_io_queued,
+				    &tg->total_io_queued);
 	}
 }
 
@@ -639,6 +651,8 @@ static void throtl_pd_free(struct blkg_policy_data *pd)
 	del_timer_sync(&tg->service_queue.pending_timer);
 	blkg_rwstat_exit(&tg->service_time);
 	blkg_rwstat_exit(&tg->wait_time);
+	blkg_rwstat_exit(&tg->total_bytes_queued);
+	blkg_rwstat_exit(&tg->total_io_queued);
 	kfree(tg);
 }
 
@@ -648,6 +662,8 @@ static void throtl_pd_reset(struct blkg_policy_data *pd)
 
 	blkg_rwstat_reset(&tg->service_time);
 	blkg_rwstat_reset(&tg->wait_time);
+	blkg_rwstat_reset(&tg->total_bytes_queued);
+	blkg_rwstat_reset(&tg->total_io_queued);
 }
 
 static struct throtl_grp *
@@ -1176,6 +1192,9 @@ static void throtl_add_bio_tg(struct bio *bio, struct throtl_qnode *qn,
 	throtl_qnode_add_bio(bio, qn, &sq->queued[rw]);
 
 	sq->nr_queued[rw]++;
+	blkg_rwstat_add(&tg->total_bytes_queued, bio_op(bio),
+			throtl_bio_data_size(bio));
+	blkg_rwstat_add(&tg->total_io_queued, bio_op(bio), 1);
 	throtl_enqueue_tg(tg);
 }
 
@@ -1594,6 +1613,22 @@ static int tg_print_wait_time(struct seq_file *sf, void *v)
 	return 0;
 }
 
+static int tg_print_total_bytes_queued(struct seq_file *sf, void *v)
+{
+	blkcg_print_blkgs(sf, css_to_blkcg(seq_css(sf)),
+			  tg_prfill_rwstat_field, &blkcg_policy_throtl,
+			  seq_cft(sf)->private, true);
+	return 0;
+}
+
+static int tg_print_total_io_queued(struct seq_file *sf, void *v)
+{
+	blkcg_print_blkgs(sf, css_to_blkcg(seq_css(sf)),
+			  tg_prfill_rwstat_field, &blkcg_policy_throtl,
+			  seq_cft(sf)->private, true);
+	return 0;
+}
+
 static struct cftype throtl_legacy_files[] = {
 	{
 		.name = "throttle.read_bps_device",
@@ -1648,6 +1683,16 @@ static struct cftype throtl_legacy_files[] = {
 		.name = "throttle.io_wait_time",
 		.private = offsetof(struct throtl_grp, wait_time),
 		.seq_show = tg_print_wait_time,
+	},
+	{
+		.name = "throttle.total_bytes_queued",
+		.private = offsetof(struct throtl_grp, total_bytes_queued),
+		.seq_show = tg_print_total_bytes_queued,
+	},
+	{
+		.name = "throttle.total_io_queued",
+		.private = offsetof(struct throtl_grp, total_io_queued),
+		.seq_show = tg_print_total_io_queued,
 	},
 	{ }	/* terminate */
 };
