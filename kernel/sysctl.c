@@ -1063,6 +1063,71 @@ static int proc_dopipe_max_size(struct ctl_table *table, int write,
 				 do_proc_dopipe_max_size_conv, NULL);
 }
 
+struct do_proc_dointvec_jiffies_minmax_conv_param {
+	int *min;
+	int *max;
+};
+
+static int do_proc_dointvec_jiffies_minmax_conv(bool *negp, unsigned long *lvalp,
+						int *valp,
+						int write, void *data)
+{
+	int val = 0;
+	struct do_proc_dointvec_jiffies_minmax_conv_param *param =
+		(struct do_proc_dointvec_jiffies_minmax_conv_param *)data;
+
+	if (write) {
+		if (*lvalp > LONG_MAX / HZ)
+			return 1;
+		val = (*negp) ? -(*lvalp*HZ) : (*lvalp*HZ);
+		if ((param->min && *param->min > val) ||
+			(param->max && *param->max < val))
+			return -EINVAL;
+		*valp = val;
+	} else {
+		unsigned long lval;
+
+		val = *valp;
+		if (val < 0) {
+			*negp = true;
+			lval = (unsigned long)-val;
+		} else {
+			*negp = false;
+			lval = (unsigned long)val;
+		}
+		*lvalp = lval / HZ;
+	}
+
+	return 0;
+}
+
+/**
+ * proc_dointvec_jiffies_minmax - read a vector of integers as seconds with min/max values
+ * @table: the sysctl table
+ * @write: %TRUE if this is a write to the sysctl file
+ * @buffer: the user buffer
+ * @lenp: the size of the user buffer
+ * @ppos: file position
+ *
+ * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
+ * values from/to the user buffer, treated as an ASCII string.
+ *
+ * This routine will ensure the values are within the range specified by
+ * table->extra1 (min) and table->extra2 (max).
+ *
+ * Returns 0 on success.
+ */
+int proc_dointvec_jiffies_minmax(struct ctl_table *table, int write,
+				 void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct do_proc_dointvec_jiffies_minmax_conv_param param = {
+		.min = (int *) table->extra1,
+		.max = (int *) table->extra2,
+	};
+	return do_proc_dointvec(table, write, buffer, lenp, ppos,
+				do_proc_dointvec_jiffies_minmax_conv, &param);
+}
+
 static void validate_coredump_safety(void)
 {
 #ifdef CONFIG_COREDUMP
@@ -1586,6 +1651,12 @@ int proc_douintvec_minmax(struct ctl_table *table, int write,
 
 int proc_dointvec_jiffies(struct ctl_table *table, int write,
 		    void *buffer, size_t *lenp, loff_t *ppos)
+{
+	return -ENOSYS;
+}
+
+int proc_dointvec_jiffies_minmax(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	return -ENOSYS;
 }
@@ -3449,6 +3520,7 @@ EXPORT_SYMBOL(proc_douintvec);
 EXPORT_SYMBOL(proc_dointvec_jiffies);
 EXPORT_SYMBOL(proc_dointvec_minmax);
 EXPORT_SYMBOL_GPL(proc_douintvec_minmax);
+EXPORT_SYMBOL(proc_dointvec_jiffies_minmax);
 EXPORT_SYMBOL(proc_dointvec_userhz_jiffies);
 EXPORT_SYMBOL(proc_dointvec_ms_jiffies);
 EXPORT_SYMBOL(proc_dostring);
