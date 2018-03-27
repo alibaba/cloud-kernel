@@ -2635,9 +2635,9 @@ adjudge_to_death:
 		} else {
 			const int tmo = tcp_fin_time(sk);
 
-			if (tmo > TCP_TIMEWAIT_LEN) {
+			if (tmo > sock_net(sk)->ipv4.sysctl_tcp_tw_timeout) {
 				inet_csk_reset_keepalive_timer(sk,
-						tmo - TCP_TIMEWAIT_LEN);
+				tmo - sock_net(sk)->ipv4.sysctl_tcp_tw_timeout);
 			} else {
 				tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
 				goto out;

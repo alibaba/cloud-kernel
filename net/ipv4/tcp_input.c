@@ -6472,8 +6472,9 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		}
 
 		tmo = tcp_fin_time(sk);
-		if (tmo > TCP_TIMEWAIT_LEN) {
-			inet_csk_reset_keepalive_timer(sk, tmo - TCP_TIMEWAIT_LEN);
+		if (tmo > sock_net(sk)->ipv4.sysctl_tcp_tw_timeout) {
+			inet_csk_reset_keepalive_timer(sk,
+						       tmo - sock_net(sk)->ipv4.sysctl_tcp_tw_timeout);
 		} else if (th->fin || sock_owned_by_user(sk)) {
 			/* Bad case. We could lose such FIN otherwise.
 			 * It is not a big problem, but it looks confusing

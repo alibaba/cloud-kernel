@@ -839,6 +839,14 @@ tcp_tw_reuse - INTEGER
 
 	Default: 2
 
+tcp_tw_timeout - INTEGER
+       The length of time (in seconds) a connection will remain in the
+       TIME-WAIT state. The maximum value is 600 seconds, the minimum
+       value is 1 second.
+       It should not be changed without advice/request of technical
+       experts.
+       Default: 60 seconds
+
 tcp_window_scaling - BOOLEAN
 	Enable window scaling as defined in RFC1323.
 
