@@ -50,6 +50,8 @@ static int ip_ping_group_range_max[] = { GID_T_MAX, GID_T_MAX };
 static int comp_sack_nr_max = 255;
 static u32 u32_max_div_HZ = UINT_MAX / HZ;
 static int one_day_secs = 24 * 3600;
+static int tcp_tw_timeout_min = 1 * HZ;
+static int tcp_tw_timeout_max = 600 * HZ;
 
 /* obsolete */
 static int sysctl_tcp_low_latency __read_mostly;
@@ -954,6 +956,15 @@ static struct ctl_table ipv4_net_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
+	},
+	{
+		.procname	= "tcp_tw_timeout",
+		.data		= &init_net.ipv4.sysctl_tcp_tw_timeout,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_jiffies_minmax,
+		.extra1		= &tcp_tw_timeout_min,
+		.extra2		= &tcp_tw_timeout_max
 	},
 	{
 		.procname	= "tcp_orphan_retries",
