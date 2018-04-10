@@ -1630,50 +1630,6 @@ static int tg_print_rwstat_recursive(struct seq_file *sf, void *v)
 	return 0;
 }
 
-static u64 tg_prfill_rwstat_field(struct seq_file *sf,
-					struct blkg_policy_data *pd,
-					int off)
-{
-	struct throtl_grp *tg = pd_to_tg(pd);
-	struct blkg_rwstat_sample rwstat = { };
-
-	blkg_rwstat_read((void *)tg + off, &rwstat);
-
-	return __blkg_prfill_rwstat(sf, pd, &rwstat);
-}
-
-static int tg_print_service_time(struct seq_file *sf, void *v)
-{
-	blkcg_print_blkgs(sf, css_to_blkcg(seq_css(sf)),
-			 tg_prfill_rwstat_field, &blkcg_policy_throtl,
-			 seq_cft(sf)->private, true);
-	return 0;
-}
-
-static int tg_print_wait_time(struct seq_file *sf, void *v)
-{
-	blkcg_print_blkgs(sf, css_to_blkcg(seq_css(sf)),
-			 tg_prfill_rwstat_field, &blkcg_policy_throtl,
-			 seq_cft(sf)->private, true);
-	return 0;
-}
-
-static int tg_print_total_bytes_queued(struct seq_file *sf, void *v)
-{
-	blkcg_print_blkgs(sf, css_to_blkcg(seq_css(sf)),
-			  tg_prfill_rwstat_field, &blkcg_policy_throtl,
-			  seq_cft(sf)->private, true);
-	return 0;
-}
-
-static int tg_print_total_io_queued(struct seq_file *sf, void *v)
-{
-	blkcg_print_blkgs(sf, css_to_blkcg(seq_css(sf)),
-			  tg_prfill_rwstat_field, &blkcg_policy_throtl,
-			  seq_cft(sf)->private, true);
-	return 0;
-}
-
 static struct cftype throtl_legacy_files[] = {
 	{
 		.name = "throttle.read_bps_device",
@@ -1722,22 +1678,22 @@ static struct cftype throtl_legacy_files[] = {
 	{
 		.name = "throttle.io_service_time",
 		.private = offsetof(struct throtl_grp, service_time),
-		.seq_show = tg_print_service_time,
+		.seq_show = tg_print_rwstat,
 	},
 	{
 		.name = "throttle.io_wait_time",
 		.private = offsetof(struct throtl_grp, wait_time),
-		.seq_show = tg_print_wait_time,
+		.seq_show = tg_print_rwstat,
 	},
 	{
 		.name = "throttle.total_bytes_queued",
 		.private = offsetof(struct throtl_grp, total_bytes_queued),
-		.seq_show = tg_print_total_bytes_queued,
+		.seq_show = tg_print_rwstat,
 	},
 	{
 		.name = "throttle.total_io_queued",
 		.private = offsetof(struct throtl_grp, total_io_queued),
-		.seq_show = tg_print_total_io_queued,
+		.seq_show = tg_print_rwstat,
 	},
 	{ }	/* terminate */
 };
