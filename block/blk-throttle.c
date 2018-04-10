@@ -182,6 +182,8 @@ struct throtl_grp {
 	struct blkg_rwstat service_time;
 	/* total time spent on block throttle */
 	struct blkg_rwstat wait_time;
+	/* total IOs completed */
+	struct blkg_rwstat completed;
 	/* total bytes throttled */
 	struct blkg_rwstat total_bytes_queued;
 	/* total IOs throttled */
@@ -501,6 +503,7 @@ static struct blkg_policy_data *throtl_pd_alloc(gfp_t gfp,
 
 	if (blkg_rwstat_init(&tg->service_time, gfp) ||
 	    blkg_rwstat_init(&tg->wait_time, gfp) ||
+	    blkg_rwstat_init(&tg->completed, gfp) ||
 	    blkg_rwstat_init(&tg->total_bytes_queued, gfp) ||
 	    blkg_rwstat_init(&tg->total_io_queued, gfp))
 		goto err;
@@ -533,6 +536,7 @@ static struct blkg_policy_data *throtl_pd_alloc(gfp_t gfp,
 err:
 	blkg_rwstat_exit(&tg->service_time);
 	blkg_rwstat_exit(&tg->wait_time);
+	blkg_rwstat_exit(&tg->completed);
 	blkg_rwstat_exit(&tg->total_bytes_queued);
 	blkg_rwstat_exit(&tg->total_io_queued);
 	kfree(tg);
@@ -637,6 +641,8 @@ static void throtl_pd_offline(struct blkg_policy_data *pd)
 				    &tg->service_time);
 		blkg_rwstat_add_aux(&blkg_to_tg(parent)->wait_time,
 				    &tg->wait_time);
+		blkg_rwstat_add_aux(&blkg_to_tg(parent)->completed,
+				    &tg->completed);
 		blkg_rwstat_add_aux(&blkg_to_tg(parent)->total_bytes_queued,
 				    &tg->total_bytes_queued);
 		blkg_rwstat_add_aux(&blkg_to_tg(parent)->total_io_queued,
@@ -651,6 +657,7 @@ static void throtl_pd_free(struct blkg_policy_data *pd)
 	del_timer_sync(&tg->service_queue.pending_timer);
 	blkg_rwstat_exit(&tg->service_time);
 	blkg_rwstat_exit(&tg->wait_time);
+	blkg_rwstat_exit(&tg->completed);
 	blkg_rwstat_exit(&tg->total_bytes_queued);
 	blkg_rwstat_exit(&tg->total_io_queued);
 	kfree(tg);
@@ -662,6 +669,7 @@ static void throtl_pd_reset(struct blkg_policy_data *pd)
 
 	blkg_rwstat_reset(&tg->service_time);
 	blkg_rwstat_reset(&tg->wait_time);
+	blkg_rwstat_reset(&tg->completed);
 	blkg_rwstat_reset(&tg->total_bytes_queued);
 	blkg_rwstat_reset(&tg->total_io_queued);
 }
@@ -1096,6 +1104,7 @@ static void throtl_stats_update_completion(struct throtl_grp *tg,
 		blkg_rwstat_add(&tg->service_time, op, now - io_start_time);
 	if (time_after64(io_start_time, start_time))
 		blkg_rwstat_add(&tg->wait_time, op, io_start_time - start_time);
+	blkg_rwstat_add(&tg->completed, op, 1);
 	local_irq_restore(flags);
 }
 
@@ -1658,6 +1667,11 @@ static struct cftype throtl_legacy_files[] = {
 	{
 		.name = "throttle.io_wait_time",
 		.private = offsetof(struct throtl_grp, wait_time),
+		.seq_show = tg_print_rwstat,
+	},
+	{
+		.name = "throttle.io_completed",
+		.private = offsetof(struct throtl_grp, completed),
 		.seq_show = tg_print_rwstat,
 	},
 	{
