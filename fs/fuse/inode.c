@@ -432,6 +432,7 @@ static int fuse_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 enum {
 	OPT_FD,
+	OPT_TAG,
 	OPT_ROOTMODE,
 	OPT_USER_ID,
 	OPT_GROUP_ID,
@@ -444,6 +445,7 @@ enum {
 
 static const match_table_t tokens = {
 	{OPT_FD,			"fd=%u"},
+	{OPT_TAG,                       "tag=%s"},
 	{OPT_ROOTMODE,			"rootmode=%o"},
 	{OPT_USER_ID,			"user_id=%u"},
 	{OPT_GROUP_ID,			"group_id=%u"},
@@ -466,7 +468,7 @@ static int fuse_match_uint(substring_t *s, unsigned int *res)
 }
 
 int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
-			  struct user_namespace *user_ns)
+		   struct user_namespace *user_ns)
 {
 	char *p;
 	memset(d, 0, sizeof(struct fuse_mount_data));
@@ -488,6 +490,11 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 				return 0;
 			d->fd = value;
 			d->fd_present = 1;
+			break;
+
+		case OPT_TAG:
+			d->tag = args[0].from;
+			d->tag_present = 1;
 			break;
 
 		case OPT_ROOTMODE:
@@ -624,8 +631,12 @@ EXPORT_SYMBOL_GPL(fuse_conn_init);
 void fuse_conn_put(struct fuse_conn *fc)
 {
 	if (refcount_dec_and_test(&fc->count)) {
+		struct fuse_iqueue *fiq = &fc->iq;
 		if (fc->destroy_req)
 			fuse_request_free(fc->destroy_req);
+
+		if (fiq->ops->release)
+			fiq->ops->release(fiq);
 		put_pid_ns(fc->pid_ns);
 		put_user_ns(fc->user_ns);
 		fc->release(fc);
@@ -1062,10 +1073,7 @@ void fuse_dev_free(struct fuse_dev *fud)
 EXPORT_SYMBOL_GPL(fuse_dev_free);
 
 int fuse_fill_super_common(struct super_block *sb,
-			   struct fuse_mount_data *mount_data,
-			   const struct fuse_iqueue_ops *fiq_ops,
-			   void *fiq_priv,
-			   void **fudptr)
+			   struct fuse_mount_data *mount_data)
 {
 	struct fuse_dev *fud;
 	struct fuse_conn *fc;
@@ -1112,7 +1120,8 @@ int fuse_fill_super_common(struct super_block *sb,
 	if (!fc)
 		goto err;
 
-	fuse_conn_init(fc, sb->s_user_ns, fiq_ops, fiq_priv);
+	fuse_conn_init(fc, sb->s_user_ns, mount_data->fiq_ops,
+		       mount_data->fiq_priv);
 	fc->release = fuse_free_conn;
 
 	fud = fuse_dev_alloc_install(fc);
@@ -1148,7 +1157,7 @@ int fuse_fill_super_common(struct super_block *sb,
 	/* Root dentry doesn't have .d_revalidate */
 	sb->s_d_op = &fuse_dentry_operations;
 
-	if (is_bdev) {
+	if (mount_data->destroy) {
 		fc->destroy_req = fuse_request_alloc(0);
 		if (!fc->destroy_req)
 			goto err_put_root;
@@ -1156,7 +1165,7 @@ int fuse_fill_super_common(struct super_block *sb,
 
 	mutex_lock(&fuse_mutex);
 	err = -EINVAL;
-	if (*fudptr)
+	if (*mount_data->fudptr)
 		goto err_unlock;
 
 	err = fuse_ctl_add_conn(fc);
@@ -1165,7 +1174,7 @@ int fuse_fill_super_common(struct super_block *sb,
 
 	list_add_tail(&fc->entry, &fuse_conn_list);
 	sb->s_root = root_dentry;
-	*fudptr = fud;
+	*mount_data->fudptr = fud;
 	mutex_unlock(&fuse_mutex);
 	return 0;
 
@@ -1214,8 +1223,11 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 		goto err_fput;
 	__set_bit(FR_BACKGROUND, &init_req->flags);
 
-	err = fuse_fill_super_common(sb, &d, &fuse_dev_fiq_ops, NULL,
-				     &file->private_data);
+	d.fiq_ops = &fuse_dev_fiq_ops;
+	d.fiq_priv = NULL;
+	d.fudptr = &file->private_data;
+	d.destroy = is_bdev;
+	err = fuse_fill_super_common(sb, &d);
 	if (err < 0)
 		goto err_free_init_req;
 	/*
@@ -1258,11 +1270,12 @@ static void fuse_sb_destroy(struct super_block *sb)
 	}
 }
 
-static void fuse_kill_sb_anon(struct super_block *sb)
+void fuse_kill_sb_anon(struct super_block *sb)
 {
 	fuse_sb_destroy(sb);
 	kill_anon_super(sb);
 }
+EXPORT_SYMBOL_GPL(fuse_kill_sb_anon);
 
 static struct file_system_type fuse_fs_type = {
 	.owner		= THIS_MODULE,

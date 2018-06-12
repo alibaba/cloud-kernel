@@ -56,17 +56,39 @@ extern unsigned max_user_congthresh;
 /** Mount options */
 struct fuse_mount_data {
 	int fd;
+	const char *tag; /* lifetime: .fill_super() data argument */
 	unsigned rootmode;
 	kuid_t user_id;
 	kgid_t group_id;
 	unsigned fd_present:1;
+	unsigned tag_present:1;
 	unsigned rootmode_present:1;
 	unsigned user_id_present:1;
 	unsigned group_id_present:1;
 	unsigned default_permissions:1;
 	unsigned allow_other:1;
+	unsigned dax:1;
+	unsigned destroy:1;
 	unsigned max_read;
 	unsigned blksize;
+
+	/* DAX device, may be NULL */
+	struct dax_device *dax_dev;
+
+	/* fuse input queue operations */
+	const struct fuse_iqueue_ops *fiq_ops;
+
+	/* device-specific state for fuse_iqueue */
+	void *fiq_priv;
+
+	/* fuse_dev pointer to fill in, should contain NULL on entry */
+	void **fudptr;
+
+	/* version table length in bytes */
+	size_t vertab_len;
+
+	/* version table kernel address */
+	void *vertab_kaddr;
 };
 
 /* One forget request */
@@ -398,6 +420,11 @@ struct fuse_req {
 
 	/** Request is stolen from fuse_file->reserved_req */
 	struct file *stolen_file;
+
+#if IS_ENABLED(CONFIG_VIRTIO_FS)
+	/** virtio-fs's physically contiguous buffer for in and out args */
+	void *argbuf;
+#endif
 };
 
 struct fuse_iqueue;
@@ -428,6 +455,11 @@ struct fuse_iqueue_ops {
 	 */
 	void (*wake_pending_and_unlock)(struct fuse_iqueue *fiq)
 	__releases(fiq->lock);
+
+	/**
+	 * Clean up when fuse_iqueue is destroyed
+	 */
+	void (*release)(struct fuse_iqueue *fiq);
 };
 
 /** /dev/fuse input queue operations */
@@ -981,11 +1013,15 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
  * @fudptr: fuse_dev pointer to fill in, should contain NULL on entry
  */
 int fuse_fill_super_common(struct super_block *sb,
-			   struct fuse_mount_data *mount_data,
-			   const struct fuse_iqueue_ops *fiq_ops,
-			   void *fiq_priv,
-			   void **fudptr);
+			   struct fuse_mount_data *mount_data);
 void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req);
+
+/**
+ * Disassociate fuse connection from superblock and kill the superblock
+ *
+ * Calls kill_anon_super(), use with do not use with bdev mounts.
+ */
+void fuse_kill_sb_anon(struct super_block *sb);
 
 /**
  * Add connection to control filesystem
