@@ -1037,4 +1037,9 @@ struct posix_acl;
 struct posix_acl *fuse_get_acl(struct inode *inode, int type);
 int fuse_set_acl(struct inode *inode, struct posix_acl *acl, int type);
 
+/**
+ * Return the number of bytes in an arguments list
+ */
+unsigned fuse_len_args(unsigned numargs, struct fuse_arg *args);
+
 #endif /* _FS_FUSE_I_H */
