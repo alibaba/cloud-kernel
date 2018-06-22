@@ -322,10 +322,11 @@ unsigned fuse_len_args(unsigned numargs, struct fuse_arg *args)
 }
 EXPORT_SYMBOL_GPL(fuse_len_args);
 
-static u64 fuse_get_unique(struct fuse_iqueue *fiq)
+u64 fuse_get_unique(struct fuse_iqueue *fiq)
 {
 	return ++fiq->reqctr;
 }
+EXPORT_SYMBOL_GPL(fuse_get_unique);
 
 /**
  * A new request is available, wake fiq->waitq
