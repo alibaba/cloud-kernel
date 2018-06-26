@@ -19,6 +19,7 @@
 #include <linux/acpi_iort.h>
 #include <linux/bitmap.h>
 #include <linux/cpu.h>
+#include <linux/crash_dump.h>
 #include <linux/delay.h>
 #include <linux/dma-iommu.h>
 #include <linux/interrupt.h>
@@ -2006,8 +2007,15 @@ static void its_free_pending_table(struct page *pt)
 		   get_order(max_t(u32, LPI_PENDBASE_SZ, SZ_64K)));
 }
 
+/*
+ * Booting with kdump and LPIs enabled is generally fine.
+ */
 static bool enabled_lpis_allowed(void)
 {
+	/* Allow a kdump kernel */
+	if (is_kdump_kernel())
+		return true;
+
 	return false;
 }
 
