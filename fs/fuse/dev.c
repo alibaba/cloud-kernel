@@ -292,10 +292,10 @@ void fuse_put_request(struct fuse_conn *fc, struct fuse_req *req)
 			 * We get here in the unlikely case that a background
 			 * request was allocated but not sent
 			 */
-			spin_lock(&fc->lock);
+			spin_lock(&fc->bg_lock);
 			if (!fc->blocked)
 				wake_up(&fc->blocked_waitq);
-			spin_unlock(&fc->lock);
+			spin_unlock(&fc->bg_lock);
 		}
 
 		if (test_bit(FR_WAITING, &req->flags)) {
@@ -415,7 +415,7 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 	WARN_ON(test_bit(FR_PENDING, &req->flags));
 	WARN_ON(test_bit(FR_SENT, &req->flags));
 	if (test_bit(FR_BACKGROUND, &req->flags)) {
-		spin_lock(&fc->lock);
+		spin_lock(&fc->bg_lock);
 		clear_bit(FR_BACKGROUND, &req->flags);
 		if (fc->num_background == fc->max_background) {
 			fc->blocked = 0;
@@ -438,7 +438,7 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 		fc->num_background--;
 		fc->active_background--;
 		flush_bg_queue(fc);
-		spin_unlock(&fc->lock);
+		spin_unlock(&fc->bg_lock);
 	}
 	wake_up(&req->waitq);
 	if (req->end)
@@ -613,8 +613,8 @@ ssize_t fuse_simple_request(struct fuse_conn *fc, struct fuse_args *args)
  *
  * fc->connected must have been checked previously
  */
-void fuse_request_send_background_locked(struct fuse_conn *fc,
-					 struct fuse_req *req)
+void fuse_request_send_background_nocheck(struct fuse_conn *fc,
+					  struct fuse_req *req)
 {
 	BUG_ON(!test_bit(FR_BACKGROUND, &req->flags));
 	if (!test_bit(FR_WAITING, &req->flags)) {
@@ -622,6 +622,7 @@ void fuse_request_send_background_locked(struct fuse_conn *fc,
 		atomic_inc(&fc->num_waiting);
 	}
 	__set_bit(FR_ISREPLY, &req->flags);
+	spin_lock(&fc->bg_lock);
 	fc->num_background++;
 	if (fc->num_background == fc->max_background)
 		fc->blocked = 1;
@@ -631,6 +632,7 @@ void fuse_request_send_background_locked(struct fuse_conn *fc,
 	}
 	list_add_tail(&req->list, &fc->bg_queue);
 	flush_bg_queue(fc);
+	spin_unlock(&fc->bg_lock);
 }
 
 void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
@@ -638,7 +640,7 @@ void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 	BUG_ON(!req->end);
 	spin_lock(&fc->lock);
 	if (fc->connected) {
-		fuse_request_send_background_locked(fc, req);
+		fuse_request_send_background_nocheck(fc, req);
 		spin_unlock(&fc->lock);
 	} else {
 		spin_unlock(&fc->lock);
@@ -2154,7 +2156,6 @@ void fuse_abort_conn(struct fuse_conn *fc, bool is_abort)
 		LIST_HEAD(to_end);
 
 		fc->connected = 0;
-		fc->blocked = 0;
 		fc->aborted = is_abort;
 		fuse_set_initialized(fc);
 		list_for_each_entry(fud, &fc->devices, entry) {
@@ -2176,8 +2177,11 @@ void fuse_abort_conn(struct fuse_conn *fc, bool is_abort)
 			list_splice_tail_init(&fpq->processing, &to_end);
 			spin_unlock(&fpq->lock);
 		}
+		spin_lock(&fc->bg_lock);
+		fc->blocked = 0;
 		fc->max_background = UINT_MAX;
 		flush_bg_queue(fc);
+		spin_unlock(&fc->bg_lock);
 
 		spin_lock(&fiq->lock);
 		fiq->connected = 0;
