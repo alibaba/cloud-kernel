@@ -60,6 +60,7 @@ static struct fuse_req *__fuse_request_alloc(unsigned npages, gfp_t flags)
 		struct page **pages;
 		struct fuse_page_desc *page_descs;
 
+		WARN_ON(npages > FUSE_MAX_MAX_PAGES);
 		if (npages <= FUSE_REQ_INLINE_PAGES) {
 			pages = req->inline_pages;
 			page_descs = req->inline_page_descs;
@@ -1705,7 +1706,7 @@ static int fuse_retrieve(struct fuse_conn *fc, struct inode *inode,
 	unsigned int num;
 	unsigned int offset;
 	size_t total_len = 0;
-	int num_pages;
+	unsigned int num_pages;
 
 	offset = outarg->offset & ~PAGE_MASK;
 	file_size = i_size_read(inode);
@@ -1717,7 +1718,7 @@ static int fuse_retrieve(struct fuse_conn *fc, struct inode *inode,
 		num = file_size - outarg->offset;
 
 	num_pages = (num + offset + PAGE_SIZE - 1) >> PAGE_SHIFT;
-	num_pages = min(num_pages, FUSE_MAX_PAGES_PER_REQ);
+	num_pages = min(num_pages, fc->max_pages);
 
 	req = fuse_get_req(fc, num_pages);
 	if (IS_ERR(req))

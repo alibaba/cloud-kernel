@@ -1004,6 +1004,11 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 				fc->cache_symlinks = 1;
 			if (arg->flags & FUSE_ABORT_ERROR)
 				fc->abort_err = 1;
+			if (arg->flags & FUSE_MAX_PAGES) {
+				fc->max_pages =
+					min_t(unsigned int, FUSE_MAX_MAX_PAGES,
+					max_t(unsigned int, arg->max_pages, 1));
+			}
 			if (IS_ENABLED(CONFIG_FUSE_DAX)) {
 				if (arg->flags & FUSE_MAP_ALIGNMENT &&
 				    !fuse_dax_check_alignment(fc, arg->map_alignment))
@@ -1049,7 +1054,7 @@ void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 		FUSE_DO_READDIRPLUS | FUSE_READDIRPLUS_AUTO | FUSE_ASYNC_DIO |
 		FUSE_WRITEBACK_CACHE | FUSE_NO_OPEN_SUPPORT |
 		FUSE_PARALLEL_DIROPS | FUSE_HANDLE_KILLPRIV | FUSE_POSIX_ACL |
-		FUSE_ABORT_ERROR | FUSE_CACHE_SYMLINKS;
+		FUSE_ABORT_ERROR | FUSE_MAX_PAGES | FUSE_CACHE_SYMLINKS;
 #ifdef CONFIG_FUSE_DAX
 	if (fc->dax)
 		arg->flags |= FUSE_MAP_ALIGNMENT;
@@ -1246,6 +1251,7 @@ int fuse_fill_super_common(struct super_block *sb,
 	fc->user_id = mount_data->user_id;
 	fc->group_id = mount_data->group_id;
 	fc->max_read = max_t(unsigned, 4096, mount_data->max_read);
+	fc->max_pages = FUSE_DEFAULT_MAX_PAGES_PER_REQ;
 
 	/* Used by get_root_inode() */
 	sb->s_fs_info = fc;
