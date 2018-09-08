@@ -392,13 +392,27 @@ void pciehp_get_latch_status(struct slot *slot, u8 *status)
 	*status = !!(slot_status & PCI_EXP_SLTSTA_MRLSS);
 }
 
-void pciehp_get_adapter_status(struct slot *slot, u8 *status)
+bool pciehp_card_present(struct controller *ctrl)
 {
-	struct pci_dev *pdev = ctrl_dev(slot->ctrl);
+	struct pci_dev *pdev = ctrl_dev(ctrl);
 	u16 slot_status;
 
 	pcie_capability_read_word(pdev, PCI_EXP_SLTSTA, &slot_status);
-	*status = !!(slot_status & PCI_EXP_SLTSTA_PDS);
+	return slot_status & PCI_EXP_SLTSTA_PDS;
+}
+
+/**
+ * pciehp_card_present_or_link_active() - whether given slot is occupied
+ * @ctrl: PCIe hotplug controller
+ *
+ * Unlike pciehp_card_present(), which determines presence solely from the
+ * Presence Detect State bit, this helper also returns true if the Link Active
+ * bit is set.  This is a concession to broken hotplug ports which hardwire
+ * Presence Detect State to zero, such as Wilocity's [1ae9:0200].
+ */
+bool pciehp_card_present_or_link_active(struct controller *ctrl)
+{
+	return pciehp_card_present(ctrl) || pciehp_check_link_active(ctrl);
 }
 
 int pciehp_query_power_fault(struct slot *slot)
@@ -861,7 +875,7 @@ static inline void dbg_ctrl(struct controller *ctrl)
 struct controller *pcie_init(struct pcie_device *dev)
 {
 	struct controller *ctrl;
-	u8 occupied, poweron;
+	u8 poweron;
 	u32 slot_cap, slot_cap2, link_cap;
 	struct pci_dev *pdev = dev->port;
 
@@ -928,9 +942,8 @@ struct controller *pcie_init(struct pcie_device *dev)
 	 * requested yet, so avoid triggering a notification with this command.
 	 */
 	if (POWER_CTRL(ctrl)) {
-		pciehp_get_adapter_status(ctrl->slot, &occupied);
 		pciehp_get_power_status(ctrl->slot, &poweron);
-		if (!occupied && poweron) {
+		if (!pciehp_card_present_or_link_active(ctrl) && poweron) {
 			pcie_disable_notification(ctrl);
 			pciehp_power_off_slot(ctrl->slot);
 		}
