@@ -232,7 +232,8 @@ static void davinci_spi_chipselect(struct spi_device *spi, int value)
 				!(spi->mode & SPI_CS_HIGH));
 	} else {
 		if (value == BITBANG_CS_ACTIVE) {
-			spidat1 |= SPIDAT1_CSHOLD_MASK;
+			if (!(spi->mode & SPI_CS_WORD))
+				spidat1 |= SPIDAT1_CSHOLD_MASK;
 			spidat1 &= ~(0x1 << chip_sel);
 		}
 	}
@@ -442,8 +443,12 @@ static int davinci_spi_setup(struct spi_device *spi)
 			return retval;
 		}
 
-		if (internal_cs)
+		if (internal_cs) {
 			set_io_bits(dspi->base + SPIPC0, 1 << spi->chip_select);
+		} else if (spi->mode & SPI_CS_WORD) {
+			dev_err(&spi->dev, "SPI_CS_WORD can't be use with GPIO CS\n");
+			return -EINVAL;
+		}
 	}
 
 	if (spi->mode & SPI_READY)
@@ -978,7 +983,7 @@ static int davinci_spi_probe(struct platform_device *pdev)
 	dspi->prescaler_limit = pdata->prescaler_limit;
 	dspi->version = pdata->version;
 
-	dspi->bitbang.flags = SPI_NO_CS | SPI_LSB_FIRST | SPI_LOOP;
+	dspi->bitbang.flags = SPI_NO_CS | SPI_LSB_FIRST | SPI_LOOP | SPI_CS_WORD;
 	if (dspi->version == SPI_VERSION_2)
 		dspi->bitbang.flags |= SPI_READY;
 
