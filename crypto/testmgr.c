@@ -2711,6 +2711,12 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(serpent_cbc_tv_template)
 		},
 	}, {
+		.alg = "cbc(sm4)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(sm4_cbc_tv_template)
+		}
+	}, {
 		.alg = "cbc(twofish)",
 		.test = alg_test_skcipher,
 		.suite = {
@@ -2839,6 +2845,12 @@ static const struct alg_test_desc alg_test_descs[] = {
 		.test = alg_test_skcipher,
 		.suite = {
 			.cipher = __VECS(serpent_ctr_tv_template)
+		}
+	}, {
+		.alg = "ctr(sm4)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(sm4_ctr_tv_template)
 		}
 	}, {
 		.alg = "ctr(twofish)",
