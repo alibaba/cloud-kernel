@@ -1642,7 +1642,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * exist.
 	 */
 	if ((vma_pagesize == PMD_SIZE ||
-	     (vma_pagesize == PUD_SIZE && STAGE2_PGTABLE_LEVELS > 3)) &&
+	     (vma_pagesize == PUD_SIZE && kvm_stage2_has_pud(kvm))) &&
 	    !logging_active) {
 		gfn = (fault_ipa & huge_page_mask(hstate_vma(vma))) >> PAGE_SHIFT;
 	} else {
