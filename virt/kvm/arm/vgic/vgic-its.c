@@ -241,13 +241,6 @@ static struct its_ite *find_ite(struct vgic_its *its, u32 device_id,
 	list_for_each_entry(dev, &(its)->device_list, dev_list) \
 		list_for_each_entry(ite, &(dev)->itt_head, ite_list)
 
-/*
- * We only implement 48 bits of PA at the moment, although the ITS
- * supports more. Let's be restrictive here.
- */
-#define BASER_ADDRESS(x)	((x) & GENMASK_ULL(47, 16))
-#define CBASER_ADDRESS(x)	((x) & GENMASK_ULL(47, 12))
-
 #define GIC_LPI_OFFSET 8192
 
 #define VITS_TYPER_IDBITS 16
@@ -762,6 +755,7 @@ static bool vgic_its_check_id(struct vgic_its *its, u64 baser, u32 id,
 {
 	int l1_tbl_size = GITS_BASER_NR_PAGES(baser) * SZ_64K;
 	u64 indirect_ptr, type = GITS_BASER_TYPE(baser);
+	phys_addr_t base = GITS_BASER_ADDR_48_to_52(baser);
 	int esz = GITS_BASER_ENTRY_SIZE(baser);
 	int index, idx;
 	gfn_t gfn;
@@ -787,7 +781,7 @@ static bool vgic_its_check_id(struct vgic_its *its, u64 baser, u32 id,
 		if (id >= (l1_tbl_size / esz))
 			return false;
 
-		addr = BASER_ADDRESS(baser) + id * esz;
+		addr = base + id * esz;
 		gfn = addr >> PAGE_SHIFT;
 
 		if (eaddr)
@@ -803,7 +797,7 @@ static bool vgic_its_check_id(struct vgic_its *its, u64 baser, u32 id,
 
 	/* Each 1st level entry is represented by a 64-bit value. */
 	if (kvm_read_guest_lock(its->dev->kvm,
-			   BASER_ADDRESS(baser) + index * sizeof(indirect_ptr),
+			   base + index * sizeof(indirect_ptr),
 			   &indirect_ptr, sizeof(indirect_ptr)))
 		return false;
 
@@ -813,11 +807,7 @@ static bool vgic_its_check_id(struct vgic_its *its, u64 baser, u32 id,
 	if (!(indirect_ptr & BIT_ULL(63)))
 		return false;
 
-	/*
-	 * Mask the guest physical address and calculate the frame number.
-	 * Any address beyond our supported 48 bits of PA will be caught
-	 * by the actual check in the final step.
-	 */
+	/* Mask the guest physical address and calculate the frame number. */
 	indirect_ptr &= GENMASK_ULL(51, 16);
 
 	/* Find the address of the actual entry */
@@ -1314,9 +1304,6 @@ static u64 vgic_sanitise_its_baser(u64 reg)
 				  GITS_BASER_OUTER_CACHEABILITY_SHIFT,
 				  vgic_sanitise_outer_cacheability);
 
-	/* Bits 15:12 contain bits 51:48 of the PA, which we don't support. */
-	reg &= ~GENMASK_ULL(15, 12);
-
 	/* We support only one (ITS) page size: 64K */
 	reg = (reg & ~GITS_BASER_PAGE_SIZE_MASK) | GITS_BASER_PAGE_SIZE_64K;
 
@@ -1335,11 +1322,8 @@ static u64 vgic_sanitise_its_cbaser(u64 reg)
 				  GITS_CBASER_OUTER_CACHEABILITY_SHIFT,
 				  vgic_sanitise_outer_cacheability);
 
-	/*
-	 * Sanitise the physical address to be 64k aligned.
-	 * Also limit the physical addresses to 48 bits.
-	 */
-	reg &= ~(GENMASK_ULL(51, 48) | GENMASK_ULL(15, 12));
+	/* Sanitise the physical address to be 64k aligned. */
+	reg &= ~GENMASK_ULL(15, 12);
 
 	return reg;
 }
@@ -1385,7 +1369,7 @@ static void vgic_its_process_commands(struct kvm *kvm, struct vgic_its *its)
 	if (!its->enabled)
 		return;
 
-	cbaser = CBASER_ADDRESS(its->cbaser);
+	cbaser = GITS_CBASER_ADDRESS(its->cbaser);
 
 	while (its->cwriter != its->creadr) {
 		int ret = kvm_read_guest_lock(kvm, cbaser + its->creadr,
@@ -2244,7 +2228,7 @@ static int vgic_its_restore_device_tables(struct vgic_its *its)
 	if (!(baser & GITS_BASER_VALID))
 		return 0;
 
-	l1_gpa = BASER_ADDRESS(baser);
+	l1_gpa = GITS_BASER_ADDR_48_to_52(baser);
 
 	if (baser & GITS_BASER_INDIRECT) {
 		l1_esz = GITS_LVL1_ENTRY_SIZE;
@@ -2316,7 +2300,7 @@ static int vgic_its_save_collection_table(struct vgic_its *its)
 {
 	const struct vgic_its_abi *abi = vgic_its_get_abi(its);
 	u64 baser = its->baser_coll_table;
-	gpa_t gpa = BASER_ADDRESS(baser);
+	gpa_t gpa = GITS_BASER_ADDR_48_to_52(baser);
 	struct its_collection *collection;
 	u64 val;
 	size_t max_size, filled = 0;
@@ -2365,7 +2349,7 @@ static int vgic_its_restore_collection_table(struct vgic_its *its)
 	if (!(baser & GITS_BASER_VALID))
 		return 0;
 
-	gpa = BASER_ADDRESS(baser);
+	gpa = GITS_BASER_ADDR_48_to_52(baser);
 
 	max_size = GITS_BASER_NR_PAGES(baser) * SZ_64K;
 
