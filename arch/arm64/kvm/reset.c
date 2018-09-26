@@ -178,3 +178,10 @@ out:
 	preempt_enable();
 	return ret;
 }
+
+int kvm_arm_config_vm(struct kvm *kvm, unsigned long type)
+{
+	if (type)
+		return -EINVAL;
+	return 0;
+}
