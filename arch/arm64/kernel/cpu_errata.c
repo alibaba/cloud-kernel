@@ -835,6 +835,14 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		.matches = needs_tx2_tvm_workaround,
 	},
 #endif
+#ifdef CONFIG_ARM64_ERRATUM_1188873
+	{
+		/* Cortex-A76 r0p0 to r2p0 */
+		.desc = "ARM erratum 1188873",
+		.capability = ARM64_WORKAROUND_1188873,
+		ERRATA_MIDR_RANGE(MIDR_CORTEX_A76, 0, 0, 2, 0),
+	},
+#endif
 	{
 	}
 };
