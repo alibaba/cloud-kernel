@@ -89,6 +89,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	fi->rdc.cached = false;
 	fi->rdc.size = 0;
 	fi->rdc.pos = 0;
+	fi->rdc.version = 0;
 	mutex_init(&fi->mutex);
 	init_rwsem(&fi->i_mmap_sem);
 	spin_lock_init(&fi->lock);
