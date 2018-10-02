@@ -230,7 +230,7 @@ struct bpf_object {
 };
 #define obj_elf_valid(o)	((o)->efile.elf)
 
-static void bpf_program__unload(struct bpf_program *prog)
+void bpf_program__unload(struct bpf_program *prog)
 {
 	int i;
 
@@ -1377,7 +1377,7 @@ out:
 	return ret;
 }
 
-static int
+int
 bpf_program__load(struct bpf_program *prog,
 		  char *license, u32 kern_version)
 {
