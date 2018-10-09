@@ -712,6 +712,16 @@ void wbc_detach_inode(struct writeback_control *wbc)
 	inode->i_wb_frn_avg_time = min(avg_time, (unsigned long)U16_MAX);
 	inode->i_wb_frn_history = history;
 
+	/*
+	 * Without wb list lock i_wb can switch at any point, so it can
+	 * judge on the wrong wb anyway.
+	 *
+	 * The wb is switched to the root memcg unconditionally. We expect
+	 * the correct wb (best candidate) is picked up in next round.
+	 */
+	if (wb == inode->i_wb && wb_dying(wb) && !(inode->i_state & I_DIRTY_ALL))
+		inode_switch_wbs(inode, root_mem_cgroup->css.id);
+
 	wb_put(wbc->wb);
 	wbc->wb = NULL;
 }
