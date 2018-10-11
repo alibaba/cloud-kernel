@@ -119,6 +119,7 @@
  *
  *  7.28
  *  - add FOPEN_CACHE_DIR
+ *  - add FUSE_CACHE_SYMLINKS
  */
 
 #ifndef _LINUX_FUSE_H
@@ -256,6 +257,7 @@ struct fuse_file_lock {
  * FUSE_HANDLE_KILLPRIV: fs handles killing suid/sgid/cap on write/chown/trunc
  * FUSE_POSIX_ACL: filesystem supports posix acls
  * FUSE_ABORT_ERROR: reading the device after abort returns ECONNABORTED
+ * FUSE_CACHE_SYMLINKS: cache READLINK responses
  * FUSE_MAP_ALIGNMENT: init_out.map_alignment contains log2(byte alignment) for
  *		       foffset and moffset fields in struct
  *		       fuse_setupmapping_out and fuse_removemapping_one.
@@ -282,6 +284,7 @@ struct fuse_file_lock {
 #define FUSE_HANDLE_KILLPRIV	(1 << 19)
 #define FUSE_POSIX_ACL		(1 << 20)
 #define FUSE_ABORT_ERROR	(1 << 21)
+#define FUSE_CACHE_SYMLINKS	(1 << 23)
 #define FUSE_MAP_ALIGNMENT	(1 << 26)
 
 /**

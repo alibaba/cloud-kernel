@@ -978,6 +978,8 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 				fc->posix_acl = 1;
 				fc->sb->s_xattr = fuse_acl_xattr_handlers;
 			}
+			if (arg->flags & FUSE_CACHE_SYMLINKS)
+				fc->cache_symlinks = 1;
 			if (arg->flags & FUSE_ABORT_ERROR)
 				fc->abort_err = 1;
 			if (IS_ENABLED(CONFIG_FUSE_DAX) &&
@@ -1022,7 +1024,7 @@ void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 		FUSE_DO_READDIRPLUS | FUSE_READDIRPLUS_AUTO | FUSE_ASYNC_DIO |
 		FUSE_WRITEBACK_CACHE | FUSE_NO_OPEN_SUPPORT |
 		FUSE_PARALLEL_DIROPS | FUSE_HANDLE_KILLPRIV | FUSE_POSIX_ACL |
-		FUSE_ABORT_ERROR;
+		FUSE_ABORT_ERROR | FUSE_CACHE_SYMLINKS;
 #ifdef CONFIG_FUSE_DAX
 	if (fc->dax)
 		arg->flags |= FUSE_MAP_ALIGNMENT;
