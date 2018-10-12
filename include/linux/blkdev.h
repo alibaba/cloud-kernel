@@ -851,6 +851,11 @@ static inline unsigned int blk_queue_zone_sectors(struct request_queue *q)
 }
 
 #ifdef CONFIG_BLK_DEV_ZONED
+static inline unsigned int blk_queue_nr_zones(struct request_queue *q)
+{
+	return blk_queue_is_zoned(q) ? q->nr_zones : 0;
+}
+
 static inline unsigned int blk_queue_zone_no(struct request_queue *q,
 					     sector_t sector)
 {
@@ -865,6 +870,11 @@ static inline bool blk_queue_zone_is_seq(struct request_queue *q,
 	if (!blk_queue_is_zoned(q) || !q->seq_zones_bitmap)
 		return false;
 	return test_bit(blk_queue_zone_no(q, sector), q->seq_zones_bitmap);
+}
+#else /* CONFIG_BLK_DEV_ZONED */
+static inline unsigned int blk_queue_nr_zones(struct request_queue *q)
+{
+	return 0;
 }
 #endif /* CONFIG_BLK_DEV_ZONED */
 
