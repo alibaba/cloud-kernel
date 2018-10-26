@@ -7298,16 +7298,6 @@ static int memory_stat_show(struct seq_file *m, void *v)
 	seq_printf(m, "pgfault %lu\n", memcg_events(memcg, PGFAULT));
 	seq_printf(m, "pgmajfault %lu\n", memcg_events(memcg, PGMAJFAULT));
 
-	seq_printf(m, "pgrefill %lu\n", memcg_events(memcg, PGREFILL));
-	seq_printf(m, "pgscan %lu\n", memcg_events(memcg, PGSCAN_KSWAPD) +
-		   memcg_events(memcg, PGSCAN_DIRECT));
-	seq_printf(m, "pgsteal %lu\n", memcg_events(memcg, PGSTEAL_KSWAPD) +
-		   memcg_events(memcg, PGSTEAL_DIRECT));
-	seq_printf(m, "pgactivate %lu\n", memcg_events(memcg, PGACTIVATE));
-	seq_printf(m, "pgdeactivate %lu\n", memcg_events(memcg, PGDEACTIVATE));
-	seq_printf(m, "pglazyfree %lu\n", memcg_events(memcg, PGLAZYFREE));
-	seq_printf(m, "pglazyfreed %lu\n", memcg_events(memcg, PGLAZYFREED));
-
 	seq_printf(m, "workingset_refault_anon %lu\n",
 		   memcg_page_state(memcg, WORKINGSET_REFAULT_ANON));
 	seq_printf(m, "workingset_refault_file %lu\n",
@@ -7322,6 +7312,16 @@ static int memory_stat_show(struct seq_file *m, void *v)
 		   memcg_page_state(memcg, WORKINGSET_RESTORE_FILE));
 	seq_printf(m, "workingset_nodereclaim %lu\n",
 		   memcg_page_state(memcg, WORKINGSET_NODERECLAIM));
+
+	seq_printf(m, "pgrefill %lu\n", memcg_events(memcg, PGREFILL));
+	seq_printf(m, "pgscan %lu\n", memcg_events(memcg, PGSCAN_KSWAPD) +
+		   memcg_events(memcg, PGSCAN_DIRECT));
+	seq_printf(m, "pgsteal %lu\n", memcg_events(memcg, PGSTEAL_KSWAPD) +
+		   memcg_events(memcg, PGSTEAL_DIRECT));
+	seq_printf(m, "pgactivate %lu\n", memcg_events(memcg, PGACTIVATE));
+	seq_printf(m, "pgdeactivate %lu\n", memcg_events(memcg, PGDEACTIVATE));
+	seq_printf(m, "pglazyfree %lu\n", memcg_events(memcg, PGLAZYFREE));
+	seq_printf(m, "pglazyfreed %lu\n", memcg_events(memcg, PGLAZYFREED));
 
 	return 0;
 }
