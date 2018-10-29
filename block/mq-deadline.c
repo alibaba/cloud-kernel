@@ -570,7 +570,7 @@ static void dd_finish_request(struct request *rq)
 		if (!list_empty(&dd->fifo_list[WRITE])) {
 			struct blk_mq_hw_ctx *hctx;
 
-			hctx = blk_mq_map_queue(q, rq->mq_ctx->cpu);
+			hctx = blk_mq_map_queue(q, rq->cmd_flags, rq->mq_ctx->cpu);
 			blk_mq_sched_mark_restart_hctx(hctx);
 		}
 		spin_unlock_irqrestore(&dd->zone_lock, flags);
