@@ -242,7 +242,7 @@ static void flush_end_io(struct request *flush_rq, blk_status_t error)
 		if (fq->rq_status != BLK_STS_OK)
 			error = fq->rq_status;
 
-		hctx = blk_mq_map_queue(q, flush_rq->cmd_flags, flush_rq->mq_ctx->cpu);
+		hctx = flush_rq->mq_hctx;
 		if (!q->elevator) {
 			blk_mq_tag_set_rq(hctx, flush_rq->tag, fq->orig_rq);
 			flush_rq->tag = -1;
@@ -345,15 +345,13 @@ static bool blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq,
 	 * just for cheating put/get driver tag.
 	 */
 	if (q->mq_ops) {
-		struct blk_mq_hw_ctx *hctx;
-
 		flush_rq->mq_ctx = first_rq->mq_ctx;
+		flush_rq->mq_hctx = first_rq->mq_hctx;
 
 		if (!q->elevator) {
 			fq->orig_rq = first_rq;
 			flush_rq->tag = first_rq->tag;
-			hctx = blk_mq_map_queue(q, first_rq->cmd_flags, first_rq->mq_ctx->cpu);
-			blk_mq_tag_set_rq(hctx, first_rq->tag, flush_rq);
+			blk_mq_tag_set_rq(flush_rq->mq_hctx, first_rq->tag, flush_rq);
 		} else {
 			flush_rq->internal_tag = first_rq->internal_tag;
 		}
@@ -414,12 +412,10 @@ static void flush_data_end_io(struct request *rq, blk_status_t error)
 static void mq_flush_data_end_io(struct request *rq, blk_status_t error)
 {
 	struct request_queue *q = rq->q;
-	struct blk_mq_hw_ctx *hctx;
+	struct blk_mq_hw_ctx *hctx = rq->mq_hctx;
 	struct blk_mq_ctx *ctx = rq->mq_ctx;
 	unsigned long flags;
 	struct blk_flush_queue *fq = blk_get_flush_queue(q, ctx);
-
-	hctx = blk_mq_map_queue(q, rq->cmd_flags, ctx->cpu);
 
 	if (q->elevator) {
 		WARN_ON(rq->tag < 0);
