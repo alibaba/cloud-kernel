@@ -216,17 +216,18 @@ static struct fuse_req *get_reserved_req(struct fuse_conn *fc,
 					 struct file *file)
 {
 	struct fuse_req *req = NULL;
+	struct fuse_inode *fi = get_fuse_inode(file_inode(file));
 	struct fuse_file *ff = file->private_data;
 
 	do {
 		wait_event(fc->reserved_req_waitq, ff->reserved_req);
-		spin_lock(&fc->lock);
+		spin_lock(&fi->lock);
 		if (ff->reserved_req) {
 			req = ff->reserved_req;
 			ff->reserved_req = NULL;
 			req->stolen_file = get_file(file);
 		}
-		spin_unlock(&fc->lock);
+		spin_unlock(&fi->lock);
 	} while (!req);
 
 	return req;
@@ -238,14 +239,15 @@ static struct fuse_req *get_reserved_req(struct fuse_conn *fc,
 static void put_reserved_req(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct file *file = req->stolen_file;
+	struct fuse_inode *fi = get_fuse_inode(file_inode(file));
 	struct fuse_file *ff = file->private_data;
 
-	spin_lock(&fc->lock);
+	spin_lock(&fi->lock);
 	fuse_request_init(req, req->pages, req->page_descs, req->max_pages);
 	BUG_ON(ff->reserved_req);
 	ff->reserved_req = req;
 	wake_up_all(&fc->reserved_req_waitq);
-	spin_unlock(&fc->lock);
+	spin_unlock(&fi->lock);
 	fput(file);
 }
 
