@@ -1502,13 +1502,12 @@ static u64 *alloc_pte(struct protection_domain *domain,
 			__npte = PM_LEVEL_PDE(level, iommu_virt_to_phys(page));
 
 			/* pte could have been changed somewhere. */
-			if (cmpxchg64(pte, __pte, __npte) != __pte) {
+			if (cmpxchg64(pte, __pte, __npte) != __pte)
 				free_page((unsigned long)page);
-				continue;
-			}
-
-			if (pte_level == PAGE_MODE_7_LEVEL)
+			else if (pte_level == PAGE_MODE_7_LEVEL)
 				*updated = true;
+
+			continue;
 		}
 
 		/* No level skipping support yet */
@@ -1517,7 +1516,7 @@ static u64 *alloc_pte(struct protection_domain *domain,
 
 		level -= 1;
 
-		pte = IOMMU_PTE_PAGE(*pte);
+		pte = IOMMU_PTE_PAGE(__pte);
 
 		if (pte_page && level == end_lvl)
 			*pte_page = pte;
