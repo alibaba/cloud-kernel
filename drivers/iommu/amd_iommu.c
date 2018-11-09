@@ -1585,6 +1585,25 @@ static u64 *fetch_pte(struct protection_domain *domain,
 	return pte;
 }
 
+static struct page *free_clear_pte(u64 *pte, u64 pteval, struct page *freelist)
+{
+	unsigned long pt;
+	int mode;
+
+	while (cmpxchg64(pte, pteval, 0) != pteval) {
+		pr_warn("AMD-Vi: IOMMU pte changed since we read it\n");
+		pteval = *pte;
+	}
+
+	if (!IOMMU_PTE_PRESENT(pteval))
+		return freelist;
+
+	pt   = (unsigned long)IOMMU_PTE_PAGE(pteval);
+	mode = IOMMU_PTE_MODE(pteval);
+
+	return free_sub_pt(pt, mode, freelist);
+}
+
 /*
  * Generic mapping functions. It maps a physical address into a DMA
  * address space. It allocates the page table pages if necessary.
@@ -1599,6 +1618,7 @@ static int iommu_map_page(struct protection_domain *dom,
 			  int prot,
 			  gfp_t gfp)
 {
+	struct page *freelist = NULL;
 	bool updated = false;
 	u64 __pte, *pte;
 	int ret, i, count;
@@ -1618,8 +1638,10 @@ static int iommu_map_page(struct protection_domain *dom,
 		goto out;
 
 	for (i = 0; i < count; ++i)
-		if (IOMMU_PTE_PRESENT(pte[i]))
-			return -EBUSY;
+		freelist = free_clear_pte(&pte[i], pte[i], freelist);
+
+	if (freelist != NULL)
+		updated = true;
 
 	if (count > 1) {
 		__pte = PAGE_SIZE_PTE(__sme_set(phys_addr), page_size);
@@ -1645,6 +1667,9 @@ out:
 		update_domain(dom);
 		spin_unlock_irqrestore(&dom->lock, flags);
 	}
+
+	/* Everything flushed out, free pages now */
+	free_page_list(freelist);
 
 	return ret;
 }
