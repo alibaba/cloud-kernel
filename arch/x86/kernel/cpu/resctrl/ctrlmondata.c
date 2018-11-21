@@ -71,7 +71,7 @@ int parse_bw_intel(struct rdt_parse_data *data, struct rdt_resource *r,
 	unsigned long bw_val;
 
 	if (d->have_new_ctrl) {
-		rdt_last_cmd_printf("duplicate domain %d\n", d->id);
+		rdt_last_cmd_printf("Duplicate domain %d\n", d->id);
 		return -EINVAL;
 	}
 
@@ -97,12 +97,12 @@ bool cbm_validate_intel(char *buf, u32 *data, struct rdt_resource *r)
 
 	ret = kstrtoul(buf, 16, &val);
 	if (ret) {
-		rdt_last_cmd_printf("non-hex character in mask %s\n", buf);
+		rdt_last_cmd_printf("Non-hex character in the mask %s\n", buf);
 		return false;
 	}
 
 	if (val == 0 || val > r->default_ctrl) {
-		rdt_last_cmd_puts("mask out of range\n");
+		rdt_last_cmd_puts("Mask out of range\n");
 		return false;
 	}
 
@@ -110,12 +110,12 @@ bool cbm_validate_intel(char *buf, u32 *data, struct rdt_resource *r)
 	zero_bit = find_next_zero_bit(&val, cbm_len, first_bit);
 
 	if (find_next_bit(&val, cbm_len, zero_bit) < cbm_len) {
-		rdt_last_cmd_printf("mask %lx has non-consecutive 1-bits\n", val);
+		rdt_last_cmd_printf("The mask %lx has non-consecutive 1-bits\n", val);
 		return false;
 	}
 
 	if ((zero_bit - first_bit) < r->cache.min_cbm_bits) {
-		rdt_last_cmd_printf("Need at least %d bits in mask\n",
+		rdt_last_cmd_printf("Need at least %d bits in the mask\n",
 				    r->cache.min_cbm_bits);
 		return false;
 	}
@@ -135,7 +135,7 @@ int parse_cbm(struct rdt_parse_data *data, struct rdt_resource *r,
 	u32 cbm_val;
 
 	if (d->have_new_ctrl) {
-		rdt_last_cmd_printf("duplicate domain %d\n", d->id);
+		rdt_last_cmd_printf("Duplicate domain %d\n", d->id);
 		return -EINVAL;
 	}
 
@@ -145,7 +145,7 @@ int parse_cbm(struct rdt_parse_data *data, struct rdt_resource *r,
 	 */
 	if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP &&
 	    rdtgroup_pseudo_locked_in_hierarchy(d)) {
-		rdt_last_cmd_printf("pseudo-locked region in hierarchy\n");
+		rdt_last_cmd_printf("Pseudo-locked region in hierarchy\n");
 		return -EINVAL;
 	}
 
@@ -164,14 +164,14 @@ int parse_cbm(struct rdt_parse_data *data, struct rdt_resource *r,
 	 * either is exclusive.
 	 */
 	if (rdtgroup_cbm_overlaps(r, d, cbm_val, rdtgrp->closid, true)) {
-		rdt_last_cmd_printf("overlaps with exclusive group\n");
+		rdt_last_cmd_printf("Overlaps with exclusive group\n");
 		return -EINVAL;
 	}
 
 	if (rdtgroup_cbm_overlaps(r, d, cbm_val, rdtgrp->closid, false)) {
 		if (rdtgrp->mode == RDT_MODE_EXCLUSIVE ||
 		    rdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP) {
-			rdt_last_cmd_printf("overlaps with other group\n");
+			rdt_last_cmd_printf("0verlaps with other group\n");
 			return -EINVAL;
 		}
 	}
@@ -293,7 +293,7 @@ static int rdtgroup_parse_resource(char *resname, char *tok,
 		if (!strcmp(resname, r->name) && rdtgrp->closid < r->num_closid)
 			return parse_line(tok, r, rdtgrp);
 	}
-	rdt_last_cmd_printf("unknown/unsupported resource name '%s'\n", resname);
+	rdt_last_cmd_printf("Unknown or unsupported resource name '%s'\n", resname);
 	return -EINVAL;
 }
 
@@ -326,7 +326,7 @@ ssize_t rdtgroup_schemata_write(struct kernfs_open_file *of,
 	 */
 	if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKED) {
 		ret = -EINVAL;
-		rdt_last_cmd_puts("resource group is pseudo-locked\n");
+		rdt_last_cmd_puts("Resource group is pseudo-locked\n");
 		goto out;
 	}
 
