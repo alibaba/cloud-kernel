@@ -1689,6 +1689,7 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 	if (plug->multiple_queues)
 		list_sort(NULL, &list, plug_rq_cmp);
 
+	plug->rq_count = 0;
 	this_q = NULL;
 	this_hctx = NULL;
 	this_ctx = NULL;
@@ -1890,6 +1891,7 @@ void blk_mq_try_issue_list_directly(struct blk_mq_hw_ctx *hctx,
 static void blk_add_rq_to_plug(struct blk_plug *plug, struct request *rq)
 {
 	list_add_tail(&rq->queuelist, &plug->mq_list);
+	plug->rq_count++;
 	if (!plug->multiple_queues && !list_is_singular(&plug->mq_list)) {
 		struct request *tmp;
 
@@ -1906,7 +1908,6 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 	const int is_flush_fua = op_is_flush(bio->bi_opf);
 	struct blk_mq_alloc_data data = { .flags = 0};
 	struct request *rq;
-	unsigned int request_count = 0;
 	struct blk_plug *plug;
 	struct request *same_queue_rq = NULL;
 	blk_qc_t cookie;
@@ -1919,7 +1920,7 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 		return BLK_QC_T_NONE;
 
 	if (!is_flush_fua && !blk_queue_nomerges(q) &&
-	    blk_attempt_plug_merge(q, bio, &request_count, &same_queue_rq))
+	    blk_attempt_plug_merge(q, bio, &same_queue_rq))
 		return BLK_QC_T_NONE;
 
 	if (blk_mq_sched_bio_merge(q, bio))
@@ -1955,19 +1956,11 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 		 * Use plugging if we have a ->commit_rqs() hook as well, as
 		 * we know the driver uses bd->last in a smart fashion.
 		 */
+		unsigned int request_count = plug->rq_count;
 		struct request *last = NULL;
 
 		blk_mq_put_ctx(data.ctx);
 		blk_mq_bio_to_request(rq, bio);
-
-		/*
-		 * @request_count may become stale because of schedule
-		 * out, so check the list again.
-		 */
-		if (list_empty(&plug->mq_list))
-			request_count = 0;
-		else if (blk_queue_nomerges(q))
-			request_count = blk_plug_queued_count(q);
 
 		if (!request_count)
 			trace_block_plug(q);
