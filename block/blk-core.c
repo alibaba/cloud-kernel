@@ -1882,7 +1882,6 @@ no_merge:
  * blk_attempt_plug_merge - try to merge with %current's plugged list
  * @q: request_queue new bio is being queued at
  * @bio: new bio being queued
- * @request_count: out parameter for number of traversed plugged requests
  * @same_queue_rq: pointer to &struct request that gets filled in when
  * another request associated with @q is found on the plug list
  * (optional, may be %NULL)
@@ -1901,7 +1900,6 @@ no_merge:
  * Caller must ensure !blk_queue_nomerges(q) beforehand.
  */
 bool blk_attempt_plug_merge(struct request_queue *q, struct bio *bio,
-			    unsigned int *request_count,
 			    struct request **same_queue_rq)
 {
 	struct blk_plug *plug;
@@ -1911,7 +1909,6 @@ bool blk_attempt_plug_merge(struct request_queue *q, struct bio *bio,
 	plug = current->plug;
 	if (!plug)
 		return false;
-	*request_count = 0;
 
 	if (q->mq_ops)
 		plug_list = &plug->mq_list;
@@ -1921,15 +1918,13 @@ bool blk_attempt_plug_merge(struct request_queue *q, struct bio *bio,
 	list_for_each_entry_reverse(rq, plug_list, queuelist) {
 		bool merged = false;
 
-		if (rq->q == q) {
-			(*request_count)++;
+		if (rq->q == q && same_queue_rq) {
 			/*
 			 * Only blk-mq multiple hardware queues case checks the
 			 * rq in the same queue, there should be only one such
 			 * rq in a queue
 			 **/
-			if (same_queue_rq)
-				*same_queue_rq = rq;
+			*same_queue_rq = rq;
 		}
 
 		if (rq->q != q || !blk_rq_merge_ok(rq, bio))
@@ -1956,30 +1951,6 @@ bool blk_attempt_plug_merge(struct request_queue *q, struct bio *bio,
 	return false;
 }
 
-unsigned int blk_plug_queued_count(struct request_queue *q)
-{
-	struct blk_plug *plug;
-	struct request *rq;
-	struct list_head *plug_list;
-	unsigned int ret = 0;
-
-	plug = current->plug;
-	if (!plug)
-		goto out;
-
-	if (q->mq_ops)
-		plug_list = &plug->mq_list;
-	else
-		plug_list = &plug->list;
-
-	list_for_each_entry(rq, plug_list, queuelist) {
-		if (rq->q == q)
-			ret++;
-	}
-out:
-	return ret;
-}
-
 void blk_init_request_from_bio(struct request *req, struct bio *bio)
 {
 	if (bio->bi_opf & REQ_RAHEAD)
@@ -2000,7 +1971,6 @@ static blk_qc_t blk_queue_bio(struct request_queue *q, struct bio *bio)
 	struct blk_plug *plug;
 	int where = ELEVATOR_INSERT_SORT;
 	struct request *req, *free;
-	unsigned int request_count = 0;
 
 	/*
 	 * low level driver can indicate that it wants pages above a
@@ -2025,10 +1995,9 @@ static blk_qc_t blk_queue_bio(struct request_queue *q, struct bio *bio)
 	 * any locks.
 	 */
 	if (!blk_queue_nomerges(q)) {
-		if (blk_attempt_plug_merge(q, bio, &request_count, NULL))
+		if (blk_attempt_plug_merge(q, bio, NULL))
 			return BLK_QC_T_NONE;
-	} else
-		request_count = blk_plug_queued_count(q);
+	}
 
 	spin_lock_irq(q->queue_lock);
 
@@ -2092,6 +2061,8 @@ get_rq:
 
 	plug = current->plug;
 	if (plug) {
+		unsigned int request_count = plug->rq_count;
+
 		/*
 		 * If this is the first request added after a plug, fire
 		 * of a plug trace.
@@ -3623,6 +3594,7 @@ void blk_start_plug(struct blk_plug *plug)
 	INIT_LIST_HEAD(&plug->list);
 	INIT_LIST_HEAD(&plug->mq_list);
 	INIT_LIST_HEAD(&plug->cb_list);
+	plug->rq_count = 0;
 	plug->multiple_queues = false;
 	/*
 	 * Store ordering should not be needed here, since a potential
