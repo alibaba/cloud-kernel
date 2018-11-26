@@ -108,7 +108,7 @@ static void nvmet_bdev_execute_rw(struct nvmet_req *req)
 
 	cookie = submit_bio(bio);
 
-	blk_poll(bdev_get_queue(req->ns->bdev), cookie);
+	blk_poll(bdev_get_queue(req->ns->bdev), cookie, true);
 }
 
 static void nvmet_bdev_execute_flush(struct nvmet_req *req)
