@@ -2922,8 +2922,8 @@ static int rtnl_group_changelink(const struct sk_buff *skb,
 	return 0;
 }
 
-static int rtnl_newlink(struct sk_buff *skb, struct nlmsghdr *nlh,
-			struct netlink_ext_ack *extack)
+static int __rtnl_newlink(struct sk_buff *skb, struct nlmsghdr *nlh,
+			  struct nlattr **attr, struct netlink_ext_ack *extack)
 {
 	struct net *net = sock_net(skb->sk);
 	const struct rtnl_link_ops *ops;
@@ -2992,7 +2992,6 @@ replay:
 	}
 
 	if (1) {
-		struct nlattr *attr[RTNL_MAX_TYPE + 1];
 		struct nlattr *slave_attr[RTNL_SLAVE_MAX_TYPE + 1];
 		struct nlattr **data = NULL;
 		struct nlattr **slave_data = NULL;
@@ -3178,6 +3177,21 @@ out_unregister:
 		}
 		goto out;
 	}
+}
+
+static int rtnl_newlink(struct sk_buff *skb, struct nlmsghdr *nlh,
+			struct netlink_ext_ack *extack)
+{
+	struct nlattr **attr;
+	int ret;
+
+	attr = kmalloc_array(RTNL_MAX_TYPE + 1, sizeof(*attr), GFP_KERNEL);
+	if (!attr)
+		return -ENOMEM;
+
+	ret = __rtnl_newlink(skb, nlh, attr, extack);
+	kfree(attr);
+	return ret;
 }
 
 static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
