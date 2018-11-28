@@ -111,6 +111,7 @@ struct blk_mq_queue_data {
 
 typedef blk_status_t (queue_rq_fn)(struct blk_mq_hw_ctx *,
 		const struct blk_mq_queue_data *);
+typedef void (commit_rqs_fn)(struct blk_mq_hw_ctx *);
 typedef bool (get_budget_fn)(struct blk_mq_hw_ctx *);
 typedef void (put_budget_fn)(struct blk_mq_hw_ctx *);
 typedef enum blk_eh_timer_return (timeout_fn)(struct request *, bool);
@@ -134,6 +135,15 @@ struct blk_mq_ops {
 	 * Queue request
 	 */
 	queue_rq_fn		*queue_rq;
+
+	/*
+	 * If a driver uses bd->last to judge when to submit requests to
+	 * hardware, it must define this function. In case of errors that
+	 * make us stop issuing further requests, this hook serves the
+	 * purpose of kicking the hardware (which the last request otherwise
+	 * would have done).
+	 */
+	commit_rqs_fn           *commit_rqs;
 
 	/*
 	 * Reserve budget before queue request, once .queue_rq is
