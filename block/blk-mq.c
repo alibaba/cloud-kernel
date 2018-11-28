@@ -1664,7 +1664,8 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 
 	list_splice_init(&plug->mq_list, &list);
 
-	list_sort(NULL, &list, plug_ctx_cmp);
+	if (plug->multiple_queues)
+		list_sort(NULL, &list, plug_ctx_cmp);
 
 	this_q = NULL;
 	this_ctx = NULL;
@@ -1855,6 +1856,19 @@ void blk_mq_try_issue_list_directly(struct blk_mq_hw_ctx *hctx,
 	}
 }
 
+static void blk_add_rq_to_plug(struct blk_plug *plug, struct request *rq)
+{
+	list_add_tail(&rq->queuelist, &plug->mq_list);
+	if (!plug->multiple_queues && !list_is_singular(&plug->mq_list)) {
+		struct request *tmp;
+
+		tmp = list_first_entry(&plug->mq_list, struct request,
+						queuelist);
+		if (tmp->q != rq->q)
+			plug->multiple_queues = true;
+	}
+}
+
 static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 {
 	const int is_sync = op_is_sync(bio->bi_opf);
@@ -1930,7 +1944,7 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 			trace_block_plug(q);
 		}
 
-		list_add_tail(&rq->queuelist, &plug->mq_list);
+		blk_add_rq_to_plug(plug, rq);
 	} else if (plug && !blk_queue_nomerges(q)) {
 		blk_mq_bio_to_request(rq, bio);
 
@@ -1945,7 +1959,7 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 			same_queue_rq = NULL;
 		if (same_queue_rq)
 			list_del_init(&same_queue_rq->queuelist);
-		list_add_tail(&rq->queuelist, &plug->mq_list);
+		blk_add_rq_to_plug(plug, rq);
 
 		blk_mq_put_ctx(data.ctx);
 
