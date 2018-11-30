@@ -150,6 +150,7 @@ struct midr_range {
 	}
 
 #define MIDR_REV_RANGE(m, v, r_min, r_max) MIDR_RANGE(m, v, r_min, v, r_max)
+#define MIDR_REV(m, v, r) MIDR_RANGE(m, v, r, v, r)
 #define MIDR_ALL_VERSIONS(m) MIDR_RANGE(m, 0, 0, 0xf, 0xf)
 
 static inline bool midr_is_cpu_model_range(u32 midr, u32 model, u32 rv_min,
