@@ -590,6 +590,13 @@ static struct ctl_table ipv4_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_do_static_key,
 	},
+	{
+		.procname       = "tcp_tw_timeout_inherit",
+		.data           = &sysctl_tcp_tw_timeout_inherit,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec,
+	},
 	{ }
 };
 

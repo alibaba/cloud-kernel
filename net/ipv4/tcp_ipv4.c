@@ -2923,6 +2923,11 @@ static int __net_init tcp_sk_init(struct net *net)
 		memcpy(net->ipv4.sysctl_tcp_wmem,
 		       init_net.ipv4.sysctl_tcp_wmem,
 		       sizeof(init_net.ipv4.sysctl_tcp_wmem));
+
+		if (sysctl_tcp_tw_timeout_inherit)
+			net->ipv4.sysctl_tcp_tw_timeout =
+				init_net.ipv4.sysctl_tcp_tw_timeout;
+
 	}
 	net->ipv4.sysctl_tcp_comp_sack_delay_ns = NSEC_PER_MSEC;
 	net->ipv4.sysctl_tcp_comp_sack_slack_ns = 100 * NSEC_PER_USEC;

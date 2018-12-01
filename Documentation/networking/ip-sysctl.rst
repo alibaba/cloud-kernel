@@ -847,6 +847,11 @@ tcp_tw_timeout - INTEGER
        experts.
        Default: 60 seconds
 
+tcp_tw_timeout_inherit - BOOLEAN
+       When enabled, tcp_tw_timeout value of the newly
+       created net namespace is assigned from the host.
+       Default: 0, not enabled
+
 tcp_window_scaling - BOOLEAN
 	Enable window scaling as defined in RFC1323.
 
