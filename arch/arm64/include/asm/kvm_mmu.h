@@ -179,6 +179,8 @@ void kvm_clear_hyp_idmap(void);
 #define kvm_pfn_pte(pfn, prot)		pfn_pte(pfn, prot)
 #define kvm_pfn_pmd(pfn, prot)		pfn_pmd(pfn, prot)
 
+#define kvm_pud_pfn(pud)		pud_pfn(pud)
+
 #define kvm_pmd_mkhuge(pmd)		pmd_mkhuge(pmd)
 
 static inline pte_t kvm_s2pte_mkwrite(pte_t pte)
@@ -262,6 +264,11 @@ static inline bool kvm_s2pud_readonly(pud_t *pudp)
 static inline bool kvm_s2pud_exec(pud_t *pudp)
 {
 	return !(READ_ONCE(pud_val(*pudp)) & PUD_S2_XN);
+}
+
+static inline pud_t kvm_s2pud_mkyoung(pud_t pud)
+{
+	return pud_mkyoung(pud);
 }
 
 #define hyp_pte_table_empty(ptep) kvm_page_empty(ptep)
