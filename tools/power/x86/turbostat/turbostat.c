@@ -3182,13 +3182,8 @@ int probe_nhm_msrs(unsigned int family, unsigned int model)
 	bclk = discover_bclk(family, model);
 
 	switch (model) {
-	case INTEL_FAM6_NEHALEM_EP:	/* Core i7, Xeon 5500 series - Bloomfield, Gainstown NHM-EP */
 	case INTEL_FAM6_NEHALEM:	/* Core i7 and i5 Processor - Clarksfield, Lynnfield, Jasper Forest */
-	case 0x1F:	/* Core i7 and i5 Processor - Nehalem */
-	case INTEL_FAM6_WESTMERE:	/* Westmere Client - Clarkdale, Arrandale */
-	case INTEL_FAM6_WESTMERE_EP:	/* Westmere EP - Gulftown */
 	case INTEL_FAM6_NEHALEM_EX:	/* Nehalem-EX Xeon - Beckton */
-	case INTEL_FAM6_WESTMERE_EX:	/* Westmere-EX Xeon - Eagleton */
 		pkg_cstate_limits = nhm_pkg_cstate_limits;
 		break;
 	case INTEL_FAM6_SANDYBRIDGE:	/* SNB */
@@ -3228,7 +3223,6 @@ int probe_nhm_msrs(unsigned int family, unsigned int model)
 		no_MSR_MISC_PWR_MGMT = 1;
 		break;
 	case INTEL_FAM6_XEON_PHI_KNL:	/* PHI */
-	case INTEL_FAM6_XEON_PHI_KNM:
 		pkg_cstate_limits = phi_pkg_cstate_limits;
 		break;
 	case INTEL_FAM6_ATOM_GOLDMONT:	/* BXT */
@@ -3289,7 +3283,6 @@ int is_bdx(unsigned int family, unsigned int model)
 
 	switch (model) {
 	case INTEL_FAM6_BROADWELL_X:
-	case INTEL_FAM6_BROADWELL_XEON_D:
 		return 1;
 	}
 	return 0;
@@ -3315,9 +3308,7 @@ int has_turbo_ratio_limit(unsigned int family, unsigned int model)
 	switch (model) {
 	/* Nehalem compatible, but do not include turbo-ratio limit support */
 	case INTEL_FAM6_NEHALEM_EX:	/* Nehalem-EX Xeon - Beckton */
-	case INTEL_FAM6_WESTMERE_EX:	/* Westmere-EX Xeon - Eagleton */
 	case INTEL_FAM6_XEON_PHI_KNL:	/* PHI - Knights Landing (different MSR definition) */
-	case INTEL_FAM6_XEON_PHI_KNM:
 		return 0;
 	default:
 		return 1;
@@ -3372,7 +3363,6 @@ int has_knl_turbo_ratio_limit(unsigned int family, unsigned int model)
 
 	switch (model) {
 	case INTEL_FAM6_XEON_PHI_KNL:	/* Knights Landing */
-	case INTEL_FAM6_XEON_PHI_KNM:
 		return 1;
 	default:
 		return 0;
@@ -3420,7 +3410,6 @@ int has_config_tdp(unsigned int family, unsigned int model)
 	case INTEL_FAM6_SKYLAKE_X:	/* SKX */
 
 	case INTEL_FAM6_XEON_PHI_KNL:	/* Knights Landing */
-	case INTEL_FAM6_XEON_PHI_KNM:
 		return 1;
 	default:
 		return 0;
@@ -3819,9 +3808,7 @@ rapl_dram_energy_units_probe(int  model, double rapl_energy_units)
 	switch (model) {
 	case INTEL_FAM6_HASWELL_X:	/* HSX */
 	case INTEL_FAM6_BROADWELL_X:	/* BDX */
-	case INTEL_FAM6_BROADWELL_XEON_D:	/* BDX-DE */
 	case INTEL_FAM6_XEON_PHI_KNL:	/* KNL */
-	case INTEL_FAM6_XEON_PHI_KNM:
 		return (rapl_dram_energy_units = 15.3 / 1000000);
 	default:
 		return (rapl_energy_units);
@@ -3886,10 +3873,8 @@ void rapl_probe_intel(unsigned int family, unsigned int model)
 		break;
 	case INTEL_FAM6_HASWELL_X:	/* HSX */
 	case INTEL_FAM6_BROADWELL_X:	/* BDX */
-	case INTEL_FAM6_BROADWELL_XEON_D:	/* BDX-DE */
 	case INTEL_FAM6_SKYLAKE_X:	/* SKX */
 	case INTEL_FAM6_XEON_PHI_KNL:	/* KNL */
-	case INTEL_FAM6_XEON_PHI_KNM:
 		do_rapl = RAPL_PKG | RAPL_DRAM | RAPL_DRAM_POWER_INFO | RAPL_DRAM_PERF_STATUS | RAPL_PKG_PERF_STATUS | RAPL_PKG_POWER_INFO;
 		BIC_PRESENT(BIC_PKG__);
 		BIC_PRESENT(BIC_RAM__);
@@ -4346,7 +4331,6 @@ int is_knl(unsigned int family, unsigned int model)
 		return 0;
 	switch (model) {
 	case INTEL_FAM6_XEON_PHI_KNL:	/* KNL */
-	case INTEL_FAM6_XEON_PHI_KNM:
 		return 1;
 	}
 	return 0;
@@ -4560,6 +4544,42 @@ void decode_c6_demotion_policy_msr(void)
 			base_cpu, msr, msr & (1 << 0) ? "EN" : "DIS");
 }
 
+/*
+ * When models are the same, for the purpose of turbostat, reuse
+ */
+unsigned int intel_model_duplicates(unsigned int model)
+{
+
+	switch(model) {
+	case INTEL_FAM6_NEHALEM_EP:	/* Core i7, Xeon 5500 series - Bloomfield, Gainstown NHM-EP */
+	case INTEL_FAM6_NEHALEM:	/* Core i7 and i5 Processor - Clarksfield, Lynnfield, Jasper Forest */
+	case 0x1F:	/* Core i7 and i5 Processor - Nehalem */
+	case INTEL_FAM6_WESTMERE:	/* Westmere Client - Clarkdale, Arrandale */
+	case INTEL_FAM6_WESTMERE_EP:	/* Westmere EP - Gulftown */
+		return INTEL_FAM6_NEHALEM;
+
+	case INTEL_FAM6_NEHALEM_EX:	/* Nehalem-EX Xeon - Beckton */
+	case INTEL_FAM6_WESTMERE_EX:	/* Westmere-EX Xeon - Eagleton */
+		return INTEL_FAM6_NEHALEM_EX;
+
+	case INTEL_FAM6_XEON_PHI_KNM:
+		return INTEL_FAM6_XEON_PHI_KNL;
+
+	case INTEL_FAM6_HASWELL_L:
+		return INTEL_FAM6_HASWELL_CORE;
+
+	case INTEL_FAM6_BROADWELL_X:
+	case INTEL_FAM6_BROADWELL_XEON_D:	/* BDX-DE */
+		return INTEL_FAM6_BROADWELL_X;
+
+	case INTEL_FAM6_SKYLAKE_L:
+	case INTEL_FAM6_SKYLAKE_DESKTOP:
+	case INTEL_FAM6_KABYLAKE_L:
+	case INTEL_FAM6_KABYLAKE_DESKTOP:
+		return INTEL_FAM6_SKYLAKE_L;
+	}
+	return model;
+}
 void process_cpuid()
 {
 	unsigned int eax, ebx, ecx, edx;
@@ -4615,6 +4635,8 @@ void process_cpuid()
 			edx_flags & (1 << 28) ? "HT" : "-",
 			edx_flags & (1 << 29) ? "TM" : "-");
 	}
+	if (genuine_intel)
+		model = intel_model_duplicates(model);
 
 	if (!(edx_flags & (1 << 5)))
 		errx(1, "CPUID: no MSR");
