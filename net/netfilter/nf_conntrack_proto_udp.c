@@ -29,7 +29,7 @@
 
 static const unsigned int udp_timeouts[UDP_CT_MAX] = {
 	[UDP_CT_UNREPLIED]	= 30*HZ,
-	[UDP_CT_REPLIED]	= 180*HZ,
+	[UDP_CT_REPLIED]	= 120*HZ,
 };
 
 static inline struct nf_udp_net *udp_pernet(struct net *net)
