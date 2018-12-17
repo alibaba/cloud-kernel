@@ -5317,7 +5317,7 @@ static int megasas_init_fw(struct megasas_instance *instance)
 
 	fusion = instance->ctrl_context;
 
-	if (instance->adapter_type == VENTURA_SERIES) {
+	if (instance->adapter_type >= VENTURA_SERIES) {
 		scratch_pad_3 =
 			readl(&instance->reg_set->outbound_scratch_pad_3);
 		instance->max_raid_mapsize = ((scratch_pad_3 >>
@@ -5440,7 +5440,7 @@ static int megasas_init_fw(struct megasas_instance *instance)
 	if (instance->instancet->init_adapter(instance))
 		goto fail_init_adapter;
 
-	if (instance->adapter_type == VENTURA_SERIES) {
+	if (instance->adapter_type >= VENTURA_SERIES) {
 		scratch_pad_4 =
 			readl(&instance->reg_set->outbound_scratch_pad_4);
 		if ((scratch_pad_4 & MR_NVME_PAGE_SIZE_MASK) >=
@@ -5476,7 +5476,7 @@ static int megasas_init_fw(struct megasas_instance *instance)
 	memset(instance->ld_ids, 0xff, MEGASAS_MAX_LD_IDS);
 
 	/* stream detection initialization */
-	if (instance->adapter_type == VENTURA_SERIES) {
+	if (instance->adapter_type >= VENTURA_SERIES) {
 		fusion->stream_detect_by_ld =
 			kcalloc(MAX_LOGICAL_DRIVES_EXT,
 				sizeof(struct LD_STREAM_DETECT *),
@@ -7003,7 +7003,7 @@ skip_firing_dcmds:
 	if (instance->msix_vectors)
 		pci_free_irq_vectors(instance->pdev);
 
-	if (instance->adapter_type == VENTURA_SERIES) {
+	if (instance->adapter_type >= VENTURA_SERIES) {
 		for (i = 0; i < MAX_LOGICAL_DRIVES_EXT; ++i)
 			kfree(fusion->stream_detect_by_ld[i]);
 		kfree(fusion->stream_detect_by_ld);
