@@ -2,10 +2,12 @@
 // Copyright (C) 2016-2018 Arm Limited
 // CMN-600 Coherent Mesh Network PMU driver
 
+#include <linux/acpi.h>
 #include <linux/bitfield.h>
 #include <linux/bitops.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -882,6 +884,7 @@ static int arm_cmn_discover(struct arm_cmn *cmn, unsigned int rgn_offset, int lv
 				 "multiple DTCs not supported; events outside domain 0 will not be counted correctly\n");
 			return 0;
 		}
+		// FIXME: node_logid is apparently not a nice simple index
 		return arm_cmn_init_pmu(cmn, region, node_logid);
 	/* These guys have PMU events */
 	case CMN_TYPE_DVM:
@@ -970,21 +973,39 @@ static int arm_cmn_get_root_node(struct arm_cmn *cmn)
 	return -ENODEV;
 }
 
-static int arm_cmn_probe(struct platform_device *pdev)
+static int arm_cmn_acpi_probe(struct platform_device *pdev, struct arm_cmn *cmn)
 {
-	struct arm_cmn *cmn;
-	struct resource *res;
-	struct device_node *np = pdev->dev.of_node;
-	u32 rootnode;
-	int err;
+	struct resource *cfg, *root;
 
-	cmn = devm_kzalloc(&pdev->dev, sizeof(*cmn), GFP_KERNEL);
-	if (!cmn)
+	cfg = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!cfg)
+		return -EINVAL;
+
+	root = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (!root)
+		return -EINVAL;
+
+	if (!resource_contains(cfg, root))
+		swap(cfg, root);
+	/*
+	 * Note that devm_ioremap_resource() is dumb and won't let the platform
+	 * device claim cfg when the ACPI companion device has already claimed
+	 * root within it. But since they *are* already both claimed in the
+	 * appropriate name, we don't really need to do it again here anyway.
+	 */
+	cmn->base = devm_ioremap(cmn->dev, cfg->start, resource_size(cfg));
+	if (!cmn->base)
 		return -ENOMEM;
-	cmn->dev = &pdev->dev;
-	platform_set_drvdata(pdev, cmn);
 
-	/* Just map the entire region for now; we can get fancy later */
+	return root->start - cfg->start;
+}
+
+static int arm_cmn_of_probe(struct platform_device *pdev, struct arm_cmn *cmn)
+{
+	struct device_node *np = pdev->dev.of_node;
+	struct resource *res;
+	u32 rootnode;
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
 		return -EINVAL;
@@ -993,13 +1014,30 @@ static int arm_cmn_probe(struct platform_device *pdev)
 	if (IS_ERR(cmn->base))
 		return PTR_ERR(cmn->base);
 
-	err = of_property_read_u32(np, "arm,root-node", &rootnode);
-	if (err) {
-		err = arm_cmn_get_root_node(cmn);
-		if (err < 0)
-			return err;
-		rootnode = err;
-	}
+	if (of_property_read_u32(np, "arm,root-node", &rootnode))
+		return arm_cmn_get_root_node(cmn);
+
+	return rootnode;
+}
+
+static int arm_cmn_probe(struct platform_device *pdev)
+{
+	struct arm_cmn *cmn;
+	int err, rootnode;
+
+	cmn = devm_kzalloc(&pdev->dev, sizeof(*cmn), GFP_KERNEL);
+	if (!cmn)
+		return -ENOMEM;
+
+	cmn->dev = &pdev->dev;
+	platform_set_drvdata(pdev, cmn);
+
+	if (has_acpi_companion(cmn->dev))
+		rootnode = arm_cmn_acpi_probe(pdev, cmn);
+	else
+		rootnode = arm_cmn_of_probe(pdev, cmn);
+	if (rootnode < 0)
+		return rootnode;
 
 	err = arm_cmn_discover(cmn, rootnode, 0);
 	if (err)
@@ -1021,16 +1059,25 @@ static int arm_cmn_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id arm_cmn_match[] = {
+static const struct of_device_id arm_cmn_of_match[] = {
 	{ .compatible = "arm,cmn-600", },
-	{},
+	{}
 };
-MODULE_DEVICE_TABLE(of, arm_cmn_match);
+MODULE_DEVICE_TABLE(of, arm_cmn_of_match);
+
+#ifdef CONFIG_ACPI
+static const struct acpi_device_id arm_cmn_acpi_match[] = {
+	{ "ARMHC600", },
+	{}
+};
+MODULE_DEVICE_TABLE(acpi, arm_cmn_acpi_match);
+#endif
 
 static struct platform_driver arm_cmn_driver = {
 	.driver = {
 		.name = "arm-cmn",
-		.of_match_table = arm_cmn_match,
+		.of_match_table = arm_cmn_of_match,
+		.acpi_match_table = ACPI_PTR(arm_cmn_acpi_match),
 	},
 	.probe = arm_cmn_probe,
 	.remove = arm_cmn_remove,
