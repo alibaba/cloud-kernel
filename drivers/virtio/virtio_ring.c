@@ -13,6 +13,8 @@
 #include <linux/dma-mapping.h>
 #include <xen/xen.h>
 
+static bool vring_force_dma_api;
+
 #ifdef DEBUG
 /* For development, we want to crash whenever the ring is screwed. */
 #define BAD_RING(_vq, fmt, args...)				\
@@ -200,6 +202,15 @@ struct vring_virtqueue {
 
 #define to_vvq(_vq) container_of(_vq, struct vring_virtqueue, vq)
 
+static int __init vring_dma_api_setup(char *str)
+{
+	vring_force_dma_api = true;
+	printk(KERN_INFO "Force vring dma api enabled\n");
+
+	return 0;
+}
+__setup("vring_force_dma_api", vring_dma_api_setup);
+
 static inline bool virtqueue_use_indirect(struct virtqueue *_vq,
 					  unsigned int total_sg)
 {
@@ -240,6 +251,13 @@ static inline bool virtqueue_use_indirect(struct virtqueue *_vq,
 
 static bool vring_use_dma_api(struct virtio_device *vdev)
 {
+	/*
+	 * Prior to xdragon platform 20181230 release (e.g. 0930 release), we
+	 * need this hack to get ENI hotplug to work.
+	 */
+	if (vring_force_dma_api)
+		return true;
+
 	if (!virtio_has_dma_quirk(vdev))
 		return true;
 

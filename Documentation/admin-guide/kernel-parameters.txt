@@ -5801,6 +5801,11 @@
 	vmpoff=		[KNL,S390] Perform z/VM CP command after power off.
 			Format: <command>
 
+	vring_force_dma_api
+			Force virtio vring to use dma api. This is only needed
+			on xdragon platform (prior to 20181230 release, e.g.
+			0930 release).
+
 	vsyscall=	[X86-64]
 			Controls the behavior of vsyscalls (i.e. calls to
 			fixed addresses of 0xffffffffff600x00 from legacy
