@@ -2410,6 +2410,7 @@ static int mpage_map_one_extent(handle_t *handle, struct mpage_da_data *mpd)
 			mpd->io_submit.io_end->handle = handle->h_rsv_handle;
 			handle->h_rsv_handle = NULL;
 		}
+		mpd->io_submit.can_submit = 0;
 		ext4_set_io_unwritten_flag(inode, mpd->io_submit.io_end);
 	}
 
@@ -2825,7 +2826,9 @@ retry:
 		}
 		/* Unlock pages we didn't use */
 		mpage_release_unused_pages(&mpd, give_up_on_write);
-		/* Submit prepared bio */
+		/* Submit all prepared bio */
+		if (!mpd.io_submit.can_submit)
+			mpd.io_submit.can_submit = 1;
 		ext4_io_submit(&mpd.io_submit);
 
 		/*
