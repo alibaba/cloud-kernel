@@ -3475,7 +3475,8 @@ static int ext4_link(struct dentry *old_dentry,
 	if (err)
 		return err;
 
-	if ((ext4_test_inode_flag(dir, EXT4_INODE_PROJINHERIT)) &&
+	if (!sysctl_hardlink_cross_projid &&
+	    (ext4_test_inode_flag(dir, EXT4_INODE_PROJINHERIT)) &&
 	    (!projid_eq(EXT4_I(dir)->i_projid,
 			EXT4_I(old_dentry->d_inode)->i_projid)))
 		return -EXDEV;

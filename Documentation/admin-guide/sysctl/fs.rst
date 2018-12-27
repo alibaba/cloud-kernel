@@ -43,6 +43,7 @@ Currently, these files are in /proc/sys/fs:
 - pipe-user-pages-soft
 - protected_fifos
 - protected_hardlinks
+- hardlink_cross_projid
 - protected_regular
 - protected_symlinks
 - suid_dumpable
@@ -234,6 +235,15 @@ When set to "1" hardlinks cannot be created by users if they do not
 already own the source file, or do not have read/write access to it.
 
 This protection is based on the restrictions in Openwall and grsecurity.
+
+
+hardlink_cross_projid
+---------------------
+
+This is a temporary workaround plan to avoid the limitation when creating
+hard link cross two projids. When set to "0", hardlink creation cross
+two projids is restricted. When set to "1" hardlinks can be created
+cross two projids.
 
 
 protected_regular
