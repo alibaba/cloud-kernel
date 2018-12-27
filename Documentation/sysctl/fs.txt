@@ -36,6 +36,7 @@ Currently, these files are in /proc/sys/fs:
 - pipe-user-pages-soft
 - protected_fifos
 - protected_hardlinks
+- hardlink_cross_projid
 - protected_regular
 - protected_symlinks
 - suid_dumpable
@@ -235,6 +236,15 @@ don't own in world writable sticky directories, unless they are
 owned by the owner of the directory.
 
 When set to "2" it also applies to group writable sticky directories.
+
+==============================================================
+
+hardlink_cross_projid:
+
+This is a temporary workaround plan to avoid the limitation when creating
+hard link cross two projids. When set to "0", hardlink creation cross
+two projids is restricted. When set to "1" hardlinks can be created
+cross two projids.
 
 ==============================================================
 
