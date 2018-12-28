@@ -793,10 +793,13 @@ static inline void blkg_rwstat_add_aux(struct blkg_rwstat *to,
 
 #ifdef CONFIG_BLK_DEV_THROTTLING
 extern bool blk_throtl_bio(struct request_queue *q, struct blkcg_gq *blkg,
-			   struct bio *bio);
+			   struct bio *bio, wait_queue_head_t **wait);
 #else
 static inline bool blk_throtl_bio(struct request_queue *q, struct blkcg_gq *blkg,
-				  struct bio *bio) { return false; }
+				  struct bio *bio, wait_queue_head_t **wait)
+{
+	return false;
+}
 #endif
 
 static inline bool blkcg_bio_issue_check(struct request_queue *q,
@@ -805,6 +808,8 @@ static inline bool blkcg_bio_issue_check(struct request_queue *q,
 	struct blkcg *blkcg;
 	struct blkcg_gq *blkg;
 	bool throtl = false;
+	DEFINE_WAIT(wait);
+	wait_queue_head_t *wait_head = NULL;
 
 	rcu_read_lock();
 	blkcg = bio_blkcg(bio);
@@ -821,7 +826,7 @@ static inline bool blkcg_bio_issue_check(struct request_queue *q,
 		spin_unlock_irq(q->queue_lock);
 	}
 
-	throtl = blk_throtl_bio(q, blkg, bio);
+	throtl = blk_throtl_bio(q, blkg, bio, &wait_head);
 
 	if (!throtl) {
 		blkg = blkg ?: q->root_blkg;
@@ -837,6 +842,12 @@ static inline bool blkcg_bio_issue_check(struct request_queue *q,
 	}
 
 	rcu_read_unlock();
+	if (wait_head) {
+		prepare_to_wait_exclusive(wait_head, &wait, TASK_UNINTERRUPTIBLE);
+		io_schedule();
+		finish_wait(wait_head, &wait);
+	}
+
 	return !throtl;
 }
 
