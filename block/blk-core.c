@@ -808,6 +808,9 @@ static noinline_for_stack bool submit_bio_checks(struct bio *bio)
 	struct request_queue *q = bio->bi_disk->queue;
 	blk_status_t status = BLK_STS_IOERR;
 	struct blk_plug *plug;
+	DEFINE_WAIT(wait);
+	wait_queue_head_t *wait_head = NULL;
+	bool throtl;
 
 	might_sleep();
 
@@ -897,7 +900,14 @@ static noinline_for_stack bool submit_bio_checks(struct bio *bio)
 	if (unlikely(!current->io_context))
 		create_task_io_context(current, GFP_ATOMIC, q->node);
 
-	if (blk_throtl_bio(bio))
+	throtl = blk_throtl_bio(bio, &wait_head);
+	if (wait_head) {
+		prepare_to_wait_exclusive(wait_head, &wait, TASK_UNINTERRUPTIBLE);
+		io_schedule();
+		finish_wait(wait_head, &wait);
+	}
+
+	if (throtl)
 		return false;
 
 	blk_cgroup_bio_start(bio);
