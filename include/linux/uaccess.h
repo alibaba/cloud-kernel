@@ -267,7 +267,14 @@ extern long strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count);
 	probe_kernel_read(&retval, addr, sizeof(retval))
 
 #ifndef user_access_begin
-#define user_access_begin() do { } while (0)
+/*
+ * The type(VERIFY_READ vs VERIFY_WRITE) argument of access_ok() was not be
+ * used at all. Commit 96d4f267e40f9509e8a66e2b39e8b95655617693
+ * 'Remove 'type' argument from access_ok() function' in upstream has been
+ * refactoring it yet.
+ * Just pass 'VERIFY_WRITE' to keep the style here.
+ */
+#define user_access_begin(ptr,len) access_ok(VERIFY_WRITE, ptr, len)
 #define user_access_end() do { } while (0)
 #define unsafe_get_user(x, ptr, err) do { if (unlikely(__get_user(x, ptr))) goto err; } while (0)
 #define unsafe_put_user(x, ptr, err) do { if (unlikely(__put_user(x, ptr))) goto err; } while (0)
