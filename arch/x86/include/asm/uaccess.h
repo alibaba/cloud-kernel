@@ -711,7 +711,21 @@ extern struct movsl_mask {
  * checking before using them, but you have to surround them with the
  * user_access_begin/end() pair.
  */
-#define user_access_begin()	__uaccess_begin()
+static __must_check inline bool user_access_begin(const void __user *ptr, size_t len)
+{
+	/*
+	 * The type(VERIFY_READ vs VERIFY_WRITE) argument of access_ok() was
+	 * not be used at all. Commit 96d4f267e40f9509e8a66e2b39e8b95655617693
+	 * 'Remove 'type' argument from access_ok() function' in upstream has
+	 * been refactoring it yet.
+	 * Just pass 'VERIFY_WRITE' to keep the style here.
+	 */
+	if (unlikely(!access_ok(VERIFY_WRITE,ptr,len)))
+		return 0;
+	__uaccess_begin();
+	return 1;
+}
+#define user_access_begin(a,b)	user_access_begin(a,b)
 #define user_access_end()	__uaccess_end()
 
 #define unsafe_put_user(x, ptr, err_label)					\
