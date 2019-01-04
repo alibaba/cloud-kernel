@@ -1588,6 +1588,7 @@ static int eb_copy_relocations(const struct i915_execbuffer *eb)
 					     (char __user *)urelocs + copied,
 					     len)) {
 end_user:
+				user_access_end();
 				kvfree(relocs);
 				err = -EFAULT;
 				goto err;
