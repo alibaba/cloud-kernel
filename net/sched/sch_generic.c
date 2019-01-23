@@ -444,13 +444,12 @@ static void dev_watchdog(struct timer_list *t)
 		if (netif_device_present(dev) &&
 		    netif_running(dev) &&
 		    netif_carrier_ok(dev)) {
+			struct netdev_queue *txq;
 			int some_queue_timedout = 0;
 			unsigned int i;
 			unsigned long trans_start;
 
 			for (i = 0; i < dev->num_tx_queues; i++) {
-				struct netdev_queue *txq;
-
 				txq = netdev_get_tx_queue(dev, i);
 				trans_start = txq->trans_start;
 				if (netif_xmit_stopped(txq) &&
@@ -464,8 +463,9 @@ static void dev_watchdog(struct timer_list *t)
 
 			if (some_queue_timedout) {
 				trace_net_dev_xmit_timeout(dev, i);
-				WARN_ONCE(1, KERN_INFO "NETDEV WATCHDOG: %s (%s): transmit queue %u timed out\n",
-				       dev->name, netdev_drivername(dev), i);
+				WARN_ONCE(1, KERN_INFO "NETDEV WATCHDOG: %s (%s): transmit queue %u (0x%lx) timed out\n",
+					  dev->name, netdev_drivername(dev),
+					  i, txq->state);
 				dev->netdev_ops->ndo_tx_timeout(dev, i);
 			}
 			if (!mod_timer(&dev->watchdog_timer,
