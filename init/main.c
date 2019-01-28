@@ -1132,7 +1132,6 @@ static noinline void __init kernel_init_freeable(void)
 	init_mm_internals();
 
 	do_pre_smp_initcalls();
-	lockup_detector_init();
 
 	smp_init();
 	sched_init_smp();
@@ -1142,6 +1141,8 @@ static noinline void __init kernel_init_freeable(void)
 	page_ext_init();
 
 	do_basic_setup();
+
+	lockup_detector_init();
 
 	/* Open the /dev/console on the rootfs, this should never fail */
 	if (ksys_open((const char __user *) "/dev/console", O_RDWR, 0) < 0)
