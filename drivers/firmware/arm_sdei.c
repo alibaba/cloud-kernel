@@ -390,7 +390,7 @@ static int sdei_platform_reset(void)
 	return err;
 }
 
-static int sdei_api_event_enable(u32 event_num)
+int sdei_api_event_enable(u32 event_num)
 {
 	return invoke_sdei_fn(SDEI_1_0_FN_SDEI_EVENT_ENABLE, event_num, 0, 0, 0,
 			      0, NULL);
@@ -435,7 +435,7 @@ int sdei_event_enable(u32 event_num)
 }
 EXPORT_SYMBOL(sdei_event_enable);
 
-static int sdei_api_event_disable(u32 event_num)
+int sdei_api_event_disable(u32 event_num)
 {
 	return invoke_sdei_fn(SDEI_1_0_FN_SDEI_EVENT_DISABLE, event_num, 0, 0,
 			      0, 0, NULL);
