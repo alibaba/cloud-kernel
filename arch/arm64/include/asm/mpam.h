@@ -266,7 +266,7 @@ static inline u64 mpam_write_sysreg_s(u64 v, u64 reg, char *name)
 #ifdef MPAM_SYS_REG_DEBUG
 static inline u32 mpam_readl(const volatile void __iomem *addr)
 {
-	return pr_info("readl: %p\n", addr);
+	return pr_info("readl: %016llx\n", (u64)addr);
 }
 #else
 #define mpam_readl(addr) readl(addr)
@@ -275,7 +275,7 @@ static inline u32 mpam_readl(const volatile void __iomem *addr)
 #ifdef MPAM_SYS_REG_DEBUG
 static inline u32 mpam_writel(u64 v, const volatile void __iomem *addr)
 {
-	return pr_info("writel: %016llx to %p\n", v, addr);
+	return pr_info("writel: %016llx to %016llx\n", v, (u64)addr);
 }
 #else
 #define mpam_writel(v, addr) writel(v, addr)
