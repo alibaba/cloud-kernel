@@ -926,3 +926,56 @@ static int __init mpam_late_init(void)
 }
 
 late_initcall(mpam_late_init);
+
+/*
+ * __intel_rdt_sched_in() - Writes the task's CLOSid/RMID to IA32_PQR_MSR
+ *
+ * Following considerations are made so that this has minimal impact
+ * on scheduler hot path:
+ * - This will stay as no-op unless we are running on an Intel SKU
+ *   which supports resource control or monitoring and we enable by
+ *   mounting the resctrl file system.
+ * - Caches the per cpu CLOSid/RMID values and does the MSR write only
+ *   when a task with a different CLOSid/RMID is scheduled in.
+ * - We allocate RMIDs/CLOSids globally in order to keep this as
+ *   simple as possible.
+ * Must be called with preemption disabled.
+ */
+void __mpam_sched_in(void)
+{
+	struct intel_pqr_state *state = this_cpu_ptr(&pqr_state);
+	u64 partid = state->default_closid;
+	u64 pmg = state->default_rmid;
+
+	/*
+	 * If this task has a closid/rmid assigned, use it.
+	 * Else use the closid/rmid assigned to this cpu.
+	 */
+	if (static_branch_likely(&resctrl_alloc_enable_key)) {
+		if (current->closid)
+			partid = current->closid;
+	}
+
+	if (static_branch_likely(&resctrl_mon_enable_key)) {
+		if (current->rmid)
+			pmg = current->rmid;
+	}
+
+	if (partid != state->cur_closid || pmg != state->cur_rmid) {
+		u64 reg;
+		state->cur_closid = partid;
+		state->cur_rmid = pmg;
+
+		/* set in EL0 */
+		reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
+		reg = PARTID_SET(reg, partid);
+		reg = PMG_SET(reg, pmg);
+		mpam_write_sysreg_s(reg, SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
+
+		/* set in EL1 */
+		reg = mpam_read_sysreg_s(SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
+		reg = PARTID_SET(reg, partid);
+		reg = PMG_SET(reg, pmg);
+		mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
+	}
+}

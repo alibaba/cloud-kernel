@@ -59,6 +59,7 @@
 #include <asm/mmu_context.h>
 #include <asm/processor.h>
 #include <asm/stacktrace.h>
+#include <asm/mpam_sched.h>
 
 #if defined(CONFIG_STACKPROTECTOR) && !defined(CONFIG_STACKPROTECTOR_PER_TASK)
 #include <linux/stackprotector.h>
@@ -516,6 +517,8 @@ __notrace_funcgraph struct task_struct *__switch_to(struct task_struct *prev,
 
 	/* the actual thread switch */
 	last = cpu_switch_to(prev, next);
+
+	mpam_sched_in();
 
 	return last;
 }
