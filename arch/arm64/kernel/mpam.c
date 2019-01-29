@@ -168,6 +168,9 @@ u64 bw_rdmsr(struct rdt_domain *d, int partid);
 static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g);
 static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g);
 
+static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, u32 match);
+static int csu_write(struct rdt_domain *d, struct rdtgroup *g, u32 match);
+
 #define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
 
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
@@ -177,6 +180,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.parse_ctrlval		= parse_cbm,
 		.format_str		= "%d=%0*x",
 		.mon_read		= csu_read,
+		.mon_write		= csu_write,
 	},
 	[MPAM_RESOURCE_CACHE] = {
 		.msr_update		= cat_wrmsr,
@@ -184,6 +188,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.parse_ctrlval		= parse_cbm,
 		.format_str		= "%d=%0*x",
 		.mon_read		= csu_read,
+		.mon_write		= csu_write,
 	},
 	[MPAM_RESOURCE_MC] = {
 		.msr_update		= bw_wrmsr,
@@ -191,6 +196,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.parse_ctrlval		= parse_cbm,	/* [FIXME] add parse_bw() helper */
 		.format_str		= "%d=%0*x",
 		.mon_read		= mbwu_read,
+		.mon_write		= mbwu_write,
 	},
 };
 
@@ -274,6 +280,33 @@ static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g)
 	return mpam_readl(d->base + MSMON_CSU);
 }
 
+static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, u32 match)
+{
+	u32 pmg = g->mon.rmid;
+	u32 partid = g->closid;
+	u32 flt = MSMON_CFG_FLT_SET(pmg, partid);
+	u32 ctl = MSMON_CFG_MBWU_CTL_SET(match);
+
+	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
+	mpam_writel(flt, d->base + MSMON_CFG_MBWU_FLT);
+	mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
+
+	return 0;
+}
+
+static int csu_write(struct rdt_domain *d, struct rdtgroup *g, u32 match)
+{
+	u32 pmg = g->mon.rmid;
+	u32 partid = g->closid;
+	u32 flt = MSMON_CFG_FLT_SET(pmg, partid);
+	u32 ctl = MSMON_CFG_CSU_CTL_SET(match);
+
+	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
+	mpam_writel(flt, d->base + MSMON_CFG_CSU_FLT);
+	mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
+
+	return 0;
+}
 
 /*
  * Trivial allocator for CLOSIDs. Since h/w only supports a small number,

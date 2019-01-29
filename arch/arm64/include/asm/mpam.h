@@ -133,6 +133,7 @@ struct mongroup {
 	struct rdtgroup		*parent;
 	struct list_head	crdtgrp_list;
 	u32			rmid;
+	int			init;
 };
 
 /**
@@ -329,6 +330,7 @@ struct raw_resctrl_resource {
 				 struct rdt_domain *d);
 	int			num_pmg;
 	u64 (*mon_read)		(struct rdt_domain *d, struct rdtgroup *g);
+	int (*mon_write)	(struct rdt_domain *d, struct rdtgroup *g, u32 match);
 };
 
 int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);

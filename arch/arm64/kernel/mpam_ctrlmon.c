@@ -116,10 +116,11 @@ next:
 	return -EINVAL;
 }
 
-static int update_domains(struct resctrl_resource *r, int partid)
+static int update_domains(struct resctrl_resource *r, struct rdtgroup *g)
 {
 	struct raw_resctrl_resource *rr;
 	struct rdt_domain *d;
+	int partid = g->closid;
 
 	rr = (struct raw_resctrl_resource *)r->res;
 	list_for_each_entry(d, &r->domains, list) {
@@ -127,6 +128,9 @@ static int update_domains(struct resctrl_resource *r, int partid)
 			d->ctrl_val[partid] = d->new_ctrl;
 			rr->msr_update(d, partid);
 		}
+
+		/* only match partid for monitoring this whole group */
+		rr->mon_write(d, g, MSMON_MATCH_PARTID);
 	}
 
 	return 0;
@@ -197,7 +201,7 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 
 	for_each_resctrl_resource(r) {
 		if (r->alloc_enabled) {
-			ret = update_domains(r, closid);
+			ret = update_domains(r, rdtgrp);
 			if (ret)
 				goto out;
 		}
@@ -378,6 +382,7 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 				struct resctrl_resource *r, struct resctrl_group *prgrp)
 {
 #if 1
+	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
 	union mon_data_bits md;
 	struct kernfs_node *kn;
 	char name[32];
@@ -402,6 +407,11 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 		kernfs_remove(kn);
 		return ret;
 	}
+
+
+	/* set mon id for mon_groups */
+	if (prgrp->type == RDTMON_GROUP)
+		rr->mon_write(d, prgrp, MSMON_MATCH_PMG);
 
 	return ret;
 #if 0
