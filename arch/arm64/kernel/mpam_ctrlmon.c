@@ -366,16 +366,6 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 	}
 
 	md.priv = of->kn->priv;
-	pr_info("%s: resname %s, rid %d, domid %d, partid %d, pmg %d, (group: partid %d, pmg %d, mon %d)\n",
-		__func__, resname,
-		md.u.rid,
-		md.u.domid,
-		md.u.partid,
-		md.u.pmg,
-		rdtgrp->closid,
-		rdtgrp->mon.rmid,
-		rdtgrp->mon.mon
-	       );
 
 	r = &resctrl_resources_all[md.u.rid];
 	rr = r->res;
@@ -468,7 +458,6 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 		return ret;
 	}
 
-
 	/* [FIXME] Could we remove the MATCH_* param ? */
 	rr->mon_write(d, prgrp, true);
 
@@ -556,7 +545,6 @@ mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
 	struct kernfs_node *kn;
 	int ret;
 
-	pr_info("%s: create dir %s\n", __func__, name);
 	/* create the directory */
 	kn = kernfs_create_dir(parent_kn, name, parent_kn->mode, prgrp);
 	if (IS_ERR(kn)) {
