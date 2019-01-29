@@ -730,6 +730,17 @@ static int resctrl_num_pmg_show(struct kernfs_open_file *of,
 	return 0;
 }
 
+static int resctrl_num_mon_show(struct kernfs_open_file *of,
+				struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+
+	seq_printf(seq, "%d\n", rr->num_mon);
+
+	return 0;
+}
+
 int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 		   cpumask_var_t tmpmask)
 {
@@ -1095,6 +1106,13 @@ static struct rftype res_specific_files[] = {
 		.fflags         = RF_MON_INFO,
 	},
 	{
+		.name           = "num_monitors",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_num_mon_show,
+		.fflags         = RF_MON_INFO,
+	},
+	{
 		.name		= "last_cmd_status",
 		.mode		= 0444,
 		.kf_ops		= &resctrl_group_kf_single_ops,
@@ -1214,6 +1232,14 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		val = mpam_readl(d->base + MPAMF_IDR);
 		rr->num_partid = MPAMF_IDR_PARTID_MAX_GET(val);
 		rr->num_pmg = MPAMF_IDR_PMG_MAX_GET(val);
+
+		if (r->rid == MPAM_RESOURCE_CACHE) {
+			val = mpam_readl(d->base + MPAMF_CSUMON_IDR);
+			rr->num_mon = MPAMF_IDR_NUM_MON(val);
+		} else if (r->rid == MPAM_RESOURCE_MC) {
+			val = mpam_readl(d->base + MPAMF_MBWUMON_IDR);
+			rr->num_mon = MPAMF_IDR_NUM_MON(val);
+		}
 
 		d->cpus_list = n->cpus_list;
 
