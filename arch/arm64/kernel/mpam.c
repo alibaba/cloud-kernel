@@ -406,6 +406,9 @@ static __init bool get_rdt_mon_resources(void)
 
 static __init bool get_resctrl_resources(void)
 {
+	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
+		return false;
+
 	rdt_alloc_capable = get_rdt_alloc_resources();
 	rdt_mon_capable = get_rdt_mon_resources();
 
