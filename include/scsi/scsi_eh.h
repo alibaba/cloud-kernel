@@ -51,5 +51,6 @@ extern void scsi_eh_prep_cmnd(struct scsi_cmnd *scmd,
 
 extern void scsi_eh_restore_cmnd(struct scsi_cmnd* scmd,
 		struct scsi_eh_save *ses);
+extern int scsi_cancel_eh_reset;
 
 #endif /* _SCSI_SCSI_EH_H */

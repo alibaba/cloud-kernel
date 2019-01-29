@@ -8,9 +8,10 @@
 #include <linux/kernel.h>
 #include <linux/sysctl.h>
 
+#include <scsi/scsi_eh.h>
+
 #include "scsi_logging.h"
 #include "scsi_priv.h"
-
 
 static struct ctl_table scsi_table[] = {
 	{ .procname	= "logging_level",
@@ -18,6 +19,15 @@ static struct ctl_table scsi_table[] = {
 	  .maxlen	= sizeof(scsi_logging_level),
 	  .mode		= 0644,
 	  .proc_handler	= proc_dointvec },
+
+	{ .procname	= "scsi_cancel_eh_reset",
+	  .data		= &scsi_cancel_eh_reset,
+	  .maxlen	= sizeof(scsi_cancel_eh_reset),
+	  .mode		= 0644,
+	  .proc_handler	= proc_dointvec_minmax,
+	  .extra1         = SYSCTL_ZERO,
+	  .extra2         = SYSCTL_ONE,
+	},
 	{ }
 };
 

@@ -2074,6 +2074,8 @@ static void scsi_restart_operations(struct Scsi_Host *shost)
 	spin_unlock_irqrestore(shost->host_lock, flags);
 }
 
+int scsi_cancel_eh_reset;
+
 /**
  * scsi_eh_ready_devs - check device ready state and recover if not.
  * @shost:	host to be recovered.
@@ -2084,13 +2086,18 @@ void scsi_eh_ready_devs(struct Scsi_Host *shost,
 			struct list_head *work_q,
 			struct list_head *done_q)
 {
-	if (!scsi_eh_stu(shost, work_q, done_q))
+	if (!scsi_eh_stu(shost, work_q, done_q)) {
+		if (scsi_cancel_eh_reset) {
+			scsi_eh_offline_sdevs(work_q, done_q);
+			return;
+		}
 		if (!scsi_eh_bus_device_reset(shost, work_q, done_q))
 			if (!scsi_eh_target_reset(shost, work_q, done_q))
 				if (!scsi_eh_bus_reset(shost, work_q, done_q))
 					if (!scsi_eh_host_reset(shost, work_q, done_q))
 						scsi_eh_offline_sdevs(work_q,
 								      done_q);
+	}
 }
 EXPORT_SYMBOL_GPL(scsi_eh_ready_devs);
 
