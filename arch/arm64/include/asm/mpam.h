@@ -9,6 +9,86 @@
 #include <linux/seq_buf.h>
 #include <linux/seq_file.h>
 
+/* MPAM register */
+#define SYS_MPAM0_EL1			sys_reg(3, 0, 10, 5, 1)
+#define SYS_MPAM1_EL1			sys_reg(3, 0, 10, 5, 0)
+#define SYS_MPAM2_EL2			sys_reg(3, 4, 10, 5, 0)
+#define SYS_MPAM3_EL3			sys_reg(3, 6, 10, 5, 0)
+#define SYS_MPAM1_EL12			sys_reg(3, 5, 10, 5, 0)
+#define SYS_MPAMHCR_EL2			sys_reg(3, 4, 10, 4, 0)
+#define SYS_MPAMVPMV_EL2		sys_reg(3, 4, 10, 4, 1)
+#define SYS_MPAMVPMn_EL2(n)		sys_reg(3, 4, 10, 6, n)
+#define SYS_MPAMIDR_EL1			sys_reg(3, 0, 10, 4, 4)
+
+#define MPAM_MASK(n)			((1 << n) - 1)
+/* plan to use GENMASK(n, 0) instead */
+
+/*
+ * MPAMx_ELn:
+ * 15:0		PARTID_I
+ * 31:16	PARTID_D
+ * 39:32	PMG_I
+ * 47:40	PMG_D
+ * 48		TRAPMPAM1EL1
+ * 49		TRAPMPAM0EL1
+ * 61:49	Reserved
+ * 62		TRAPLOWER
+ * 63		MPAMEN
+ */
+#define PARTID_BITS			(16)
+#define PMG_BITS			(8)
+#define PARTID_MASK			MPAM_MASK(PARTID_BITS)
+#define PMG_MASK			MPAM_MASK(PMG_BITS)
+
+#define PARTID_I_SHIFT			(0)
+#define PARTID_D_SHIFT			(PARTID_I_SHIFT + PARTID_BITS)
+#define PMG_I_SHIFT			(PARTID_D_SHIFT + PARTID_BITS)
+#define PMG_D_SHIFT			(PMG_I_SHIFT + PMG_BITS)
+
+#define TRAPMPAM1EL1_SHIFT		(PMG_D_SHIFT + PMG_BITS)
+#define TRAPMPAM0EL1_SHIFT		(TRAPMPAM1EL1_SHIFT + 1)
+#define TRAPLOWER_SHIFT			(TRAPMPAM0EL1_SHIFT + 13)
+#define MPAMEN_SHIFT			(TRAPLOWER_SHIFT + 1)
+
+/*
+ * MPAMHCR_EL2:
+ * 0		EL0_VPMEN
+ * 1		EL1_VPMEN
+ * 7:2		Reserved
+ * 8		GSTAPP_PLK
+ * 30:9		Reserved
+ * 31		TRAP_MPAMIDR_EL1
+ * 63:32	Reserved
+ */
+#define EL0_VPMEN_SHIFT			(0)
+#define EL1_VPMEN_SHIFT			(EL0_VPMEN_SHIFT + 1)
+#define GSTAPP_PLK_SHIFT		(8)
+#define TRAP_MPAMIDR_EL1_SHIFT		(31)
+
+/*
+ * MPAMIDR_EL1:
+ * 15:0		PARTID_MAX
+ * 16		Reserved
+ * 17		HAS_HCR
+ * 20:18	VPMR_MAX
+ * 31:21	Reserved
+ * 39:32	PMG_MAX
+ * 63:40	Reserved
+ */
+#define VPMR_MAX_BITS			(3)
+#define PARTID_MAX_SHIFT		(0)
+#define HAS_HCR_SHIFT			(PARTID_MAX_SHIFT + PARTID_BITS + 1)
+#define VPMR_MAX_SHIFT			(HAS_HCR_SHIFT + 1)
+#define PMG_MAX_SHIFT			(VPMR_MAX_SHIFT + VPMR_MAX_BITS + 11)
+#define VPMR_MASK			MPAM_MASK(VPMR_MAX_BITS)
+
+/*
+ * MPAMVPMV_EL2:
+ * 31:0		VPM_V
+ * 63:32	Reserved
+ */
+#define VPM_V_BITS			32
+
 DECLARE_STATIC_KEY_FALSE(resctrl_enable_key);
 DECLARE_STATIC_KEY_FALSE(resctrl_mon_enable_key);
 
@@ -85,6 +165,11 @@ struct rdt_domain {
 	struct list_head	list;
 	int			id;
 	struct cpumask		cpu_mask;
+
+	/* arch specific fields */
+	u32			*ctrl_val;
+	u32			new_ctrl;
+	bool			have_new_ctrl;
 };
 
 extern struct mutex resctrl_group_mutex;
