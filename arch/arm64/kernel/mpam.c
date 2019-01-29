@@ -165,6 +165,9 @@ bw_wrmsr(struct rdt_domain *d, int partid);
 u64 cat_rdmsr(struct rdt_domain *d, int partid);
 u64 bw_rdmsr(struct rdt_domain *d, int partid);
 
+static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g);
+static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g);
+
 #define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
 
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
@@ -173,18 +176,21 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.msr_read		= cat_rdmsr,
 		.parse_ctrlval		= parse_cbm,
 		.format_str		= "%d=%0*x",
+		.mon_read		= csu_read,
 	},
 	[MPAM_RESOURCE_CACHE] = {
 		.msr_update		= cat_wrmsr,
 		.msr_read		= cat_rdmsr,
 		.parse_ctrlval		= parse_cbm,
 		.format_str		= "%d=%0*x",
+		.mon_read		= csu_read,
 	},
 	[MPAM_RESOURCE_MC] = {
 		.msr_update		= bw_wrmsr,
 		.msr_read		= bw_rdmsr,
 		.parse_ctrlval		= parse_cbm,	/* [FIXME] add parse_bw() helper */
 		.format_str		= "%d=%0*x",
+		.mon_read		= mbwu_read,
 	},
 };
 
@@ -246,6 +252,28 @@ u64 bw_rdmsr(struct rdt_domain *d, int partid)
 
 	return MBW_MAX_GET(max);
 }
+
+/*
+ * [FIXME]
+ * use pmg as monitor id
+ * just use match_pardid only.
+ */
+static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g)
+{
+	u32 pmg = g->mon.rmid;
+
+	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
+	return mpam_readl(d->base + MSMON_MBWU);
+}
+
+static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g)
+{
+	u32 pmg = g->mon.rmid;
+
+	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
+	return mpam_readl(d->base + MSMON_CSU);
+}
+
 
 /*
  * Trivial allocator for CLOSIDs. Since h/w only supports a small number,
