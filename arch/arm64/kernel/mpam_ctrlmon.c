@@ -314,14 +314,21 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 		return -ENOMEM;
 
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	if (!rdtgrp) {
+		resctrl_group_kn_unlock(of->kn);
+		return -ENOENT;
+	}
 
 	md.priv = of->kn->priv;
-	pr_info("%s: resname %s, rid %d, domid %d, partid %d, pmg %d\n",
+	pr_info("%s: resname %s, rid %d, domid %d, partid %d, pmg %d, (group: partid %d, pmg %d)\n",
 		__func__, resname,
 		md.u.rid,
 		md.u.domid,
 		md.u.partid,
-		md.u.pmg);
+		md.u.pmg,
+		rdtgrp->closid,
+		rdtgrp->mon.rmid
+	       );
 
 	/* show monitor data */
 
@@ -545,7 +552,7 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 	/*
 	 * Create the mon_data directory first.
 	 */
-	ret = mongroup_create_dir(parent_kn, NULL, "mon_data", &kn);
+	ret = mongroup_create_dir(parent_kn, prgrp, "mon_data", &kn);
 	if (ret)
 		return ret;
 
