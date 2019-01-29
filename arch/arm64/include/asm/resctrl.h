@@ -55,6 +55,8 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 	     r < resctrl_resources_all + MPAM_NUM_RESOURCES;		\
 	     r++)							\
 
+int mpam_get_mon_config(struct resctrl_resource *r);
+
 int mkdir_mondata_all(struct kernfs_node *parent_kn,
 			     struct resctrl_group *prgrp,
 			     struct kernfs_node **dest_kn);

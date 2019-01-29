@@ -338,6 +338,8 @@ static __init bool get_rdt_mon_resources(void)
 {
 	bool ret = true;
 
+	mpam_get_mon_config(&resctrl_resources_all[MPAM_RESOURCE_CACHE]);
+	mpam_get_mon_config(&resctrl_resources_all[MPAM_RESOURCE_MC]);
 	return ret;
 }
 

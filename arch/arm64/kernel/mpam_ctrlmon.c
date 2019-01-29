@@ -256,7 +256,7 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
  * use pmg as monitor id
  * just use match_pardid only.
  */
-static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g)
+static inline u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g)
 {
 	u32 pmg = g->mon.rmid;
 
@@ -264,12 +264,42 @@ static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g)
 	return mpam_readl(d->base + MSMON_MBWU);
 }
 
-static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g)
+static inline u64 csu_read(struct rdt_domain *d, struct rdtgroup *g)
 {
 	u32 pmg = g->mon.rmid;
 
 	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
 	return mpam_readl(d->base + MSMON_CSU);
+}
+
+static inline char *kernfs_node_name(struct kernfs_open_file *of)
+{
+	return (char *)(of ? of->kn->name : NULL);
+}
+
+static inline void put_resource_name(char *res)
+{
+	kfree(res);
+}
+
+/*
+ * pick resource name from mon data name
+ * eg. from mon_L3_01 we got L3
+ * */
+static inline char *get_resource_name(char *name)
+{
+	char *s, *p, *res;
+
+	if (!name)
+		return NULL;
+
+	s = name + 4;	/* skip "mon_" prefix */
+	p = strrchr(name, '_');
+	res = kmemdup_nul(s, p - s, GFP_KERNEL);
+	if (!res)
+		res = NULL;
+
+	return res;
 }
 
 int resctrl_group_mondata_show(struct seq_file *m, void *arg)
@@ -278,17 +308,30 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 	struct rdtgroup *rdtgrp;
 	struct rdt_domain *d;
 	int ret = 0;
+	char *resname = get_resource_name(kernfs_node_name(of));
+
+	if (!resname)
+		return -ENOMEM;
 
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 
 	d = of->kn->priv;
 
+	if (rdtgrp)
 	/* for debug */
-	seq_printf(m, "group: partid: %d, pmg: %d",
-		   rdtgrp->closid, rdtgrp->mon.rmid);
+		seq_printf(m, "resource: %s, group: partid: %d, pmg: %d\n",
+				resname, rdtgrp->closid, rdtgrp->mon.rmid);
+	else
+		seq_printf(m, "resource: %s: need partid and pmg here\n",
+				resname);
+
+	if (d)
+		seq_printf(m, "domain: id %d: cpu_list %s, base %016llx\n",
+			   d->id, d->cpus_list, (u64)d->base);
 
 	/* show monitor data */
 
+	put_resource_name(resname);
 	resctrl_group_kn_unlock(of->kn);
 	return ret;
 }
@@ -342,10 +385,9 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 #if 1
 	struct kernfs_node *kn;
 	char name[32];
-	int ret;
+	int ret = 0;
 
 	sprintf(name, "mon_%s_%02d", r->name, d->id);
-
 	kn = __kernfs_create_file(parent_kn, name, 0444,
 				  GLOBAL_ROOT_UID, GLOBAL_ROOT_GID, 0,
 				  &kf_mondata_ops, d, NULL, NULL);
@@ -354,6 +396,7 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 
 	ret = resctrl_group_kn_set_ugid(kn);
 	if (ret) {
+		pr_info("%s: create name %s, error ret %d\n", __func__, name, ret);
 		kernfs_remove(kn);
 		return ret;
 	}
@@ -442,10 +485,13 @@ mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
 	struct kernfs_node *kn;
 	int ret;
 
+	pr_info("%s: create dir %s\n", __func__, name);
 	/* create the directory */
 	kn = kernfs_create_dir(parent_kn, name, parent_kn->mode, prgrp);
-	if (IS_ERR(kn))
+	if (IS_ERR(kn)) {
+		pr_info("%s: create dir %s, error\n", __func__, name);
 		return PTR_ERR(kn);
+	}
 
 	if (dest_kn)
 		*dest_kn = kn;
