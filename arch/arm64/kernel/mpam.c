@@ -168,8 +168,8 @@ u64 bw_rdmsr(struct rdt_domain *d, int partid);
 static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g);
 static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g);
 
-static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, u32 match);
-static int csu_write(struct rdt_domain *d, struct rdtgroup *g, u32 match);
+static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable);
+static int csu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable);
 
 #define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
 
@@ -266,43 +266,55 @@ u64 bw_rdmsr(struct rdt_domain *d, int partid)
  */
 static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g)
 {
-	u32 pmg = g->mon.rmid;
+	u32 mon = g->mon.mon;
 
-	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
+	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
 	return mpam_readl(d->base + MSMON_MBWU);
 }
 
 static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g)
 {
-	u32 pmg = g->mon.rmid;
+	u32 mon = g->mon.mon;
 
-	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
+	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
 	return mpam_readl(d->base + MSMON_CSU);
 }
 
-static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, u32 match)
+static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable)
 {
-	u32 pmg = g->mon.rmid;
-	u32 partid = g->closid;
-	u32 flt = MSMON_CFG_FLT_SET(pmg, partid);
-	u32 ctl = MSMON_CFG_MBWU_CTL_SET(match);
+	u32 mon, pmg, partid, flt, ctl = 0;
 
-	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
-	mpam_writel(flt, d->base + MSMON_CFG_MBWU_FLT);
+	if (enable) {
+		mon = g->mon.mon;
+		pmg = g->mon.rmid;
+		partid = g->closid;
+		flt = MSMON_CFG_FLT_SET(pmg, partid);
+		ctl = MSMON_CFG_MBWU_CTL_SET(MSMON_MATCH_PMG|MSMON_MATCH_PARTID);
+
+		mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
+		mpam_writel(flt, d->base + MSMON_CFG_MBWU_FLT);
+	}
+
 	mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
 
 	return 0;
 }
 
-static int csu_write(struct rdt_domain *d, struct rdtgroup *g, u32 match)
+static int csu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable)
 {
-	u32 pmg = g->mon.rmid;
-	u32 partid = g->closid;
-	u32 flt = MSMON_CFG_FLT_SET(pmg, partid);
-	u32 ctl = MSMON_CFG_CSU_CTL_SET(match);
+	u32 mon, pmg, partid, flt, ctl = 0;
 
-	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
-	mpam_writel(flt, d->base + MSMON_CFG_CSU_FLT);
+	if (enable) {
+		mon = g->mon.mon;
+		pmg = g->mon.rmid;
+		partid = g->closid;
+		flt = MSMON_CFG_FLT_SET(pmg, partid);
+		ctl = MSMON_CFG_CSU_CTL_SET(MSMON_MATCH_PMG|MSMON_MATCH_PARTID);
+
+		mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
+		mpam_writel(flt, d->base + MSMON_CFG_CSU_FLT);
+	}
+
 	mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
 
 	return 0;
@@ -933,6 +945,139 @@ static int resctrl_group_tasks_show(struct kernfs_open_file *of,
 	return ret;
 }
 
+int resctrl_ctrlmon_enable(struct kernfs_node *parent_kn,
+			  struct resctrl_group *prgrp,
+			  struct kernfs_node **dest_kn)
+{
+	int ret;
+
+	pr_info("%s: out of monitors: ret %d, MON_GROUP %d\n",
+		__func__, prgrp->type, RDTMON_GROUP);
+	/* only for RDTCTRL_GROUP */
+	if (prgrp->type == RDTMON_GROUP)
+		return 0;
+
+	ret = alloc_mon();
+	if (ret < 0) {
+		rdt_last_cmd_puts("out of monitors\n");
+		pr_info("out of monitors: ret %d\n", ret);
+		return ret;
+	}
+	prgrp->mon.mon = ret;
+	prgrp->mon.rmid = 0;
+
+	pr_info("%s: prev dest_kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
+		__func__, (u64)*dest_kn, prgrp->closid, prgrp->flags, prgrp->type,
+		prgrp->mon.rmid, prgrp->mon.mon);
+
+	ret = mkdir_mondata_all(parent_kn, prgrp, dest_kn);
+	if (ret) {
+		rdt_last_cmd_puts("kernfs subdir error\n");
+		free_mon(ret);
+	}
+
+	pr_info("%s: post dest_kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
+		__func__, (u64)*dest_kn, prgrp->closid, prgrp->flags, prgrp->type,
+		prgrp->mon.rmid, prgrp->mon.mon);
+
+	return ret;
+}
+
+int resctrl_ctrlmon_disable(struct kernfs_node *kn_mondata,
+			    struct resctrl_group *prgrp)
+{
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+	struct rdt_domain *dom;
+	int ret, mon = prgrp->mon.mon;
+
+	/* only for RDTCTRL_GROUP */
+	if (prgrp->type == RDTMON_GROUP)
+		return 0;
+
+	/* disable monitor before free mon */
+	for_each_resctrl_resource(r) {
+		if (r->mon_enabled) {
+			rr = (struct raw_resctrl_resource *)r->res;
+
+			list_for_each_entry(dom, &r->domains, list) {
+				rr->mon_write(dom, prgrp, false);
+			}
+		}
+	}
+
+	free_mon(mon);
+
+	pr_info("%s: prev kn_mondta %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
+		__func__, (u64)kn_mondata, prgrp->closid, prgrp->flags, prgrp->type,
+		prgrp->mon.rmid, prgrp->mon.mon);
+
+	kernfs_remove(kn_mondata);
+
+	pr_info("%s: post kn_mondta %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
+		__func__, (u64)kn_mondata, prgrp->closid, prgrp->flags, prgrp->type,
+		prgrp->mon.rmid, prgrp->mon.mon);
+
+	return ret;
+}
+
+static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
+				    char *buf, size_t nbytes, loff_t off)
+{
+	struct rdtgroup *rdtgrp;
+	int ret = 0;
+	int ctrlmon;
+
+	if (kstrtoint(strstrip(buf), 0, &ctrlmon) || ctrlmon < 0)
+		return -EINVAL;
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	rdt_last_cmd_clear();
+
+	pr_info("%s: prev of->kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
+		__func__, (u64)of->kn, rdtgrp->closid, rdtgrp->flags, rdtgrp->type,
+		rdtgrp->mon.rmid, rdtgrp->mon.mon);
+
+	if (rdtgrp) {
+		if ((rdtgrp->flags & RDT_CTRLMON) && !ctrlmon) {
+			/* [FIXME] disable & remove mon_data dir */
+			rdtgrp->flags &= ~RDT_CTRLMON;
+			resctrl_ctrlmon_disable(rdtgrp->mon.mon_data_kn, rdtgrp);
+		} else if (!(rdtgrp->flags & RDT_CTRLMON) && ctrlmon) {
+			rdtgrp->flags |= RDT_CTRLMON;
+			resctrl_ctrlmon_enable(rdtgrp->kn, rdtgrp,
+					       &rdtgrp->mon.mon_data_kn);
+		} else {
+			ret = -ENOENT;
+		}
+	} else {
+		ret = -ENOENT;
+	}
+
+	pr_info("%s: post of->kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
+		__func__, (u64)of->kn, rdtgrp->closid, rdtgrp->flags, rdtgrp->type,
+		rdtgrp->mon.rmid, rdtgrp->mon.mon);
+
+	resctrl_group_kn_unlock(of->kn);
+
+	return ret ?: nbytes;
+}
+
+static int resctrl_group_ctrlmon_show(struct kernfs_open_file *of,
+			       struct seq_file *s, void *v)
+{
+	struct rdtgroup *rdtgrp;
+	int ret = 0;
+
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	if (rdtgrp)
+		seq_printf(s, "%d", !!(rdtgrp->flags & RDT_CTRLMON));
+	else
+		ret = -ENOENT;
+	resctrl_group_kn_unlock(of->kn);
+
+	return ret;
+}
+
 /* rdtgroup information files for one cache resource. */
 static struct rftype res_specific_files[] = {
 	{
@@ -987,6 +1132,14 @@ static struct rftype res_specific_files[] = {
 		.kf_ops		= &resctrl_group_kf_single_ops,
 		.write		= resctrl_group_schemata_write,
 		.seq_show	= resctrl_group_schemata_show,
+		.fflags		= RF_CTRL_BASE,
+	},
+	{
+		.name		= "ctrlmon",
+		.mode		= 0644,
+		.kf_ops		= &resctrl_group_kf_single_ops,
+		.write		= resctrl_group_ctrlmon_write,
+		.seq_show	= resctrl_group_ctrlmon_show,
 		.fflags		= RF_CTRL_BASE,
 	},
 };

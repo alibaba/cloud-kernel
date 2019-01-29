@@ -36,10 +36,12 @@
 bool rdt_mon_capable;
 
 static int pmg_free_map;
-
+void mon_init(void);
 void pmg_init(void)
 {
 	int pmg_max = 16;
+
+	mon_init();
 
 	pmg_free_map = BIT_MASK(pmg_max) - 1;
 
@@ -65,6 +67,35 @@ void free_pmg(u32 pmg)
 	pmg_free_map |= 1 << pmg;
 }
 
+static int mon_free_map;
+void mon_init(void)
+{
+	// [FIXME] hard code for max mon.
+	int mon_max = 8;
+
+	mon_free_map = BIT_MASK(mon_max) - 1;
+
+	/* pmg 0 is always reserved for the default group */
+	mon_free_map &= ~1;
+}
+
+int alloc_mon(void)
+{
+	u32 mon = ffs(mon_free_map);
+
+	if (mon == 0)
+		return -ENOSPC;
+
+	mon--;
+	mon_free_map &= ~(1 << mon);
+
+	return mon;
+}
+
+void free_mon(u32 mon)
+{
+	mon_free_map |= 1 << mon;
+}
 
 /*
  * As of now the RMIDs allocation is global.

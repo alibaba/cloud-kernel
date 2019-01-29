@@ -128,9 +128,6 @@ static int update_domains(struct resctrl_resource *r, struct rdtgroup *g)
 			d->ctrl_val[partid] = d->new_ctrl;
 			rr->msr_update(d, partid);
 		}
-
-		/* only match partid for monitoring this whole group */
-		rr->mon_write(d, g, MSMON_MATCH_PARTID);
 	}
 
 	return 0;
@@ -307,14 +304,15 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 	}
 
 	md.priv = of->kn->priv;
-	pr_info("%s: resname %s, rid %d, domid %d, partid %d, pmg %d, (group: partid %d, pmg %d)\n",
+	pr_info("%s: resname %s, rid %d, domid %d, partid %d, pmg %d, (group: partid %d, pmg %d, mon %d)\n",
 		__func__, resname,
 		md.u.rid,
 		md.u.domid,
 		md.u.partid,
 		md.u.pmg,
 		rdtgrp->closid,
-		rdtgrp->mon.rmid
+		rdtgrp->mon.rmid,
+		rdtgrp->mon.mon
 	       );
 
 	r = &resctrl_resources_all[md.u.rid];
@@ -409,9 +407,8 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 	}
 
 
-	/* set mon id for mon_groups */
-	if (prgrp->type == RDTMON_GROUP)
-		rr->mon_write(d, prgrp, MSMON_MATCH_PMG);
+	/* [FIXME] Could we remove the MATCH_* param ? */
+	rr->mon_write(d, prgrp, true);
 
 	return ret;
 #if 0
@@ -581,5 +578,39 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 
 out_destroy:
 	kernfs_remove(kn);
+	return ret;
+}
+
+int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
+				  struct resctrl_group *prgrp,
+				  struct kernfs_node **dest_kn)
+{
+	int ret;
+
+	/* disalbe monitor by default for mpam. */
+	if (prgrp->type == RDTCTRL_GROUP)
+		return 0;
+
+	ret = alloc_mon();
+	if (ret < 0) {
+		rdt_last_cmd_puts("out of monitors\n");
+		return ret;
+	}
+	prgrp->mon.mon = ret;
+
+	ret = alloc_mon_id();
+	if (ret < 0) {
+		rdt_last_cmd_puts("out of PMGs\n");
+		free_mon(prgrp->mon.mon);
+		return ret;
+	}
+
+	prgrp->mon.rmid = ret;
+
+	ret = mkdir_mondata_all(parent_kn, prgrp, dest_kn);
+	if (ret) {
+		rdt_last_cmd_puts("kernfs subdir error\n");
+		free_mon(ret);
+	}
 	return ret;
 }
