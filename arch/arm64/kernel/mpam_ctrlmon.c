@@ -82,6 +82,68 @@ int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d)
 	return 0;
 }
 
+/* define bw_min as 5 percentage, that are 5% ~ 100% which cresponding masks: */
+static u32 bw_max_mask[20] = {
+	 3,	/*  3/64:  5% */
+	 6,	/*  6/64: 10% */
+	10,	/* 10/64: 15% */
+	13,	/* 13/64: 20% */
+	16,	/* 16/64: 25% */
+	19,	/* ... */
+	22,
+	26,
+	29,
+	32,
+	35,
+	38,
+	42,
+	45,
+	48,
+	51,
+	54,
+	58,
+	61,
+	63	/* 100% */
+};
+
+static bool bw_validate(char *buf, unsigned long *data, struct raw_resctrl_resource *r)
+{
+	unsigned long bw;
+	int ret, idx;
+
+	ret = kstrtoul(buf, 10, &bw);
+	if (ret) {
+		rdt_last_cmd_printf("non-hex character in mask %s\n", buf);
+		return false;
+	}
+
+	bw = bw < 5 ? 5 : bw;
+	bw = bw > 100 ? 100 : bw;
+
+	idx = roundup(bw, 5) / 5 - 1;
+
+	*data = bw_max_mask[idx];
+	return true;
+}
+
+int parse_bw(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d)
+{
+	unsigned long data;
+
+	if (d->have_new_ctrl) {
+		rdt_last_cmd_printf("duplicate domain %d\n", d->id);
+		return -EINVAL;
+	}
+
+	if (!bw_validate(buf, &data, r))
+		return -EINVAL;
+
+	d->new_ctrl = data;
+	d->have_new_ctrl = true;
+
+	return 0;
+}
+
 /*
  * For each domain in this resource we expect to find a series of:
  * id=mask
