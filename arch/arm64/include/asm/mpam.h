@@ -20,7 +20,7 @@
 #define SYS_MPAMVPMn_EL2(n)		sys_reg(3, 4, 10, 6, n)
 #define SYS_MPAMIDR_EL1			sys_reg(3, 0, 10, 4, 4)
 
-#define MPAM_MASK(n)			((1 << n) - 1)
+#define MPAM_MASK(n)			((1UL << n) - 1)
 /* plan to use GENMASK(n, 0) instead */
 
 /*
@@ -44,6 +44,26 @@
 #define PARTID_D_SHIFT			(PARTID_I_SHIFT + PARTID_BITS)
 #define PMG_I_SHIFT			(PARTID_D_SHIFT + PARTID_BITS)
 #define PMG_D_SHIFT			(PMG_I_SHIFT + PMG_BITS)
+
+#define PARTID_I_MASK			(PARTID_MASK << PARTID_I_SHIFT)
+#define PARTID_D_MASK			(PARTID_MASK << PARTID_D_SHIFT)
+#define PARTID_I_CLR(r)			((r) & ~PARTID_I_MASK)
+#define PARTID_D_CLR(r)			((r) & ~PARTID_D_MASK)
+#define PARTID_CLR(r)			(PARTID_I_CLR(r) & PARTID_D_CLR(r))
+
+#define PARTID_I_SET(r, id)		(PARTID_I_CLR(r) | ((id) << PARTID_I_SHIFT))
+#define PARTID_D_SET(r, id)		(PARTID_D_CLR(r) | ((id) << PARTID_D_SHIFT))
+#define PARTID_SET(r, id)		(PARTID_CLR(r) | ((id) << PARTID_I_SHIFT) | ((id) << PARTID_D_SHIFT))
+
+#define PMG_I_MASK			(PMG_MASK << PMG_I_SHIFT)
+#define PMG_D_MASK			(PMG_MASK << PMG_D_SHIFT)
+#define PMG_I_CLR(r)			((r) & ~PMG_I_MASK)
+#define PMG_D_CLR(r)			((r) & ~PMG_D_MASK)
+#define PMG_CLR(r)			(PMG_I_CLR(r) & PMG_D_CLR(r))
+
+#define PMG_I_SET(r, id)		(PMG_I_CLR(r) | ((id) << PMG_I_SHIFT))
+#define PMG_D_SET(r, id)		(PMG_D_CLR(r) | ((id) << PMG_D_SHIFT))
+#define PMG_SET(r, id)			(PMG_CLR(r) | ((id) << PMG_I_SHIFT) | ((id) << PMG_D_SHIFT))
 
 #define TRAPMPAM1EL1_SHIFT		(PMG_D_SHIFT + PMG_BITS)
 #define TRAPMPAM0EL1_SHIFT		(TRAPMPAM1EL1_SHIFT + 1)

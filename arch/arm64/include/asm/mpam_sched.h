@@ -49,8 +49,8 @@ DECLARE_PER_CPU(struct intel_pqr_state, pqr_state);
 static void __mpam_sched_in(void)
 {
 	struct intel_pqr_state *state = this_cpu_ptr(&pqr_state);
-	u32 partid = state->default_closid;
-	u32 pmg = state->default_rmid;
+	u64 partid = state->default_closid;
+	u64 pmg = state->default_rmid;
 
 	/*
 	 * If this task has a closid/rmid assigned, use it.
@@ -73,20 +73,20 @@ static void __mpam_sched_in(void)
 
 		/* set in EL0 */
 		reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
-		reg = reg & (~PARTID_MASK) & partid;
-		reg = reg & (~PMG_MASK) & pmg;
+		reg = PARTID_SET(reg, partid);
+		reg = PMG_SET(reg, pmg);
 		mpam_write_sysreg_s(reg, SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
 
 		/* set in EL1 */
 		reg = mpam_read_sysreg_s(SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
-		reg = reg & (~PARTID_MASK) & partid;
-		reg = reg & (~PMG_MASK) & pmg;
+		reg = PARTID_SET(reg, partid);
+		reg = PMG_SET(reg, pmg);
 		mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
 
-		/* set in EL2 */
+		/* [FIXME] set in EL2 (hard code for VHE enabed) */
 		reg = mpam_read_sysreg_s(SYS_MPAM2_EL2, "SYS_MPAM2_EL2");
-		reg = reg & (~PARTID_MASK) & partid;
-		reg = reg & (~PMG_MASK) & pmg;
+		reg = PARTID_SET(reg, partid);
+		reg = PMG_SET(reg, pmg);
 		mpam_write_sysreg_s(reg, SYS_MPAM2_EL2, "SYS_MPAM2_EL2");
 	}
 }
