@@ -64,6 +64,8 @@ int alloc_pmg(void)
 
 void free_pmg(u32 pmg)
 {
+	WARN_ON(!pmg);
+
 	pmg_free_map |= 1 << pmg;
 }
 
