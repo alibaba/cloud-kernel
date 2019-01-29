@@ -147,8 +147,8 @@ void mpam_nodes_show(void)
 
 	for (i = 0; i < num_nodes; i++) {
 		n = &mpam_node_all[i];
-		pr_cont("type: %s; addr = %p; cpus_list = %s; cpus: ",
-			types[n->type], (void *)n->addr, n->cpus_list);
+		pr_cont("%s: type: %s; addr = %016llx; base = %016llx; cpus_list = %s; cpus: ",
+			__func__, types[n->type], n->addr, (u64)n->base, n->cpus_list);
 
 		for_each_cpu(cpu, &n->cpu_mask) {
 			pr_cont("%d, ", cpu);
@@ -821,8 +821,8 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		if (r->rid != n->type)
 			continue;
 
-		pr_cont("type: %s; addr = %p; cpus_list = %s; cpus: ",
-			types[n->type], (void *)n->addr, n->cpus_list);
+		pr_cont("%s: type: %s; addr = %016llx; base = %016llx; cpus_list = %s; cpus: ",
+			__func__, types[n->type], n->addr, (u64)n->base, n->cpus_list);
 
 		for_each_cpu(cpu, &n->cpu_mask) {
 			pr_cont("%d, ", cpu);
@@ -864,8 +864,8 @@ static void mpam_domains_init(struct resctrl_resource *r)
 	list_for_each(l, &r->domains) {
 		d = list_entry(l, struct rdt_domain, list);
 
-		pr_cont("domain: %d; type: %s; addr = %p; cpus_list = %s; cpus: ",
-			d->id, types[r->rid], (void *)d->base, d->cpus_list);
+		pr_cont("domain: %d; type: %s; base = %016llx; cpus_list = %s; cpus: ",
+			d->id, types[r->rid], (u64)d->base, d->cpus_list);
 
 		for_each_cpu(cpu, &d->cpu_mask) {
 			pr_cont("%d, ", cpu);
