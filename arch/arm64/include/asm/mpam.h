@@ -243,8 +243,6 @@ static inline int __resctrl_group_show_options(struct seq_file *seq)
 
 void post_resctrl_mount(void);
 
-#define MPAM_SYS_REG_DEBUG
-
 #ifdef MPAM_SYS_REG_DEBUG
 static inline u64 mpam_read_sysreg_s(u64 reg, char *name)
 {
