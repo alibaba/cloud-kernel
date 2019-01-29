@@ -244,7 +244,8 @@ void post_resctrl_mount(void);
 #ifdef MPAM_SYS_REG_DEBUG
 static inline u64 mpam_read_sysreg_s(u64 reg, char *name)
 {
-	pr_info("cpu %2d: read_sysreg_s: %s (addr %016llx)\n", smp_processor_id(), name, reg);
+	pr_info("cpu %2d (cur: %s(%d)): read_sysreg_s: %s (addr %016llx)\n",
+		smp_processor_id(), current->comm, current->pid, name, reg);
 	return 0;
 }
 #else
@@ -254,7 +255,8 @@ static inline u64 mpam_read_sysreg_s(u64 reg, char *name)
 #ifdef MPAM_SYS_REG_DEBUG
 static inline u64 mpam_write_sysreg_s(u64 v, u64 reg, char *name)
 {
-	pr_info("cpu %2d: write_sysreg_s: %s (addr %016llx), value %016llx\n", smp_processor_id(), name, reg, v);
+	pr_info("cpu %2d (cur %s(%d)): write_sysreg_s: %s (addr %016llx), value %016llx\n",
+		smp_processor_id(), current->comm, current->pid, name, reg, v);
 	return 0;
 }
 #else
