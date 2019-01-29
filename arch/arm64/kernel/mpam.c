@@ -34,7 +34,9 @@
 #include <linux/resctrlfs.h>
 
 #include <asm/mpam_sched.h>
+#include <asm/mpam_resource.h>
 #include <asm/resctrl.h>
+#include <asm/io.h>
 
 /* Mutex to protect rdtgroup access. */
 DEFINE_MUTEX(resctrl_group_mutex);
@@ -59,51 +61,168 @@ int max_name_width, max_data_width;
  */
 bool rdt_alloc_capable;
 
+char *mpam_types_str[] = {
+	"MPAM_RESOURCE_SMMU",
+	"MPAM_RESOURCE_CACHE",
+	"MPAM_RESOURCE_MC",
+};
+
+struct mpam_node mpam_node_all[] = {
+	/* P0 DIE 0: cluster 0 */
+	{
+		.name			= "L3T0",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x90390000,
+		.cpus_list              = "0",
+		.default_ctrl		= 0x7fff,
+	},
+
+	/* P0 DIE 0: cluster 1 */
+	{
+		.name			= "L3T1",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x903a0000,
+		.cpus_list              = "1",
+		.default_ctrl		= 0x7fff,
+	},
+
+	/* P0 DIE 0: cluster 2 */
+	{
+		.name			= "L3T2",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x903b0000,
+		.cpus_list              = "2",
+		.default_ctrl		= 0x7fff,
+	},
+
+	/* P0 DIE 0: cluster 3 */
+	{
+		.name			= "L3T3",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x903c0000,
+		.cpus_list              = "3",
+		.default_ctrl		= 0x7fff,
+	},
+
+	/* P0 DIE 0: HHA0 */
+	{
+		.name			= "HHA0",
+		.type                   = MPAM_RESOURCE_MC,
+		.addr                   = 0x90410000,
+		.cpus_list              = "0-3",
+	},
+
+	/* P0 DIE 0: HHA1 */
+	{
+		.name			= "HHA1",
+		.type                   = MPAM_RESOURCE_MC,
+		.addr                   = 0x90420000,
+		.cpus_list              = "0-3",
+	},
+	/* other mpam nodes ... */
+};
+
+int mpam_nodes_init(void)
+{
+	int i, ret = 0;
+	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
+	struct mpam_node *n;
+
+	for (i = 0; i < num_nodes; i++) {
+		n = &mpam_node_all[i];
+		ret |= cpulist_parse(n->cpus_list, &n->cpu_mask);
+		n->base = ioremap(n->addr, 0x10000);
+	}
+
+	return ret;
+}
+
+void mpam_nodes_show(void)
+{
+	int i, cpu;
+	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
+	struct mpam_node *n;
+
+	char *types[] = {"MPAM_RESOURCE_SMMU", "MPAM_RESOURCE_CACHE", "MPAM_RESOURCE_MC"};
+
+	for (i = 0; i < num_nodes; i++) {
+		n = &mpam_node_all[i];
+		pr_cont("type: %s; addr = %p; cpus_list = %s; cpus: ",
+			types[n->type], (void *)n->addr, n->cpus_list);
+
+		for_each_cpu(cpu, &n->cpu_mask) {
+			pr_cont("%d, ", cpu);
+		}
+		pr_cont("\n");
+	}
+}
+
+static void
+cat_wrmsr(struct rdt_domain *d, int partid);
+static void
+bw_wrmsr(struct rdt_domain *d, int partid);
+
 #define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
 
-struct resctrl_resource resctrl_resources_all[] = {
-	[MPAM_RESOURCE_L3] = {
-		.rid			= MPAM_RESOURCE_L3,
-		.name			= "L3",
-		.domains		= domain_init(MPAM_RESOURCE_L3),
-		.fflags			= RFTYPE_RES_CACHE,
+struct raw_resctrl_resource raw_resctrl_resources_all[] = {
+	[MPAM_RESOURCE_SMMU] = {
+		.msr_update		= cat_wrmsr,
+		.parse_ctrlval		= parse_cbm,
+		.format_str		= "%d=%0*x",
 	},
-	[MPAM_RESOURCE_L3DATA] = {
-		.rid			= MPAM_RESOURCE_L3DATA,
-		.name			= "L3DATA",
-		.domains		= domain_init(MPAM_RESOURCE_L3DATA),
-		.fflags			= RFTYPE_RES_CACHE,
+	[MPAM_RESOURCE_CACHE] = {
+		.msr_update		= cat_wrmsr,
+		.parse_ctrlval		= parse_cbm,
+		.format_str		= "%d=%0*x",
 	},
-	[MPAM_RESOURCE_L3CODE] = (
-		.rid			= MPAM_RESOURCE_L3CODE,
-		.name			= "L3CODE",
-		.domains		= domain_init(MPAM_RESOURCE_L3CODE),
-		.fflags			= RFTYPE_RES_CACHE,
-	},
-	[MPAM_RESOURCE_L2] = {
-		.rid			= MPAM_RESOURCE_L2,
-		.name			= "L2",
-		.domains		= domain_init(MPAM_RESOURCE_L2),
-		.fflags			= RFTYPE_RES_CACHE,
-	},
-	[MPAM_RESOURCE_L2DATA] = {
-		.rid			= MPAM_RESOURCE_L2DATA,
-		.name			= "L2DATA",
-		.domains		= domain_init(MPAM_RESOURCE_L2DATA),
-		.fflags			= RFTYPE_RES_CACHE,
-	},
-	[MPAM_RESOURCE_L2CODE] = {
-		.rid			= MPAM_RESOURCE_L2CODE,
-		.name			= "L2CODE",
-		.domains		= domain_init(MPAM_RESOURCE_L2CODE),
-		.fflags			= RFTYPE_RES_CACHE,
+	[MPAM_RESOURCE_MC] = {
+		.msr_update		= bw_wrmsr,
+		.parse_ctrlval		= parse_cbm,	/* [FIXME] add parse_bw() helper */
+		.format_str		= "%d=%0*x",
 	},
 };
 
-static void rdt_get_cache_alloc_cfg(int idx, struct resctrl_resource *r)
+struct resctrl_resource resctrl_resources_all[] = {
+	[MPAM_RESOURCE_SMMU] = {
+		.rid			= MPAM_RESOURCE_SMMU,
+		.name			= "SMMU",
+		.domains		= domain_init(MPAM_RESOURCE_SMMU),
+		.res			= &raw_resctrl_resources_all[MPAM_RESOURCE_SMMU],
+		.fflags			= RFTYPE_RES_SMMU,
+		.alloc_enabled		= 1,
+	},
+	[MPAM_RESOURCE_CACHE] = {
+		.rid			= MPAM_RESOURCE_CACHE,
+		.name			= "L3",
+		.domains		= domain_init(MPAM_RESOURCE_CACHE),
+		.res			= &raw_resctrl_resources_all[MPAM_RESOURCE_CACHE],
+		.fflags			= RFTYPE_RES_CACHE,
+		.alloc_enabled		= 1,
+	},
+	[MPAM_RESOURCE_MC] = {
+		.rid			= MPAM_RESOURCE_MC,
+		.name			= "MB",
+		.domains		= domain_init(MPAM_RESOURCE_MC),
+		.res			= &raw_resctrl_resources_all[MPAM_RESOURCE_MC],
+		.fflags			= RFTYPE_RES_MC,
+		.alloc_enabled		= 1,
+	},
+};
+
+static void
+cat_wrmsr(struct rdt_domain *d, int partid)
 {
-	r->alloc_capable = true;
-	r->alloc_enabled = true;
+	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
+	mpam_writel(d->ctrl_val[partid], d->base + MPAMCFG_CPBM);
+}
+
+static void
+bw_wrmsr(struct rdt_domain *d, int partid)
+{
+	u64 val = MBW_MAX_SET(d->ctrl_val[partid]);
+
+	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
+	mpam_writel(val, d->base + MPAMCFG_MBW_MAX);
 }
 
 /*
@@ -125,7 +244,6 @@ static int closid_free_map;
 
 void closid_init(void)
 {
-	struct resctrl_resource *r;
 	int resctrl_min_closid = 32;
 
 	closid_free_map = BIT_MASK(resctrl_min_closid) - 1;
@@ -151,14 +269,9 @@ void closid_free(int closid)
 	closid_free_map |= 1 << closid;
 }
 
-static void clear_closid_rmid(int cpu)
-{
-	struct intel_pqr_state *state = this_cpu_ptr(&pqr_state);
-}
-
 static int mpam_online_cpu(unsigned int cpu)
 {
-	pr_info("online cpu\n");
+	pr_info("CPU %2d: online cpu and enable mpam\n", cpu);
 	return 0;
 }
 
@@ -170,15 +283,14 @@ static int mpam_offline_cpu(unsigned int cpu)
 
 static __init bool get_rdt_alloc_resources(void)
 {
-	bool ret = false;
+	bool ret = true;
 
 	return ret;
 }
 
 static __init bool get_rdt_mon_resources(void)
 {
-
-	bool ret = false;
+	bool ret = true;
 
 	return ret;
 }
@@ -193,9 +305,6 @@ static __init bool get_resctrl_resources(void)
 
 void post_resctrl_mount(void)
 {
-	struct rdt_domain *dom;
-	struct resctrl_resource *r;
-
 	if (rdt_alloc_capable)
 		static_branch_enable_cpuslocked(&resctrl_alloc_enable_key);
 	if (rdt_mon_capable)
@@ -208,6 +317,7 @@ void post_resctrl_mount(void)
 static int reset_all_ctrls(struct resctrl_resource *r)
 {
 	pr_info("%s\n", __func__);
+	return 0;
 }
 
 void resctrl_resource_reset(void)
@@ -233,7 +343,6 @@ int parse_rdtgroupfs_options(char *data)
 
 	return ret;
 }
-
 
 /*
  * This is safe against intel_resctrl_sched_in() called from __switch_to()
@@ -671,6 +780,100 @@ static struct rftype res_specific_files[] = {
 	},
 };
 
+struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
+		struct list_head **pos)
+{
+	struct rdt_domain *d;
+	struct list_head *l;
+
+	if (id < 0)
+		return ERR_PTR(id);
+
+	list_for_each(l, &r->domains) {
+		d = list_entry(l, struct rdt_domain, list);
+		/* When id is found, return its domain. */
+		if (id == d->id)
+			return d;
+		/* Stop searching when finding id's position in sorted list. */
+		if (id < d->id)
+			break;
+	}
+
+	if (pos)
+		*pos = l;
+
+	return NULL;
+}
+
+static void mpam_domains_init(struct resctrl_resource *r)
+{
+	int i, cpu, id = 0;
+	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
+	struct mpam_node *n;
+	struct list_head *add_pos = NULL, *l;
+	struct rdt_domain *d;
+	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+
+	char *types[] = {"MPAM_RESOURCE_SMMU", "MPAM_RESOURCE_CACHE", "MPAM_RESOURCE_MC"};
+
+	for (i = 0; i < num_nodes; i++) {
+		n = &mpam_node_all[i];
+		if (r->rid != n->type)
+			continue;
+
+		pr_cont("type: %s; addr = %p; cpus_list = %s; cpus: ",
+			types[n->type], (void *)n->addr, n->cpus_list);
+
+		for_each_cpu(cpu, &n->cpu_mask) {
+			pr_cont("%d, ", cpu);
+		}
+		pr_cont("\n");
+
+		d = mpam_find_domain(r, id, &add_pos);
+		if (IS_ERR(d)) {
+			pr_warn("Could't find cache id for cpu %d\n", cpu);
+			return;
+		}
+
+		if (!d)
+			d = kzalloc(sizeof(*d), GFP_KERNEL);
+
+		if (!d)
+			return;
+
+		d->id = id;
+		d->base = n->base;
+		cpumask_copy(&d->cpu_mask, &n->cpu_mask);
+		rr->default_ctrl = n->default_ctrl;
+		rr->num_partid = 32;
+
+		d->cpus_list = n->cpus_list;
+
+		d->ctrl_val = kmalloc_array(rr->num_partid, sizeof(*d->ctrl_val), GFP_KERNEL);
+		if (!d->ctrl_val)
+			return;
+
+		list_add_tail(&d->list, add_pos);
+
+		id++;
+	}
+
+	/*
+	 * for debug
+	 */
+	list_for_each(l, &r->domains) {
+		d = list_entry(l, struct rdt_domain, list);
+
+		pr_cont("domain: %d; type: %s; addr = %p; cpus_list = %s; cpus: ",
+			d->id, types[r->rid], (void *)d->base, d->cpus_list);
+
+		for_each_cpu(cpu, &d->cpu_mask) {
+			pr_cont("%d, ", cpu);
+		}
+		pr_cont("\n");
+	}
+}
+
 static int __init mpam_late_init(void)
 {
 	struct resctrl_resource *r;
@@ -678,6 +881,18 @@ static int __init mpam_late_init(void)
 
 	if (!get_resctrl_resources())
 		return -ENODEV;
+
+	ret = mpam_nodes_init();
+	if (ret) {
+		pr_err("internal error: bad cpu list\n");
+		return ret;
+	}
+
+	/* for debug */
+	mpam_nodes_show();
+
+	mpam_domains_init(&resctrl_resources_all[MPAM_RESOURCE_CACHE]);
+	mpam_domains_init(&resctrl_resources_all[MPAM_RESOURCE_MC]);
 
 	state = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
 				  "arm64/mpam:online:",

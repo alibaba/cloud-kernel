@@ -59,6 +59,7 @@ arm64-obj-$(CONFIG_ARM_SDE_INTERFACE)	+= sdei.o
 arm64-obj-$(CONFIG_ARM64_SSBD)		+= ssbd.o
 arm64-obj-$(CONFIG_SDEI_WATCHDOG) 	+= watchdog_sdei.o
 arm64-obj-$(CONFIG_MPAM)		+= mpam.o mpam_ctrlmon.o mpam_mon.o
+arm64-obj-$(CONFIG_MPAM)		+= mpam.o mpam_ctrlmon.o mpam_mon.o mpam_resource.o
 
 obj-y					+= $(arm64-obj-y) vdso/ probes/
 obj-m					+= $(arm64-obj-m)

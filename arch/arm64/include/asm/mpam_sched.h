@@ -72,22 +72,22 @@ static void __mpam_sched_in(void)
 		state->cur_rmid = pmg;
 
 		/* set in EL0 */
-		reg = read_sysreg_s(SYS_MPAM0_EL1);
+		reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
 		reg = reg & (~PARTID_MASK) & partid;
 		reg = reg & (~PMG_MASK) & pmg;
-		write_sysreg_s(reg, SYS_MPAM0_EL1);
+		mpam_write_sysreg_s(reg, SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
 
 		/* set in EL1 */
-		reg = read_sysreg_s(SYS_MPAM1_EL1);
+		reg = mpam_read_sysreg_s(SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
 		reg = reg & (~PARTID_MASK) & partid;
 		reg = reg & (~PMG_MASK) & pmg;
-		write_sysreg_s(reg, SYS_MPAM1_EL1);
+		mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
 
 		/* set in EL2 */
-		reg = read_sysreg_s(SYS_MPAM2_EL2);
+		reg = mpam_read_sysreg_s(SYS_MPAM2_EL2, "SYS_MPAM2_EL2");
 		reg = reg & (~PARTID_MASK) & partid;
 		reg = reg & (~PMG_MASK) & pmg;
-		write_sysreg_s(reg, SYS_MPAM2_EL2);
+		mpam_write_sysreg_s(reg, SYS_MPAM2_EL2, "SYS_MPAM2_EL2");
 	}
 }
 

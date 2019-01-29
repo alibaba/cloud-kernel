@@ -165,11 +165,15 @@ struct rdt_domain {
 	struct list_head	list;
 	int			id;
 	struct cpumask		cpu_mask;
+	void __iomem		*base;
 
 	/* arch specific fields */
 	u32			*ctrl_val;
 	u32			new_ctrl;
 	bool			have_new_ctrl;
+
+	/* for debug */
+	char			*cpus_list;
 };
 
 extern struct mutex resctrl_group_mutex;
@@ -179,12 +183,9 @@ extern struct resctrl_resource resctrl_resources_all[];
 int __init resctrl_group_init(void);
 
 enum {
-	MPAM_RESOURCE_L3,
-	MPAM_RESOURCE_L3DATA,
-	MPAM_RESOURCE_L3CODE,
-	MPAM_RESOURCE_L2,
-	MPAM_RESOURCE_L2DATA,
-	MPAM_RESOURCE_L2CODE,
+	MPAM_RESOURCE_SMMU,
+	MPAM_RESOURCE_CACHE,
+	MPAM_RESOURCE_MC,
 
 	/* Must be the last */
 	MPAM_NUM_RESOURCES,
@@ -213,8 +214,6 @@ int parse_rdtgroupfs_options(char *data);
 
 static inline int __resctrl_group_show_options(struct seq_file *seq)
 {
-	if (resctrl_resources_all[MPAM_RESOURCE_L3DATA].alloc_enabled)
-		seq_puts(seq, ",cdp");
 	return 0;
 }
 
@@ -222,24 +221,89 @@ void post_resctrl_mount(void);
 
 #define MPAM_SYS_REG_DEBUG
 
-static inline u32 mpam_read_sysreg_s(void *reg, char *name)
-{
 #ifdef MPAM_SYS_REG_DEBUG
-       pr_info("read_sysreg_s: %s (addr %p)\n", name, reg);
-       return 0;
-#else
-       return read_sysreg_s(reg);
-#endif
+static inline u64 mpam_read_sysreg_s(u64 reg, char *name)
+{
+	pr_info("cpu %2d: read_sysreg_s: %s (addr %016llx)\n", smp_processor_id(), name, reg);
+	return 0;
 }
+#else
+#define mpam_read_sysreg_s(reg, name) read_sysreg_s(reg)
+#endif
 
-static inline u32 mpam_write_sysreg_s(u32 v, void *reg, char *name)
-{
 #ifdef MPAM_SYS_REG_DEBUG
-       pr_info("write_sysreg_s: %s (addr %p), value %x\n", name, reg, v);
-       return 0;
-#else
-       return write_sysreg_s(v, reg);
-#endif
+static inline u64 mpam_write_sysreg_s(u64 v, u64 reg, char *name)
+{
+	pr_info("cpu %2d: write_sysreg_s: %s (addr %016llx), value %016llx\n", smp_processor_id(), name, reg, v);
+	return 0;
 }
+#else
+#define mpam_write_sysreg_s(v, r, n) write_sysreg_s(v, r)
+#endif
+
+#ifdef MPAM_SYS_REG_DEBUG
+static inline u32 mpam_readl(const volatile void __iomem *addr)
+{
+	return pr_info("readl: %p\n", addr);
+}
+#else
+#define mpam_readl(addr) readl(addr)
+#endif
+
+#ifdef MPAM_SYS_REG_DEBUG
+static inline u32 mpam_writel(u64 v, const volatile void __iomem *addr)
+{
+	return pr_info("writel: %016llx to %p\n", v, addr);
+}
+#else
+#define mpam_writel(v, addr) writel(v, addr)
+#endif
+
+/**
+ * struct msr_param - set a range of MSRs from a domain
+ * @res:	The resource to use
+ * @value:	value
+ */
+struct msr_param {
+	struct resctrl_resource	*res;
+	u64			value;
+};
+
+/**
+ * struct resctrl_resource - attributes of an RDT resource
+ * @rid:		The index of the resource
+ * @alloc_enabled:	Is allocation enabled on this machine
+ * @mon_enabled:		Is monitoring enabled for this feature
+ * @alloc_capable:	Is allocation available on this machine
+ * @mon_capable:		Is monitor feature available on this machine
+ * @name:		Name to use in "schemata" file
+ * @num_closid:		Number of CLOSIDs available
+ * @cache_level:	Which cache level defines scope of this resource
+ * @default_ctrl:	Specifies default cache cbm or memory B/W percent.
+ * @msr_base:		Base MSR address for CBMs
+ * @msr_update:		Function pointer to update QOS MSRs
+ * @data_width:		Character width of data when displaying
+ * @domains:		All domains for this resource
+ * @cache:		Cache allocation related data
+ * @format_str:		Per resource format string to show domain value
+ * @parse_ctrlval:	Per resource function pointer to parse control values
+ * @evt_list:			List of monitoring events
+ * @num_rmid:			Number of RMIDs available
+ * @mon_scale:			cqm counter * mon_scale = occupancy in bytes
+ * @fflags:			flags to choose base and info files
+ */
+
+struct raw_resctrl_resource {
+	int			num_partid;
+	u32			default_ctrl;
+	void (*msr_update)	(struct rdt_domain *d, int partid);
+	int			data_width;
+	const char		*format_str;
+	int (*parse_ctrlval)	(char *buf, struct raw_resctrl_resource *r,
+				 struct rdt_domain *d);
+	int			num_pmg;
+};
+
+int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
 
 #endif /* _ASM_ARM64_MPAM_H */

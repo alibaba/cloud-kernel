@@ -110,7 +110,7 @@ static int __resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflag
 				     struct rftype *rfts, int len)
 {
 	struct rftype *rft;
-	int ret;
+	int ret = 0;
 
 	lockdep_assert_held(&resctrl_group_mutex);
 
@@ -137,7 +137,7 @@ error:
 
 static int resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflags)
 {
-	int ret;
+	int ret = 0;
 
 	if (res_common_files)
 		ret = __resctrl_group_add_files(kn, fflags, res_common_files,
