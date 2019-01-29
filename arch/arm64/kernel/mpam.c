@@ -1283,6 +1283,9 @@ static int __init mpam_late_init(void)
 	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
 		return -ENODEV;
 
+	rdt_alloc_capable = 1;
+	rdt_mon_capable = 1;
+
 	mpam_init_padding();
 
 	ret = mpam_nodes_init();
