@@ -35,6 +35,36 @@
  */
 bool rdt_mon_capable;
 
+static int pmg_free_map;
+
+void pmg_init(void)
+{
+	int pmg_max = 16;
+
+	pmg_free_map = BIT_MASK(pmg_max) - 1;
+
+	/* pmg 0 is always reserved for the default group */
+	pmg_free_map &= ~1;
+}
+
+int alloc_pmg(void)
+{
+	u32 pmg = ffs(pmg_free_map);
+
+	if (pmg == 0)
+		return -ENOSPC;
+	pmg--;
+	pmg_free_map &= ~(1 << pmg);
+
+	return pmg;
+}
+
+void free_pmg(u32 pmg)
+{
+	pmg_free_map |= 1 << pmg;
+}
+
+
 /*
  * As of now the RMIDs allocation is global.
  * However we keep track of which packages the RMIDs
@@ -42,10 +72,10 @@ bool rdt_mon_capable;
  */
 int alloc_rmid(void)
 {
-	return 0;
+	return alloc_pmg();
 }
 
-void free_rmid(u32 rmid)
+void free_rmid(u32 pmg)
 {
+	free_pmg(pmg);
 }
-

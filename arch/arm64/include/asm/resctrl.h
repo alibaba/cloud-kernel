@@ -19,9 +19,11 @@ static inline void free_mon_id(u32 id)
 	free_rmid(id);
 }
 
+void pmg_init(void);
 static inline void resctrl_id_init(void)
 {
 	closid_init();
+	pmg_init();
 }
 
 static inline int resctrl_id_alloc(void)

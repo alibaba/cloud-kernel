@@ -57,8 +57,10 @@
 #define BWA_WD			6		/* hard code for P680 */
 #define MBW_MAX_MASK		0xFC00
 #define MBW_MAX_HARDLIM		BIT(31)
-#define MBW_MAX_SET(v)		(MBW_MAX_HARDLIM|((v) << (15 - BWA_WD)))	/* [FIXME] hard code for hardlim */
 
+/* [FIXME] hard code for hardlim */
+#define MBW_MAX_SET(v)		(MBW_MAX_HARDLIM|((v) << (15 - BWA_WD)))
+#define MBW_MAX_GET(v)		(((v) & MBW_MAX_MASK) >> (15 - BWA_WD))
 /*
  * emulate the mpam nodes
  * These should be reported by ACPI MPAM Table.

@@ -217,7 +217,7 @@ static void show_doms(struct seq_file *s, struct resctrl_resource *r, int partid
 		if (sep)
 			seq_puts(s, ";");
 		seq_printf(s, rr->format_str, dom->id, max_data_width,
-			   dom->ctrl_val[partid]);
+			   rr->msr_read(dom, partid));
 		sep = true;
 	}
 	seq_puts(s, "\n");

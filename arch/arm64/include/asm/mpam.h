@@ -321,6 +321,7 @@ struct raw_resctrl_resource {
 	int			num_partid;
 	u32			default_ctrl;
 	void (*msr_update)	(struct rdt_domain *d, int partid);
+	u64  (*msr_read)	(struct rdt_domain *d, int partid);
 	int			data_width;
 	const char		*format_str;
 	int (*parse_ctrlval)	(char *buf, struct raw_resctrl_resource *r,

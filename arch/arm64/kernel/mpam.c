@@ -162,21 +162,27 @@ cat_wrmsr(struct rdt_domain *d, int partid);
 static void
 bw_wrmsr(struct rdt_domain *d, int partid);
 
+u64 cat_rdmsr(struct rdt_domain *d, int partid);
+u64 bw_rdmsr(struct rdt_domain *d, int partid);
+
 #define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
 
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 	[MPAM_RESOURCE_SMMU] = {
 		.msr_update		= cat_wrmsr,
+		.msr_read		= cat_rdmsr,
 		.parse_ctrlval		= parse_cbm,
 		.format_str		= "%d=%0*x",
 	},
 	[MPAM_RESOURCE_CACHE] = {
 		.msr_update		= cat_wrmsr,
+		.msr_read		= cat_rdmsr,
 		.parse_ctrlval		= parse_cbm,
 		.format_str		= "%d=%0*x",
 	},
 	[MPAM_RESOURCE_MC] = {
 		.msr_update		= bw_wrmsr,
+		.msr_read		= bw_rdmsr,
 		.parse_ctrlval		= parse_cbm,	/* [FIXME] add parse_bw() helper */
 		.format_str		= "%d=%0*x",
 	},
@@ -225,6 +231,22 @@ bw_wrmsr(struct rdt_domain *d, int partid)
 	mpam_writel(val, d->base + MPAMCFG_MBW_MAX);
 }
 
+u64 cat_rdmsr(struct rdt_domain *d, int partid)
+{
+	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
+	return mpam_readl(d->base + MPAMCFG_CPBM);
+}
+
+u64 bw_rdmsr(struct rdt_domain *d, int partid)
+{
+	u64 max;
+
+	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
+	max = mpam_readl(d->base + MPAMCFG_MBW_MAX);
+
+	return MBW_MAX_GET(max);
+}
+
 /*
  * Trivial allocator for CLOSIDs. Since h/w only supports a small number,
  * we can keep a bitmap of free CLOSIDs in a single integer.
@@ -271,10 +293,11 @@ void closid_free(int closid)
 
 static int mpam_online_cpu(unsigned int cpu)
 {
-	pr_info("CPU %2d: online cpu and enable mpam\n", cpu);
+	cpumask_set_cpu(cpu, &resctrl_group_default.cpu_mask);
 	return 0;
 }
 
+/* [FIXME] remove related resource when cpu offline */
 static int mpam_offline_cpu(unsigned int cpu)
 {
 	pr_info("offline cpu\n");
@@ -540,9 +563,68 @@ static int resctrl_group_cpus_show(struct kernfs_open_file *of,
 	return ret;
 }
 
+static void cpumask_rdtgrp_clear(struct rdtgroup *r, struct cpumask *m)
+{
+	struct rdtgroup *crgrp;
+
+	cpumask_andnot(&r->cpu_mask, &r->cpu_mask, m);
+	/* update the child mon group masks as well*/
+	list_for_each_entry(crgrp, &r->mon.crdtgrp_list, mon.crdtgrp_list)
+		cpumask_and(&crgrp->cpu_mask, &r->cpu_mask, &crgrp->cpu_mask);
+}
+
 int cpus_ctrl_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 			   cpumask_var_t tmpmask, cpumask_var_t tmpmask1)
 {
+	struct rdtgroup *r, *crgrp;
+	struct list_head *head;
+
+	/* Check whether cpus are dropped from this group */
+	cpumask_andnot(tmpmask, &rdtgrp->cpu_mask, newmask);
+	if (cpumask_weight(tmpmask)) {
+		/* Can't drop from default group */
+		if (rdtgrp == &resctrl_group_default) {
+			rdt_last_cmd_puts("Can't drop CPUs from default group\n");
+			return -EINVAL;
+		}
+
+		/* Give any dropped cpus to rdtgroup_default */
+		cpumask_or(&resctrl_group_default.cpu_mask,
+				&resctrl_group_default.cpu_mask, tmpmask);
+		update_closid_rmid(tmpmask, &resctrl_group_default);
+	}
+
+	/*
+	 * If we added cpus, remove them from previous group and
+	 * the prev group's child groups that owned them
+	 * and update per-cpu closid/rmid.
+	 */
+	cpumask_andnot(tmpmask, newmask, &rdtgrp->cpu_mask);
+	if (cpumask_weight(tmpmask)) {
+		list_for_each_entry(r, &resctrl_all_groups, resctrl_group_list) {
+			if (r == rdtgrp)
+				continue;
+			cpumask_and(tmpmask1, &r->cpu_mask, tmpmask);
+			if (cpumask_weight(tmpmask1))
+				cpumask_rdtgrp_clear(r, tmpmask1);
+		}
+		update_closid_rmid(tmpmask, rdtgrp);
+	}
+
+	/* Done pushing/pulling - update this group with new mask */
+	cpumask_copy(&rdtgrp->cpu_mask, newmask);
+
+	/*
+	 * Clear child mon group masks since there is a new parent mask
+	 * now and update the rmid for the cpus the child lost.
+	 */
+	head = &rdtgrp->mon.crdtgrp_list;
+	list_for_each_entry(crgrp, head, mon.crdtgrp_list) {
+		cpumask_and(tmpmask, &rdtgrp->cpu_mask, &crgrp->cpu_mask);
+		update_closid_rmid(tmpmask, rdtgrp);
+		cpumask_clear(&crgrp->cpu_mask);
+	}
+
 	return 0;
 }
 
