@@ -207,7 +207,7 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 	}
 
 	/*
-	 * This extra ref will be put in kernfs_remove() and guarantees
+	 m This extra ref will be put in kernfs_remove() and guarantees
 	 * that @rdtgrp->kn is always accessible.
 	 */
 	kernfs_get(kn_info);
@@ -330,6 +330,7 @@ static struct dentry *resctrl_mount(struct file_system_type *fs_type,
 		}
 		kernfs_get(kn_mongrp);
 
+#ifndef CONFIG_ARM64 /* [FIXME] arch specific code */
 		ret = mkdir_mondata_all(resctrl_group_default.kn,
 					&resctrl_group_default, &kn_mondata);
 		if (ret) {
@@ -338,6 +339,7 @@ static struct dentry *resctrl_mount(struct file_system_type *fs_type,
 		}
 		kernfs_get(kn_mondata);
 		resctrl_group_default.mon.mon_data_kn = kn_mondata;
+#endif
 	}
 
 	dentry = kernfs_mount(fs_type, flags, resctrl_root,
@@ -350,8 +352,10 @@ static struct dentry *resctrl_mount(struct file_system_type *fs_type,
 	goto out;
 
 out_mondata:
+#ifndef CONFIG_ARM64 /* [FIXME] arch specific code */
 	if (resctrl_mon_capable)
 		kernfs_remove(kn_mondata);
+#endif
 out_mongrp:
 	if (resctrl_mon_capable)
 		kernfs_remove(kn_mongrp);
@@ -810,6 +814,11 @@ static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tm
 static int resctrl_group_rmdir_ctrl(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
 			       cpumask_var_t tmpmask)
 {
+#ifdef CONFIG_ARM64 /* [FIXME] arch specific code */
+	if (rdtgrp->flags & RDT_CTRLMON)
+		return -EPERM;
+#endif
+
 	resctrl_group_rm_ctrl(rdtgrp, tmpmask);
 
 	/*
