@@ -206,9 +206,45 @@ out:
 	return ret ?: nbytes;
 }
 
+static void show_doms(struct seq_file *s, struct resctrl_resource *r, int partid)
+{
+	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+	struct rdt_domain *dom;
+	bool sep = false;
+
+	seq_printf(s, "%*s:", max_name_width, r->name);
+	list_for_each_entry(dom, &r->domains, list) {
+		if (sep)
+			seq_puts(s, ";");
+		seq_printf(s, rr->format_str, dom->id, max_data_width,
+			   dom->ctrl_val[partid]);
+		sep = true;
+	}
+	seq_puts(s, "\n");
+}
+
 int resctrl_group_schemata_show(struct kernfs_open_file *of,
 			   struct seq_file *s, void *v)
 {
-	seq_printf(s, "resctrl_group_schemata_show\n");
-	return 0;
+	struct rdtgroup *rdtgrp;
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+	int ret = 0;
+	u32 partid;
+
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	if (rdtgrp) {
+		partid = rdtgrp->closid;
+		for_each_resctrl_resource(r) {
+			if (r->alloc_enabled) {
+				rr = (struct raw_resctrl_resource *)r->res;
+				if (partid < rr->num_partid)
+					show_doms(s, r, partid);
+			}
+		}
+	} else {
+		ret = -ENOENT;
+	}
+	resctrl_group_kn_unlock(of->kn);
+	return ret;
 }

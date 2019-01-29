@@ -281,6 +281,29 @@ static int mpam_offline_cpu(unsigned int cpu)
 	return 0;
 }
 
+/*
+ * Choose a width for the resource name and resource data based on the
+ * resource that has widest name and cbm.
+ */
+static __init void mpam_init_padding(void)
+{
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+	int cl;
+
+	for_each_resctrl_resource(r) {
+		if (r->alloc_enabled) {
+			rr = (struct raw_resctrl_resource *)r->res;
+			cl = strlen(r->name);
+			if (cl > max_name_width)
+				max_name_width = cl;
+
+			if (rr->data_width > max_data_width)
+				max_data_width = rr->data_width;
+		}
+	}
+}
+
 static __init bool get_rdt_alloc_resources(void)
 {
 	bool ret = true;
@@ -882,6 +905,8 @@ static int __init mpam_late_init(void)
 
 	if (!get_resctrl_resources())
 		return -ENODEV;
+
+	mpam_init_padding();
 
 	ret = mpam_nodes_init();
 	if (ret) {

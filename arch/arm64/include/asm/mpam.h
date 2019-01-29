@@ -159,6 +159,8 @@ struct rdtgroup {
 	struct mongroup		mon;
 };
 
+extern int max_name_width, max_data_width;
+
 /* rdtgroup.flags */
 #define	RDT_DELETED		1
 
