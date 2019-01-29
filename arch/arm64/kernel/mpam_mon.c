@@ -51,10 +51,8 @@ int alloc_pmg(void)
 {
 	u32 pmg = ffs(pmg_free_map);
 
-	if (pmg == 0) {
-		pr_info("%s: no pmg available\n");
+	if (pmg == 0)
 		return -ENOSPC;
-	}
 
 	pmg--;
 	pmg_free_map &= ~(1 << pmg);
