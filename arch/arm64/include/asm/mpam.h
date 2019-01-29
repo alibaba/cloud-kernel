@@ -140,6 +140,7 @@ struct mongroup {
  * @kn:				kernfs node
  * @resctrl_group_list:		linked list for all rdtgroups
  * @closid:			closid for this rdtgroup
+ * #endif
  * @cpu_mask:			CPUs assigned to this rdtgroup
  * @flags:			status bits
  * @waitcount:			how many cpus expect to find this

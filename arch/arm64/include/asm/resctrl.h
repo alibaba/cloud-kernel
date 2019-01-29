@@ -55,4 +55,12 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 	     r < resctrl_resources_all + MPAM_NUM_RESOURCES;		\
 	     r++)							\
 
+int mkdir_mondata_all(struct kernfs_node *parent_kn,
+			     struct resctrl_group *prgrp,
+			     struct kernfs_node **dest_kn);
+
+int
+mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
+		    char *name, struct kernfs_node **dest_kn);
+
 #endif /* _ASM_ARM64_RESCTRL_H */
