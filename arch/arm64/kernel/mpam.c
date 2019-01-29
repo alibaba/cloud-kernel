@@ -103,6 +103,13 @@ struct mpam_node mpam_node_all[] = {
 		.cpus_list              = "3",
 		.default_ctrl		= 0x7fff,
 	},
+	{
+		.name			= "L3TALL",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x90B90000,
+		.cpus_list              = "0-3",
+		.default_ctrl		= 0x7fff,
+	},
 
 	/* P0 DIE 0: HHA0 */
 	{
@@ -117,6 +124,13 @@ struct mpam_node mpam_node_all[] = {
 		.name			= "HHA1",
 		.type                   = MPAM_RESOURCE_MC,
 		.addr                   = 0x90420000,
+		.cpus_list              = "0-3",
+	},
+
+	{
+		.name			= "HHALL",
+		.type                   = MPAM_RESOURCE_MC,
+		.addr                   = 0x90C10000,
 		.cpus_list              = "0-3",
 	},
 	/* other mpam nodes ... */
@@ -1228,6 +1242,11 @@ static void mpam_domains_init(struct resctrl_resource *r)
 			r->mon_capable,
 			r->mon_enabled
 			);
+
+		r->alloc_capable = 1;
+		r->alloc_enabled = 1;
+		r->mon_capable = 1;
+		r->mon_enabled = 1;
 
 		d->cpus_list = n->cpus_list;
 
