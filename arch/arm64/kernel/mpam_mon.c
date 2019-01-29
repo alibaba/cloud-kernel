@@ -87,9 +87,6 @@ void mon_init(void)
 	}
 
 	mon_free_map = BIT_MASK(num_mon) - 1;
-
-	/* pmg 0 is always reserved for the default group */
-	mon_free_map &= ~1;
 }
 
 int alloc_mon(void)
