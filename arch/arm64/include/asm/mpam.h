@@ -219,4 +219,27 @@ static inline int __resctrl_group_show_options(struct seq_file *seq)
 }
 
 void post_resctrl_mount(void);
+
+#define MPAM_SYS_REG_DEBUG
+
+static inline u32 mpam_read_sysreg_s(void *reg, char *name)
+{
+#ifdef MPAM_SYS_REG_DEBUG
+       pr_info("read_sysreg_s: %s (addr %p)\n", name, reg);
+       return 0;
+#else
+       return read_sysreg_s(reg);
+#endif
+}
+
+static inline u32 mpam_write_sysreg_s(u32 v, void *reg, char *name)
+{
+#ifdef MPAM_SYS_REG_DEBUG
+       pr_info("write_sysreg_s: %s (addr %p), value %x\n", name, reg, v);
+       return 0;
+#else
+       return write_sysreg_s(v, reg);
+#endif
+}
+
 #endif /* _ASM_ARM64_MPAM_H */
