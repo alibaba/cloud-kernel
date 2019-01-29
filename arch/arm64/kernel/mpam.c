@@ -691,8 +691,30 @@ int cpus_ctrl_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 	return 0;
 }
 
+static int resctrl_num_partid_show(struct kernfs_open_file *of,
+				   struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+
+	seq_printf(seq, "%d\n", rr->num_partid);
+
+	return 0;
+}
+
+static int resctrl_num_pmg_show(struct kernfs_open_file *of,
+				struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+
+	seq_printf(seq, "%d\n", rr->num_pmg);
+
+	return 0;
+}
+
 int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
-			  cpumask_var_t tmpmask)
+		   cpumask_var_t tmpmask)
 {
 	return 0;
 }
@@ -909,6 +931,20 @@ static int resctrl_group_tasks_show(struct kernfs_open_file *of,
 /* rdtgroup information files for one cache resource. */
 static struct rftype res_specific_files[] = {
 	{
+		.name           = "num_partids",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_num_partid_show,
+		.fflags         = RF_CTRL_INFO,
+	},
+	{
+		.name           = "num_pmgs",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_num_pmg_show,
+		.fflags         = RF_MON_INFO,
+	},
+	{
 		.name		= "last_cmd_status",
 		.mode		= 0444,
 		.kf_ops		= &resctrl_group_kf_single_ops,
@@ -983,6 +1019,7 @@ static void mpam_domains_init(struct resctrl_resource *r)
 	struct list_head *add_pos = NULL, *l;
 	struct rdt_domain *d;
 	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+	u32 val;
 
 	char *types[] = {"MPAM_RESOURCE_SMMU", "MPAM_RESOURCE_CACHE", "MPAM_RESOURCE_MC"};
 
@@ -1015,7 +1052,10 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		d->base = n->base;
 		cpumask_copy(&d->cpu_mask, &n->cpu_mask);
 		rr->default_ctrl = n->default_ctrl;
-		rr->num_partid = 32;
+
+		val = mpam_readl(d->base + MPAMF_IDR);
+		rr->num_partid = MPAMF_IDR_PARTID_MAX_GET(val);
+		rr->num_pmg = MPAMF_IDR_PMG_MAX_GET(val);
 
 		d->cpus_list = n->cpus_list;
 
