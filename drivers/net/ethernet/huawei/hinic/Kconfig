@@ -4,9 +4,10 @@
 
 config HINIC
 	tristate "Huawei Intelligent PCIE Network Interface Card"
-	depends on (PCI_MSI && (X86 || ARM64))
+	default n
+	depends on PCI_MSI && NUMA && PCI_IOV && DCB
 	---help---
 	  This driver supports HiNIC PCIE Ethernet cards.
 	  To compile this driver as part of the kernel, choose Y here.
 	  If unsure, choose N.
-	  The default is compiled as module.
+	  The default is N.
