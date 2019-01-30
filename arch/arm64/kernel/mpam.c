@@ -1,0 +1,712 @@
+/*
+ * Resource Director Technology(RDT)
+ * - Cache Allocation code.
+ *
+ * Copyright (C) 2016 Intel Corporation
+ *
+ * Authors:
+ *    Fenghua Yu <fenghua.yu@intel.com>
+ *    Tony Luck <tony.luck@intel.com>
+ *    Vikas Shivappa <vikas.shivappa@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * More information about RDT be found in the Intel (R) x86 Architecture
+ * Software Developer Manual June 2016, volume 3, section 17.17.
+ */
+
+#define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
+
+#include <linux/slab.h>
+#include <linux/err.h>
+#include <linux/cacheinfo.h>
+#include <linux/cpuhotplug.h>
+#include <linux/task_work.h>
+#include <linux/sched/signal.h>
+#include <linux/sched/task.h>
+#include <linux/resctrlfs.h>
+
+#include <asm/mpam_sched.h>
+#include <asm/resctrl.h>
+
+/* Mutex to protect rdtgroup access. */
+DEFINE_MUTEX(resctrl_group_mutex);
+
+/*
+ * The cached intel_pqr_state is strictly per CPU and can never be
+ * updated from a remote CPU. Functions which modify the state
+ * are called with interrupts disabled and no preemption, which
+ * is sufficient for the protection.
+ */
+DEFINE_PER_CPU(struct intel_pqr_state, pqr_state);
+
+/*
+ * Used to store the max resource name width and max resource data width
+ * to display the schemata in a tabular format
+ */
+int max_name_width, max_data_width;
+
+/*
+ * Global boolean for rdt_alloc which is true if any
+ * resource allocation is enabled.
+ */
+bool rdt_alloc_capable;
+
+#define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
+
+struct resctrl_resource resctrl_resources_all[] = {
+	[MPAM_RESOURCE_L3] = {
+		.rid			= MPAM_RESOURCE_L3,
+		.name			= "L3",
+		.domains		= domain_init(MPAM_RESOURCE_L3),
+		.fflags			= RFTYPE_RES_CACHE,
+	},
+	[MPAM_RESOURCE_L3DATA] = {
+		.rid			= MPAM_RESOURCE_L3DATA,
+		.name			= "L3DATA",
+		.domains		= domain_init(MPAM_RESOURCE_L3DATA),
+		.fflags			= RFTYPE_RES_CACHE,
+	},
+	[MPAM_RESOURCE_L3CODE] = (
+		.rid			= MPAM_RESOURCE_L3CODE,
+		.name			= "L3CODE",
+		.domains		= domain_init(MPAM_RESOURCE_L3CODE),
+		.fflags			= RFTYPE_RES_CACHE,
+	},
+	[MPAM_RESOURCE_L2] = {
+		.rid			= MPAM_RESOURCE_L2,
+		.name			= "L2",
+		.domains		= domain_init(MPAM_RESOURCE_L2),
+		.fflags			= RFTYPE_RES_CACHE,
+	},
+	[MPAM_RESOURCE_L2DATA] = {
+		.rid			= MPAM_RESOURCE_L2DATA,
+		.name			= "L2DATA",
+		.domains		= domain_init(MPAM_RESOURCE_L2DATA),
+		.fflags			= RFTYPE_RES_CACHE,
+	},
+	[MPAM_RESOURCE_L2CODE] = {
+		.rid			= MPAM_RESOURCE_L2CODE,
+		.name			= "L2CODE",
+		.domains		= domain_init(MPAM_RESOURCE_L2CODE),
+		.fflags			= RFTYPE_RES_CACHE,
+	},
+};
+
+static void rdt_get_cache_alloc_cfg(int idx, struct resctrl_resource *r)
+{
+	r->alloc_capable = true;
+	r->alloc_enabled = true;
+}
+
+/*
+ * Trivial allocator for CLOSIDs. Since h/w only supports a small number,
+ * we can keep a bitmap of free CLOSIDs in a single integer.
+ *
+ * Using a global CLOSID across all resources has some advantages and
+ * some drawbacks:
+ * + We can simply set "current->closid" to assign a task to a resource
+ *   group.
+ * + Context switch code can avoid extra memory references deciding which
+ *   CLOSID to load into the PQR_ASSOC MSR
+ * - We give up some options in configuring resource groups across multi-socket
+ *   systems.
+ * - Our choices on how to configure each resource become progressively more
+ *   limited as the number of resources grows.
+ */
+static int closid_free_map;
+
+void closid_init(void)
+{
+	struct resctrl_resource *r;
+	int resctrl_min_closid = 32;
+
+	closid_free_map = BIT_MASK(resctrl_min_closid) - 1;
+
+	/* CLOSID 0 is always reserved for the default group */
+	closid_free_map &= ~1;
+}
+
+int closid_alloc(void)
+{
+	u32 closid = ffs(closid_free_map);
+
+	if (closid == 0)
+		return -ENOSPC;
+	closid--;
+	closid_free_map &= ~(1 << closid);
+
+	return closid;
+}
+
+void closid_free(int closid)
+{
+	closid_free_map |= 1 << closid;
+}
+
+static void clear_closid_rmid(int cpu)
+{
+	struct intel_pqr_state *state = this_cpu_ptr(&pqr_state);
+}
+
+static int mpam_online_cpu(unsigned int cpu)
+{
+	pr_info("online cpu\n");
+	return 0;
+}
+
+static int mpam_offline_cpu(unsigned int cpu)
+{
+	pr_info("offline cpu\n");
+	return 0;
+}
+
+static __init bool get_rdt_alloc_resources(void)
+{
+	bool ret = false;
+
+	return ret;
+}
+
+static __init bool get_rdt_mon_resources(void)
+{
+
+	bool ret = false;
+
+	return ret;
+}
+
+static __init bool get_resctrl_resources(void)
+{
+	rdt_alloc_capable = get_rdt_alloc_resources();
+	rdt_mon_capable = get_rdt_mon_resources();
+
+	return (rdt_mon_capable || rdt_alloc_capable);
+}
+
+void post_resctrl_mount(void)
+{
+	struct rdt_domain *dom;
+	struct resctrl_resource *r;
+
+	if (rdt_alloc_capable)
+		static_branch_enable_cpuslocked(&resctrl_alloc_enable_key);
+	if (rdt_mon_capable)
+		static_branch_enable_cpuslocked(&resctrl_mon_enable_key);
+
+	if (rdt_alloc_capable || rdt_mon_capable)
+		static_branch_enable_cpuslocked(&resctrl_enable_key);
+}
+
+static int reset_all_ctrls(struct resctrl_resource *r)
+{
+	pr_info("%s\n", __func__);
+}
+
+void resctrl_resource_reset(void)
+{
+	struct resctrl_resource *r;
+
+	/*Put everything back to default values. */
+	for_each_resctrl_resource(r) {
+		if (r->alloc_enabled)
+			reset_all_ctrls(r);
+	}
+}
+
+void release_rdtgroupfs_options(void)
+{
+}
+
+int parse_rdtgroupfs_options(char *data)
+{
+	int ret = 0;
+
+	pr_err("Invalid mount option\n");
+
+	return ret;
+}
+
+
+/*
+ * This is safe against intel_resctrl_sched_in() called from __switch_to()
+ * because __switch_to() is executed with interrupts disabled. A local call
+ * from update_closid_rmid() is proteced against __switch_to() because
+ * preemption is disabled.
+ */
+void update_cpu_closid_rmid(void *info)
+{
+	struct rdtgroup *r = info;
+
+	if (r) {
+		this_cpu_write(pqr_state.default_closid, r->closid);
+		this_cpu_write(pqr_state.default_rmid, r->mon.rmid);
+	}
+
+	/*
+	 * We cannot unconditionally write the MSR because the current
+	 * executing task might have its own closid selected. Just reuse
+	 * the context switch code.
+	 */
+	mpam_sched_in();
+}
+
+/*
+ * Update the PGR_ASSOC MSR on all cpus in @cpu_mask,
+ *
+ * Per task closids/rmids must have been set up before calling this function.
+ */
+void
+update_closid_rmid(const struct cpumask *cpu_mask, struct rdtgroup *r)
+{
+	int cpu = get_cpu();
+
+	if (cpumask_test_cpu(cpu, cpu_mask))
+		update_cpu_closid_rmid(r);
+	smp_call_function_many(cpu_mask, update_cpu_closid_rmid, r, 1);
+	put_cpu();
+}
+
+struct task_move_callback {
+	struct callback_head	work;
+	struct rdtgroup		*rdtgrp;
+};
+
+static void move_myself(struct callback_head *head)
+{
+	struct task_move_callback *callback;
+	struct rdtgroup *rdtgrp;
+
+	callback = container_of(head, struct task_move_callback, work);
+	rdtgrp = callback->rdtgrp;
+
+	/*
+	 * If resource group was deleted before this task work callback
+	 * was invoked, then assign the task to root group and free the
+	 * resource group.
+	 */
+	if (atomic_dec_and_test(&rdtgrp->waitcount) &&
+	    (rdtgrp->flags & RDT_DELETED)) {
+		current->closid = 0;
+		current->rmid = 0;
+		kfree(rdtgrp);
+	}
+
+	preempt_disable();
+	/* update PQR_ASSOC MSR to make resource group go into effect */
+	mpam_sched_in();
+	preempt_enable();
+
+	kfree(callback);
+}
+
+int __resctrl_group_move_task(struct task_struct *tsk,
+				struct rdtgroup *rdtgrp)
+{
+	struct task_move_callback *callback;
+	int ret;
+
+	callback = kzalloc(sizeof(*callback), GFP_KERNEL);
+	if (!callback)
+		return -ENOMEM;
+	callback->work.func = move_myself;
+	callback->rdtgrp = rdtgrp;
+
+	/*
+	 * Take a refcount, so rdtgrp cannot be freed before the
+	 * callback has been invoked.
+	 */
+	atomic_inc(&rdtgrp->waitcount);
+	ret = task_work_add(tsk, &callback->work, true);
+	if (ret) {
+		/*
+		 * Task is exiting. Drop the refcount and free the callback.
+		 * No need to check the refcount as the group cannot be
+		 * deleted before the write function unlocks resctrl_group_mutex.
+		 */
+		atomic_dec(&rdtgrp->waitcount);
+		kfree(callback);
+		rdt_last_cmd_puts("task exited\n");
+	} else {
+		/*
+		 * For ctrl_mon groups move both closid and rmid.
+		 * For monitor groups, can move the tasks only from
+		 * their parent CTRL group.
+		 */
+		if (rdtgrp->type == RDTCTRL_GROUP) {
+			tsk->closid = rdtgrp->closid;
+			tsk->rmid = rdtgrp->mon.rmid;
+		} else if (rdtgrp->type == RDTMON_GROUP) {
+			if (rdtgrp->mon.parent->closid == tsk->closid) {
+				tsk->rmid = rdtgrp->mon.rmid;
+			} else {
+				rdt_last_cmd_puts("Can't move task to different control group\n");
+				ret = -EINVAL;
+			}
+		}
+	}
+	return ret;
+}
+
+static int resctrl_group_seqfile_show(struct seq_file *m, void *arg)
+{
+	struct kernfs_open_file *of = m->private;
+	struct rftype *rft = of->kn->priv;
+
+	if (rft->seq_show)
+		return rft->seq_show(of, m, arg);
+	return 0;
+}
+
+static ssize_t resctrl_group_file_write(struct kernfs_open_file *of, char *buf,
+				   size_t nbytes, loff_t off)
+{
+	struct rftype *rft = of->kn->priv;
+
+	if (rft->write)
+		return rft->write(of, buf, nbytes, off);
+
+	return -EINVAL;
+}
+
+struct kernfs_ops resctrl_group_kf_single_ops = {
+	.atomic_write_len	= PAGE_SIZE,
+	.write			= resctrl_group_file_write,
+	.seq_show		= resctrl_group_seqfile_show,
+};
+
+static bool is_cpu_list(struct kernfs_open_file *of)
+{
+	struct rftype *rft = of->kn->priv;
+
+	return rft->flags & RFTYPE_FLAGS_CPUS_LIST;
+}
+
+static int resctrl_group_cpus_show(struct kernfs_open_file *of,
+			      struct seq_file *s, void *v)
+{
+	struct rdtgroup *rdtgrp;
+	int ret = 0;
+
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+
+	if (rdtgrp) {
+		seq_printf(s, is_cpu_list(of) ? "%*pbl\n" : "%*pb\n",
+			   cpumask_pr_args(&rdtgrp->cpu_mask));
+	} else {
+		ret = -ENOENT;
+	}
+	resctrl_group_kn_unlock(of->kn);
+
+	return ret;
+}
+
+int cpus_ctrl_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
+			   cpumask_var_t tmpmask, cpumask_var_t tmpmask1)
+{
+	return 0;
+}
+
+int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
+			  cpumask_var_t tmpmask)
+{
+	return 0;
+}
+
+static ssize_t resctrl_group_cpus_write(struct kernfs_open_file *of,
+				   char *buf, size_t nbytes, loff_t off)
+{
+	cpumask_var_t tmpmask, newmask, tmpmask1;
+	struct rdtgroup *rdtgrp;
+	int ret;
+
+	if (!buf)
+		return -EINVAL;
+
+	if (!zalloc_cpumask_var(&tmpmask, GFP_KERNEL))
+		return -ENOMEM;
+	if (!zalloc_cpumask_var(&newmask, GFP_KERNEL)) {
+		free_cpumask_var(tmpmask);
+		return -ENOMEM;
+	}
+	if (!zalloc_cpumask_var(&tmpmask1, GFP_KERNEL)) {
+		free_cpumask_var(tmpmask);
+		free_cpumask_var(newmask);
+		return -ENOMEM;
+	}
+
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	rdt_last_cmd_clear();
+	if (!rdtgrp) {
+		ret = -ENOENT;
+		rdt_last_cmd_puts("directory was removed\n");
+		goto unlock;
+	}
+
+	if (is_cpu_list(of))
+		ret = cpulist_parse(buf, newmask);
+	else
+		ret = cpumask_parse(buf, newmask);
+
+	if (ret) {
+		rdt_last_cmd_puts("bad cpu list/mask\n");
+		goto unlock;
+	}
+
+	/* check that user didn't specify any offline cpus */
+	cpumask_andnot(tmpmask, newmask, cpu_online_mask);
+	if (cpumask_weight(tmpmask)) {
+		ret = -EINVAL;
+		rdt_last_cmd_puts("can only assign online cpus\n");
+		goto unlock;
+	}
+
+	if (rdtgrp->type == RDTCTRL_GROUP)
+		ret = cpus_ctrl_write(rdtgrp, newmask, tmpmask, tmpmask1);
+	else if (rdtgrp->type == RDTMON_GROUP)
+		ret = cpus_mon_write(rdtgrp, newmask, tmpmask);
+	else
+		ret = -EINVAL;
+
+unlock:
+	resctrl_group_kn_unlock(of->kn);
+	free_cpumask_var(tmpmask);
+	free_cpumask_var(newmask);
+	free_cpumask_var(tmpmask1);
+
+	return ret ?: nbytes;
+}
+
+
+static int resctrl_group_task_write_permission(struct task_struct *task,
+					  struct kernfs_open_file *of)
+{
+	const struct cred *tcred = get_task_cred(task);
+	const struct cred *cred = current_cred();
+	int ret = 0;
+
+	/*
+	 * Even if we're attaching all tasks in the thread group, we only
+	 * need to check permissions on one of them.
+	 */
+	if (!uid_eq(cred->euid, GLOBAL_ROOT_UID) &&
+	    !uid_eq(cred->euid, tcred->uid) &&
+	    !uid_eq(cred->euid, tcred->suid)) {
+		rdt_last_cmd_printf("No permission to move task %d\n", task->pid);
+		ret = -EPERM;
+	}
+
+	put_cred(tcred);
+	return ret;
+}
+
+static int resctrl_group_move_task(pid_t pid, struct rdtgroup *rdtgrp,
+			      struct kernfs_open_file *of)
+{
+	struct task_struct *tsk;
+	int ret;
+
+	rcu_read_lock();
+	if (pid) {
+		tsk = find_task_by_vpid(pid);
+		if (!tsk) {
+			rcu_read_unlock();
+			rdt_last_cmd_printf("No task %d\n", pid);
+			return -ESRCH;
+		}
+	} else {
+		tsk = current;
+	}
+
+	get_task_struct(tsk);
+	rcu_read_unlock();
+
+	ret = resctrl_group_task_write_permission(tsk, of);
+	if (!ret)
+		ret = __resctrl_group_move_task(tsk, rdtgrp);
+
+	put_task_struct(tsk);
+	return ret;
+}
+
+static struct seq_buf last_cmd_status;
+static char last_cmd_status_buf[512];
+
+void rdt_last_cmd_clear(void)
+{
+	lockdep_assert_held(&resctrl_group_mutex);
+	seq_buf_clear(&last_cmd_status);
+}
+
+void rdt_last_cmd_puts(const char *s)
+{
+	lockdep_assert_held(&resctrl_group_mutex);
+	seq_buf_puts(&last_cmd_status, s);
+}
+
+void rdt_last_cmd_printf(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	lockdep_assert_held(&resctrl_group_mutex);
+	seq_buf_vprintf(&last_cmd_status, fmt, ap);
+	va_end(ap);
+}
+
+static int rdt_last_cmd_status_show(struct kernfs_open_file *of,
+				    struct seq_file *seq, void *v)
+{
+	int len;
+
+	mutex_lock(&resctrl_group_mutex);
+	len = seq_buf_used(&last_cmd_status);
+	if (len)
+		seq_printf(seq, "%.*s", len, last_cmd_status_buf);
+	else
+		seq_puts(seq, "ok\n");
+	mutex_unlock(&resctrl_group_mutex);
+	return 0;
+}
+
+static ssize_t resctrl_group_tasks_write(struct kernfs_open_file *of,
+				    char *buf, size_t nbytes, loff_t off)
+{
+	struct rdtgroup *rdtgrp;
+	int ret = 0;
+	pid_t pid;
+
+	if (kstrtoint(strstrip(buf), 0, &pid) || pid < 0)
+		return -EINVAL;
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	rdt_last_cmd_clear();
+
+	if (rdtgrp)
+		ret = resctrl_group_move_task(pid, rdtgrp, of);
+	else
+		ret = -ENOENT;
+
+	resctrl_group_kn_unlock(of->kn);
+
+	return ret ?: nbytes;
+}
+
+static void show_resctrl_tasks(struct rdtgroup *r, struct seq_file *s)
+{
+	struct task_struct *p, *t;
+
+	rcu_read_lock();
+	for_each_process_thread(p, t) {
+		if ((r->type == RDTCTRL_GROUP && t->closid == r->closid) ||
+		    (r->type == RDTMON_GROUP && t->rmid == r->mon.rmid))
+			seq_printf(s, "%d\n", t->pid);
+	}
+	rcu_read_unlock();
+}
+
+static int resctrl_group_tasks_show(struct kernfs_open_file *of,
+			       struct seq_file *s, void *v)
+{
+	struct rdtgroup *rdtgrp;
+	int ret = 0;
+
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	if (rdtgrp)
+		show_resctrl_tasks(rdtgrp, s);
+	else
+		ret = -ENOENT;
+	resctrl_group_kn_unlock(of->kn);
+
+	return ret;
+}
+
+/* rdtgroup information files for one cache resource. */
+static struct rftype res_specific_files[] = {
+	{
+		.name		= "last_cmd_status",
+		.mode		= 0444,
+		.kf_ops		= &resctrl_group_kf_single_ops,
+		.seq_show	= rdt_last_cmd_status_show,
+		.fflags		= RF_TOP_INFO,
+	},
+	{
+		.name		= "cpus",
+		.mode		= 0644,
+		.kf_ops		= &resctrl_group_kf_single_ops,
+		.write		= resctrl_group_cpus_write,
+		.seq_show	= resctrl_group_cpus_show,
+		.fflags		= RFTYPE_BASE,
+	},
+	{
+		.name		= "cpus_list",
+		.mode		= 0644,
+		.kf_ops		= &resctrl_group_kf_single_ops,
+		.write		= resctrl_group_cpus_write,
+		.seq_show	= resctrl_group_cpus_show,
+		.flags		= RFTYPE_FLAGS_CPUS_LIST,
+		.fflags		= RFTYPE_BASE,
+	},
+	{
+		.name		= "tasks",
+		.mode		= 0644,
+		.kf_ops		= &resctrl_group_kf_single_ops,
+		.write		= resctrl_group_tasks_write,
+		.seq_show	= resctrl_group_tasks_show,
+		.fflags		= RFTYPE_BASE,
+	},
+	{
+		.name		= "schemata",
+		.mode		= 0644,
+		.kf_ops		= &resctrl_group_kf_single_ops,
+		.write		= resctrl_group_schemata_write,
+		.seq_show	= resctrl_group_schemata_show,
+		.fflags		= RF_CTRL_BASE,
+	},
+};
+
+static int __init mpam_late_init(void)
+{
+	struct resctrl_resource *r;
+	int state, ret;
+
+	if (!get_resctrl_resources())
+		return -ENODEV;
+
+	state = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
+				  "arm64/mpam:online:",
+				  mpam_online_cpu, mpam_offline_cpu);
+	if (state < 0)
+		return state;
+
+	register_resctrl_specific_files(res_specific_files, ARRAY_SIZE(res_specific_files));
+
+	seq_buf_init(&last_cmd_status, last_cmd_status_buf,
+		     sizeof(last_cmd_status_buf));
+
+	ret = resctrl_group_init();
+	if (ret) {
+		cpuhp_remove_state(state);
+		return ret;
+	}
+
+	for_each_resctrl_resource(r) {
+		if (r->alloc_capable)
+			pr_info("MPAM %s allocation detected\n", r->name);
+	}
+
+	for_each_resctrl_resource(r) {
+		if (r->mon_capable)
+			pr_info("MPAM %s monitoring detected\n", r->name);
+	}
+
+	return 0;
+}
+
+late_initcall(mpam_late_init);
