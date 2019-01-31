@@ -16,47 +16,105 @@
 #ifndef HINIC_TX_H
 #define HINIC_TX_H
 
-#include <linux/types.h>
-#include <linux/netdevice.h>
-#include <linux/skbuff.h>
-#include <linux/u64_stats_sync.h>
-
-#include "hinic_common.h"
-#include "hinic_hw_qp.h"
+enum tx_offload_type {
+	TX_OFFLOAD_TSO = BIT(0),
+	TX_OFFLOAD_CSUM = BIT(1),
+	TX_OFFLOAD_VLAN = BIT(2),
+	TX_OFFLOAD_INVALID = BIT(3),
+};
 
 struct hinic_txq_stats {
-	u64     pkts;
-	u64     bytes;
-	u64     tx_busy;
-	u64     tx_wake;
-	u64     tx_dropped;
+	u64	packets;
+	u64	bytes;
+	u64	busy;
+	u64	wake;
+	u64	dropped;
+	u64	big_frags_pkts;
+	u64	big_udp_pkts;
 
-	struct u64_stats_sync   syncp;
+	/* Subdivision statistics show in private tool */
+	u64	ufo_pkt_unsupport;
+	u64	ufo_linearize_err;
+	u64	ufo_alloc_skb_err;
+	u64	skb_pad_err;
+	u64	frag_len_overflow;
+	u64	offload_cow_skb_err;
+	u64	alloc_cpy_frag_err;
+	u64	map_cpy_frag_err;
+	u64	map_frag_err;
+
+#ifdef HAVE_NDO_GET_STATS64
+	struct u64_stats_sync	syncp;
+#else
+	struct u64_stats_sync_empty syncp;
+#endif
+};
+
+struct hinic_dma_len {
+	dma_addr_t dma;
+	u32 len;
+};
+
+#define MAX_SGE_NUM_PER_WQE	17
+
+struct hinic_tx_info {
+	struct sk_buff		*skb;
+
+	int			wqebb_cnt;
+
+	int			num_sge;
+	void			*wqe;
+	u8			*cpy_buff;
+	u16			num_pkts;
+	u64			num_bytes;
+	struct hinic_dma_len	dma_len[MAX_SGE_NUM_PER_WQE];
 };
 
 struct hinic_txq {
-	struct net_device       *netdev;
-	struct hinic_sq         *sq;
+	struct net_device	*netdev;
 
-	struct hinic_txq_stats  txq_stats;
+	u16			q_id;
+	u16			q_depth;
+	u16			q_mask;
+	struct hinic_txq_stats	txq_stats;
 
-	int                     max_sges;
-	struct hinic_sge        *sges;
-	struct hinic_sge        *free_sges;
-
-	char                    *irq_name;
-	struct napi_struct      napi;
+	struct hinic_tx_info	*tx_info;
 };
 
-void hinic_txq_clean_stats(struct hinic_txq *txq);
+enum hinic_tx_xmit_status {
+	HINIC_TX_OK = 0,
+	HINIC_TX_DROPED = 1,
+	HINIC_TX_BUSY =	2,
+};
 
-void hinic_txq_get_stats(struct hinic_txq *txq, struct hinic_txq_stats *stats);
+enum hinic_tx_avd_type {
+	HINIC_TX_NON_AVD = 0,
+	HINIC_TX_UFO_AVD = 1,
+};
+
+void hinic_txq_clean_stats(struct hinic_txq_stats *txq_stats);
+
+void hinic_txq_get_stats(struct hinic_txq *txq,
+			 struct hinic_txq_stats *stats);
 
 netdev_tx_t hinic_xmit_frame(struct sk_buff *skb, struct net_device *netdev);
 
-int hinic_init_txq(struct hinic_txq *txq, struct hinic_sq *sq,
-		   struct net_device *netdev);
+int hinic_setup_all_tx_resources(struct net_device *netdev);
 
-void hinic_clean_txq(struct hinic_txq *txq);
+void hinic_free_all_tx_resources(struct net_device *netdev);
+
+void hinic_set_sq_default_cos(struct net_device *netdev, u8 cos_id);
+
+int hinic_sq_cos_mapping(struct net_device *netdev);
+
+int hinic_alloc_txqs(struct net_device *netdev);
+
+void hinic_free_txqs(struct net_device *netdev);
+
+int hinic_tx_poll(struct hinic_txq *txq, int budget);
+
+u8 hinic_get_vlan_pri(struct sk_buff *skb);
+
+int hinic_flush_txqs(struct net_device *netdev);
 
 #endif

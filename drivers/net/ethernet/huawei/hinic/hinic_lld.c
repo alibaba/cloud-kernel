@@ -1880,7 +1880,7 @@ static int mapping_bar(struct pci_dev *pdev, struct hinic_pcidev *pci_adapter)
 
 	/* arm do not support call ioremap_wc(), refer to  */
 	pci_adapter->dwqe_mapping = __ioremap(dwqe_addr, HINIC_DB_DWQE_SIZE,
-					      __pgprot(PROT_DEVICE_NGNRNE));
+					      __pgprot(PROT_DEVICE_nGnRnE));
 	if (!pci_adapter->dwqe_mapping) {
 		sdk_err(&pci_adapter->pcidev->dev, "Failed to io_mapping_create_wc\n");
 		goto mapping_dwqe_err;
