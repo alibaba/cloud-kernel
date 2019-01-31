@@ -2305,13 +2305,13 @@ static void hinic_assign_netdev_ops(struct hinic_nic_dev *adapter)
 #endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
 		if (FUNC_SUPPORT_DCB(adapter->hwdev))
 			adapter->netdev->dcbnl_ops = &hinic_dcbnl_ops;
-		/* Will implement hinic_set_ethtool_ops() in next patch. */
+		hinic_set_ethtool_ops(adapter->netdev);
 	} else {
 		adapter->netdev->netdev_ops = &hinicvf_netdev_ops;
 #ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
 		set_netdev_ops_ext(adapter->netdev, &hinicvf_netdev_ops_ext);
 #endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
-		/* Will implement hinic_set_ethtool_ops() in next patch. */
+		hinicvf_set_ethtool_ops(adapter->netdev);
 	}
 	adapter->netdev->watchdog_timeo = 5 * HZ;
 }

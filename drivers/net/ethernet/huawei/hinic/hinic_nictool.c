@@ -779,7 +779,7 @@ static int get_sset_count(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	switch (*((u32 *)buf_in)) {
 	case HINIC_SHOW_SSET_IO_STATS:
-		count = 0;
+		count = hinic_get_io_stats_size(nic_dev);
 		break;
 
 	default:
@@ -818,6 +818,7 @@ static int get_sset_stats(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	switch (sset) {
 	case HINIC_SHOW_SSET_IO_STATS:
+		hinic_get_io_stats(nic_dev, items);
 		break;
 
 	default:

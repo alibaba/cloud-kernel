@@ -257,6 +257,9 @@ int hinic_open(struct net_device *netdev);
 int hinic_close(struct net_device *netdev);
 int nic_ioctl(void *uld_dev, u32 cmd, void *buf_in,
 	      u32 in_size, void *buf_out, u32 *out_size);
+void hinic_set_ethtool_ops(struct net_device *netdev);
+void hinicvf_set_ethtool_ops(struct net_device *netdev);
+void hinic_update_num_qps(struct net_device *netdev);
 
 int hinic_force_port_disable(struct hinic_nic_dev *nic_dev);
 int hinic_force_set_port_state(struct hinic_nic_dev *nic_dev, bool enable);

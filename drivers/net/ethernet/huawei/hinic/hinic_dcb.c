@@ -293,7 +293,7 @@ int hinic_setup_tc(struct net_device *netdev, u8 tc)
 			return -EFAULT;
 		}
 	} else {
-		/* will implement hinic_update_num_qps() in next patch */
+		hinic_update_num_qps(netdev);
 	}
 
 	hinic_configure_dcb(netdev);

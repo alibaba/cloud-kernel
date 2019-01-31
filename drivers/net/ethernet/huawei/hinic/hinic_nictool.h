@@ -235,5 +235,8 @@ struct hinic_pf_info {
 
 int nictool_k_init(void);
 void nictool_k_uninit(void);
+extern u32 hinic_get_io_stats_size(struct hinic_nic_dev *nic_dev);
+extern void hinic_get_io_stats(struct hinic_nic_dev *nic_dev,
+			       struct hinic_show_item *items);
 
 #endif
