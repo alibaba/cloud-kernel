@@ -16,25 +16,11 @@
 #include <linux/arm_sdei.h>
 #include <linux/nmi.h>
 
-/* We use the arch virt timer as SDEI NMI watchdog timer */
-#define SDEI_NMI_WATCHDOG_HWIRQ		27
-#define SDEI_TIMER_INTERVAL		3
+/* We use the secure physical timer as SDEI NMI watchdog timer */
+#define SDEI_NMI_WATCHDOG_HWIRQ		29
 
 static int sdei_watchdog_event_num;
 static bool disable_sdei_nmi_watchdog;
-
-static void start_arch_virt_timer(int seconds)
-{
-	int timer_freq = arch_timer_get_rate();
-
-	write_sysreg_el0(1, cntv_ctl);
-	write_sysreg_el0(timer_freq * seconds, cntv_tval);
-}
-
-static void stop_arch_virt_timer(void)
-{
-	write_sysreg_el0(0, cntv_ctl);
-}
 
 int watchdog_nmi_enable(unsigned int cpu)
 {
@@ -47,8 +33,6 @@ int watchdog_nmi_enable(unsigned int cpu)
 		return ret;
 	}
 
-	start_arch_virt_timer(SDEI_TIMER_INTERVAL);
-
 	return 0;
 }
 
@@ -60,15 +44,11 @@ void watchdog_nmi_disable(unsigned int cpu)
 	if (ret)
 		pr_err("Disable NMI Watchdog failed on cpu%d\n",
 				smp_processor_id());
-
-	stop_arch_virt_timer();
 }
 
 static int sdei_watchdog_callback(u32 event,
 		struct pt_regs *regs, void *arg)
 {
-	/* reprogram the arch virt timer */
-	start_arch_virt_timer(SDEI_TIMER_INTERVAL);
 	watchdog_hardlockup_check(regs);
 
 	return 0;
@@ -84,11 +64,6 @@ static void sdei_nmi_watchdog_bind(void *data)
 				smp_processor_id(), ret);
 }
 
-/* Before BIOS implements SDEI platform event, the host OS will use arch
- * virt timer as SDEI watchdog timer, so the guest os will failed to start
- * because it can not use arch virt timer. We provide a mechanism to disable
- * SDEI NMI watchdog in the host.
- */
 static int __init disable_sdei_nmi_watchdog_setup(char *str)
 {
 	disable_sdei_nmi_watchdog = true;
@@ -103,13 +78,8 @@ int __init watchdog_nmi_probe(void)
 	if (disable_sdei_nmi_watchdog)
 		return -EINVAL;
 
-	/*
-	 * When hyp mode is not available and kernel is not in hyp mode, the system
-	 * will use arch virt timer, which will conflict with SDEI NMI Watchdog.
-	 * Refer to 'arch_timer_select_ppi'.
-	 */
-	if (!is_kernel_in_hyp_mode() && !is_hyp_mode_available()) {
-		pr_err("Disable SDEI NMI Watchdog because the system will use virt timer\n");
+	if (!is_hyp_mode_available()) {
+		pr_err("Disable SDEI NMI Watchdog in VM\n");
 		return -EINVAL;
 	}
 
