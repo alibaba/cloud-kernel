@@ -116,12 +116,17 @@ swiotlb_dma_supported(struct device *hwdev, u64 mask);
 extern void __init swiotlb_exit(void);
 unsigned int swiotlb_max_segment(void);
 size_t swiotlb_max_mapping_size(struct device *dev);
+bool is_swiotlb_active(void);
 #else
 static inline void swiotlb_exit(void) { }
 static inline unsigned int swiotlb_max_segment(void) { return 0; }
 static inline size_t swiotlb_max_mapping_size(struct device *dev);
 {
 	return SIZE_MAX;
+}
+static inline bool is_swiotlb_active(void)
+{
+	return false;
 }
 #endif
 
