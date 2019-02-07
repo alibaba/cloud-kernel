@@ -11,6 +11,7 @@
 #include <linux/scatterlist.h>
 #include <linux/bug.h>
 #include <linux/mem_encrypt.h>
+#include <linux/swiotlb.h>
 
 /**
  * List of possible attributes associated with a DMA mapping. The semantics
@@ -133,6 +134,7 @@ struct dma_map_ops {
 #ifdef ARCH_HAS_DMA_GET_REQUIRED_MASK
 	u64 (*get_required_mask)(struct device *dev);
 #endif
+	size_t (*max_mapping_size)(struct device *dev);
 };
 
 #define DMA_MAPPING_ERROR		(~(dma_addr_t)0)
@@ -197,6 +199,8 @@ static inline int dma_mmap_from_global_coherent(struct vm_area_struct *vma,
 	return 0;
 }
 #endif /* CONFIG_HAVE_GENERIC_DMA_COHERENT */
+
+size_t dma_direct_max_mapping_size(struct device *dev);
 
 #ifdef CONFIG_HAS_DMA
 #include <asm/dma-mapping.h>
@@ -777,12 +781,17 @@ extern void *dmam_alloc_coherent(struct device *dev, size_t size,
 				 dma_addr_t *dma_handle, gfp_t gfp);
 extern void dmam_free_coherent(struct device *dev, size_t size, void *vaddr,
 			       dma_addr_t dma_handle);
+size_t dma_max_mapping_size(struct device *dev);
 #else /* !CONFIG_HAS_DMA */
 static inline void *dmam_alloc_coherent(struct device *dev, size_t size,
 					dma_addr_t *dma_handle, gfp_t gfp)
 { return NULL; }
 static inline void dmam_free_coherent(struct device *dev, size_t size,
 				      void *vaddr, dma_addr_t dma_handle) { }
+static inline size_t dma_max_mapping_size(struct device *dev)
+{
+	return 0;
+}
 #endif /* !CONFIG_HAS_DMA */
 
 extern void *dmam_alloc_attrs(struct device *dev, size_t size,

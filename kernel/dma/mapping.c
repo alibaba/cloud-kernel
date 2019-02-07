@@ -328,6 +328,20 @@ void dma_common_free_remap(void *cpu_addr, size_t size, unsigned long vm_flags)
 }
 #endif
 
+size_t dma_max_mapping_size(struct device *dev)
+{
+	const struct dma_map_ops *ops = get_dma_ops(dev);
+	size_t size = SIZE_MAX;
+
+	if (!ops)
+		size = dma_direct_max_mapping_size(dev);
+	else if (ops && ops->max_mapping_size)
+		size = ops->max_mapping_size(dev);
+
+	return size;
+}
+EXPORT_SYMBOL_GPL(dma_max_mapping_size);
+
 /*
  * enables DMA API use for a device
  */
