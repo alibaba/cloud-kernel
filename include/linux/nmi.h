@@ -204,6 +204,7 @@ u64 hw_nmi_get_sample_period(int watchdog_thresh);
 #if defined(CONFIG_HARDLOCKUP_CHECK_TIMESTAMP) && \
     defined(CONFIG_HARDLOCKUP_DETECTOR)
 void watchdog_update_hrtimer_threshold(u64 period);
+void refresh_hld_last_timestamp(void);
 #else
 static inline void watchdog_update_hrtimer_threshold(u64 period) { }
 #endif
