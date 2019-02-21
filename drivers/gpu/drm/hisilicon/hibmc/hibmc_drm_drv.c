@@ -70,7 +70,7 @@ static struct drm_driver hibmc_driver = {
 	.irq_handler		= hibmc_drm_interrupt,
 };
 
-static int __maybe_unused hibmc_pm_suspend(struct device *dev)
+static int hibmc_pm_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
 	struct drm_device *drm_dev = pci_get_drvdata(pdev);
@@ -88,7 +88,7 @@ static int __maybe_unused hibmc_pm_suspend(struct device *dev)
 	return 0;
 }
 
-static int  __maybe_unused hibmc_pm_resume(struct device *dev)
+static int hibmc_pm_resume(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
 	struct drm_device *drm_dev = pci_get_drvdata(pdev);
@@ -115,7 +115,7 @@ static int hibmc_kms_init(struct hibmc_drm_private *priv)
 	priv->dev->mode_config.min_width = 0;
 	priv->dev->mode_config.min_height = 0;
 	priv->dev->mode_config.max_width = 1920;
-	priv->dev->mode_config.max_height = 1440;
+	priv->dev->mode_config.max_height = 1200;
 
 	priv->dev->mode_config.fb_base = priv->fb_base;
 	priv->dev->mode_config.preferred_depth = 24;
@@ -136,6 +136,21 @@ static int hibmc_kms_init(struct hibmc_drm_private *priv)
 	}
 
 	return 0;
+}
+
+static void hibmc_hw_unmap(struct hibmc_drm_private *priv)
+{
+	struct drm_device *dev = priv->dev;
+
+	if (priv->mmio) {
+		devm_iounmap(dev->dev, priv->mmio);
+		priv->mmio = NULL;
+	}
+
+	if (priv->fb_map) {
+		devm_iounmap(dev->dev, priv->fb_map);
+		priv->fb_map = NULL;
+	}
 }
 
 static void hibmc_kms_fini(struct hibmc_drm_private *priv)
@@ -284,6 +299,7 @@ static int hibmc_unload(struct drm_device *dev)
 
 	hibmc_kms_fini(priv);
 	hibmc_mm_fini(priv);
+	hibmc_hw_unmap(priv);
 	dev->dev_private = NULL;
 	return 0;
 }
@@ -398,7 +414,13 @@ static void hibmc_pci_remove(struct pci_dev *pdev)
 
 	drm_dev_unregister(dev);
 	hibmc_unload(dev);
+	pci_disable_device(pdev);
 	drm_dev_unref(dev);
+}
+
+static void hibmc_pci_shutdown(struct pci_dev *pdev)
+{
+	hibmc_pci_remove(pdev);
 }
 
 static struct pci_device_id hibmc_pci_table[] = {
@@ -411,6 +433,7 @@ static struct pci_driver hibmc_pci_driver = {
 	.id_table =	hibmc_pci_table,
 	.probe =	hibmc_pci_probe,
 	.remove =	hibmc_pci_remove,
+	.shutdown = hibmc_pci_shutdown,
 	.driver.pm =    &hibmc_pm_ops,
 };
 
