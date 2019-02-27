@@ -21,10 +21,14 @@
 
 static int sdei_watchdog_event_num;
 static bool disable_sdei_nmi_watchdog;
+static bool sdei_watchdog_registered;
 
 int watchdog_nmi_enable(unsigned int cpu)
 {
 	int ret;
+
+	if (!sdei_watchdog_registered)
+		return -EINVAL;
 
 	refresh_hld_last_timestamp();
 
@@ -41,6 +45,9 @@ int watchdog_nmi_enable(unsigned int cpu)
 void watchdog_nmi_disable(unsigned int cpu)
 {
 	int ret;
+
+	if (!sdei_watchdog_registered)
+		return;
 
 	ret = sdei_api_event_disable(sdei_watchdog_event_num);
 	if (ret)
@@ -87,7 +94,7 @@ int __init watchdog_nmi_probe(void)
 
 	sdei_watchdog_event_num = sdei_api_event_interrupt_bind(SDEI_NMI_WATCHDOG_HWIRQ);
 	if (sdei_watchdog_event_num < 0) {
-		pr_err("bind interrupt failed !\n");
+		pr_err("Bind interrupt failed. Firmware may not support SDEI !\n");
 		return sdei_watchdog_event_num;
 	}
 
@@ -100,6 +107,7 @@ int __init watchdog_nmi_probe(void)
 		return ret;
 	}
 
+	sdei_watchdog_registered = true;
 	pr_info("SDEI Watchdog registered successfully\n");
 
 	return 0;
