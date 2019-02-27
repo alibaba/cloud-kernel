@@ -22,13 +22,22 @@ struct kvec {
 };
 
 enum iter_type {
-	ITER_IOVEC = 0,
-	ITER_KVEC = 2,
-	ITER_BVEC = 4,
-	ITER_PIPE = 8,
+	/* set if ITER_BVEC doesn't hold a bv_page ref */
+	ITER_BVEC_FLAG_NO_REF = 2,
+
+	/* iter types */
+	ITER_IOVEC = 4,
+	ITER_KVEC = 8,
+	ITER_BVEC = 16,
+	ITER_PIPE = 32,
 };
 
 struct iov_iter {
+	/*
+	 * Bit 0 is the read/write bit, set if we're writing.
+	 * Bit 1 is the BVEC_FLAG_NO_REF bit, set if type is a bvec and
+	 * the caller isn't expecting to drop a page reference when done.
+	 */
 	unsigned int type;
 	size_t iov_offset;
 	size_t count;
@@ -75,6 +84,11 @@ static inline bool iov_iter_is_pipe(const struct iov_iter *i)
 static inline unsigned char iov_iter_rw(const struct iov_iter *i)
 {
 	return i->type & (READ | WRITE);
+}
+
+static inline bool iov_iter_bvec_no_ref(const struct iov_iter *i)
+{
+	return (i->type & ITER_BVEC_FLAG_NO_REF) != 0;
 }
 
 /*
