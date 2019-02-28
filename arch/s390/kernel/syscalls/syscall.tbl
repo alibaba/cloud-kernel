@@ -391,3 +391,6 @@
 381  common	kexec_file_load		sys_kexec_file_load		compat_sys_kexec_file_load
 382  common	io_pgetevents		sys_io_pgetevents		compat_sys_io_pgetevents
 383  common	rseq			sys_rseq			compat_sys_rseq
+425  common	io_uring_setup		sys_io_uring_setup		sys_io_uring_setup
+426  common	io_uring_enter		sys_io_uring_enter		sys_io_uring_enter
+427  common	io_uring_register	sys_io_uring_register		sys_io_uring_register
