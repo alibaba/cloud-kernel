@@ -819,6 +819,12 @@ __SYSCALL(__NR_pkey_free, sys_pkey_free)
 __SYSCALL(__NR_statx, sys_statx)
 #define __NR_rseq 398
 __SYSCALL(__NR_rseq, sys_rseq)
+#define __NR_io_uring_setup 425
+__SYSCALL(__NR_io_uring_setup, sys_io_uring_setup)
+#define __NR_io_uring_enter 426
+__SYSCALL(__NR_io_uring_enter, sys_io_uring_enter)
+#define __NR_io_uring_register 427
+__SYSCALL(__NR_io_uring_register, sys_io_uring_register)
 
 /*
  * Please add new compat syscalls above this comment and update
