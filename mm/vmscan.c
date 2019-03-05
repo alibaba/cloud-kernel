@@ -2887,9 +2887,8 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 				   sc->nr_reclaimed - reclaimed);
 
 			/*
-			 * Direct reclaim and kswapd have to scan all memory
-			 * cgroups to fulfill the overall scan target for the
-			 * node.
+			 * Kswapd have to scan all memory cgroups to fulfill
+			 * the overall scan target for the node.
 			 *
 			 * Limit reclaim, on the other hand, only cares about
 			 * nr_to_reclaim pages to be reclaimed and it will
@@ -2899,9 +2898,14 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 			 * Memcg background reclaim would break iter once water
 			 * mark is satisfied.
 			 */
-			if (!global_reclaim(sc) &&
-			    ((sc->nr_reclaimed >= sc->nr_to_reclaim) ||
-			    (current_is_kswapd() && is_wmark_ok(root, false)))) {
+			if (!current_is_kswapd() &&
+					sc->nr_reclaimed >= sc->nr_to_reclaim) {
+				mem_cgroup_iter_break(root, memcg);
+				break;
+			}
+
+			if (current_is_kswapd() && !global_reclaim(sc) &&
+					is_wmark_ok(root, false)) {
 				mem_cgroup_iter_break(root, memcg);
 				break;
 			}
