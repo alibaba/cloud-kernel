@@ -933,6 +933,7 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 int fuse_fill_super_common(struct super_block *sb,
 			   struct fuse_mount_data *mount_data,
 			   void **fudptr);
+void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req);
 
 /**
  * Add connection to control filesystem
