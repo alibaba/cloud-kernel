@@ -323,6 +323,7 @@ struct sock_common {
   *	@sk_clockid: clockid used by time-based scheduling (SO_TXTIME)
   *	@sk_txtime_deadline_mode: set deadline mode for SO_TXTIME
   *	@sk_txtime_unused: unused txtime flags
+  *	@sk_toa_data: tcp option address (toa) data
   */
 struct sock {
 	/*
@@ -508,6 +509,7 @@ struct sock {
 #endif
 	void                    (*sk_destruct)(struct sock *sk);
 	struct sock_reuseport __rcu	*sk_reuseport_cb;
+	__be32			sk_toa_data[16];
 	struct rcu_head		sk_rcu;
 };
 
