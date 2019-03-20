@@ -895,7 +895,8 @@ static irqreturn_t armv8pmu_handle_irq(struct arm_pmu *cpu_pmu)
 	 * platforms that can have the PMU interrupts raised as an NMI, this
 	 * will not work.
 	 */
-	irq_work_run();
+	if (!in_nmi())
+		irq_work_run();
 
 	return IRQ_HANDLED;
 }
