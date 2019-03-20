@@ -736,10 +736,22 @@ static inline int armv7_pmnc_counter_has_overflowed(u32 pmnc, int idx)
 	return pmnc & BIT(ARMV7_IDX_TO_COUNTER(idx));
 }
 
+static inline u32 armv7_pmsel_read(void)
+{
+	u32 pmsel;
+
+	asm volatile("mrc p15, 0, %0, c9, c12, 5" : "=&r" (pmsel));
+	return pmsel;
+}
+
+static inline void armv7_pmsel_write(u32 counter)
+{
+	asm volatile("mcr p15, 0, %0, c9, c12, 5" : : "r" (counter));
+}
+
 static inline void armv7_pmnc_select_counter(int idx)
 {
-	u32 counter = ARMV7_IDX_TO_COUNTER(idx);
-	asm volatile("mcr p15, 0, %0, c9, c12, 5" : : "r" (counter));
+	armv7_pmsel_write(ARMV7_IDX_TO_COUNTER(idx));
 	isb();
 }
 
@@ -952,7 +964,10 @@ static irqreturn_t armv7pmu_handle_irq(struct arm_pmu *cpu_pmu)
 	struct perf_sample_data data;
 	struct pmu_hw_events *cpuc = this_cpu_ptr(cpu_pmu->hw_events);
 	struct pt_regs *regs;
+	u32 pmsel;
 	int idx;
+
+	pmsel = armv7_pmsel_read();
 
 	/*
 	 * Get and reset the IRQ flags
@@ -1003,6 +1018,8 @@ static irqreturn_t armv7pmu_handle_irq(struct arm_pmu *cpu_pmu)
 	 * will not work.
 	 */
 	irq_work_run();
+
+	armv7_pmsel_write(pmsel);
 
 	return IRQ_HANDLED;
 }
