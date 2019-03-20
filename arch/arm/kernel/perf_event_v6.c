@@ -69,6 +69,12 @@ enum armv6_counters {
 };
 
 /*
+ * Hardware lock to serialize accesses to PMU registers. Needed for the
+ * read/modify/write sequences.
+ */
+DEFINE_PER_CPU(raw_spinlock_t, pmu_lock);
+
+/*
  * The hardware events that we support. We do support cache operations but
  * we have harvard caches and no way to combine instruction and data
  * accesses/misses in hardware.
@@ -271,7 +277,7 @@ static void armv6pmu_enable_event(struct perf_event *event)
 	unsigned long val, mask, evt, flags;
 	struct arm_pmu *cpu_pmu = to_arm_pmu(event->pmu);
 	struct hw_perf_event *hwc = &event->hw;
-	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+	struct raw_spinlock_t *lock = this_cpu_ptr(&pmu_lock);
 	int idx = hwc->idx;
 
 	if (ARMV6_CYCLE_COUNTER == idx) {
@@ -294,12 +300,12 @@ static void armv6pmu_enable_event(struct perf_event *event)
 	 * Mask out the current event and set the counter to count the event
 	 * that we're interested in.
 	 */
-	raw_spin_lock_irqsave(&events->pmu_lock, flags);
+	raw_spin_lock_irqsave(lock, flags);
 	val = armv6_pmcr_read();
 	val &= ~mask;
 	val |= evt;
 	armv6_pmcr_write(val);
-	raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
+	raw_spin_unlock_irqrestore(lock, flags);
 }
 
 static irqreturn_t
@@ -363,25 +369,25 @@ armv6pmu_handle_irq(struct arm_pmu *cpu_pmu)
 static void armv6pmu_start(struct arm_pmu *cpu_pmu)
 {
 	unsigned long flags, val;
-	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+	raw_spinlock_t *lock = this_cpu_ptr(&pmu_lock);
 
-	raw_spin_lock_irqsave(&events->pmu_lock, flags);
+	raw_spin_lock_irqsave(lock, flags);
 	val = armv6_pmcr_read();
 	val |= ARMV6_PMCR_ENABLE;
 	armv6_pmcr_write(val);
-	raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
+	raw_spin_unlock_irqrestore(lock, flags);
 }
 
 static void armv6pmu_stop(struct arm_pmu *cpu_pmu)
 {
 	unsigned long flags, val;
-	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+	raw_spinlock_t *lock = this_cpu_ptr(&pmu_lock);
 
-	raw_spin_lock_irqsave(&events->pmu_lock, flags);
+	raw_spin_lock_irqsave(lock, flags);
 	val = armv6_pmcr_read();
 	val &= ~ARMV6_PMCR_ENABLE;
 	armv6_pmcr_write(val);
-	raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
+	raw_spin_unlock_irqrestore(lock, flags);
 }
 
 static int
@@ -502,6 +508,8 @@ static void armv6pmu_init(struct arm_pmu *cpu_pmu)
 	cpu_pmu->stop		= armv6pmu_stop;
 	cpu_pmu->map_event	= armv6_map_event;
 	cpu_pmu->num_events	= 3;
+
+	raw_spin_lock_init(this_cpu_ptr(&pmu_lock));
 }
 
 static int armv6_1136_pmu_init(struct arm_pmu *cpu_pmu)
