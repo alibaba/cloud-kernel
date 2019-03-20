@@ -273,15 +273,37 @@ void kvm_pmu_sync_hwstate(struct kvm_vcpu *vcpu)
 	kvm_pmu_update_state(vcpu);
 }
 
+static inline struct kvm_vcpu *kvm_pmu_to_vcpu(struct kvm_pmu *pmu)
+{
+	struct kvm_vcpu_arch *vcpu_arch;
+
+	vcpu_arch = container_of(pmu, struct kvm_vcpu_arch, pmu);
+	return container_of(vcpu_arch, struct kvm_vcpu, arch);
+}
+
 static inline struct kvm_vcpu *kvm_pmc_to_vcpu(struct kvm_pmc *pmc)
 {
 	struct kvm_pmu *pmu;
-	struct kvm_vcpu_arch *vcpu_arch;
 
 	pmc -= pmc->idx;
 	pmu = container_of(pmc, struct kvm_pmu, pmc[0]);
-	vcpu_arch = container_of(pmu, struct kvm_vcpu_arch, pmu);
-	return container_of(vcpu_arch, struct kvm_vcpu, arch);
+	return kvm_pmu_to_vcpu(pmu);
+}
+
+/**
+ * When perf interrupt is an NMI, we cannot safely notify the vcpu corresponding
+ * to the even.
+ * This is why we need a callback to do it once outside of the NMI context.
+ */
+static void kvm_pmu_perf_overflow_notify_vcpu(struct irq_work *work)
+{
+	struct kvm_vcpu *vcpu;
+	struct kvm_pmu *pmu;
+
+	pmu = container_of(work, struct kvm_pmu, overflow_work);
+	vcpu = kvm_pmu_to_vcpu(pmu);
+
+	kvm_vcpu_kick(vcpu);
 }
 
 /**
@@ -299,7 +321,11 @@ static void kvm_pmu_perf_overflow(struct perf_event *perf_event,
 
 	if (kvm_pmu_overflow_status(vcpu)) {
 		kvm_make_request(KVM_REQ_IRQ_PENDING, vcpu);
-		kvm_vcpu_kick(vcpu);
+
+		if (!in_nmi())
+			kvm_vcpu_kick(vcpu);
+		else
+			irq_work_queue(&vcpu->arch.pmu.overflow_work);
 	}
 }
 
@@ -500,6 +526,9 @@ static int kvm_arm_pmu_v3_init(struct kvm_vcpu *vcpu)
 		if (ret)
 			return ret;
 	}
+
+	init_irq_work(&vcpu->arch.pmu.overflow_work,
+		      kvm_pmu_perf_overflow_notify_vcpu);
 
 	vcpu->arch.pmu.created = true;
 	return 0;
