@@ -187,6 +187,8 @@ static int hardlockup_detector_event_create(void)
 
 	wd_attr = &wd_hw_attr;
 	wd_attr->sample_period = hw_nmi_get_sample_period(watchdog_thresh);
+	if (!wd_attr->sample_period)
+		return -EINVAL;
 
 	/* Try to register using hardware perf events */
 	evt = perf_event_create_kernel_counter(wd_attr, cpu, NULL,

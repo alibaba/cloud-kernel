@@ -1064,3 +1064,19 @@ bool cpus_are_stuck_in_kernel(void)
 
 	return !!cpus_stuck_in_kernel || smp_spin_tables;
 }
+
+#ifdef CONFIG_HARDLOCKUP_DETECTOR_PERF
+u64 hardlockup_cpu_freq;
+
+static int __init hardlockup_cpu_freq_setup(char *str)
+{
+	hardlockup_cpu_freq = simple_strtoull(str, NULL, 0);
+	return 1;
+}
+__setup("hardlockup_cpu_freq=", hardlockup_cpu_freq_setup);
+
+u64 hw_nmi_get_sample_period(int watchdog_thresh)
+{
+	return hardlockup_cpu_freq * 1000 * watchdog_thresh;
+}
+#endif
