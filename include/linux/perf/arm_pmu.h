@@ -58,6 +58,11 @@ struct pmu_hw_events {
 	 */
 	DECLARE_BITMAP(used_mask, ARMPMU_MAX_HWEVENTS);
 
+	/*
+	 * Hardware lock to serialize accesses to PMU registers. Needed for the
+	 * read/modify/write sequences.
+	 */
+	raw_spinlock_t		pmu_lock;
 
 	/*
 	 * When using percpu IRQs, we need a percpu dev_id. Place it here as we
@@ -163,6 +168,8 @@ void armpmu_free(struct arm_pmu *pmu);
 int armpmu_register(struct arm_pmu *pmu);
 int armpmu_request_irq(int irq, int cpu);
 void armpmu_free_irq(int irq, int cpu);
+
+extern bool pmu_nmi_enable;
 
 #define ARMV8_PMU_PDEV_NAME "armv8-pmu"
 

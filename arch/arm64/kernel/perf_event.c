@@ -597,9 +597,20 @@ static inline int armv8pmu_counter_has_overflowed(u32 pmnc, int idx)
 	return pmnc & BIT(ARMV8_IDX_TO_COUNTER(idx));
 }
 
+static inline void armv8pmu_select_counter(int idx)
+{
+	u32 counter = ARMV8_IDX_TO_COUNTER(idx);
+	write_sysreg(counter, pmselr_el0);
+	isb();
+}
+
 static inline u32 armv8pmu_read_evcntr(int idx)
 {
-	return read_pmevcntrn(idx);
+	if (pmu_nmi_enable)
+		return read_pmevcntrn(idx);
+
+	armv8pmu_select_counter(idx);
+	return read_sysreg(pmxevcntr_el0);
 }
 
 static inline u64 armv8pmu_read_hw_counter(struct perf_event *event)
@@ -633,7 +644,12 @@ static inline u64 armv8pmu_read_counter(struct perf_event *event)
 
 static inline void armv8pmu_write_evcntr(int idx, u32 value)
 {
-	write_pmevcntrn(idx, value);
+	if (pmu_nmi_enable) {
+		write_pmevcntrn(idx, value);
+	} else {
+		armv8pmu_select_counter(idx);
+		write_sysreg(value, pmxevcntr_el0);
+	}
 }
 
 static inline void armv8pmu_write_hw_counter(struct perf_event *event,
@@ -674,8 +690,14 @@ static inline void armv8pmu_write_counter(struct perf_event *event, u64 value)
 
 static inline void armv8pmu_write_evtype(int idx, u32 val)
 {
-	val &= ARMV8_PMU_EVTYPE_MASK;
-	write_pmevtypern(idx, val);
+	if (pmu_nmi_enable) {
+		val &= ARMV8_PMU_EVTYPE_MASK;
+		write_pmevtypern(idx, val);
+	} else {
+		armv8pmu_select_counter(idx);
+		val &= ARMV8_PMU_EVTYPE_MASK;
+		write_sysreg(val, pmxevtyper_el0);
+	}
 }
 
 static inline void armv8pmu_write_event_type(struct perf_event *event)
@@ -778,10 +800,16 @@ static inline u32 armv8pmu_getreset_flags(void)
 
 static void armv8pmu_enable_event(struct perf_event *event)
 {
+	unsigned long flags = 0;
+	struct arm_pmu *cpu_pmu = to_arm_pmu(event->pmu);
+	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+
 	/*
 	 * Enable counter and interrupt, and set the counter to count
 	 * the event that we're interested in.
 	 */
+	if (!pmu_nmi_enable)
+		raw_spin_lock_irqsave(&events->pmu_lock, flags);
 
 	/*
 	 * Disable counter
@@ -802,10 +830,23 @@ static void armv8pmu_enable_event(struct perf_event *event)
 	 * Enable counter
 	 */
 	armv8pmu_enable_event_counter(event);
+
+	if (!pmu_nmi_enable)
+		raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
 }
 
 static void armv8pmu_disable_event(struct perf_event *event)
 {
+	unsigned long flags = 0;
+	struct arm_pmu *cpu_pmu = to_arm_pmu(event->pmu);
+	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+
+	/*
+	 * Disable counter and interrupt
+	 */
+	if (!pmu_nmi_enable)
+		raw_spin_lock_irqsave(&events->pmu_lock, flags);
+
 	/*
 	 * Disable counter
 	 */
@@ -815,22 +856,45 @@ static void armv8pmu_disable_event(struct perf_event *event)
 	 * Disable interrupt for this counter
 	 */
 	armv8pmu_disable_event_irq(event);
+
+	if (!pmu_nmi_enable)
+		raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
 }
 
 static void armv8pmu_start(struct arm_pmu *cpu_pmu)
 {
-	preempt_disable();
-	/* Enable all counters */
-	armv8pmu_pmcr_write(armv8pmu_pmcr_read() | ARMV8_PMU_PMCR_E);
-	preempt_enable();
+	if (pmu_nmi_enable) {
+		preempt_disable();
+		/* Enable all counters */
+		armv8pmu_pmcr_write(armv8pmu_pmcr_read() | ARMV8_PMU_PMCR_E);
+		preempt_enable();
+	} else {
+		unsigned long flags;
+		struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+
+		raw_spin_lock_irqsave(&events->pmu_lock, flags);
+		/* Enable all counters */
+		armv8pmu_pmcr_write(armv8pmu_pmcr_read() | ARMV8_PMU_PMCR_E);
+		raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
+	}
 }
 
 static void armv8pmu_stop(struct arm_pmu *cpu_pmu)
 {
-	preempt_disable();
-	/* Disable all counters */
-	armv8pmu_pmcr_write(armv8pmu_pmcr_read() & ~ARMV8_PMU_PMCR_E);
-	preempt_enable();
+	if (pmu_nmi_enable) {
+		preempt_disable();
+		/* Disable all counters */
+		armv8pmu_pmcr_write(armv8pmu_pmcr_read() & ~ARMV8_PMU_PMCR_E);
+		preempt_enable();
+	} else {
+		unsigned long flags;
+		struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
+
+		raw_spin_lock_irqsave(&events->pmu_lock, flags);
+		/* Disable all counters */
+		armv8pmu_pmcr_write(armv8pmu_pmcr_read() & ~ARMV8_PMU_PMCR_E);
+		raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
+	}
 }
 
 static irqreturn_t armv8pmu_handle_irq(struct arm_pmu *cpu_pmu)
@@ -895,7 +959,7 @@ static irqreturn_t armv8pmu_handle_irq(struct arm_pmu *cpu_pmu)
 	 * platforms that can have the PMU interrupts raised as an NMI, this
 	 * will not work.
 	 */
-	if (!in_nmi())
+	if (!pmu_nmi_enable || !in_nmi())
 		irq_work_run();
 
 	return IRQ_HANDLED;

@@ -19,6 +19,7 @@
 #include <linux/kvm.h>
 #include <linux/kvm_host.h>
 #include <linux/perf_event.h>
+#include <linux/perf/arm_pmu.h>
 #include <linux/uaccess.h>
 #include <asm/kvm_emulate.h>
 #include <kvm/arm_pmu.h>
@@ -284,10 +285,15 @@ static inline struct kvm_vcpu *kvm_pmu_to_vcpu(struct kvm_pmu *pmu)
 static inline struct kvm_vcpu *kvm_pmc_to_vcpu(struct kvm_pmc *pmc)
 {
 	struct kvm_pmu *pmu;
+	struct kvm_vcpu_arch *vcpu_arch;
 
 	pmc -= pmc->idx;
 	pmu = container_of(pmc, struct kvm_pmu, pmc[0]);
-	return kvm_pmu_to_vcpu(pmu);
+	if (pmu_nmi_enable)
+		return kvm_pmu_to_vcpu(pmu);
+
+	vcpu_arch = container_of(pmu, struct kvm_vcpu_arch, pmu);
+	return container_of(vcpu_arch, struct kvm_vcpu, arch);
 }
 
 /**
@@ -322,7 +328,7 @@ static void kvm_pmu_perf_overflow(struct perf_event *perf_event,
 	if (kvm_pmu_overflow_status(vcpu)) {
 		kvm_make_request(KVM_REQ_IRQ_PENDING, vcpu);
 
-		if (!in_nmi())
+		if (!pmu_nmi_enable || !in_nmi())
 			kvm_vcpu_kick(vcpu);
 		else
 			irq_work_queue(&vcpu->arch.pmu.overflow_work);
@@ -527,8 +533,9 @@ static int kvm_arm_pmu_v3_init(struct kvm_vcpu *vcpu)
 			return ret;
 	}
 
-	init_irq_work(&vcpu->arch.pmu.overflow_work,
-		      kvm_pmu_perf_overflow_notify_vcpu);
+	if (pmu_nmi_enable)
+		init_irq_work(&vcpu->arch.pmu.overflow_work,
+			      kvm_pmu_perf_overflow_notify_vcpu);
 
 	vcpu->arch.pmu.created = true;
 	return 0;

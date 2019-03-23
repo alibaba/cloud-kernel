@@ -44,6 +44,17 @@ static const struct pmu_irq_ops pmuirq_ops = {
 	.free_pmuirq = armpmu_free_pmuirq
 };
 
+bool pmu_nmi_enable;
+EXPORT_SYMBOL_GPL(pmu_nmi_enable);
+
+static int __init pmu_nmi_enable_setup(char *str)
+{
+	pmu_nmi_enable = true;
+
+	return 1;
+}
+__setup("pmu_nmi_enable", pmu_nmi_enable_setup);
+
 static void armpmu_free_pmunmi(unsigned int irq, int cpu, void __percpu *devid)
 {
 	free_nmi(irq, per_cpu_ptr(devid, cpu));
@@ -645,10 +656,19 @@ void armpmu_free_irq(int irq, int cpu)
 	if (WARN_ON(irq != per_cpu(cpu_irq, cpu)))
 		return;
 
-	per_cpu(cpu_irq_ops, cpu)->free_pmuirq(irq, cpu, &cpu_armpmu);
+	if (pmu_nmi_enable) {
+		per_cpu(cpu_irq_ops, cpu)->free_pmuirq(irq, cpu, &cpu_armpmu);
 
-	per_cpu(cpu_irq, cpu) = 0;
-	per_cpu(cpu_irq_ops, cpu) = NULL;
+		per_cpu(cpu_irq, cpu) = 0;
+		per_cpu(cpu_irq_ops, cpu) = NULL;
+	} else {
+		if (!irq_is_percpu_devid(irq))
+			free_irq(irq, per_cpu_ptr(&cpu_armpmu, cpu));
+		else if (armpmu_count_irq_users(irq) == 1)
+			free_percpu_irq(irq, &cpu_armpmu);
+
+		per_cpu(cpu_irq, cpu) = 0;
+	}
 }
 
 int armpmu_request_irq(int irq, int cpu)
@@ -660,58 +680,88 @@ int armpmu_request_irq(int irq, int cpu)
 	if (!irq)
 		return 0;
 
-	if (!irq_is_percpu_devid(irq)) {
-		unsigned long irq_flags;
+	if (pmu_nmi_enable) {
+		if (!irq_is_percpu_devid(irq)) {
+			unsigned long irq_flags;
 
-		err = irq_force_affinity(irq, cpumask_of(cpu));
+			err = irq_force_affinity(irq, cpumask_of(cpu));
 
-		if (err && num_possible_cpus() > 1) {
-			pr_warn("unable to set irq affinity (irq=%d, cpu=%u)\n",
-				irq, cpu);
-			goto err_out;
+			if (err && num_possible_cpus() > 1) {
+				pr_warn("unable to set irq affinity (irq=%d, cpu=%u)\n",
+						irq, cpu);
+				goto err_out;
+			}
+
+			irq_flags = IRQF_PERCPU |
+				IRQF_NOBALANCING |
+				IRQF_NO_THREAD;
+
+			irq_set_status_flags(irq, IRQ_NOAUTOEN);
+
+			err = request_nmi(irq, handler, irq_flags, "arm-pmu",
+					  per_cpu_ptr(&cpu_armpmu, cpu));
+
+			/* If cannot get an NMI, get a normal interrupt */
+			if (err) {
+				err = request_irq(irq, handler, irq_flags, "arm-pmu",
+						  per_cpu_ptr(&cpu_armpmu, cpu));
+				irq_ops = &pmuirq_ops;
+			} else {
+				irq_ops = &pmunmi_ops;
+			}
+		} else if (armpmu_count_irq_users(irq) == 0) {
+			err = request_percpu_nmi(irq, handler, "arm-pmu", &cpu_armpmu);
+
+			/* If cannot get an NMI, get a normal interrupt */
+			if (err) {
+				err = request_percpu_irq(irq, handler, "arm-pmu",
+							 &cpu_armpmu);
+				irq_ops = &percpu_pmuirq_ops;
+			} else {
+				irq_ops = &percpu_pmunmi_ops;
+			}
+		} else {
+			/* Per cpudevid irq was already requested by another CPU */
+			irq_ops = armpmu_find_irq_ops(irq);
+
+			if (WARN_ON(!irq_ops))
+				err = -EINVAL;
 		}
 
-		irq_flags = IRQF_PERCPU |
-			    IRQF_NOBALANCING |
-			    IRQF_NO_THREAD;
+		if (err)
+			goto err_out;
 
-		irq_set_status_flags(irq, IRQ_NOAUTOEN);
+		per_cpu(cpu_irq, cpu) = irq;
+		per_cpu(cpu_irq_ops, cpu) = irq_ops;
+	} else {
+		if (!irq_is_percpu_devid(irq)) {
+			unsigned long irq_flags;
 
-		err = request_nmi(irq, handler, irq_flags, "arm-pmu",
-				  per_cpu_ptr(&cpu_armpmu, cpu));
+			err = irq_force_affinity(irq, cpumask_of(cpu));
 
-		/* If cannot get an NMI, get a normal interrupt */
-		if (err) {
+			if (err && num_possible_cpus() > 1) {
+				pr_warn("unable to set irq affinity (irq=%d, cpu=%u)\n",
+						irq, cpu);
+				goto err_out;
+			}
+
+			irq_flags = IRQF_PERCPU |
+				IRQF_NOBALANCING |
+				IRQF_NO_THREAD;
+
+			irq_set_status_flags(irq, IRQ_NOAUTOEN);
 			err = request_irq(irq, handler, irq_flags, "arm-pmu",
 					  per_cpu_ptr(&cpu_armpmu, cpu));
-			irq_ops = &pmuirq_ops;
-		} else {
-			irq_ops = &pmunmi_ops;
-		}
-	} else if (armpmu_count_irq_users(irq) == 0) {
-		err = request_percpu_nmi(irq, handler, "arm-pmu", &cpu_armpmu);
-
-		/* If cannot get an NMI, get a normal interrupt */
-		if (err) {
+		} else if (armpmu_count_irq_users(irq) == 0) {
 			err = request_percpu_irq(irq, handler, "arm-pmu",
 						 &cpu_armpmu);
-			irq_ops = &percpu_pmuirq_ops;
-		} else {
-			irq_ops = &percpu_pmunmi_ops;
 		}
-	} else {
-		/* Per cpudevid irq was already requested by another CPU */
-		irq_ops = armpmu_find_irq_ops(irq);
 
-		if (WARN_ON(!irq_ops))
-			err = -EINVAL;
+		if (err)
+			goto err_out;
+
+		per_cpu(cpu_irq, cpu) = irq;
 	}
-
-	if (err)
-		goto err_out;
-
-	per_cpu(cpu_irq, cpu) = irq;
-	per_cpu(cpu_irq_ops, cpu) = irq_ops;
 	return 0;
 
 err_out:
@@ -744,8 +794,16 @@ static int arm_perf_starting_cpu(unsigned int cpu, struct hlist_node *node)
 	per_cpu(cpu_armpmu, cpu) = pmu;
 
 	irq = armpmu_get_cpu_irq(pmu, cpu);
-	if (irq)
-		per_cpu(cpu_irq_ops, cpu)->enable_pmuirq(irq);
+	if (irq) {
+		if (pmu_nmi_enable) {
+			per_cpu(cpu_irq_ops, cpu)->enable_pmuirq(irq);
+		} else {
+			if (irq_is_percpu_devid(irq))
+				enable_percpu_irq(irq, IRQ_TYPE_NONE);
+			else
+				enable_irq(irq);
+		}
+	}
 
 	return 0;
 }
@@ -759,8 +817,16 @@ static int arm_perf_teardown_cpu(unsigned int cpu, struct hlist_node *node)
 		return 0;
 
 	irq = armpmu_get_cpu_irq(pmu, cpu);
-	if (irq)
-		per_cpu(cpu_irq_ops, cpu)->disable_pmuirq(irq);
+	if (irq) {
+		if (pmu_nmi_enable) {
+			per_cpu(cpu_irq_ops, cpu)->disable_pmuirq(irq);
+		} else {
+			if (irq_is_percpu_devid(irq))
+				disable_percpu_irq(irq);
+			else
+				disable_irq_nosync(irq);
+		}
+	}
 
 	per_cpu(cpu_armpmu, cpu) = NULL;
 
@@ -934,6 +1000,8 @@ static struct arm_pmu *__armpmu_alloc(gfp_t flags)
 		struct pmu_hw_events *events;
 
 		events = per_cpu_ptr(pmu->hw_events, cpu);
+		if (!pmu_nmi_enable)
+			raw_spin_lock_init(&events->pmu_lock);
 		events->percpu_pmu = pmu;
 	}
 
