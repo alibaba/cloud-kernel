@@ -81,9 +81,9 @@ struct cppc_pcc_data {
 	int refcount;
 };
 
-/* Array  to represent the PCC channel per subspace id */
+/* Array to represent the PCC channel per subspace ID */
 static struct cppc_pcc_data *pcc_data[MAX_PCC_SUBSPACES];
-/* The cpu_pcc_subspace_idx containsper CPU subspace id */
+/* The cpu_pcc_subspace_idx contains per CPU subspace ID */
 static DEFINE_PER_CPU(int, cpu_pcc_subspace_idx);
 
 /*
@@ -438,7 +438,7 @@ int acpi_get_psd_map(struct cppc_cpudata **all_cpu_data)
 		return -ENOMEM;
 
 	/*
-	 * Now that we have _PSD data from all CPUs, lets setup P-state
+	 * Now that we have _PSD data from all CPUs, let's setup P-state
 	 * domain info.
 	 */
 	for_each_possible_cpu(i) {
@@ -590,7 +590,7 @@ static int register_pcc_channel(int pcc_ss_idx)
 			return -ENOMEM;
 		}
 
-		/* Set flag so that we dont come here for each CPU. */
+		/* Set flag so that we don't come here for each CPU. */
 		pcc_data[pcc_ss_idx]->pcc_channel_acquired = true;
 	}
 
@@ -615,7 +615,7 @@ bool __weak cpc_ffh_supported(void)
  *
  * Check and allocate the cppc_pcc_data memory.
  * In some processor configurations it is possible that same subspace
- * is shared between multiple CPU's. This is seen especially in CPU's
+ * is shared between multiple CPUs. This is seen especially in CPUs
  * with hardware multi-threading support.
  *
  * Return: 0 for success, errno for failure
@@ -713,7 +713,7 @@ static bool is_cppc_supported(int revision, int num_ent)
 
 /**
  * acpi_cppc_processor_probe - Search for per CPU _CPC objects.
- * @pr: Ptr to acpi_processor containing this CPUs logical Id.
+ * @pr: Ptr to acpi_processor containing this CPU's logical ID.
  *
  *	Return: 0 for success or negative value for err.
  */
@@ -730,7 +730,7 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	acpi_status status;
 	int ret = -EFAULT;
 
-	/* Parse the ACPI _CPC table for this cpu. */
+	/* Parse the ACPI _CPC table for this CPU. */
 	status = acpi_evaluate_object_typed(handle, "_CPC", NULL, &output,
 			ACPI_TYPE_PACKAGE);
 	if (ACPI_FAILURE(status)) {
@@ -842,7 +842,7 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	if (ret)
 		goto out_free;
 
-	/* Register PCC channel once for all PCC subspace id. */
+	/* Register PCC channel once for all PCC subspace ID. */
 	if (pcc_subspace_id >= 0 && !pcc_data[pcc_subspace_id]->pcc_channel_acquired) {
 		ret = register_pcc_channel(pcc_subspace_id);
 		if (ret)
@@ -862,7 +862,7 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 		goto out_free;
 	}
 
-	/* Plug PSD data into this CPUs CPC descriptor. */
+	/* Plug PSD data into this CPU's CPC descriptor. */
 	per_cpu(cpc_desc_ptr, pr->id) = cpc_ptr;
 
 	ret = kobject_init_and_add(&cpc_ptr->kobj, &cppc_ktype, &cpu_dev->kobj,
@@ -893,7 +893,7 @@ EXPORT_SYMBOL_GPL(acpi_cppc_processor_probe);
 
 /**
  * acpi_cppc_processor_exit - Cleanup CPC structs.
- * @pr: Ptr to acpi_processor containing this CPUs logical Id.
+ * @pr: Ptr to acpi_processor containing this CPU's logical ID.
  *
  * Return: Void
  */
@@ -933,7 +933,7 @@ EXPORT_SYMBOL_GPL(acpi_cppc_processor_exit);
 
 /**
  * cpc_read_ffh() - Read FFH register
- * @cpunum:	cpu number to read
+ * @cpunum:	CPU number to read
  * @reg:	cppc register information
  * @val:	place holder for return value
  *
@@ -948,7 +948,7 @@ int __weak cpc_read_ffh(int cpunum, struct cpc_reg *reg, u64 *val)
 
 /**
  * cpc_write_ffh() - Write FFH register
- * @cpunum:	cpu number to write
+ * @cpunum:	CPU number to write
  * @reg:	cppc register information
  * @val:	value to write
  *
@@ -1095,7 +1095,7 @@ int cppc_get_desired_perf(int cpunum, u64 *desired_perf)
 EXPORT_SYMBOL_GPL(cppc_get_desired_perf);
 
 /**
- * cppc_get_perf_caps - Get a CPUs performance capabilities.
+ * cppc_get_perf_caps - Get a CPU's performance capabilities.
  * @cpunum: CPU from which to get capabilities info.
  * @perf_caps: ptr to cppc_perf_caps. See cppc_acpi.h
  *
@@ -1180,7 +1180,7 @@ out_err:
 EXPORT_SYMBOL_GPL(cppc_get_perf_caps);
 
 /**
- * cppc_get_perf_ctrs - Read a CPUs performance feedback counters.
+ * cppc_get_perf_ctrs - Read a CPU's performance feedback counters.
  * @cpunum: CPU from which to read counters.
  * @perf_fb_ctrs: ptr to cppc_perf_fb_ctrs. See cppc_acpi.h
  *
@@ -1207,7 +1207,7 @@ int cppc_get_perf_ctrs(int cpunum, struct cppc_perf_fb_ctrs *perf_fb_ctrs)
 	ctr_wrap_reg = &cpc_desc->cpc_regs[CTR_WRAP_TIME];
 
 	/*
-	 * If refernce perf register is not supported then we should
+	 * If reference perf register is not supported then we should
 	 * use the nominal perf value
 	 */
 	if (!CPC_SUPPORTED(ref_perf_reg))
@@ -1260,7 +1260,7 @@ out_err:
 EXPORT_SYMBOL_GPL(cppc_get_perf_ctrs);
 
 /**
- * cppc_set_perf - Set a CPUs performance controls.
+ * cppc_set_perf - Set a CPU's performance controls.
  * @cpu: CPU for which to set performance controls.
  * @perf_ctrls: ptr to cppc_perf_ctrls. See cppc_acpi.h
  *
@@ -1341,7 +1341,7 @@ int cppc_set_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls)
 	 * executing the Phase-II.
 	 *     2. Some other CPU has beaten this CPU to successfully execute the
 	 * write_trylock and has already acquired the write_lock. We know for a
-	 * fact it(other CPU acquiring the write_lock) couldn't have happened
+	 * fact it (other CPU acquiring the write_lock) couldn't have happened
 	 * before this CPU's Phase-I as we held the read_lock.
 	 *     3. Some other CPU executing pcc CMD_READ has stolen the
 	 * down_write, in which case, send_pcc_cmd will check for pending
