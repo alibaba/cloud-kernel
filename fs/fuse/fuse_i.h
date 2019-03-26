@@ -38,7 +38,7 @@
 #define FUSE_NAME_MAX 1024
 
 /** Number of dentries for each connection in the control filesystem */
-#define FUSE_CTL_NUM_DENTRIES 5
+#define FUSE_CTL_NUM_DENTRIES 6
 
 /** Number of page pointers embedded in fuse_req */
 #define FUSE_REQ_INLINE_PAGES 1
@@ -866,6 +866,9 @@ void fuse_request_send_background_locked(struct fuse_conn *fc,
 /* Abort all requests */
 void fuse_abort_conn(struct fuse_conn *fc, bool is_abort);
 void fuse_wait_aborted(struct fuse_conn *fc);
+
+/* Flush all requests in processing queue */
+void fuse_flush_pq(struct fuse_conn *fc);
 
 /**
  * Invalidate inode attributes
