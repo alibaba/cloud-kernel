@@ -2222,6 +2222,41 @@ int fuse_dev_release(struct inode *inode, struct file *file)
 }
 EXPORT_SYMBOL_GPL(fuse_dev_release);
 
+/*
+ * Flush all pending processing requests.
+ *
+ * The failover procedure will reuse the fuse_conn after usersapce crash and
+ * recovery. But the reqs in the processing queue will never get the reply,
+ * making the application stuck forever.
+ *
+ * So we need to flush these reqs by sysfs api. We only flush the reqs in
+ * the processing queue, because these reqs have been sent to userspace.
+ * Firstly we need to dequeue the req from the processing queue, and secondly
+ * we need to call request_end to finish it.
+ */
+void fuse_flush_pq(struct fuse_conn *fc)
+{
+	struct fuse_dev *fud;
+	LIST_HEAD(to_end);
+
+	spin_lock(&fc->lock);
+	if (!fc->connected) {
+		spin_unlock(&fc->lock);
+		return;
+	}
+	list_for_each_entry(fud, &fc->devices, entry) {
+		struct fuse_pqueue *fpq = &fud->pq;
+
+		spin_lock(&fpq->lock);
+		WARN_ON(!list_empty(&fpq->io));
+		list_splice_init(fpq->processing, &to_end);
+		spin_unlock(&fpq->lock);
+	}
+	spin_unlock(&fc->lock);
+
+	end_requests(&to_end);
+}
+
 static int fuse_dev_fasync(int fd, struct file *file, int on)
 {
 	struct fuse_dev *fud = fuse_get_dev(file);
