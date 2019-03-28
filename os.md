@@ -6,7 +6,7 @@ description: An open-source Linux distribution powered by Alibaba Cloud
 Brief Introduction to Alibaba Cloud Linux OS
 ============================================
 
-Navigation | 中文版 | [Alibaba Cloud Linux Kernel](README.md) | [CONTRIBUTING](CONTRIBUTING.md) | [CREDITS](CREDITS.md)
+Navigation | [中文版](zh/os.md) | [Alibaba Cloud Linux Kernel](README.md) | [CONTRIBUTING](CONTRIBUTING.md) | [CREDITS](CREDITS.md)
 
 Table of Contents
 -----------------
