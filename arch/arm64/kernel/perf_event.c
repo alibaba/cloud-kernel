@@ -538,7 +538,7 @@ static inline bool armv8pmu_event_is_chained(struct perf_event *event)
 		PMEVN_CASE(28, case_macro);			\
 		PMEVN_CASE(29, case_macro);			\
 		PMEVN_CASE(30, case_macro);			\
-		default: WARN(1, "Inavlid PMEV* index");	\
+		default: WARN(1, "Invalid PMEV* index %#x", __x);	\
 		}						\
 	} while (0)
 
@@ -706,7 +706,7 @@ static inline void armv8pmu_write_evtype(int idx, u32 val)
 	}
 }
 
-static inline void armv8pmu_write_event_type(struct perf_event *event)
+static inline void armv8pmu_write_hw_type(struct perf_event *event)
 {
 	struct hw_perf_event *hwc = &event->hw;
 	int idx = hwc->idx;
@@ -724,6 +724,26 @@ static inline void armv8pmu_write_event_type(struct perf_event *event)
 		armv8pmu_write_evtype(idx, chain_evt);
 	} else {
 		armv8pmu_write_evtype(idx, hwc->config_base);
+	}
+}
+
+static inline void armv8pmu_write_event_type(struct perf_event *event)
+{
+	if (!pmu_nmi_enable) {
+		armv8pmu_write_hw_type(event);
+	} else {
+		struct arm_pmu *cpu_pmu = to_arm_pmu(event->pmu);
+		struct hw_perf_event *hwc = &event->hw;
+		int idx = hwc->idx;
+
+		if (!armv8pmu_counter_valid(cpu_pmu, idx))
+			pr_err("CPU%u writing wrong event %d\n",
+				smp_processor_id(), idx);
+		else if (idx == ARMV8_IDX_CYCLE_COUNTER)
+			write_sysreg(hwc->config_base & ARMV8_PMU_EVTYPE_MASK,
+						pmccfiltr_el0);
+		else
+			armv8pmu_write_hw_type(event);
 	}
 }
 
