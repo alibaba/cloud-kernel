@@ -80,6 +80,12 @@ static int __init disable_sdei_nmi_watchdog_setup(char *str)
 }
 __setup("disable_sdei_nmi_watchdog", disable_sdei_nmi_watchdog_setup);
 
+void sdei_watchdog_clear_eoi(void)
+{
+	if (sdei_watchdog_registered)
+		sdei_api_clear_eoi(SDEI_NMI_WATCHDOG_HWIRQ);
+}
+
 int __init watchdog_nmi_probe(void)
 {
 	int ret;
