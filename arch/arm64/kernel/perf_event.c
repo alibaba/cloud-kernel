@@ -606,8 +606,10 @@ static inline void armv8pmu_select_counter(int idx)
 
 static inline u32 armv8pmu_read_evcntr(int idx)
 {
+	u32 counter = ARMV8_IDX_TO_COUNTER(idx);
+
 	if (pmu_nmi_enable)
-		return read_pmevcntrn(idx);
+		return read_pmevcntrn(counter);
 
 	armv8pmu_select_counter(idx);
 	return read_sysreg(pmxevcntr_el0);
@@ -644,8 +646,10 @@ static inline u64 armv8pmu_read_counter(struct perf_event *event)
 
 static inline void armv8pmu_write_evcntr(int idx, u32 value)
 {
+	u32 counter = ARMV8_IDX_TO_COUNTER(idx);
+
 	if (pmu_nmi_enable) {
-		write_pmevcntrn(idx, value);
+		write_pmevcntrn(counter, value);
 	} else {
 		armv8pmu_select_counter(idx);
 		write_sysreg(value, pmxevcntr_el0);
@@ -690,9 +694,11 @@ static inline void armv8pmu_write_counter(struct perf_event *event, u64 value)
 
 static inline void armv8pmu_write_evtype(int idx, u32 val)
 {
+	u32 counter = ARMV8_IDX_TO_COUNTER(idx);
+
 	if (pmu_nmi_enable) {
 		val &= ARMV8_PMU_EVTYPE_MASK;
-		write_pmevtypern(idx, val);
+		write_pmevtypern(counter, val);
 	} else {
 		armv8pmu_select_counter(idx);
 		val &= ARMV8_PMU_EVTYPE_MASK;
