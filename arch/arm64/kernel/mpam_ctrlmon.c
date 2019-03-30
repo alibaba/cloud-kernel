@@ -49,13 +49,6 @@ static bool cbm_validate(char *buf, unsigned long *data, struct raw_resctrl_reso
 		return false;
 	}
 
-#if 0
-	if (val == 0 || val > r->default_ctrl) {
-		rdt_last_cmd_puts("mask out of range\n");
-		return false;
-	}
-#endif
-
 	*data = val;
 	return true;
 }
@@ -404,34 +397,10 @@ static int resctrl_group_kn_set_ugid(struct kernfs_node *kn)
 	return kernfs_setattr(kn, &iattr);
 }
 
-#if 0	/* used at remove cpu*/
-/*
- * Remove all subdirectories of mon_data of ctrl_mon groups
- * and monitor groups with given domain id.
- */
-void rmdir_mondata_subdir_allrdtgrp(struct resctrl_resource *r, unsigned int dom_id)
-{
-	struct resctrl_group *prgrp, *crgrp;
-	char name[32];
-
-	if (!r->mon_enabled)
-		return;
-
-	list_for_each_entry(prgrp, &resctrl_all_groups, resctrl_group_list) {
-		sprintf(name, "mon_%s_%02d", r->name, dom_id);
-		kernfs_remove_by_name(prgrp->mon.mon_data_kn, name);
-
-		list_for_each_entry(crgrp, &prgrp->mon.crdtgrp_list, mon.crdtgrp_list)
-			kernfs_remove_by_name(crgrp->mon.mon_data_kn, name);
-	}
-}
-#endif
-
 static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 				struct rdt_domain *d,
 				struct resctrl_resource *r, struct resctrl_group *prgrp)
 {
-#if 1
 	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
 	union mon_data_bits md;
 	struct kernfs_node *kn;
@@ -462,38 +431,6 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 	rr->mon_write(d, prgrp, true);
 
 	return ret;
-#if 0
-	/* create the directory */
-	kn = kernfs_create_dir(parent_kn, name, parent_kn->mode, prgrp);
-	if (IS_ERR(kn))
-		return PTR_ERR(kn);
-
-	/*
-	 * This extra ref will be put in kernfs_remove() and guarantees
-	 * that kn is always accessible.
-	 */
-	kernfs_get(kn);
-	ret = resctrl_group_kn_set_ugid(kn);
-	if (ret)
-		goto out_destroy;
-#endif
-
-
-#if 0
-	ret = mon_addfile(kn, mevt->name, d);
-	if (ret)
-		goto out_destroy;
-
-	kernfs_activate(kn);
-	return 0;
-
-out_destroy:
-	kernfs_remove(kn);
-	return ret;
-#endif
-#else
-	return 0;
-#endif
 }
 
 /*
