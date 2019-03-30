@@ -946,17 +946,17 @@ int resctrl_ctrlmon_enable(struct kernfs_node *parent_kn,
 	return ret;
 }
 
-int resctrl_ctrlmon_disable(struct kernfs_node *kn_mondata,
+void resctrl_ctrlmon_disable(struct kernfs_node *kn_mondata,
 			    struct resctrl_group *prgrp)
 {
 	struct resctrl_resource *r;
 	struct raw_resctrl_resource *rr;
 	struct rdt_domain *dom;
-	int ret, mon = prgrp->mon.mon;
+	int mon = prgrp->mon.mon;
 
 	/* only for RDTCTRL_GROUP */
 	if (prgrp->type == RDTMON_GROUP)
-		return 0;
+		return;
 
 	/* disable monitor before free mon */
 	for_each_resctrl_resource(r) {
@@ -981,7 +981,7 @@ int resctrl_ctrlmon_disable(struct kernfs_node *kn_mondata,
 		__func__, (u64)kn_mondata, prgrp->closid, prgrp->flags, prgrp->type,
 		prgrp->mon.rmid, prgrp->mon.mon);
 
-	return ret;
+	return;
 }
 
 static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
@@ -996,22 +996,23 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 	rdt_last_cmd_clear();
 
+	if (!rdtgrp) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
 	pr_info("%s: prev of->kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
 		__func__, (u64)of->kn, rdtgrp->closid, rdtgrp->flags, rdtgrp->type,
 		rdtgrp->mon.rmid, rdtgrp->mon.mon);
 
-	if (rdtgrp) {
-		if ((rdtgrp->flags & RDT_CTRLMON) && !ctrlmon) {
-			/* [FIXME] disable & remove mon_data dir */
-			rdtgrp->flags &= ~RDT_CTRLMON;
-			resctrl_ctrlmon_disable(rdtgrp->mon.mon_data_kn, rdtgrp);
-		} else if (!(rdtgrp->flags & RDT_CTRLMON) && ctrlmon) {
-			rdtgrp->flags |= RDT_CTRLMON;
-			resctrl_ctrlmon_enable(rdtgrp->kn, rdtgrp,
-					       &rdtgrp->mon.mon_data_kn);
-		} else {
-			ret = -ENOENT;
-		}
+	if ((rdtgrp->flags & RDT_CTRLMON) && !ctrlmon) {
+		/* [FIXME] disable & remove mon_data dir */
+		rdtgrp->flags &= ~RDT_CTRLMON;
+		resctrl_ctrlmon_disable(rdtgrp->mon.mon_data_kn, rdtgrp);
+	} else if (!(rdtgrp->flags & RDT_CTRLMON) && ctrlmon) {
+		rdtgrp->flags |= RDT_CTRLMON;
+		resctrl_ctrlmon_enable(rdtgrp->kn, rdtgrp,
+				       &rdtgrp->mon.mon_data_kn);
 	} else {
 		ret = -ENOENT;
 	}
@@ -1020,8 +1021,8 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 		__func__, (u64)of->kn, rdtgrp->closid, rdtgrp->flags, rdtgrp->type,
 		rdtgrp->mon.rmid, rdtgrp->mon.mon);
 
+unlock:
 	resctrl_group_kn_unlock(of->kn);
-
 	return ret ?: nbytes;
 }
 
