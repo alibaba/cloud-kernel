@@ -1,0 +1,5 @@
+theme: jekyll-theme-cayman
+show_downloads: false
+include:
+- CONTRIBUTING.md
+- COPYING

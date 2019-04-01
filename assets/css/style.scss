@@ -1,0 +1,16 @@
+---
+---
+
+$header-bg-color: #d95a00;
+$header-bg-color-secondary: #ff8126;
+$section-headings-color: #ff6a00;
+
+@import 'jekyll-theme-cayman';
+
+body {
+    font-family: "Univers 45 Light", "Helvetica Light", Helvetica, Arial, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: "Univers IT std bold", "Helvetica Bold", Helvetica, Arial, sans-serif;
+}
