@@ -6,7 +6,7 @@ description: 阿里云上原生的免费开源操作系统发行版
 Alibaba Cloud Linux 2 操作系统简介
 =================================
 
-导航 | [English Version](../os.md) | [阿里云 Linux 内核(ALK)](README.md) | [开发者指南](CONTRIBUTING.md) | [致谢](CREDITS.md)
++ [English Version](../os.md)
 
 目录
 ----

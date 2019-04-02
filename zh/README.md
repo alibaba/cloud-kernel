@@ -1,7 +1,7 @@
 阿里云 Linux 内核 (Alibaba Cloud Linux Kernel)
 ==============================================
 
-导航 | [English Version](../README.md) | [Alibaba Cloud Linux 操作系统](os.md) | [开发者指南](CONTRIBUTING.md) | [致谢](CREDITS.md)
++ [English Version](../README.md)
 
 目录
 ----

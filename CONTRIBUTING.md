@@ -1,5 +1,7 @@
-Contributing to Alibaba Cloud Linux Kernel
-==========================================
+Contributing Guide
+==================
+
++ [中文版开发者指南](zh/CONTRIBUTING.md)
 
 Table of Contents
 -----------------

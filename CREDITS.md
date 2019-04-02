@@ -1,8 +1,8 @@
 CREDITS
 =======
 
-> This is a credits-file of people that have contributed to Alibaba
-> Cloud Linux OS project and Alibaba Cloud Linux Kernel project.
+> This is a credits-file of teams and individuals that have contributed
+> to Alibaba Cloud Linux OS and Kernel projects.
 > The list is sorted by name. The fields are: name (N), email (E),
 > web-address (W) and description (D).
 

@@ -1,7 +1,7 @@
 Alibaba Cloud Linux Kernel
 ==========================
 
-Navigation | [中文版](zh/README.md) | [Alibaba Cloud Linux OS](os.md) | [CONTRIBUTING](CONTRIBUTING.md) | [CREDITS](CREDITS.md)
++ [中文版](zh/README.md)
 
 Table of Contents
 -----------------

@@ -1,6 +1,8 @@
 开发者指南
 ==========
 
++ [English Version of Contributing Guide](../CONTRIBUTING.md)
+
 目录
 ----
 1. [报告 BUG](#1-报告-bug)
