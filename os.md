@@ -46,3 +46,7 @@ To get helps when using Alibaba Cloud Linux OS, you can
 + Join the [mailing list discussions](MAILLIST.md);
 + Join the [forum discussions](https://bbs.aliyun.com/thread/450.html);
 + Send us an E-mail to [alicloud-linux-os@service.alibaba.com](mailto:alicloud-linux-os@service.alibaba.com).
+
+------------------------
+
+> The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.

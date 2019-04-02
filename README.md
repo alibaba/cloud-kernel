@@ -100,3 +100,7 @@ We use the same license as the upstream does, so please refer to the [COPYING](C
 + Join the [mailing list discussions](MAILLIST.md);
 + Join the [forum discussions](https://bbs.aliyun.com/thread/450.html);
 + Send us an E-mail to [alicloud-linux-os@service.alibaba.com](mailto:alicloud-linux-os@service.alibaba.com) is always a good idea.
+
+--------------------------------
+
+> The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.

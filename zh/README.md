@@ -103,3 +103,7 @@ ALK 和 Alibaba Cloud Linux OS 项目是“站在巨人的肩膀上”且聚合�
 + 加入[邮件列表](MAILLIST.md)参与讨论；
 + 加入[开发者论坛](https://bbs.aliyun.com/thread/450.html)参与讨论；
 + 或者可以给我们发邮件：[alicloud-linux-os@service.alibaba.com](mailto:alicloud-linux-os@service.alibaba.com).
+
+--------------------------------
+
+> The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.
