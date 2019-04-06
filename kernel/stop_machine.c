@@ -23,6 +23,10 @@
 #include <linux/nmi.h>
 #include <linux/sched/wake_q.h>
 
+#ifdef CONFIG_ARM64
+#include <linux/arm_sdei.h>
+#endif
+
 /*
  * Structure to determine completion condition and record errors.  May
  * be shared by works on different cpus.
@@ -208,6 +212,9 @@ static int multi_cpu_stop(void *data)
 			case MULTI_STOP_DISABLE_IRQ:
 				local_irq_disable();
 				hard_irq_disable();
+#ifdef CONFIG_ARM64
+				sdei_mask_local_cpu();
+#endif
 				break;
 			case MULTI_STOP_RUN:
 				if (is_active)
@@ -227,6 +234,9 @@ static int multi_cpu_stop(void *data)
 		}
 	} while (curstate != MULTI_STOP_EXIT);
 
+#ifdef CONFIG_ARM64
+	sdei_unmask_local_cpu();
+#endif
 	local_irq_restore(flags);
 	return err;
 }
