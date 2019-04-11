@@ -6,7 +6,19 @@
 ----------------------------
 
 ```
-N: Aliyun CLI developer team
+N: Aliyun CLI 开发团队
 W: https://github.com/aliyun/aliyun-cli
-D: Universal Command Line Interface for Alibaba Cloud
+D: Aliyun CLI 命令行工具
+```
+
+```
+N: 穆阿浩(姜弋)
+W: https://yq.aliyun.com/articles/697679
+D: eBCC (Extended BPF Compiler Collection)
+```
+
+```
+N: PouchContainer 开发团队
+W: https://pouchcontainer.io/
+D: Pouch -- 一个高效的容器引擎
 ```
