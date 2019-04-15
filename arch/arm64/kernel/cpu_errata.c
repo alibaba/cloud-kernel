@@ -653,6 +653,16 @@ static const struct midr_range arm64_harden_el2_vectors[] = {
 
 #endif
 
+#ifdef CONFIG_ARM64_ERRATUM_1188873
+static const struct midr_range erratum_1188873_list[] = {
+	/* Cortex-A76 r0p0 to r2p0 */
+	MIDR_RANGE(MIDR_CORTEX_A76, 0, 0, 2, 0),
+	/* Neoverse-N1 r0p0 to r2p0 */
+	MIDR_RANGE(MIDR_NEOVERSE_N1, 0, 0, 2, 0),
+	{},
+};
+#endif
+
 const struct arm64_cpu_capabilities arm64_errata[] = {
 #if	defined(CONFIG_ARM64_ERRATUM_826319) || \
 	defined(CONFIG_ARM64_ERRATUM_827319) || \
@@ -837,10 +847,9 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 #endif
 #ifdef CONFIG_ARM64_ERRATUM_1188873
 	{
-		/* Cortex-A76 r0p0 to r2p0 */
 		.desc = "ARM erratum 1188873",
 		.capability = ARM64_WORKAROUND_1188873,
-		ERRATA_MIDR_RANGE(MIDR_CORTEX_A76, 0, 0, 2, 0),
+		ERRATA_MIDR_RANGE_LIST(erratum_1188873_list),
 	},
 #endif
 	{
