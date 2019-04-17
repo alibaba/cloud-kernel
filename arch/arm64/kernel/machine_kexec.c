@@ -268,7 +268,8 @@ void machine_crash_shutdown(struct pt_regs *regs)
 	 * interrupt failed to trigger in the second kernel. So we clear eoi
 	 * of the secure timer before booting the second kernel.
 	 */
-	sdei_watchdog_clear_eoi();
+	if (in_nmi())
+		sdei_watchdog_clear_eoi();
 
 	/* for crashing cpu */
 	crash_save_cpu(regs, smp_processor_id());
