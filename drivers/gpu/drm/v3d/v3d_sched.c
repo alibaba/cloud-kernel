@@ -178,7 +178,7 @@ v3d_job_timedout(struct drm_sched_job *sched_job)
 	for (q = 0; q < V3D_MAX_QUEUES; q++) {
 		struct drm_gpu_scheduler *sched = &v3d->queue[q].sched;
 
-		drm_sched_stop(sched);
+		drm_sched_stop(sched, sched_job);
 
 		if(sched_job)
 			drm_sched_increase_karma(sched_job);

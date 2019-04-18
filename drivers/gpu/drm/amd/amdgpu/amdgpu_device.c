@@ -3323,7 +3323,7 @@ int amdgpu_device_gpu_recover(struct amdgpu_device *adev,
 		if (!ring || !ring->sched.thread)
 			continue;
 
-		drm_sched_stop(&ring->sched);
+		drm_sched_stop(&ring->sched, &job->base);
 
 		/* after all hw jobs are reset, hw fence is meaningless, so force_completion */
 		amdgpu_fence_driver_force_completion(ring);
@@ -3336,8 +3336,6 @@ int amdgpu_device_gpu_recover(struct amdgpu_device *adev,
 		r = amdgpu_device_reset_sriov(adev, job ? false : true);
 	else
 		r = amdgpu_device_reset(adev);
-
-
 
 	for (i = 0; i < AMDGPU_MAX_RINGS; ++i) {
 		struct amdgpu_ring *ring = adev->rings[i];
