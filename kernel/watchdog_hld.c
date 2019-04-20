@@ -14,6 +14,7 @@
 
 #include <linux/nmi.h>
 #include <linux/atomic.h>
+#include <linux/kprobes.h>
 #include <linux/module.h>
 #include <linux/sched/debug.h>
 
