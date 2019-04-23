@@ -30,7 +30,7 @@
 #define HINIC_DRV_NAME		"hinic"
 #define HINIC_CHIP_NAME		"hinic"
 
-#define HINIC_DRV_VERSION	"1.6.2.2"
+#define HINIC_DRV_VERSION	"1.8.2.8"
 struct vf_data_storage;
 
 #define HINIC_FUNC_IS_VF(hwdev)	(hinic_func_type(hwdev) == TYPE_VF)
@@ -44,6 +44,7 @@ enum hinic_flags {
 	HINIC_BP_ENABLE,
 	HINIC_SAME_RXTX,
 	HINIC_INTR_ADAPT,
+	HINIC_UPDATE_MAC_FILTER,
 };
 
 #define RX_BUFF_NUM_PER_PAGE	2
@@ -209,6 +210,9 @@ struct hinic_nic_dev {
 	u8			max_cos;
 	u8			up_valid_bitmap;
 	u8			up_cos[HINIC_DCB_UP_MAX];
+	struct ieee_ets		hinic_ieee_ets_default;
+	struct ieee_ets		hinic_ieee_ets;
+	struct ieee_pfc		hinic_ieee_pfc;
 	struct hinic_dcb_config	dcb_cfg;
 	struct hinic_dcb_config	tmp_dcb_cfg;
 	struct hinic_dcb_config	save_dcb_cfg;
@@ -255,11 +259,11 @@ extern struct hinic_uld_info nic_uld_info;
 
 int hinic_open(struct net_device *netdev);
 int hinic_close(struct net_device *netdev);
-int nic_ioctl(void *uld_dev, u32 cmd, void *buf_in,
-	      u32 in_size, void *buf_out, u32 *out_size);
 void hinic_set_ethtool_ops(struct net_device *netdev);
 void hinicvf_set_ethtool_ops(struct net_device *netdev);
 void hinic_update_num_qps(struct net_device *netdev);
+int nic_ioctl(void *uld_dev, u32 cmd, void *buf_in,
+	      u32 in_size, void *buf_out, u32 *out_size);
 
 int hinic_force_port_disable(struct hinic_nic_dev *nic_dev);
 int hinic_force_set_port_state(struct hinic_nic_dev *nic_dev, bool enable);

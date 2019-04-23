@@ -37,6 +37,7 @@
 #define HIADM_DEV_NAME		"nictool_dev"
 
 #define MAJOR_DEV_NUM 921
+#define	HINIC_CMDQ_BUF_MAX_SIZE		2048U
 
 static dev_t g_dev_id = {0};
 /*lint -save -e104 -e808*/
@@ -82,6 +83,11 @@ static int alloc_buff_in(void *hwdev, struct msg_module *nt_msg,
 
 	if (nt_msg->module == SEND_TO_UCODE) {
 		struct hinic_cmd_buf *cmd_buf;
+
+		if (in_size > HINIC_CMDQ_BUF_MAX_SIZE) {
+			pr_err("Cmdq in size(%u) more than 2KB\n", in_size);
+			return -ENOMEM;
+		}
 
 		cmd_buf = hinic_alloc_cmd_buf(hwdev);
 		if (!cmd_buf) {
@@ -133,6 +139,11 @@ static int alloc_buff_out(void *hwdev, struct msg_module *nt_msg,
 	if (nt_msg->module == SEND_TO_UCODE &&
 	    !nt_msg->ucode_cmd.ucode_db.ucode_imm) {
 		struct hinic_cmd_buf *cmd_buf;
+
+		if (out_size > HINIC_CMDQ_BUF_MAX_SIZE) {
+			pr_err("Cmdq out size(%u) more than 2KB\n", out_size);
+			return -ENOMEM;
+		}
 
 		cmd_buf = hinic_alloc_cmd_buf(hwdev);
 		*buf_out = (void *)cmd_buf;
@@ -987,11 +998,11 @@ static int get_pf_id(void *hwdev, void *buf_in, u32 in_size,
 
 	port_id = *((u32 *)buf_in);
 	pf_info = (struct hinic_pf_info *)buf_out;
-	err = hinic_get_pf_id(hwdev, port_id, &pf_info->pf_id);
+	err = hinic_get_pf_id(hwdev, port_id, &pf_info->pf_id,
+			      &pf_info->isvalid);
 	if (err)
 		return err;
 
-	pf_info->isvalid = 1;
 	*out_size = sizeof(*pf_info);
 
 	return 0;
@@ -1324,7 +1335,7 @@ static int api_csr_read(void *hwdev, struct msg_module *nt_msg,
 					 (u32 *)(((u8 *)buf_out) + offset));
 		if (ret) {
 			pr_err("Csr rd fail, err: %d, node_id: %d, csr addr: 0x%08x\n",
-			       ret, rd_addr + offset, node_id);
+			       ret, node_id, rd_addr + offset);
 			return ret;
 		}
 		offset += 4;
@@ -1398,7 +1409,8 @@ static int send_to_up(void *hwdev, struct msg_module *nt_msg,
 {
 	int ret = 0;
 
-	if (nt_msg->up_cmd.up_db.up_api_type == API_CMD) {
+	if (nt_msg->up_cmd.up_db.up_api_type == API_CMD ||
+	    nt_msg->up_cmd.up_db.up_api_type == API_CLP) {
 		enum hinic_mod_type mod;
 		u8 cmd;
 		u32 timeout;
@@ -1407,10 +1419,16 @@ static int send_to_up(void *hwdev, struct msg_module *nt_msg,
 		cmd = nt_msg->up_cmd.up_db.chipif_cmd;
 
 		timeout = get_up_timeout_val(mod, cmd);
-		ret = hinic_msg_to_mgmt_sync(hwdev, mod, cmd,
-					     buf_in, (u16)in_size,
-					     buf_out, (u16 *)out_size,
-					     timeout);
+
+		if (nt_msg->up_cmd.up_db.up_api_type == API_CMD)
+			ret = hinic_msg_to_mgmt_sync(hwdev, mod, cmd,
+						     buf_in, (u16)in_size,
+						     buf_out, (u16 *)out_size,
+						     timeout);
+		else
+			ret = hinic_clp_to_mgmt(hwdev, mod, cmd,
+						buf_in, (u16)in_size,
+						buf_out, (u16 *)out_size);
 		if (ret) {
 			pr_err("Message to mgmt cpu return fail, mod: %d, cmd: %d\n",
 			       mod, cmd);
@@ -1522,7 +1540,8 @@ static int send_to_sm(void *hwdev, struct msg_module *nt_msg,
 	return ret;
 }
 
-static bool is_hwdev_cmd_support(unsigned int mod, char *ifname)
+static bool is_hwdev_cmd_support(unsigned int mod,
+				 char *ifname, u32 up_api_type)
 {
 	void *hwdev;
 
@@ -1536,13 +1555,19 @@ static bool is_hwdev_cmd_support(unsigned int mod, char *ifname)
 	case SEND_TO_UP:
 	case SEND_TO_SM:
 		if (FUNC_SUPPORT_MGMT(hwdev)) {
-			if (!hinic_is_hwdev_mod_inited
+			if (up_api_type == API_CLP) {
+				if (!hinic_is_hwdev_mod_inited
+					(hwdev, HINIC_HWDEV_CLP_INITED)) {
+					pr_err("CLP have not initialized\n");
+					return false;
+				}
+			} else if (!hinic_is_hwdev_mod_inited
 					(hwdev, HINIC_HWDEV_MGMT_INITED)) {
 				pr_err("MGMT have not initialized\n");
 				return false;
 			}
 		} else if (!hinic_is_hwdev_mod_inited
-					(hwdev, HINIC_HWDEV_MBOX_INITED)) {
+				(hwdev, HINIC_HWDEV_MBOX_INITED)) {
 			pr_err("MBOX have not initialized\n");
 			return false;
 		}
@@ -1571,7 +1596,8 @@ static bool is_hwdev_cmd_support(unsigned int mod, char *ifname)
 	return true;
 }
 
-static bool nictool_k_is_cmd_support(unsigned int mod, char *ifname)
+static bool nictool_k_is_cmd_support(unsigned int mod,
+				     char *ifname, u32 up_api_type)
 {
 	enum hinic_init_state init_state =
 			hinic_get_init_state_by_ifname(ifname);
@@ -1586,7 +1612,7 @@ static bool nictool_k_is_cmd_support(unsigned int mod, char *ifname)
 			return false;
 		}
 	} else if (mod >= SEND_TO_UCODE && mod <= SEND_TO_SM) {
-		return is_hwdev_cmd_support(mod, ifname);
+		return is_hwdev_cmd_support(mod, ifname, up_api_type);
 	} else if ((mod >= HINICADM_OVS_DRIVER &&
 		   mod <= HINICADM_FCOE_DRIVER) ||
 		   mod == SEND_TO_HW_DRIVER) {
@@ -1888,7 +1914,8 @@ static long nictool_k_unlocked_ioctl(struct file *pfile,
 	    nt_msg.msg_formate == GET_CHIP_ID)
 		get_fc_devname(nt_msg.device_name);
 
-	if (!nictool_k_is_cmd_support(cmd_raw, nt_msg.device_name)) {
+	if (!nictool_k_is_cmd_support(cmd_raw, nt_msg.device_name,
+				      nt_msg.up_cmd.up_db.up_api_type)) {
 		ret = -EFAULT;
 		goto out_free_lock;
 	}

@@ -211,4 +211,7 @@ void hinic_cmdqs_free(struct hinic_hwdev *hwdev);
 bool hinic_cmdq_check_vf_ctxt(struct hinic_hwdev *hwdev,
 			      struct hinic_cmdq_ctxt *cmdq_ctxt);
 
+void hinic_cmdq_flush_cmd(struct hinic_hwdev *hwdev,
+			  struct hinic_cmdq *cmdq);
+
 #endif

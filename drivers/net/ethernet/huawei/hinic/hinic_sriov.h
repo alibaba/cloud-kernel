@@ -54,6 +54,11 @@ int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos);
 
 int hinic_ndo_get_vf_config(struct net_device *netdev, int vf,
 			    struct ifla_vf_info *ivi);
+
+#ifdef HAVE_VF_SPOOFCHK_CONFIGURE
+int hinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting);
+#endif
+
 int hinic_ndo_set_vf_link_state(struct net_device *netdev, int vf_id, int link);
 
 #ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE

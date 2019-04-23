@@ -315,6 +315,40 @@ out:
 }
 #endif
 
+#ifdef HAVE_VF_SPOOFCHK_CONFIGURE
+int hinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
+{
+	struct hinic_nic_dev *adapter = netdev_priv(netdev);
+	struct hinic_sriov_info *sriov_info;
+	int err = 0;
+	bool cur_spoofchk;
+
+	sriov_info = hinic_get_sriov_info_by_pcidev(adapter->pdev);
+	if (vf >= sriov_info->num_vfs)
+		return -EINVAL;
+
+	cur_spoofchk = hinic_vf_info_spoofchk(sriov_info->hwdev,
+					      OS_VF_ID_TO_HW(vf));
+	/* same request, so just return success */
+	if ((setting && cur_spoofchk) || (!setting && !cur_spoofchk))
+		return 0;
+
+	err = hinic_set_vf_spoofchk(sriov_info->hwdev,
+				    OS_VF_ID_TO_HW(vf), setting);
+
+	if (!err) {
+		nicif_info(adapter, drv, netdev, "Set VF %d spoofchk %s\n",
+			   vf, setting ? "on" : "off");
+	} else if (err == HINIC_MGMT_CMD_UNSUPPORTED) {
+		nicif_err(adapter, drv, netdev,
+			  "Current firmware doesn't support to set vf spoofchk, need to upgrade latest firmware version\n");
+		err = -EOPNOTSUPP;
+	}
+
+	return err;
+}
+#endif
+
 int hinic_ndo_get_vf_config(struct net_device *netdev,
 			    int vf, struct ifla_vf_info *ivi)
 {

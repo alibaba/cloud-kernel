@@ -122,6 +122,16 @@ struct hinic_port_state {
 	u16	func_id;
 };
 
+struct hinic_spoofchk_set {
+	u8	status;
+	u8	version;
+	u8	rsvd0[6];
+
+	u8	state;
+	u8	rsvd1;
+	u16	func_id;
+};
+
 struct hinic_mtu {
 	u8	status;
 	u8	version;
@@ -912,6 +922,34 @@ struct hinic_promsic_info {
 	u16	func_id;
 	u8	cfg;
 	u8	rsvd1;
+};
+
+struct hinic_netq_cfg_msg {
+	u8	status;
+	u8	version;
+	u8	rsvd0[6];
+
+	u16	func_id;
+	u8	netq_en;
+	u8	rsvd;
+};
+
+/* add/del rxq filter msg */
+struct hinic_rq_filter_msg {
+	u8	status;
+	u8	version;
+	u8	rsvd0[6];
+
+	u16	func_id;
+	u16	qid;
+	u8	filter_type;
+	u8	qflag;/*0:stdq, 1:defq, 2: netq*/
+
+	u8	mac[6];
+	struct {
+		u8	inner_mac[6];
+		u32	vni;
+	} vxlan;
 };
 
 int hinic_get_hilink_link_info(void *hwdev, struct hinic_link_info *info);

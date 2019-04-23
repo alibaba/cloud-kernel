@@ -270,6 +270,8 @@ int hinic_register_ppf_mbox_cb(struct hinic_hwdev *hwdev,
 
 	func_to_func->ppf_mbox_cb[mod] = callback;
 
+	set_bit(HINIC_PPF_MBOX_CB_REG, &func_to_func->ppf_mbox_cb_state[mod]);
+
 	return 0;
 }
 
@@ -291,6 +293,8 @@ int hinic_register_pf_mbox_cb(struct hinic_hwdev *hwdev,
 		return -EFAULT;
 
 	func_to_func->pf_mbox_cb[mod] = callback;
+
+	set_bit(HINIC_PF_MBOX_CB_REG, &func_to_func->pf_mbox_cb_state[mod]);
 
 	return 0;
 }
@@ -314,6 +318,8 @@ int hinic_register_vf_mbox_cb(struct hinic_hwdev *hwdev,
 
 	func_to_func->vf_mbox_cb[mod] = callback;
 
+	set_bit(HINIC_VF_MBOX_CB_REG, &func_to_func->vf_mbox_cb_state[mod]);
+
 	return 0;
 }
 
@@ -336,6 +342,9 @@ int hinic_register_ppf_to_pf_mbox_cb(struct hinic_hwdev *hwdev,
 
 	func_to_func->pf_recv_from_ppf_mbox_cb[mod] = callback;
 
+	set_bit(HINIC_PPF_TO_PF_MBOX_CB_REG,
+		&func_to_func->ppf_to_pf_mbox_cb_state[mod]);
+
 	return 0;
 }
 
@@ -349,6 +358,12 @@ void hinic_unregister_ppf_mbox_cb(struct hinic_hwdev *hwdev,
 				  enum hinic_mod_type mod)
 {
 	struct hinic_mbox_func_to_func *func_to_func = hwdev->func_to_func;
+
+	clear_bit(HINIC_PPF_MBOX_CB_REG, &func_to_func->ppf_mbox_cb_state[mod]);
+
+	while (test_bit(HINIC_PPF_MBOX_CB_RUNNING,
+			&func_to_func->ppf_mbox_cb_state[mod]))
+		usleep_range(900, 1000);
 
 	func_to_func->ppf_mbox_cb[mod] = NULL;
 }
@@ -364,11 +379,17 @@ void hinic_unregister_pf_mbox_cb(struct hinic_hwdev *hwdev,
 {
 	struct hinic_mbox_func_to_func *func_to_func = hwdev->func_to_func;
 
+	clear_bit(HINIC_PF_MBOX_CB_REG, &func_to_func->pf_mbox_cb_state[mod]);
+
+	while (test_bit(HINIC_PF_MBOX_CB_RUNNING,
+			&func_to_func->pf_mbox_cb_state[mod]))
+		usleep_range(900, 1000);
+
 	func_to_func->pf_mbox_cb[mod] = NULL;
 }
 
 /**
- * hinic_unregister_ppf_mbox_cb - unregister the mbox callback for vf
+ * hinic_unregister_vf_mbox_cb - unregister the mbox callback for vf
  * @func_to_func:	pointer to func_to_func part of the chip
  * @mod:		specific mod that the callback will handle
  * Return:
@@ -377,6 +398,12 @@ void hinic_unregister_vf_mbox_cb(struct hinic_hwdev *hwdev,
 				 enum hinic_mod_type mod)
 {
 	struct hinic_mbox_func_to_func *func_to_func = hwdev->func_to_func;
+
+	clear_bit(HINIC_VF_MBOX_CB_REG, &func_to_func->vf_mbox_cb_state[mod]);
+
+	while (test_bit(HINIC_VF_MBOX_CB_RUNNING,
+			&func_to_func->vf_mbox_cb_state[mod]))
+		usleep_range(900, 1000);
 
 	func_to_func->vf_mbox_cb[mod] = NULL;
 }
@@ -392,11 +419,18 @@ void hinic_unregister_ppf_to_pf_mbox_cb(struct hinic_hwdev *hwdev,
 {
 	struct hinic_mbox_func_to_func *func_to_func = hwdev->func_to_func;
 
+	clear_bit(HINIC_PPF_TO_PF_MBOX_CB_REG,
+		  &func_to_func->ppf_to_pf_mbox_cb_state[mod]);
+
+	while (test_bit(HINIC_PPF_TO_PF_MBOX_CB_RUNNIG,
+			&func_to_func->ppf_to_pf_mbox_cb_state[mod]))
+		usleep_range(900, 1000);
+
 	func_to_func->pf_recv_from_ppf_mbox_cb[mod] = NULL;
 }
 
-static int vf_to_pf_handler(void *handle, u16 vf_id, u8 cmd, void *buf_in,
-			    u16 in_size, void *buf_out, u16 *out_size)
+int vf_to_pf_handler(void *handle, u16 vf_id, u8 cmd, void *buf_in,
+		     u16 in_size, void *buf_out, u16 *out_size)
 {
 	struct hinic_mbox_func_to_func *func_to_func = handle;
 
@@ -408,22 +442,32 @@ static int recv_vf_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 				struct hinic_recv_mbox *recv_mbox,
 				void *buf_out, u16 *out_size)
 {
+	hinic_vf_mbox_cb cb;
+	int ret;
+
 	if (recv_mbox->mod >= HINIC_MOD_MAX) {
 		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %d\n",
 			 recv_mbox->mod);
 		return -EINVAL;
 	}
 
-	if (!func_to_func->vf_mbox_cb[recv_mbox->mod]) {
+	set_bit(HINIC_VF_MBOX_CB_RUNNING,
+		&func_to_func->vf_mbox_cb_state[recv_mbox->mod]);
+
+	cb = func_to_func->vf_mbox_cb[recv_mbox->mod];
+	if (cb && test_bit(HINIC_VF_MBOX_CB_REG,
+			   &func_to_func->vf_mbox_cb_state[recv_mbox->mod])) {
+		ret = cb(func_to_func->hwdev, recv_mbox->cmd, recv_mbox->mbox,
+			 recv_mbox->mbox_len, buf_out, out_size);
+	} else {
 		sdk_warn(func_to_func->hwdev->dev_hdl, "VF mbox cb is not registered\n");
-		return -EINVAL;
+		ret = -EINVAL;
 	}
 
-	return func_to_func->vf_mbox_cb[recv_mbox->mod](func_to_func->hwdev,
-							recv_mbox->cmd,
-							recv_mbox->mbox,
-							recv_mbox->mbox_len,
-							buf_out, out_size);
+	clear_bit(HINIC_VF_MBOX_CB_RUNNING,
+		  &func_to_func->vf_mbox_cb_state[recv_mbox->mod]);
+
+	return ret;
 }
 
 static int
@@ -431,30 +475,43 @@ recv_pf_from_ppf_handler(struct hinic_mbox_func_to_func *func_to_func,
 			 struct hinic_recv_mbox *recv_mbox,
 			 void *buf_out, u16 *out_size)
 {
-	hinic_pf_recv_from_ppf_mbox_cb	mbox_callback;
+	hinic_pf_recv_from_ppf_mbox_cb	cb;
+	enum hinic_mod_type mod = recv_mbox->mod;
+	int ret;
 
-	if (recv_mbox->mod >= HINIC_MOD_MAX) {
+	if (mod >= HINIC_MOD_MAX) {
 		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %d\n",
-			 recv_mbox->mod);
+			 mod);
 		return -EINVAL;
 	}
 
-	mbox_callback = func_to_func->pf_recv_from_ppf_mbox_cb[recv_mbox->mod];
-	if (!mbox_callback) {
+	set_bit(HINIC_PPF_TO_PF_MBOX_CB_RUNNIG,
+		&func_to_func->ppf_to_pf_mbox_cb_state[mod]);
+
+	cb = func_to_func->pf_recv_from_ppf_mbox_cb[mod];
+	if (cb && test_bit(HINIC_PPF_TO_PF_MBOX_CB_REG,
+			   &func_to_func->ppf_to_pf_mbox_cb_state[mod])) {
+		ret = cb(func_to_func->hwdev, recv_mbox->cmd,
+			 recv_mbox->mbox, recv_mbox->mbox_len,
+			 buf_out, out_size);
+	} else {
 		sdk_warn(func_to_func->hwdev->dev_hdl, "PF receive ppf mailbox callback is not registered\n");
-		return -EINVAL;
+		ret = -EINVAL;
 	}
 
-	return mbox_callback(func_to_func->hwdev, recv_mbox->cmd,
-			     recv_mbox->mbox, recv_mbox->mbox_len, buf_out,
-			     out_size);
+	clear_bit(HINIC_PPF_TO_PF_MBOX_CB_RUNNIG,
+		  &func_to_func->ppf_to_pf_mbox_cb_state[mod]);
+
+	return ret;
 }
 
 static int recv_ppf_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 				 struct hinic_recv_mbox *recv_mbox,
 				 u8 pf_id, void *buf_out, u16 *out_size)
 {
+	hinic_ppf_mbox_cb cb;
 	u16 vf_id = 0;
+	int ret;
 
 	if (recv_mbox->mod >= HINIC_MOD_MAX) {
 		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %d\n",
@@ -462,18 +519,25 @@ static int recv_ppf_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 		return -EINVAL;
 	}
 
-	if (!func_to_func->ppf_mbox_cb[recv_mbox->mod]) {
+	set_bit(HINIC_PPF_MBOX_CB_RUNNING,
+		&func_to_func->ppf_mbox_cb_state[recv_mbox->mod]);
+
+	cb = func_to_func->ppf_mbox_cb[recv_mbox->mod];
+	if (cb && test_bit(HINIC_PPF_MBOX_CB_REG,
+			   &func_to_func->ppf_mbox_cb_state[recv_mbox->mod])) {
+		ret = cb(func_to_func->hwdev, pf_id, vf_id, recv_mbox->cmd,
+			 recv_mbox->mbox, recv_mbox->mbox_len,
+			 buf_out, out_size);
+	} else {
 		sdk_warn(func_to_func->hwdev->dev_hdl, "PPF mbox cb is not registered, mod = %d\n",
 			 recv_mbox->mod);
-		return -EINVAL;
+		ret = -EINVAL;
 	}
 
-	return func_to_func->ppf_mbox_cb[recv_mbox->mod](func_to_func->hwdev,
-							 pf_id, vf_id,
-							 recv_mbox->cmd,
-							 recv_mbox->mbox,
-							 recv_mbox->mbox_len,
-							 buf_out, out_size);
+	clear_bit(HINIC_PPF_MBOX_CB_RUNNING,
+		  &func_to_func->ppf_mbox_cb_state[recv_mbox->mod]);
+
+	return ret;
 }
 
 static int
@@ -482,7 +546,9 @@ recv_pf_from_vf_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 			     u16 src_func_idx, void *buf_out,
 			     u16 *out_size)
 {
+	hinic_pf_mbox_cb cb;
 	u16 vf_id = 0;
+	int ret;
 
 	if (recv_mbox->mod >= HINIC_MOD_MAX) {
 		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %d\n",
@@ -490,16 +556,27 @@ recv_pf_from_vf_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 		return -EINVAL;
 	}
 
-	if (!func_to_func->pf_mbox_cb[recv_mbox->mod]) {
+	set_bit(HINIC_PF_MBOX_CB_RUNNING,
+		&func_to_func->pf_mbox_cb_state[recv_mbox->mod]);
+
+	cb = func_to_func->pf_mbox_cb[recv_mbox->mod];
+	if (cb && test_bit(HINIC_PF_MBOX_CB_REG,
+			   &func_to_func->pf_mbox_cb_state[recv_mbox->mod])) {
+		vf_id = src_func_idx -
+			hinic_glb_pf_vf_offset(func_to_func->hwdev);
+		ret = cb(func_to_func->hwdev, vf_id, recv_mbox->cmd,
+			 recv_mbox->mbox, recv_mbox->mbox_len,
+			 buf_out, out_size);
+	} else {
 		sdk_warn(func_to_func->hwdev->dev_hdl, "PF mbox mod(0x%x) cb is not registered\n",
 			 recv_mbox->mod);
-		return -EINVAL;
+		ret = -EINVAL;
 	}
 
-	vf_id = src_func_idx - hinic_glb_pf_vf_offset(func_to_func->hwdev);
-	return func_to_func->pf_mbox_cb[recv_mbox->mod](func_to_func->hwdev,
-					vf_id, recv_mbox->cmd, recv_mbox->mbox,
-					recv_mbox->mbox_len, buf_out, out_size);
+	clear_bit(HINIC_PF_MBOX_CB_RUNNING,
+		  &func_to_func->pf_mbox_cb_state[recv_mbox->mod]);
+
+	return ret;
 }
 
 bool hinic_mbox_check_cmd_valid(struct hinic_hwdev *hwdev,
@@ -596,13 +673,12 @@ static bool check_mbox_seq_id_and_seg_len(struct hinic_recv_mbox *recv_mbox,
 		return false;
 
 	if (seq_id == 0) {
-		recv_mbox->sed_id = seq_id;
+		recv_mbox->seq_id = seq_id;
 	} else {
-		if (seq_id != recv_mbox->sed_id + 1) {
-			recv_mbox->sed_id = 0;
+		if (seq_id != recv_mbox->seq_id + 1)
 			return false;
-		}
-		recv_mbox->sed_id = seq_id;
+		else
+			recv_mbox->seq_id = seq_id;
 	}
 
 	return true;
@@ -654,7 +730,8 @@ static void recv_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 	if (!check_mbox_seq_id_and_seg_len(recv_mbox, seq_id, seg_len)) {
 		sdk_err(func_to_func->hwdev->dev_hdl,
 			"Mailbox sequence and segment check fail, src func id: 0x%x, front id: 0x%x, current id: 0x%x, seg len: 0x%x\n",
-			src_func_idx, recv_mbox->sed_id, seq_id, seg_len);
+			src_func_idx, recv_mbox->seq_id, seq_id, seg_len);
+		recv_mbox->seq_id = SEQ_ID_MAX_VAL;
 		return;
 	}
 
@@ -671,6 +748,7 @@ static void recv_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 	recv_mbox->ack_type = HINIC_MBOX_HEADER_GET(mbox_header, NO_ACK);
 	recv_mbox->msg_info.msg_id = HINIC_MBOX_HEADER_GET(mbox_header, MSG_ID);
 	recv_mbox->msg_info.status = HINIC_MBOX_HEADER_GET(mbox_header, STATUS);
+	recv_mbox->seq_id = SEQ_ID_MAX_VAL;
 
 	if (HINIC_MBOX_HEADER_GET(mbox_header, DIRECTION) ==
 	    HINIC_HWIF_RESPONSE) {
@@ -1389,6 +1467,8 @@ static int init_mbox_info(struct hinic_recv_mbox *mbox_info)
 {
 	int err;
 
+	mbox_info->seq_id = SEQ_ID_MAX_VAL;
+
 	mbox_info->mbox = kzalloc(MBOX_MAX_BUF_SZ, GFP_KERNEL);
 	if (!mbox_info->mbox)
 		return -ENOMEM;
@@ -1564,8 +1644,6 @@ int hinic_func_to_func_init(struct hinic_hwdev *hwdev)
 
 	prepare_send_mbox(func_to_func);
 
-	hinic_register_pf_mbox_cb(hwdev, HINIC_MOD_COMM, vf_to_pf_handler);
-
 	return 0;
 
 alloc_wb_status_err:
@@ -1587,16 +1665,16 @@ void hinic_func_to_func_free(struct hinic_hwdev *hwdev)
 {
 	struct hinic_mbox_func_to_func *func_to_func = hwdev->func_to_func;
 
-	hinic_unregister_pf_mbox_cb(hwdev, HINIC_MOD_COMM);
+	/* destroy workqueue before free related mbox resources in case of
+	 * illegal resource access
+	 */
+	destroy_workqueue(func_to_func->workq);
 
 	free_mbox_wb_status(func_to_func);
 
 	free_mbox_info(func_to_func->mbox_resp);
 
 	free_mbox_info(func_to_func->mbox_send);
-
-	destroy_workqueue(func_to_func->workq);
-
 	spin_lock_deinit(&func_to_func->mbox_lock);
 	sema_deinit(&func_to_func->mbox_send_sem);
 	sema_deinit(&func_to_func->msg_send_sem);

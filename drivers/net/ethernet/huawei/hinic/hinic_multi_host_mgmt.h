@@ -82,7 +82,6 @@ struct hinic_slave_func_nic_state {
 };
 
 void set_master_host_mbox_enable(struct hinic_hwdev *hwdev, bool enable);
-bool get_master_host_mbox_enable(struct hinic_hwdev *hwdev);
 void set_slave_host_enable(struct hinic_hwdev *hwdev, u8 host_id, bool enable);
 void set_func_host_mode(struct hinic_hwdev *hwdev, enum hinic_func_mode mode);
 int rectify_host_mode(struct hinic_hwdev *hwdev);

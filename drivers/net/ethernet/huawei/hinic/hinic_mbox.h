@@ -60,7 +60,7 @@ struct hinic_recv_mbox {
 	void			*buf_out;
 	enum hinic_mbox_ack_type ack_type;
 	struct mbox_msg_info	msg_info;
-	u8			sed_id;
+	u8			seq_id;
 };
 
 struct hinic_send_mbox {
@@ -90,6 +90,17 @@ enum mbox_event_state {
 	EVENT_END,
 };
 
+enum hinic_mbox_cb_state {
+	HINIC_VF_MBOX_CB_REG = 0,
+	HINIC_VF_MBOX_CB_RUNNING,
+	HINIC_PF_MBOX_CB_REG,
+	HINIC_PF_MBOX_CB_RUNNING,
+	HINIC_PPF_MBOX_CB_REG,
+	HINIC_PPF_MBOX_CB_RUNNING,
+	HINIC_PPF_TO_PF_MBOX_CB_REG,
+	HINIC_PPF_TO_PF_MBOX_CB_RUNNIG,
+};
+
 struct hinic_mbox_func_to_func {
 	struct hinic_hwdev	*hwdev;
 
@@ -106,6 +117,11 @@ struct hinic_mbox_func_to_func {
 	hinic_pf_mbox_cb	pf_mbox_cb[HINIC_MOD_MAX];
 	hinic_ppf_mbox_cb	ppf_mbox_cb[HINIC_MOD_MAX];
 	hinic_pf_recv_from_ppf_mbox_cb	pf_recv_from_ppf_mbox_cb[HINIC_MOD_MAX];
+	unsigned long		ppf_to_pf_mbox_cb_state[HINIC_MOD_MAX];
+	unsigned long		ppf_mbox_cb_state[HINIC_MOD_MAX];
+	unsigned long		pf_mbox_cb_state[HINIC_MOD_MAX];
+	unsigned long		vf_mbox_cb_state[HINIC_MOD_MAX];
+
 	u8 send_msg_id;
 	enum mbox_event_state event_flag;
 	/*lock for mbox event flag*/
@@ -209,5 +225,8 @@ int hinic_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 int __hinic_mbox_to_vf(void *hwdev,
 		       enum hinic_mod_type mod, u16 vf_id, u8 cmd, void *buf_in,
 		       u16 in_size, void *buf_out, u16 *out_size, u32 timeout);
+
+int vf_to_pf_handler(void *handle, u16 vf_id, u8 cmd, void *buf_in,
+		     u16 in_size, void *buf_out, u16 *out_size);
 
 #endif

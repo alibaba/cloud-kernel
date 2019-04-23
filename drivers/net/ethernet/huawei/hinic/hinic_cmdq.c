@@ -897,7 +897,7 @@ static int cmdq_params_valid(void *hwdev, struct hinic_cmd_buf *buf_in)
 		return -EINVAL;
 	}
 
-	if (buf_in->size > HINIC_CMDQ_MAX_DATA_SIZE) {
+	if (!buf_in->size || buf_in->size > HINIC_CMDQ_MAX_DATA_SIZE) {
 		pr_err("Invalid CMDQ buffer size: 0x%x\n", buf_in->size);
 		return -EINVAL;
 	}
@@ -1219,6 +1219,13 @@ void hinic_cmdq_ceq_handler(void *handle, u32 ceqe_data)
 			if (!WQE_COMPLETED(ctrl_info))
 				break;
 
+			/* This memory barrier is needed to keep us from reading
+			 * any other fields out of the cmdq wqe until we have
+			 * verified the command has been processed and
+			 * written back.
+			 */
+			dma_rmb();
+
 			if (cmdq_type == HINIC_CMDQ_ASYNC)
 				cmdq_async_cmd_handler(hwdev, cmdq, wqe, ci);
 			else
@@ -1361,24 +1368,45 @@ int hinic_set_cmdq_ctxts(struct hinic_hwdev *hwdev)
 	return 0;
 }
 
-static void hinic_cmdq_flush_cmd(struct hinic_hwdev *hwdev,
-				 struct hinic_cmdq *cmdq)
+void hinic_cmdq_flush_cmd(struct hinic_hwdev *hwdev,
+			  struct hinic_cmdq *cmdq)
 {
 	struct hinic_cmdq_wqe *wqe;
-	struct hinic_cmdq_cmd_info *cmd_info;
-	u16 ci;
+	struct hinic_cmdq_cmd_info *cmdq_info;
+	u16 ci, wqe_left, i;
+	u64 buf;
 
-	while ((wqe = hinic_read_wqe(cmdq->wq, 1, &ci)) != NULL) {
+	spin_lock_bh(&cmdq->cmdq_lock);
+	wqe_left = cmdq->wq->q_depth - (u16)atomic_read(&cmdq->wq->delta);
+	ci = MASKED_WQE_IDX(cmdq->wq, cmdq->wq->cons_idx);
+	for (i = 0; i < wqe_left; i++, ci++) {
+		ci = MASKED_WQE_IDX(cmdq->wq, ci);
+		cmdq_info = &cmdq->cmd_infos[ci];
+
+		if (cmdq_info->cmd_type == HINIC_CMD_TYPE_SET_ARM)
+			continue;
+
 		if (cmdq->cmdq_type == HINIC_CMDQ_ASYNC) {
-			cmd_info = &cmdq->cmd_infos[ci];
-			if (cmd_info->cmd_type == HINIC_CMD_TYPE_SET_ARM)
-				clear_wqe_complete_bit(cmdq, wqe, ci);
-			else
-				cmdq_async_cmd_handler(hwdev, cmdq, wqe, ci);
+			wqe = hinic_get_wqebb_addr(cmdq->wq, ci);
+			buf = wqe->wqe_lcmd.buf_desc.saved_async_buf;
+			wqe->wqe_lcmd.buf_desc.saved_async_buf = 0;
+
+			hinic_be32_to_cpu((void *)&buf, sizeof(u64));
+			if (buf)
+				hinic_free_cmd_buf(hwdev,
+						   (struct hinic_cmd_buf *)buf);
 		} else {
-			cmdq_sync_cmd_handler(cmdq, wqe, ci);
+			if (cmdq_info->done) {
+				complete(cmdq_info->done);
+				cmdq_info->done = NULL;
+				cmdq_info->cmpt_code = NULL;
+				cmdq_info->direct_resp = NULL;
+				cmdq_info->errcode = NULL;
+			}
 		}
 	}
+
+	spin_unlock_bh(&cmdq->cmdq_lock);
 }
 
 int hinic_reinit_cmdq_ctxts(struct hinic_hwdev *hwdev)

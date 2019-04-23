@@ -789,13 +789,6 @@ void hinic_force_complete_all(void *hwdev)
 {
 	struct hinic_hwdev *dev = (struct hinic_hwdev *)hwdev;
 	struct hinic_recv_msg *recv_resp_msg;
-	struct hinic_cmdq_cmd_info *cmdq_info;
-	struct hinic_cmdq *cmdq;
-	int pi = 0;
-	int ci = 0;
-	int delta = 0;
-	int i = 0;
-	u16 max_index = 0;
 
 	set_bit(HINIC_HWDEV_STATE_BUSY, &dev->func_state);
 
@@ -808,32 +801,11 @@ void hinic_force_complete_all(void *hwdev)
 		}
 	}
 
-	if (!hinic_is_hwdev_mod_inited(dev, HINIC_HWDEV_CMDQ_INITED))
-		goto out;
+	/* only flush sync cmdq to avoid blocking remove */
+	if (hinic_is_hwdev_mod_inited(dev, HINIC_HWDEV_CMDQ_INITED))
+		hinic_cmdq_flush_cmd(hwdev,
+				     &dev->cmdqs->cmdq[HINIC_CMDQ_SYNC]);
 
-	cmdq = &dev->cmdqs->cmdq[HINIC_CMDQ_SYNC];
-	pi = cmdq->wq->prod_idx;
-	pi = MASKED_WQE_IDX(cmdq->wq, pi);
-	ci = cmdq->wq->cons_idx;
-	ci = MASKED_WQE_IDX(cmdq->wq, ci);
-	max_index = (cmdq->wq->q_depth) - 1;
-	delta = (pi >= ci) ? (pi - ci) : ((max_index - ci) + pi);
-
-	for (; i < delta; i++) {
-		cmdq_info = &cmdq->cmd_infos[ci];
-		spin_lock_bh(&cmdq->cmdq_lock);
-		if (cmdq_info->done) {
-			complete(cmdq_info->done);
-			cmdq_info->done = NULL;
-			atomic_add(1, &cmdq->wq->delta);
-			cmdq->wq->cons_idx += 1;
-		}
-		spin_unlock_bh(&cmdq->cmdq_lock);
-		ci++;
-		ci = MASKED_WQE_IDX(cmdq->wq, ci);
-	}
-
-out:
 	clear_bit(HINIC_HWDEV_STATE_BUSY, &dev->func_state);
 }
 
@@ -1087,6 +1059,32 @@ int hinic_mbox_to_vf(void *hwdev,
 }
 EXPORT_SYMBOL(hinic_mbox_to_vf);
 
+int hinic_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
+		      void *buf_in, u16 in_size,
+		      void *buf_out, u16 *out_size)
+
+{
+	struct hinic_hwdev *dev = hwdev;
+	int err;
+
+	if (!dev)
+		return -EINVAL;
+
+	if (!dev->chip_present_flag)
+		return -EPERM;
+
+	if (hinic_func_type(hwdev) == TYPE_VF || NEED_MBOX_FORWARD(dev))
+		return -EINVAL;
+
+	if (!hinic_is_hwdev_mod_inited(hwdev, HINIC_HWDEV_CLP_INITED))
+		return -EPERM;
+
+	err = hinic_pf_clp_to_mgmt(dev, mod, cmd, buf_in,
+				   in_size, buf_out, out_size);
+
+	return err;
+}
+
 /**
  * hinic_cpu_to_be32 - convert data to big endian 32 bit format
  * @data: the data to convert
@@ -1333,7 +1331,7 @@ static int wait_cmdq_stop(struct hinic_hwdev *hwdev)
 
 	cmdqs->status &= ~HINIC_CMDQ_ENABLE;
 
-	while (cnt < HINIC_WAIT_CMDQ_IDLE_TIMEOUT) {
+	while (cnt < HINIC_WAIT_CMDQ_IDLE_TIMEOUT && hwdev->chip_present_flag) {
 		err = 0;
 		cmdq_type = HINIC_CMDQ_SYNC;
 		for (; cmdq_type < HINIC_MAX_CMDQ_TYPES; cmdq_type++) {
@@ -2088,6 +2086,9 @@ static int hinic_comm_func_to_func_init(struct hinic_hwdev *hwdev)
 					  comm_pf_mbox_handler);
 		hinic_register_pf_mbox_cb(hwdev, HINIC_MOD_SW_FUNC,
 					  sw_func_pf_mbox_handler);
+	} else {
+		hinic_register_pf_mbox_cb(hwdev, HINIC_MOD_COMM,
+					  vf_to_pf_handler);
 	}
 
 	set_bit(HINIC_HWDEV_MBOX_INITED, &hwdev->func_state);
@@ -2099,6 +2100,9 @@ static void hinic_comm_func_to_func_free(struct hinic_hwdev *hwdev)
 {
 	hinic_aeq_unregister_hw_cb(hwdev, HINIC_MBX_FROM_FUNC);
 	hinic_aeq_unregister_hw_cb(hwdev, HINIC_MBX_SEND_RSLT);
+
+	hinic_unregister_pf_mbox_cb(hwdev, HINIC_MOD_COMM);
+	hinic_unregister_pf_mbox_cb(hwdev, HINIC_MOD_SW_FUNC);
 
 	hinic_func_to_func_free(hwdev);
 }
@@ -2128,7 +2132,7 @@ static int hinic_comm_pf_to_mgmt_init(struct hinic_hwdev *hwdev)
 
 static void hinic_comm_pf_to_mgmt_free(struct hinic_hwdev *hwdev)
 {
-	if (hinic_func_type(hwdev) == TYPE_VF &&
+	if (hinic_func_type(hwdev) == TYPE_VF ||
 	    !FUNC_SUPPORT_MGMT(hwdev))
 		return;	/* VF do not support send msg to mgmt directly */
 
@@ -2137,6 +2141,33 @@ static void hinic_comm_pf_to_mgmt_free(struct hinic_hwdev *hwdev)
 	hinic_aeq_unregister_hw_cb(hwdev, HINIC_MSG_FROM_MGMT_CPU);
 
 	hinic_pf_to_mgmt_free(hwdev);
+}
+
+static int hinic_comm_clp_to_mgmt_init(struct hinic_hwdev *hwdev)
+{
+	int err;
+
+	if (hinic_func_type(hwdev) == TYPE_VF ||
+	    !FUNC_SUPPORT_MGMT(hwdev))
+		return 0;
+
+	err = hinic_clp_pf_to_mgmt_init(hwdev);
+	if (err)
+		return err;
+
+	set_bit(HINIC_HWDEV_CLP_INITED, &hwdev->func_state);
+
+	return 0;
+}
+
+static void hinic_comm_clp_to_mgmt_free(struct hinic_hwdev *hwdev)
+{
+	if (hinic_func_type(hwdev) == TYPE_VF ||
+	    !FUNC_SUPPORT_MGMT(hwdev))
+		return;
+
+	clear_bit(HINIC_HWDEV_CLP_INITED, &hwdev->func_state);
+	hinic_clp_pf_to_mgmt_free(hwdev);
 }
 
 static int hinic_comm_cmdqs_init(struct hinic_hwdev *hwdev)
@@ -2261,11 +2292,18 @@ static int __get_func_misc_info(struct hinic_hwdev *hwdev)
 
 	err = hinic_get_board_info(hwdev, &hwdev->board_info);
 	if (err) {
+		/*For the pf/vf of slave host, return error */
+		if (hinic_pcie_itf_id(hwdev))
+			return err;
+
 		/* VF can't get board info in early version */
 		if (!HINIC_IS_VF(hwdev)) {
 			sdk_err(hwdev->dev_hdl, "Get board info failed\n");
 			return err;
 		}
+
+		memset(&hwdev->board_info, 0xff,
+		       sizeof(struct hinic_board_info));
 	}
 
 	err = hinic_get_mgmt_version(hwdev, hwdev->mgmt_ver);
@@ -2302,15 +2340,21 @@ int hinic_init_comm_ch(struct hinic_hwdev *hwdev)
 	int err;
 
 	if (IS_BMGW_SLAVE_HOST(hwdev) &&
-	    (!get_master_host_mbox_enable(hwdev))) {
+	    (!hinic_get_master_host_mbox_enable(hwdev))) {
 		sdk_err(hwdev->dev_hdl, "Master host not initialized\n");
 		return -EFAULT;
+	}
+
+	err = hinic_comm_clp_to_mgmt_init(hwdev);
+	if (err) {
+		sdk_err(hwdev->dev_hdl, "Failed to init clp\n");
+		return err;
 	}
 
 	err = hinic_comm_aeqs_init(hwdev);
 	if (err) {
 		sdk_err(hwdev->dev_hdl, "Failed to init async event queues\n");
-		return err;
+		goto aeqs_init_err;
 	}
 
 	err = hinic_comm_pf_to_mgmt_init(hwdev);
@@ -2421,6 +2465,9 @@ func_to_func_init_err:
 msg_init_err:
 	hinic_comm_aeqs_free(hwdev);
 
+aeqs_init_err:
+	hinic_comm_clp_to_mgmt_free(hwdev);
+
 	return err;
 }
 
@@ -2456,6 +2503,9 @@ static void __uninit_comm_module(struct hinic_hwdev *hwdev,
 		break;
 	case HINIC_HWDEV_AEQ_INITED:
 		hinic_comm_aeqs_free(hwdev);
+		break;
+	case HINIC_HWDEV_CLP_INITED:
+		hinic_comm_clp_to_mgmt_free(hwdev);
 		break;
 	default:
 		break;
@@ -3841,13 +3891,25 @@ static void __print_cable_info(struct hinic_hwdev *hwdev,
 	memcpy(tmp_vendor, info->vendor_name,
 	       sizeof(info->vendor_name));
 	snprintf(tmp_str, sizeof(tmp_str) - 1,
-		 "Vendor: %s, %s, %s, length: %um, max_speed: %uGbps",
-		 tmp_vendor, info->sfp_type ? "SFP" : "QSFP", port_type,
-		 info->cable_length, info->cable_max_speed);
-	if (info->port_type != LINK_PORT_COPPER)
+		 "Vendor: %s, %s, length: %um, max_speed: %uGbps",
+		 tmp_vendor, port_type, info->cable_length,
+		 info->cable_max_speed);
+	if (info->port_type == LINK_PORT_FIBRE ||
+	    info->port_type == LINK_PORT_AOC) {
 		snprintf(tmp_str, sizeof(tmp_str) - 1,
-			 "%s, Temperature: %u", tmp_str,
-			 info->cable_temp);
+			 "%s, %s, Temperature: %u", tmp_str,
+			 info->sfp_type ? "SFP" : "QSFP", info->cable_temp);
+		if (info->sfp_type) {
+			snprintf(tmp_str, sizeof(tmp_str) - 1,
+				 "%s, rx power: %uuW, tx power: %uuW",
+				 tmp_str, info->power[0], info->power[1]);
+		} else {
+			snprintf(tmp_str, sizeof(tmp_str) - 1,
+				 "%s, rx power: %uuw %uuW %uuW %uuW",
+				 tmp_str, info->power[0], info->power[1],
+				 info->power[2], info->power[3]);
+		}
+	}
 
 	sdk_info(hwdev->dev_hdl, "Cable information: %s\n",
 		 tmp_str);
@@ -4836,6 +4898,8 @@ int hinic_read_reg(void *hwdev, u32 reg_addr, u32 *val)
 static void hinic_exec_recover_cb(struct hinic_hwdev *hwdev,
 				  struct hinic_fault_recover_info *info)
 {
+	sdk_info(hwdev->dev_hdl, "Enter hinic_exec_recover_cb\n");
+
 	if (!hinic_get_chip_present_flag(hwdev)) {
 		sdk_err(hwdev->dev_hdl, "Device surprised removed, abort recover\n");
 		return;
@@ -4972,8 +5036,11 @@ int hinic_set_ip_check(void *hwdev, bool ip_check_ctl)
 	int ret;
 	int i;
 
-	if (!hwdev || hinic_func_type(hwdev) == TYPE_VF)
+	if (!hwdev)
 		return -EINVAL;
+
+	if (hinic_func_type(hwdev) == TYPE_VF)
+		return 0;
 
 	for (i = 0; i <= HINIC_IPSU_CHANNEL_NUM; i++) {
 		ret = hinic_api_csr_rd32(hwdev, HINIC_NODE_ID_IPSU,
@@ -5017,3 +5084,42 @@ int hinic_get_card_present_state(void *hwdev, bool *card_present_state)
 	return 0;
 }
 EXPORT_SYMBOL(hinic_get_card_present_state);
+
+void hinic_disable_mgmt_msg_report(void *hwdev)
+{
+	struct hinic_hwdev *hw_dev = (struct hinic_hwdev *)hwdev;
+
+	hinic_set_pf_status(hw_dev->hwif, HINIC_PF_STATUS_INIT);
+}
+
+int hinic_set_vxlan_udp_dport(void *hwdev, u32 udp_port)
+{
+	u32 val = 0;
+	int ret;
+
+	if (!hwdev)
+		return -EINVAL;
+
+	if (hinic_func_type(hwdev) == TYPE_VF)
+		return 0;
+
+	ret = hinic_api_csr_rd32(hwdev, HINIC_NODE_ID_IPSU,
+				 HINIC_IPSURX_VXLAN_DPORT_ADDR, &val);
+	if (ret)
+		return ret;
+
+	nic_info(((struct hinic_hwdev *)hwdev)->dev_hdl,
+		 "Update VxLAN UDP dest port: cur port:%u, new port:%u",
+		 be32_to_cpu(val), udp_port);
+
+	if (be32_to_cpu(val) == udp_port)
+		return 0;
+
+	udp_port = cpu_to_be32(udp_port);
+	ret = hinic_api_csr_wr32(hwdev, HINIC_NODE_ID_IPSU,
+				 HINIC_IPSURX_VXLAN_DPORT_ADDR, udp_port);
+	if (ret)
+		return ret;
+
+	return 0;
+}

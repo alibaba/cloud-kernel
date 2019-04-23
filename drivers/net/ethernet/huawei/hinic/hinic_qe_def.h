@@ -462,8 +462,6 @@ enum rq_completion_fmt {
 	RQ_COMPLETE_SGE = 1
 };
 
-#define HINIC_VLAN_FILTER_EN		(1U << 0)
-#define HINIC_BROADCAST_FILTER_EX_EN	(1U << 1)
 
 #ifdef __cplusplus
     #if __cplusplus

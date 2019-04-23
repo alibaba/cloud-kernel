@@ -92,14 +92,18 @@ void set_master_host_mbox_enable(struct hinic_hwdev *hwdev, bool enable)
 		 enable, reg_val);
 }
 
-bool get_master_host_mbox_enable(struct hinic_hwdev *hwdev)
+bool hinic_get_master_host_mbox_enable(void *hwdev)
 {
 	u32 reg_val;
+	struct hinic_hwdev *dev = hwdev;
 
-	if (!IS_SLAVE_HOST(hwdev) || HINIC_FUNC_TYPE(hwdev) == TYPE_VF)
+	if (!hwdev)
+		return false;
+
+	if (!IS_SLAVE_HOST(dev) || HINIC_FUNC_TYPE(dev) == TYPE_VF)
 		return true;
 
-	reg_val = hinic_hwif_read_reg(hwdev->hwif, HINIC_HOST_MODE_ADDR);
+	reg_val = hinic_hwif_read_reg(dev->hwif, HINIC_HOST_MODE_ADDR);
 
 	return !!MULTI_HOST_REG_GET(reg_val, MASTER_MBX_STS);
 }
@@ -238,7 +242,7 @@ int __mbox_to_host(struct hinic_hwdev *hwdev, enum hinic_mod_type mod,
 		goto release_lock;
 	}
 
-	if (!get_master_host_mbox_enable(hwdev)) {
+	if (!hinic_get_master_host_mbox_enable(hwdev)) {
 		sdk_err(hwdev->dev_hdl, "Master host not initialized\n");
 		err = -EFAULT;
 		goto release_lock;
@@ -715,6 +719,7 @@ int hinic_set_func_nic_state(void *hwdev, struct hinic_func_nic_state *state)
 	u8 host_id = 0;
 	bool host_enable;
 	int err;
+	int old_state;
 
 	if (!hwdev || !state)
 		return -EINVAL;
@@ -729,6 +734,7 @@ int hinic_set_func_nic_state(void *hwdev, struct hinic_func_nic_state *state)
 	if (!mhost_mgmt || state->func_idx >= HINIC_MAX_FUNCTIONS)
 		return -EINVAL;
 
+	old_state = test_bit(state->func_idx, mhost_mgmt->func_nic_en) ? 1 : 0;
 	if (state->state == HINIC_FUNC_NIC_DEL)
 		clear_bit(state->func_idx, mhost_mgmt->func_nic_en);
 	else if (state->state == HINIC_FUNC_NIC_ADD)
@@ -740,6 +746,8 @@ int hinic_set_func_nic_state(void *hwdev, struct hinic_func_nic_state *state)
 	if (err) {
 		sdk_err(ppf_hwdev->dev_hdl, "Failed to get function %d host id, err: %d\n",
 			state->func_idx, err);
+		old_state ? set_bit(state->func_idx, mhost_mgmt->func_nic_en) :
+			clear_bit(state->func_idx, mhost_mgmt->func_nic_en);
 		return -EFAULT;
 	}
 
@@ -753,8 +761,11 @@ int hinic_set_func_nic_state(void *hwdev, struct hinic_func_nic_state *state)
 
 	/* notify slave host */
 	err = set_slave_func_nic_state(hwdev, state->func_idx, state->state);
-	if (err)
+	if (err) {
+		old_state ? set_bit(state->func_idx, mhost_mgmt->func_nic_en) :
+			clear_bit(state->func_idx, mhost_mgmt->func_nic_en);
 		return err;
+	}
 
 	return 0;
 }
@@ -913,8 +924,6 @@ int hinic_multi_host_mgmt_free(struct hinic_hwdev *hwdev)
 	hinic_unregister_ppf_mbox_cb(hwdev, HINIC_MOD_L2NIC);
 	hinic_unregister_ppf_mbox_cb(hwdev, HINIC_MOD_HILINK);
 	hinic_unregister_ppf_mbox_cb(hwdev, HINIC_MOD_SW_FUNC);
-
-	hinic_unregister_pf_mbox_cb(hwdev, HINIC_MOD_SW_FUNC);
 
 	kfree(hwdev->mhost_mgmt);
 	hwdev->mhost_mgmt = NULL;

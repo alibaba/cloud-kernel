@@ -345,6 +345,27 @@ struct hinic_phy_port_stats {
 	u64 mac_tx_higig2_l3_multicast_pkt_num;
 };
 
+enum hinic_rq_filter_type {
+	HINIC_RQ_FILTER_TYPE_NONE      = 0x0,
+	HINIC_RQ_FILTER_TYPE_MAC_ONLY  = (1 << 0),
+	HINIC_RQ_FILTER_TYPE_VLAN_ONLY = (1 << 1),
+	HINIC_RQ_FILTER_TYPE_VLANMAC   = (1 << 2),
+	HINIC_RQ_FILTER_TYPE_VXLAN     = (1 << 3),
+	HINIC_RQ_FILTER_TYPE_GENEVE    = (1 << 4),
+};
+
+struct hinic_rq_filter_info {
+	u16	qid;
+	u8	filter_type;/* 1: mac, 8: vxlan */
+	u8	qflag;/*0:stdq, 1:defq, 2: netq*/
+
+	u8	mac[ETH_ALEN];
+	struct {
+		u8	inner_mac[ETH_ALEN];
+		u32	vni;
+	} vxlan;
+};
+
 #define HINIC_MGMT_VERSION_MAX_LEN	32
 
 #define HINIC_FW_VERSION_NAME	16
@@ -551,6 +572,10 @@ void hinic_save_pf_link_status(void *hwdev, u8 link);
 
 int hinic_set_vf_link_state(void *hwdev, u16 vf_id, int link);
 
+int hinic_set_vf_spoofchk(void *hwdev, u16 vf_id, bool spoofchk);
+
+bool hinic_vf_info_spoofchk(void *hwdev, int vf_id);
+
 int hinic_set_vf_tx_rate(void *hwdev, u16 vf_id, u32 max_rate, u32 min_rate);
 
 int hinic_init_vf_hw(void *hwdev, u16 start_vf_id, u16 end_vf_id);
@@ -587,5 +612,11 @@ int hinic_disable_tx_promisc(void *hwdev);
 
 /* HILINK module */
 int hinic_set_link_settings(void *hwdev, struct hinic_link_ksettings *settings);
+
+int hinic_enable_netq(void *hwdev, u8 en);
+int hinic_add_hw_rqfilter(void *hwdev,
+			  struct hinic_rq_filter_info *filter_info);
+int hinic_del_hw_rqfilter(void *hwdev,
+			  struct hinic_rq_filter_info *filter_info);
 
 #endif

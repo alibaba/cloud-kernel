@@ -87,7 +87,7 @@ enum hinic_node_id {
 	HINIC_NODE_ID_MAX = 22
 };
 
-#define HINIC_HWDEV_INIT_MODES_MASK	((1 << HINIC_HWDEV_ALL_INITED) - 1)
+#define HINIC_HWDEV_INIT_MODES_MASK	((1UL << HINIC_HWDEV_ALL_INITED) - 1)
 
 enum hinic_hwdev_func_state {
 	HINIC_HWDEV_FUNC_INITED = HINIC_HWDEV_ALL_INITED,
@@ -250,6 +250,7 @@ struct hinic_hwdev {
 	struct hinic_mbox_func_to_func *func_to_func;
 
 	struct hinic_msg_pf_to_mgmt *pf_to_mgmt;
+	struct hinic_clp_pf_to_mgmt *clp_pf_to_mgmt;
 
 	struct hinic_cmdqs *cmdqs;
 
@@ -344,6 +345,10 @@ void hinic_notify_dcb_state_event(struct hinic_hwdev *hwdev,
 int hinic_pf_msg_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			      void *buf_in, u16 in_size,
 			      void *buf_out, u16 *out_size, u32 timeout);
+
+int hinic_pf_send_clp_cmd(void *hwdev, enum hinic_mod_type mod, u8 cmd,
+			  void *buf_in, u16 in_size,
+			  void *buf_out, u16 *out_size);
 
 int hinic_get_bios_pf_bw_limit(void *hwdev, u32 *pf_bw_limit);
 

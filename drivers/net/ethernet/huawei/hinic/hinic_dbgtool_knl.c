@@ -45,6 +45,8 @@ struct ffm_intr_info {
 	u32 err_csr_value;
 };
 
+#define DBGTOOL_MSG_MAX_SIZE	2048ULL
+
 #define HINIC_SELF_CMD_UP2PF_FFM		0x26
 
 void *g_card_node_array[MAX_CARD_NUM] = {0};
@@ -158,6 +160,10 @@ long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 
 	/* alloc cmd and ack memory*/
 	size = para->param.api_rd.size;
+	if (para->param.api_rd.size == 0) {
+		pr_err("Read cmd size invalid\n");
+		return -EINVAL;
+	}
 	cmd = kzalloc((unsigned long long)size, GFP_KERNEL);
 	if (!cmd) {
 		pr_err("Alloc read cmd mem fail\n");
@@ -228,6 +234,10 @@ long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
 
 	/* alloc cmd memory*/
 	size = para->param.api_wr.size;
+	if (para->param.api_wr.size == 0) {
+		pr_err("Write cmd size invalid\n");
+		return -EINVAL;
+	}
 	cmd = kzalloc((unsigned long long)size, GFP_KERNEL);
 	if (!cmd) {
 		pr_err("Alloc write cmd mem fail\n");
@@ -392,6 +402,12 @@ long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 	u16 out_size;
 	u8 pf_id;
 
+	if (para->param.msg2up.in_size > DBGTOOL_MSG_MAX_SIZE) {
+		pr_err("User data(%d) more than 2KB\n",
+		       para->param.msg2up.in_size);
+		return -EFAULT;
+	}
+
 	pf_id = para->param.msg2up.pf_id;
 	/* pf at most 16*/
 	if (pf_id >= 16) {
@@ -405,13 +421,12 @@ long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 	}
 
 	/* alloc buf_in and buf_out memory, apply for 2K*/
-	buf_in = kzalloc(2048ULL, GFP_KERNEL);
+	buf_in = kzalloc(DBGTOOL_MSG_MAX_SIZE, GFP_KERNEL);
 	if (!buf_in) {
 		pr_err("Alloc buf_in mem fail\n");
 		return -ENOMEM;
 	}
 
-#define DBGTOOL_MSG_MAX_SIZE	2048ULL
 	buf_out = kzalloc(DBGTOOL_MSG_MAX_SIZE, 0);
 	if (!buf_out) {
 		pr_err("Alloc buf_out mem fail\n");
@@ -842,4 +857,6 @@ void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 	unregister_chrdev_region(dbgtool_dev_id, 1);
 
 	g_dbgtool_init_flag = 0;
-} /*lint -restore*/
+}
+
+/*lint -restore*/

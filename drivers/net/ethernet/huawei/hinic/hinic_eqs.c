@@ -245,6 +245,8 @@ int hinic_aeq_register_hw_cb(void *hwdev, enum hinic_aeq_type event,
 
 	aeqs->aeq_hwe_cb[event] = hwe_cb;
 
+	set_bit(HINIC_AEQ_HW_CB_REG, &aeqs->aeq_hw_cb_state[event]);
+
 	return 0;
 }
 EXPORT_SYMBOL(hinic_aeq_register_hw_cb);
@@ -258,13 +260,17 @@ void hinic_aeq_unregister_hw_cb(void *hwdev, enum hinic_aeq_type event)
 {
 	struct hinic_aeqs *aeqs;
 
-	if (!hwdev)
+	if (!hwdev || event >= HINIC_MAX_AEQ_EVENTS)
 		return;
 
 	aeqs = ((struct hinic_hwdev *)hwdev)->aeqs;
 
-	if (event < HINIC_MAX_AEQ_EVENTS)
-		aeqs->aeq_hwe_cb[event] = NULL;
+	clear_bit(HINIC_AEQ_HW_CB_REG, &aeqs->aeq_hw_cb_state[event]);
+
+	while (test_bit(HINIC_AEQ_HW_CB_RUNNING, &aeqs->aeq_hw_cb_state[event]))
+		usleep_range(900, 1000);
+
+	aeqs->aeq_hwe_cb[event] = NULL;
 }
 EXPORT_SYMBOL(hinic_aeq_unregister_hw_cb);
 
@@ -287,6 +293,8 @@ int hinic_aeq_register_swe_cb(void *hwdev, enum hinic_aeq_sw_type event,
 
 	aeqs->aeq_swe_cb[event] = aeq_swe_cb;
 
+	set_bit(HINIC_AEQ_SW_CB_REG, &aeqs->aeq_sw_cb_state[event]);
+
 	return 0;
 }
 EXPORT_SYMBOL(hinic_aeq_register_swe_cb);
@@ -300,13 +308,17 @@ void hinic_aeq_unregister_swe_cb(void *hwdev, enum hinic_aeq_sw_type event)
 {
 	struct hinic_aeqs *aeqs;
 
-	if (!hwdev)
+	if (!hwdev || event >= HINIC_MAX_AEQ_SW_EVENTS)
 		return;
 
 	aeqs = ((struct hinic_hwdev *)hwdev)->aeqs;
 
-	if (event < HINIC_MAX_AEQ_SW_EVENTS)
-		aeqs->aeq_swe_cb[event] = NULL;
+	clear_bit(HINIC_AEQ_SW_CB_REG, &aeqs->aeq_sw_cb_state[event]);
+
+	while (test_bit(HINIC_AEQ_SW_CB_RUNNING, &aeqs->aeq_sw_cb_state[event]))
+		usleep_range(900, 1000);
+
+	aeqs->aeq_swe_cb[event] = NULL;
 }
 EXPORT_SYMBOL(hinic_aeq_unregister_swe_cb);
 
@@ -329,6 +341,8 @@ int hinic_ceq_register_cb(void *hwdev, enum hinic_ceq_event event,
 
 	ceqs->ceq_cb[event] = callback;
 
+	set_bit(HINIC_CEQ_CB_REG, &ceqs->ceq_cb_state[event]);
+
 	return 0;
 }
 EXPORT_SYMBOL(hinic_ceq_register_cb);
@@ -342,13 +356,17 @@ void hinic_ceq_unregister_cb(void *hwdev, enum hinic_ceq_event event)
 {
 	struct hinic_ceqs *ceqs;
 
-	if (!hwdev)
+	if (!hwdev || event >= HINIC_MAX_CEQ_EVENTS)
 		return;
 
 	ceqs = ((struct hinic_hwdev *)hwdev)->ceqs;
 
-	if (event < HINIC_MAX_CEQ_EVENTS)
-		ceqs->ceq_cb[event] = NULL;
+	clear_bit(HINIC_CEQ_CB_REG, &ceqs->ceq_cb_state[event]);
+
+	while (test_bit(HINIC_CEQ_CB_RUNNING, &ceqs->ceq_cb_state[event]))
+		usleep_range(900, 1000);
+
+	ceqs->ceq_cb[event] = NULL;
 }
 EXPORT_SYMBOL(hinic_ceq_unregister_cb);
 
@@ -390,8 +408,13 @@ static void ceq_event_handler(struct hinic_ceqs *ceqs, u32 ceqe)
 		return;
 	}
 
-	if (ceqs->ceq_cb[event])
+	set_bit(HINIC_CEQ_CB_RUNNING, &ceqs->ceq_cb_state[event]);
+
+	if (ceqs->ceq_cb[event] &&
+	    test_bit(HINIC_CEQ_CB_REG, &ceqs->ceq_cb_state[event]))
 		ceqs->ceq_cb[event](hwdev, ceqe_data);
+
+	clear_bit(HINIC_CEQ_CB_RUNNING, &ceqs->ceq_cb_state[event]);
 }
 
 /**
@@ -421,6 +444,13 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
 		if (EQ_ELEM_DESC_GET(aeqe_desc, WRAPPED) == eq->wrapped)
 			return false;
 
+		/* This memory barrier is needed to keep us from reading
+		 * any other fields out of the cmdq wqe until we have
+		 * verified the command has been processed and
+		 * written back.
+		 */
+		dma_rmb();
+
 		event = EQ_ELEM_DESC_GET(aeqe_desc, TYPE);
 		if (EQ_ELEM_DESC_GET(aeqe_desc, SRC)) {
 			ucode_event = event;
@@ -429,19 +459,31 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
 				   HINIC_STATEFULL_EVENT :
 				   HINIC_STATELESS_EVENT;
 			aeqe_data = be64_to_cpu((*(u64 *)aeqe_pos->aeqe_data));
-			if (aeqs->aeq_swe_cb[sw_event]) {
+			set_bit(HINIC_AEQ_SW_CB_RUNNING,
+				&aeqs->aeq_sw_cb_state[sw_event]);
+			if (aeqs->aeq_swe_cb[sw_event] &&
+			    test_bit(HINIC_AEQ_SW_CB_REG,
+				     &aeqs->aeq_sw_cb_state[sw_event])) {
 				lev = aeqs->aeq_swe_cb[sw_event](aeqs->hwdev,
 								 ucode_event,
 								 aeqe_data);
 				hinic_swe_fault_handler(aeqs->hwdev, lev,
 							ucode_event, aeqe_data);
 			}
+			clear_bit(HINIC_AEQ_SW_CB_RUNNING,
+				  &aeqs->aeq_sw_cb_state[sw_event]);
 		} else {
 			if (event < HINIC_MAX_AEQ_EVENTS) {
 				size = EQ_ELEM_DESC_GET(aeqe_desc, SIZE);
-				if (aeqs->aeq_hwe_cb[event])
+				set_bit(HINIC_AEQ_HW_CB_RUNNING,
+					&aeqs->aeq_hw_cb_state[event]);
+				if (aeqs->aeq_hwe_cb[event] &&
+				    test_bit(HINIC_AEQ_HW_CB_REG,
+					     &aeqs->aeq_hw_cb_state[event]))
 					aeqs->aeq_hwe_cb[event](aeqs->hwdev,
 						aeqe_pos->aeqe_data, size);
+				clear_bit(HINIC_AEQ_HW_CB_RUNNING,
+					  &aeqs->aeq_hw_cb_state[event]);
 			} else {
 				sdk_warn(eq->hwdev->dev_hdl,
 					 "Unknown aeq hw event %d\n", event);
@@ -837,10 +879,10 @@ static int alloc_eq_pages(struct hinic_eq *eq)
 		eq->dma_addr[pg_num] = eq->dma_addr_for_free[pg_num];
 		eq->virt_addr[pg_num] = eq->virt_addr_for_free[pg_num];
 		if (eq->dma_addr_for_free[pg_num] & (eq->page_size - 1)) {
-			sdk_warn(eq->hwdev->dev_hdl,
+			sdk_info(eq->hwdev->dev_hdl,
 				 "Address is not aligned to %u-bytes as hardware required\n",
 				 eq->page_size);
-			sdk_warn(eq->hwdev->dev_hdl, "Change eq's page size %u\n",
+			sdk_info(eq->hwdev->dev_hdl, "Change eq's page size %u\n",
 				 ((eq->page_size) >> 1));
 			eq->dma_addr[pg_num] = ALIGN
 					(eq->dma_addr_for_free[pg_num],
@@ -959,9 +1001,12 @@ static int init_eq(struct hinic_eq *eq, struct hinic_hwdev *hwdev, u16 q_id,
 	eq->type = type;
 	eq->eq_len = q_len;
 
-	/* Clear PI and CI, also clear the ARM bit */
-	hinic_hwif_write_reg(eq->hwdev->hwif, EQ_CONS_IDX_REG_ADDR(eq), 0);
-	hinic_hwif_write_reg(eq->hwdev->hwif, EQ_PROD_IDX_REG_ADDR(eq), 0);
+	/* clear eq_len to force eqe drop in hardware */
+	if (eq->type == HINIC_AEQ)
+		hinic_hwif_write_reg(eq->hwdev->hwif,
+				     HINIC_CSR_AEQ_CTRL_1_ADDR(eq->q_id), 0);
+	else
+		set_ceq_ctrl_reg(eq->hwdev, eq->q_id, 0, 0);
 
 	eq->cons_idx = 0;
 	eq->wrapped = 0;
@@ -993,6 +1038,7 @@ static int init_eq(struct hinic_eq *eq, struct hinic_hwdev *hwdev, u16 q_id,
 		goto init_eq_ctrls_err;
 	}
 
+	hinic_hwif_write_reg(eq->hwdev->hwif, EQ_PROD_IDX_REG_ADDR(eq), 0);
 	set_eq_cons_idx(eq, HINIC_EQ_ARMED);
 
 	if (type == HINIC_AEQ) {
@@ -1265,6 +1311,7 @@ void hinic_get_aeq_irqs(struct hinic_hwdev *hwdev, struct irq_info *irqs,
 
 void hinic_dump_aeq_info(struct hinic_hwdev *hwdev)
 {
+	struct hinic_aeq_elem *aeqe_pos;
 	struct hinic_eq *eq;
 	u32 addr, ci, pi;
 	int q_id;
@@ -1275,8 +1322,10 @@ void hinic_dump_aeq_info(struct hinic_hwdev *hwdev)
 		ci = hinic_hwif_read_reg(hwdev->hwif, addr);
 		addr = EQ_PROD_IDX_REG_ADDR(eq);
 		pi = hinic_hwif_read_reg(hwdev->hwif, addr);
-		sdk_err(hwdev->dev_hdl, "Aeq id: %d, ci: 0x%x, pi: 0x%x\n",
-			q_id, ci, pi);
+		aeqe_pos = GET_CURR_AEQ_ELEM(eq);
+		sdk_err(hwdev->dev_hdl, "Aeq id: %d, ci: 0x%08x, pi: 0x%x, work_state: 0x%x, wrap: %d, desc: 0x%x\n",
+			q_id, ci, pi, work_busy(&eq->aeq_work.work),
+			eq->wrapped, be32_to_cpu(aeqe_pos->desc));
 	}
 }
 
@@ -1292,8 +1341,10 @@ void hinic_dump_ceq_info(struct hinic_hwdev *hwdev)
 		ci = hinic_hwif_read_reg(hwdev->hwif, addr);
 		addr = EQ_PROD_IDX_REG_ADDR(eq);
 		pi = hinic_hwif_read_reg(hwdev->hwif, addr);
-		sdk_err(hwdev->dev_hdl, "Ceq id: %d, ci: 0x%x, sw_ci: 0x%x, pi: 0x%x\n",
-			q_id, ci, eq->cons_idx, pi);
+		sdk_err(hwdev->dev_hdl, "Ceq id: %d, ci: 0x%08x, sw_ci: 0x%08x, pi: 0x%x, tasklet_state: 0x%lx, wrap: %d, ceqe: 0x%x\n",
+			q_id, ci, eq->cons_idx, pi,
+			tasklet_state(&eq->ceq_tasklet),
+			eq->wrapped, be32_to_cpu(*(GET_CURR_CEQ_ELEM(eq))));
 		sdk_err(hwdev->dev_hdl, "Ceq last response hard interrupt time: %u\n",
 			jiffies_to_msecs(jiffies - eq->hard_intr_jif));
 		sdk_err(hwdev->dev_hdl, "Ceq last response soft interrupt time: %u\n",

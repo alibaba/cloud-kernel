@@ -447,6 +447,125 @@ int hinic_hiovs_del_cpath_vlan(void *hwdev, u16 vlan_id, u16 pf_id)
 	return 0;
 }
 
+int hinic_enable_netq(void *hwdev, u8 en)
+{
+	struct hinic_hwdev *nic_hwdev = (struct hinic_hwdev *)hwdev;
+	struct hinic_netq_cfg_msg netq_cfg = {0};
+	u16 out_size = sizeof(netq_cfg);
+	int err;
+
+	if (!hwdev)
+		return -EINVAL;
+
+	netq_cfg.func_id = hinic_global_func_id(hwdev);
+	netq_cfg.netq_en = en;
+
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_NETQ,
+				     &netq_cfg, sizeof(netq_cfg),
+				     &netq_cfg, &out_size);
+	if (netq_cfg.status == HINIC_MGMT_CMD_UNSUPPORTED) {
+		err = HINIC_MGMT_CMD_UNSUPPORTED;
+		nic_warn(nic_hwdev->dev_hdl, "Not support enable netq\n");
+	} else if (err || !out_size || netq_cfg.status) {
+		nic_err(nic_hwdev->dev_hdl, "Failed to enable netq, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, netq_cfg.status, out_size);
+	}
+
+	return err;
+}
+
+int hinic_add_hw_rqfilter(void *hwdev, struct hinic_rq_filter_info *filter_info)
+{
+	struct hinic_hwdev *nic_hwdev = (struct hinic_hwdev *)hwdev;
+	struct hinic_rq_filter_msg filter_msg = {0};
+	u16 out_size = sizeof(filter_msg);
+	int err;
+
+	if (!hwdev || !filter_info)
+		return -EINVAL;
+
+	switch (filter_info->filter_type) {
+	case HINIC_RQ_FILTER_TYPE_MAC_ONLY:
+		memcpy(filter_msg.mac, filter_info->mac, ETH_ALEN);
+		break;
+	case HINIC_RQ_FILTER_TYPE_VXLAN:
+		memcpy(filter_msg.mac, filter_info->mac, ETH_ALEN);
+		memcpy(filter_msg.vxlan.inner_mac,
+		       filter_info->vxlan.inner_mac, ETH_ALEN);
+		filter_msg.vxlan.vni = filter_info->vxlan.vni;
+		break;
+	default:
+		nic_warn(nic_hwdev->dev_hdl, "No support filter type: 0x%x\n",
+			 filter_info->filter_type);
+		return -EINVAL;
+	}
+
+	filter_msg.filter_type = filter_info->filter_type;
+	filter_msg.func_id = hinic_global_func_id(hwdev);
+	filter_msg.qid = filter_info->qid;
+	filter_msg.qflag = filter_info->qflag;
+
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_ADD_RQ_FILTER,
+				     &filter_msg, sizeof(filter_msg),
+				     &filter_msg, &out_size);
+	if (filter_msg.status == HINIC_MGMT_CMD_UNSUPPORTED) {
+		err = HINIC_MGMT_CMD_UNSUPPORTED;
+		nic_warn(nic_hwdev->dev_hdl, "Not support add rxq filter\n");
+	} else if (err || !out_size || filter_msg.status) {
+		nic_err(nic_hwdev->dev_hdl,
+			"Failed to add RX qfilter, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, filter_msg.status, out_size);
+		return -EINVAL;
+	}
+
+	return err;
+}
+
+int hinic_del_hw_rqfilter(void *hwdev, struct hinic_rq_filter_info *filter_info)
+{
+	struct hinic_hwdev *nic_hwdev = (struct hinic_hwdev *)hwdev;
+	struct hinic_rq_filter_msg filter_msg = {0};
+	u16 out_size = sizeof(filter_msg);
+	int err;
+
+	if (!hwdev || !filter_info)
+		return -EINVAL;
+
+	switch (filter_info->filter_type) {
+	case HINIC_RQ_FILTER_TYPE_MAC_ONLY:
+		memcpy(filter_msg.mac, filter_info->mac, ETH_ALEN);
+		break;
+	case HINIC_RQ_FILTER_TYPE_VXLAN:
+		memcpy(filter_msg.mac, filter_info->mac, ETH_ALEN);
+		memcpy(filter_msg.vxlan.inner_mac,
+		       filter_info->vxlan.inner_mac, ETH_ALEN);
+		filter_msg.vxlan.vni = filter_info->vxlan.vni;
+		break;
+	default:
+		nic_warn(nic_hwdev->dev_hdl, "No support filter type: 0x%x\n",
+			 filter_info->filter_type);
+		return -EINVAL;
+	}
+
+	filter_msg.filter_type = filter_info->filter_type;
+	filter_msg.func_id = hinic_global_func_id(hwdev);
+
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_DEL_RQ_FILTER,
+				     &filter_msg, sizeof(filter_msg),
+					&filter_msg, &out_size);
+	if (filter_msg.status == HINIC_MGMT_CMD_UNSUPPORTED) {
+		err = HINIC_MGMT_CMD_UNSUPPORTED;
+		nic_warn(nic_hwdev->dev_hdl, "Not support del rxq filter\n");
+	} else if (err || !out_size || filter_msg.status) {
+		nic_err(nic_hwdev->dev_hdl,
+			"Failed to delte RX qfilter, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, filter_msg.status, out_size);
+		return -EINVAL;
+	}
+
+	return err;
+}
+
 int hinic_add_vlan(void *hwdev, u16 vlan_id, u16 func_id)
 {
 	struct hinic_hwdev *nic_hwdev = (struct hinic_hwdev *)hwdev;
@@ -2179,7 +2298,12 @@ static int hinic_update_vf_mac_msg_handler(struct hinic_nic_io *nic_io, u16 vf,
 	struct hinic_port_mac_update *mac_out = buf_out;
 	int err;
 
-	if (vf_info->pf_set_mac && is_valid_ether_addr(mac_in->new_mac)) {
+	if (!is_valid_ether_addr(mac_in->new_mac)) {
+		nic_err(nic_io->hwdev->dev_hdl, "Update VF MAC is invalid.\n");
+		return -EINVAL;
+	}
+
+	if (vf_info->pf_set_mac) {
 		nic_warn(nic_io->hwdev->dev_hdl, "PF has already set VF mac.\n");
 		mac_out->status = HINIC_PF_SET_VF_ALREADY;
 		*out_size = sizeof(*mac_out);
@@ -2695,6 +2819,10 @@ void hinic_get_vf_config(void *hwdev, u16 vf_id, struct ifla_vf_info *ivi)
 	ivi->vlan = vfinfo->pf_vlan;
 	ivi->qos = vfinfo->pf_qos;
 
+#ifdef HAVE_VF_SPOOFCHK_CONFIGURE
+	ivi->spoofchk = vfinfo->spoofchk;
+#endif
+
 #ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 	ivi->max_tx_rate = vfinfo->max_rate;
 	ivi->min_tx_rate = vfinfo->min_rate;
@@ -2728,6 +2856,9 @@ void hinic_clear_vf_infos(void *hwdev, u16 vf_id)
 
 	if (vf_infos->max_rate)
 		hinic_set_vf_tx_rate(hwdev, vf_id, 0, 0);
+
+	if (vf_infos->spoofchk)
+		hinic_set_vf_spoofchk(hwdev, vf_id, false);
 
 	memset(vf_infos, 0, sizeof(*vf_infos));
 	/* set vf_infos to default */
@@ -2809,6 +2940,50 @@ int hinic_set_vf_link_state(void *hwdev, u16 vf_id, int link)
 	hinic_notify_vf_link_status(hwdev, vf_id, link_status);
 
 	return 0;
+}
+
+int hinic_set_vf_spoofchk(void *hwdev, u16 vf_id, bool spoofchk)
+{
+	struct hinic_hwdev *hw_dev = hwdev;
+	struct hinic_nic_io *nic_io = NULL;
+	struct hinic_spoofchk_set spoofchk_cfg = {0};
+	struct vf_data_storage *vf_infos = NULL;
+	u16 out_size = sizeof(spoofchk_cfg);
+	int err = 0;
+
+	if (!hwdev)
+		return -EINVAL;
+
+	nic_io = hw_dev->nic_io;
+	vf_infos = nic_io->vf_infos;
+
+	spoofchk_cfg.func_id = hinic_glb_pf_vf_offset(hwdev) + vf_id;
+	spoofchk_cfg.state = spoofchk ? 1 : 0;
+	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_L2NIC,
+				     HINIC_PORT_CMD_ENABLE_SPOOFCHK,
+				     &spoofchk_cfg,
+				     sizeof(spoofchk_cfg), &spoofchk_cfg,
+				     &out_size, 0);
+	if (spoofchk_cfg.status == HINIC_MGMT_CMD_UNSUPPORTED) {
+		err = HINIC_MGMT_CMD_UNSUPPORTED;
+	} else if (err || !out_size || spoofchk_cfg.status) {
+		nic_err(hw_dev->dev_hdl, "Failed to set VF(%d) spoofchk, err: %d, status: 0x%x, out size: 0x%x\n",
+			HW_VF_ID_TO_OS(vf_id), err, spoofchk_cfg.status,
+			out_size);
+		err = -EINVAL;
+	}
+
+	vf_infos[HW_VF_ID_TO_OS(vf_id)].spoofchk = spoofchk;
+
+	return err;
+}
+
+bool hinic_vf_info_spoofchk(void *hwdev, int vf_id)
+{
+	struct hinic_nic_io *nic_io = ((struct hinic_hwdev *)hwdev)->nic_io;
+	bool spoofchk = nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].spoofchk;
+
+	return spoofchk;
 }
 
 static int hinic_set_vf_rate_limit(void *hwdev, u16 vf_id, u32 tx_rate)

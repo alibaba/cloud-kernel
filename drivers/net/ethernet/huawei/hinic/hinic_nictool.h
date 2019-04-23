@@ -76,6 +76,7 @@ struct up_cmd_st {
 
 #define API_CMD 0x1
 #define API_CHAIN 0x2
+#define API_CLP 0x3
 
 struct msg_module {
 	char device_name[IFNAMSIZ];

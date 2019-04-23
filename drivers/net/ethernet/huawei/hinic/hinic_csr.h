@@ -188,6 +188,8 @@
 #define HINIC_IPSU_DIP_SIP_MASK		\
 	((0x1 << HINIC_IPSU_SIP_OFFSET) | (0x1 << HINIC_IPSU_DIP_OFFSET))
 
+#define HINIC_IPSURX_VXLAN_DPORT_ADDR	0x6d4
+
 /* For multi-host mgmt
  * 0x75C0: bit0~3: uP write, host mode is bmwg or normal host
  *	   bit4~7: master host ppf write when function initializing

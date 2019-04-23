@@ -92,6 +92,36 @@ void hinic_dcb_config_init(struct hinic_nic_dev *nic_dev,
 	dcb_cfg->pfc_state = false;
 }
 
+void hinic_init_ieee_settings(struct hinic_nic_dev *nic_dev)
+{
+	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
+	struct ieee_ets *ets = &nic_dev->hinic_ieee_ets_default;
+	struct ieee_pfc *pfc = &nic_dev->hinic_ieee_pfc;
+	struct hinic_tc_attr *tc_attr;
+	u8 i;
+
+	memset(ets, 0x0, sizeof(struct ieee_ets));
+	memset(&nic_dev->hinic_ieee_ets, 0x0, sizeof(struct ieee_ets));
+	ets->ets_cap = dcb_cfg->pg_tcs;
+	for (i = 0; i < HINIC_DCB_TC_MAX; i++) {
+		tc_attr = &dcb_cfg->tc_cfg[i].path[HINIC_DCB_CFG_TX];
+		ets->tc_tsa[i] = tc_attr->prio_type ?
+			IEEE8021Q_TSA_STRICT : IEEE8021Q_TSA_ETS;
+		ets->tc_tx_bw[i] = nic_dev->dcb_cfg.bw_pct[HINIC_DCB_CFG_TX][i];
+		ets->tc_rx_bw[i] = nic_dev->dcb_cfg.bw_pct[HINIC_DCB_CFG_RX][i];
+		ets->prio_tc[i] = hinic_dcb_get_tc(dcb_cfg,
+						   HINIC_DCB_CFG_TX, i);
+	}
+	memcpy(&nic_dev->hinic_ieee_ets, ets, sizeof(struct ieee_ets));
+
+	memset(pfc, 0x0, sizeof(struct ieee_pfc));
+	pfc->pfc_cap = dcb_cfg->pfc_tcs;
+	for (i = 0; i < dcb_cfg->pfc_tcs; i++) {
+		if (dcb_cfg->tc_cfg[i].pfc_en)
+			pfc->pfc_en |= (u8)BIT(i);
+	}
+}
+
 static int hinic_set_up_cos_map(struct hinic_nic_dev *nic_dev,
 				u8 num_cos, u8 *cos_up)
 {
@@ -218,6 +248,8 @@ int hinic_dcb_init(struct hinic_nic_dev *nic_dev)
 	memcpy(&nic_dev->save_dcb_cfg, &nic_dev->dcb_cfg,
 	       sizeof(nic_dev->save_dcb_cfg));
 
+	hinic_init_ieee_settings(nic_dev);
+
 	sema_init(&nic_dev->dcb_sem, 1);
 
 	return 0;
@@ -227,9 +259,6 @@ void hinic_set_prio_tc_map(struct hinic_nic_dev *nic_dev)
 {
 	struct net_device *netdev = nic_dev->netdev;
 	u8 prio, tc;
-
-	if (!(nic_dev->dcbx_cap & DCB_CAP_DCBX_VER_CEE))
-		return;
 
 	for (prio = 0; prio < HINIC_DCB_UP_MAX; prio++) {
 		tc = nic_dev->up_cos[prio];
@@ -777,6 +806,7 @@ static int __set_hw_cos_up_map(struct hinic_nic_dev *nic_dev)
 static int __set_hw_ets(struct hinic_nic_dev *nic_dev)
 {
 	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
+	struct ieee_ets *my_ets = &nic_dev->hinic_ieee_ets;
 	struct hinic_tc_attr *tc_attr;
 	u8 up_tc[HINIC_DCB_UP_MAX] = {0};
 	u8 up_pgid[HINIC_DCB_UP_MAX] = {0};
@@ -791,19 +821,34 @@ static int __set_hw_ets(struct hinic_nic_dev *nic_dev)
 			continue;
 
 		cos = nic_dev->up_cos[i];
-		tc = hinic_dcb_get_tc(dcb_cfg, HINIC_DCB_CFG_TX, i);
-		tc_attr = &dcb_cfg->tc_cfg[tc].path[HINIC_DCB_CFG_TX];
-		up_tc[cos] = tc;
-		up_pgid[cos] = tc_attr->pg_id;
-		up_bw[cos] = tc_attr->bw_pct;
-		up_strict[cos] = tc_attr->prio_type ?
-			HINIC_DCB_TSA_TC_SP : HINIC_DCB_TSA_TC_DWRR;
+		if ((nic_dev->dcbx_cap & DCB_CAP_DCBX_VER_IEEE)) {
+			up_tc[cos] = my_ets->prio_tc[i];
+			up_pgid[cos] = my_ets->prio_tc[i];
+			up_bw[cos] = 100;
+			up_strict[i] =
+				(my_ets->tc_tsa[cos] == IEEE8021Q_TSA_STRICT) ?
+				HINIC_DCB_TSA_TC_SP : HINIC_DCB_TSA_TC_DWRR;
+
+		} else {
+			tc = hinic_dcb_get_tc(dcb_cfg, HINIC_DCB_CFG_TX, i);
+			tc_attr = &dcb_cfg->tc_cfg[tc].path[HINIC_DCB_CFG_TX];
+			up_tc[cos] = tc;
+			up_pgid[cos] = tc_attr->pg_id;
+			up_bw[cos] = tc_attr->bw_pct;
+			up_strict[cos] = tc_attr->prio_type ?
+				HINIC_DCB_TSA_TC_SP : HINIC_DCB_TSA_TC_DWRR;
+		}
 	}
 
 	hinic_dcb_adjust_up_bw(nic_dev, up_pgid, up_bw);
 
-	for (i = 0; i < HINIC_DCB_PG_MAX; i++)
-		pg_bw[i] = dcb_cfg->bw_pct[HINIC_DCB_CFG_TX][i];
+	if (nic_dev->dcbx_cap & DCB_CAP_DCBX_VER_IEEE) {
+		for (i = 0; i < HINIC_DCB_PG_MAX; i++)
+			pg_bw[i] = my_ets->tc_tx_bw[i];
+	} else {
+		for (i = 0; i < HINIC_DCB_PG_MAX; i++)
+			pg_bw[i] = dcb_cfg->bw_pct[HINIC_DCB_CFG_TX][i];
+	}
 
 	if (test_bit(HINIC_DCB_ENABLE, &nic_dev->flags))
 		hinic_dcb_dump_configuration(nic_dev, up_tc, up_pgid,
@@ -813,13 +858,59 @@ static int __set_hw_ets(struct hinic_nic_dev *nic_dev)
 	err = hinic_dcb_set_ets(nic_dev->hwdev, up_tc, pg_bw, up_pgid,
 				up_bw, up_strict);
 	if (err) {
-		hinic_err(nic_dev, drv, "Failed to set ets\n");
+		hinic_err(nic_dev, drv, "Failed to set ets with mode:%d\n",
+			  nic_dev->dcbx_cap);
 		return err;
 	}
 
-	hinic_info(nic_dev, drv, "Set ets to hw done\n");
+	hinic_info(nic_dev, drv, "Set ets to hw done with mode:%d\n",
+		   nic_dev->dcbx_cap);
 
 	return 0;
+}
+
+static int hinic_dcbnl_set_df_ieee_cfg(struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct ieee_ets *ets_default = &nic_dev->hinic_ieee_ets_default;
+	struct ieee_pfc *my_pfc = &nic_dev->hinic_ieee_pfc;
+	struct ieee_ets *my_ets = &nic_dev->hinic_ieee_ets;
+	struct ieee_pfc pfc = {0};
+	int err1 = 0;
+	int err2 = 0;
+	u8 flag = 0;
+
+	if (!(nic_dev->dcbx_cap & DCB_CAP_DCBX_VER_IEEE))
+		return 0;
+
+	if (memcmp(my_ets, ets_default, sizeof(struct ieee_ets)))
+		flag |= (u8)BIT(0);
+
+	if (my_pfc->pfc_en)
+		flag |= (u8)BIT(1);
+	if (!flag)
+		return 0;
+
+	err1 = hinic_stop_port_traffic_flow(nic_dev);
+	if (err1)
+		return err1;
+	if (netdev->reg_state == NETREG_REGISTERED)
+		msleep(HINIC_WAIT_PORT_IO_STOP);
+
+	if (flag & BIT(0)) {
+		memcpy(my_ets, ets_default, sizeof(struct ieee_ets));
+		err1 = __set_hw_ets(nic_dev);
+	}
+	if (flag & BIT(1)) {
+		my_pfc->pfc_en = 0;
+		err2 = hinic_dcb_set_pfc(nic_dev->hwdev, false, pfc.pfc_en);
+		if (err2)
+			nicif_err(nic_dev, drv, netdev, "Failed to set pfc\n");
+	}
+
+	hinic_start_port_traffic_flow(nic_dev);
+
+	return (err1 | err2) ? -EINVAL : 0;
 }
 
 u8 hinic_dcbnl_set_all(struct net_device *netdev)
@@ -894,6 +985,156 @@ out:
 	return state;
 }
 
+static int hinic_dcbnl_ieee_get_ets(struct net_device *netdev,
+				    struct ieee_ets *ets)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct ieee_ets *my_ets = &nic_dev->hinic_ieee_ets;
+
+	ets->ets_cap = my_ets->ets_cap;
+	memcpy(ets->tc_tx_bw, my_ets->tc_tx_bw, sizeof(ets->tc_tx_bw));
+	memcpy(ets->tc_rx_bw, my_ets->tc_rx_bw, sizeof(ets->tc_rx_bw));
+	memcpy(ets->prio_tc, my_ets->prio_tc, sizeof(ets->prio_tc));
+	memcpy(ets->tc_tsa, my_ets->tc_tsa, sizeof(ets->tc_tsa));
+
+	return 0;
+}
+
+static int hinic_dcbnl_ieee_set_ets(struct net_device *netdev,
+				    struct ieee_ets *ets)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
+	struct ieee_ets *my_ets = &nic_dev->hinic_ieee_ets;
+	struct ieee_ets back_ets;
+	int err, i;
+	u8 max_tc = 0;
+	u16 total_bw = 0;
+
+	if (!(nic_dev->dcbx_cap & DCB_CAP_DCBX_VER_IEEE))
+		return -EINVAL;
+
+	if (!memcmp(ets->tc_tx_bw, my_ets->tc_tx_bw, sizeof(ets->tc_tx_bw)) &&
+	    !memcmp(ets->tc_rx_bw, my_ets->tc_rx_bw, sizeof(ets->tc_rx_bw)) &&
+	    !memcmp(ets->prio_tc, my_ets->prio_tc, sizeof(ets->prio_tc)) &&
+	    !memcmp(ets->tc_tsa, my_ets->tc_tsa, sizeof(ets->tc_tsa)))
+		return 0;
+
+	for (i = 0; i < HINIC_DCB_TC_MAX; i++)
+		total_bw += ets->tc_tx_bw[i];
+	if (!total_bw)
+		return -EINVAL;
+
+	for (i = 0; i < dcb_cfg->pg_tcs; i++) {
+		if (ets->prio_tc[i] > max_tc)
+			max_tc = ets->prio_tc[i];
+	}
+	if (max_tc)
+		max_tc++;
+
+	if (max_tc > dcb_cfg->pg_tcs)
+		return -EINVAL;
+
+	max_tc = max_tc ? dcb_cfg->pg_tcs : 0;
+	memcpy(&back_ets, my_ets, sizeof(struct ieee_ets));
+	memcpy(my_ets->tc_tx_bw, ets->tc_tx_bw, sizeof(ets->tc_tx_bw));
+	memcpy(my_ets->tc_rx_bw, ets->tc_rx_bw, sizeof(ets->tc_rx_bw));
+	memcpy(my_ets->prio_tc, ets->prio_tc, sizeof(ets->prio_tc));
+	memcpy(my_ets->tc_tsa, ets->tc_tsa, sizeof(ets->tc_tsa));
+
+	if (max_tc != netdev_get_num_tc(netdev)) {
+		err = hinic_setup_tc(netdev, max_tc);
+		if (err) {
+			netif_err(nic_dev, drv, netdev,
+				  "Failed to setup tc with max_tc:%d, err:%d\n",
+				  max_tc, err);
+			memcpy(my_ets, &back_ets, sizeof(struct ieee_ets));
+			return err;
+		}
+	}
+
+	err = hinic_stop_port_traffic_flow(nic_dev);
+	if (err)
+		return err;
+	if (netdev->reg_state == NETREG_REGISTERED)
+		msleep(HINIC_WAIT_PORT_IO_STOP);
+
+	err = __set_hw_ets(nic_dev);
+
+	hinic_start_port_traffic_flow(nic_dev);
+
+	return err;
+}
+
+static int hinic_dcbnl_ieee_get_pfc(struct net_device *netdev,
+				    struct ieee_pfc *pfc)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct ieee_pfc *my_pfc = &nic_dev->hinic_ieee_pfc;
+
+	pfc->pfc_en = my_pfc->pfc_en;
+	pfc->pfc_cap = my_pfc->pfc_cap;
+
+	return 0;
+}
+
+static int hinic_dcbnl_ieee_set_pfc(struct net_device *netdev,
+				    struct ieee_pfc *pfc)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
+	struct ieee_pfc *my_pfc = &nic_dev->hinic_ieee_pfc;
+	struct ieee_ets *my_ets = &nic_dev->hinic_ieee_ets;
+	int err, i;
+	u8 pfc_map, max_tc;
+	u8 outof_range_pfc = 0;
+	bool pfc_en;
+
+	if (!(nic_dev->dcbx_cap & DCB_CAP_DCBX_VER_IEEE))
+		return -EINVAL;
+
+	if (my_pfc->pfc_en == pfc->pfc_en)
+		return 0;
+
+	pfc_map = pfc->pfc_en & nic_dev->up_valid_bitmap;
+	outof_range_pfc = pfc->pfc_en & (~nic_dev->up_valid_bitmap);
+	if (outof_range_pfc)
+		netif_info(nic_dev, drv, netdev,
+			   "pfc setting out of range, 0x%x will be ignored\n",
+			   outof_range_pfc);
+
+	err = hinic_stop_port_traffic_flow(nic_dev);
+	if (err)
+		return err;
+	if (netdev->reg_state == NETREG_REGISTERED)
+		msleep(HINIC_WAIT_PORT_IO_STOP);
+
+	pfc_en = pfc_map ? true : false;
+	max_tc = 0;
+	for (i = 0; i < dcb_cfg->pg_tcs; i++) {
+		if (my_ets->prio_tc[i] > max_tc)
+			max_tc = my_ets->prio_tc[i];
+	}
+	pfc_en = max_tc ? pfc_en : false;
+
+	err = hinic_dcb_set_pfc(nic_dev->hwdev, pfc_en, pfc_map);
+	if (err) {
+		hinic_info(nic_dev, drv,
+			   "Failed to set pfc to hw with pfc_map:0x%x err:%d\n",
+			   pfc_map, err);
+		hinic_start_port_traffic_flow(nic_dev);
+		return err;
+	}
+
+	hinic_start_port_traffic_flow(nic_dev);
+	my_pfc->pfc_en = pfc->pfc_en;
+	hinic_info(nic_dev, drv,
+		   "Set pfc successfully with pfc_map:0x%x, pfc_en:%d\n",
+		   pfc_map, pfc_en);
+
+	return 0;
+}
+
 #ifdef NUMTCS_RETURNS_U8
 static u8 hinic_dcbnl_getnumtcs(struct net_device *netdev, int tcid, u8 *num)
 #else
@@ -955,10 +1196,13 @@ static u8 hinic_dcbnl_setdcbx(struct net_device *netdev, u8 mode)
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	int err;
 
-	if ((mode & DCB_CAP_DCBX_VER_IEEE) ||
+	if (((mode & DCB_CAP_DCBX_VER_IEEE) && (mode & DCB_CAP_DCBX_VER_CEE)) ||
 	    ((mode & DCB_CAP_DCBX_LLD_MANAGED) &&
-	    (!(mode & DCB_CAP_DCBX_HOST))))
+	    (!(mode & DCB_CAP_DCBX_HOST)))) {
+		nicif_info(nic_dev, drv, netdev,
+			   "Set dcbx failed with invalid mode:%d\n", mode);
 		return 1;
+	}
 
 	if (nic_dev->dcbx_cap == mode)
 		return 0;
@@ -970,20 +1214,38 @@ static u8 hinic_dcbnl_setdcbx(struct net_device *netdev, u8 mode)
 			DCB_CFG_CHG_PG_RX;
 		nic_dev->dcb_changes |= mask;
 		hinic_dcbnl_set_all(netdev);
+	} else if (mode & DCB_CAP_DCBX_VER_IEEE) {
+		if (netdev_get_num_tc(netdev)) {
+			err = hinic_setup_tc(netdev, 0);
+			if (err) {
+				nicif_err(nic_dev, drv, netdev,
+					  "Failed to setup tc with mode:%d\n",
+					  mode);
+				return 1;
+			}
+		}
+		hinic_dcbnl_set_df_ieee_cfg(netdev);
 	} else {
 		err = hinic_setup_tc(netdev, 0);
 		if (err) {
-			nicif_err(nic_dev, drv, netdev, "Failed to setup tc\n");
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed to setup tc with mode:%d\n", mode);
 			return 1;
 		}
 	}
-
 	nicif_info(nic_dev, drv, netdev, "Change dcbx mode to 0x%x\n", mode);
 
 	return 0;
 }
 
 const struct dcbnl_rtnl_ops hinic_dcbnl_ops = {
+	/* IEEE 802.1Qaz std */
+	.ieee_getets	= hinic_dcbnl_ieee_get_ets,
+	.ieee_setets	= hinic_dcbnl_ieee_set_ets,
+	.ieee_getpfc	= hinic_dcbnl_ieee_get_pfc,
+	.ieee_setpfc	= hinic_dcbnl_ieee_set_pfc,
+
+	/*CEE std*/
 	.getstate	= hinic_dcbnl_get_state,
 	.setstate	= hinic_dcbnl_set_state,
 	.getpermhwaddr	= hinic_dcbnl_get_perm_hw_addr,
@@ -1003,6 +1265,8 @@ const struct dcbnl_rtnl_ops hinic_dcbnl_ops = {
 	.setnumtcs	= hinic_dcbnl_setnumtcs,
 	.getpfcstate	= hinic_dcbnl_getpfcstate,
 	.setpfcstate	= hinic_dcbnl_setpfcstate,
+
+	/* DCBX configuration */
 	.getdcbx	= hinic_dcbnl_getdcbx,
 	.setdcbx	= hinic_dcbnl_setdcbx,
 };

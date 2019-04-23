@@ -48,6 +48,10 @@ static u16 num_qps;
 module_param(num_qps, ushort, 0444);
 MODULE_PARM_DESC(num_qps, "Number of Queue Pairs (default unset)");
 
+static u16 ovs_num_qps = 16;
+module_param(ovs_num_qps, ushort, 0444);
+MODULE_PARM_DESC(ovs_num_qps, "Number of Queue Pairs in ovs mode (default=16)");
+
 #define DEFAULT_POLL_WEIGHT	64
 static unsigned int poll_weight = DEFAULT_POLL_WEIGHT;
 module_param(poll_weight, uint, 0444);
@@ -1842,11 +1846,7 @@ static void __update_mac_filter(struct hinic_nic_dev *nic_dev)
 {
 	struct net_device *netdev = nic_dev->netdev;
 
-	if (netdev_uc_count(netdev) != nic_dev->netdev_uc_cnt ||
-	    netdev_mc_count(netdev) != nic_dev->netdev_mc_cnt) {
-		nic_dev->netdev_uc_cnt = netdev_uc_count(netdev);
-		nic_dev->netdev_mc_cnt = netdev_mc_count(netdev);
-
+	if (test_and_clear_bit(HINIC_UPDATE_MAC_FILTER, &nic_dev->flags)) {
 		hinic_update_mac_filter(nic_dev, &netdev->uc,
 					&nic_dev->uc_filter_list);
 #ifdef NETDEV_HW_ADDR_T_MULTICAST
@@ -1920,6 +1920,13 @@ static void hinic_nic_set_rx_mode(struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
+	if (netdev_uc_count(netdev) != nic_dev->netdev_uc_cnt ||
+	    netdev_mc_count(netdev) != nic_dev->netdev_mc_cnt) {
+		set_bit(HINIC_UPDATE_MAC_FILTER, &nic_dev->flags);
+		nic_dev->netdev_uc_cnt = netdev_uc_count(netdev);
+		nic_dev->netdev_mc_cnt = netdev_mc_count(netdev);
+	}
+
 	if (FUNC_SUPPORT_RX_MODE(nic_dev->hwdev))
 		queue_work(nic_dev->workq, &nic_dev->rx_mode_work);
 }
@@ -1968,7 +1975,9 @@ static const struct net_device_ops hinic_netdev_ops = {
 #else
 	.ndo_set_vf_tx_rate	= hinic_ndo_set_vf_bw,
 #endif /* HAVE_NDO_SET_VF_MIN_MAX_TX_RATE */
-
+#ifdef HAVE_VF_SPOOFCHK_CONFIGURE
+	.ndo_set_vf_spoofchk	= hinic_ndo_set_vf_spoofchk,
+#endif
 	.ndo_get_vf_config	= hinic_ndo_get_vf_config,
 #endif
 
@@ -2172,6 +2181,9 @@ static void hinic_try_to_enable_rss(struct hinic_nic_dev *nic_dev)
 	u8 prio_tc[HINIC_DCB_UP_MAX] = {0};
 	int i, node, err = 0;
 	u16 num_cpus = 0;
+	enum hinic_service_mode service_mode =
+					hinic_get_service_mode(nic_dev->hwdev);
+
 
 	nic_dev->max_qps = hinic_func_max_nic_qnum(nic_dev->hwdev);
 	if (nic_dev->max_qps <= 1) {
@@ -2201,6 +2213,15 @@ static void hinic_try_to_enable_rss(struct hinic_nic_dev *nic_dev)
 	nic_dev->max_qps = hinic_func_max_nic_qnum(nic_dev->hwdev);
 
 	MOD_PARA_VALIDATE_NUM_QPS(nic_dev, num_qps, nic_dev->num_qps);
+
+	/* To reduce memory footprint in ovs mode.
+	 * VF can't get board info correctly with early pf driver.
+	 */
+	if ((hinic_get_func_mode(nic_dev->hwdev) == FUNC_MOD_NORMAL_HOST) &&
+	    service_mode == HINIC_WORK_MODE_OVS &&
+	    hinic_func_type(nic_dev->hwdev) != TYPE_VF)
+		MOD_PARA_VALIDATE_NUM_QPS(nic_dev, ovs_num_qps,
+					  nic_dev->num_qps);
 
 	for (i = 0; i < (int)num_online_cpus(); i++) {
 		node = (int)cpu_to_node(i);

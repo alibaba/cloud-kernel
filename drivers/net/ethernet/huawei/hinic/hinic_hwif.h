@@ -18,7 +18,7 @@
 
 #include "hinic_hwdev.h"
 
-#define HINIC_WAIT_DOORBELL_AND_OUTBOUND_TIMEOUT	2000
+#define HINIC_WAIT_DOORBELL_AND_OUTBOUND_TIMEOUT	60000
 
 struct hinic_free_db_area {
 	u32		db_idx[HINIC_DB_MAX_AREAS];

@@ -39,6 +39,9 @@
 #define BUF_OUT_DEFAULT_SIZE		1
 #define SEGMENT_LEN			48
 
+#define MGMT_MSG_MAX_SEQ_ID	(ALIGN(HINIC_MSG_TO_MGMT_MAX_LEN, \
+				       SEGMENT_LEN) / SEGMENT_LEN)
+
 #define MAX_PF_MGMT_BUF_SIZE		2048UL
 
 #define MGMT_MSG_SIZE_MIN		20
@@ -71,9 +74,9 @@
 static void pf_to_mgmt_send_event_set(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 				      int event_flag)
 {
-	down(&pf_to_mgmt->msg_sem);
+	spin_lock(&pf_to_mgmt->sync_event_lock);
 	pf_to_mgmt->event_flag = event_flag;
-	up(&pf_to_mgmt->msg_sem);
+	spin_unlock(&pf_to_mgmt->sync_event_lock);
 }
 
 /**
@@ -97,6 +100,8 @@ int hinic_register_mgmt_msg_cb(void *hwdev, enum hinic_mod_type mod,
 	pf_to_mgmt->recv_mgmt_msg_cb[mod] = callback;
 	pf_to_mgmt->recv_mgmt_msg_data[mod] = pri_handle;
 
+	set_bit(HINIC_MGMT_MSG_CB_REG, &pf_to_mgmt->mgmt_msg_cb_state[mod]);
+
 	return 0;
 }
 EXPORT_SYMBOL(hinic_register_mgmt_msg_cb);
@@ -110,17 +115,21 @@ void hinic_unregister_mgmt_msg_cb(void *hwdev, enum hinic_mod_type mod)
 {
 	struct hinic_msg_pf_to_mgmt *pf_to_mgmt;
 
-	if (!hwdev)
+	if (!hwdev || mod >= HINIC_MOD_HW_MAX)
 		return;
 
 	pf_to_mgmt = ((struct hinic_hwdev *)hwdev)->pf_to_mgmt;
 	if (!pf_to_mgmt)
 		return;
 
-	if (mod < HINIC_MOD_HW_MAX) {
-		pf_to_mgmt->recv_mgmt_msg_cb[mod] = NULL;
-		pf_to_mgmt->recv_mgmt_msg_data[mod] = NULL;
-	}
+	clear_bit(HINIC_MGMT_MSG_CB_REG, &pf_to_mgmt->mgmt_msg_cb_state[mod]);
+
+	while (test_bit(HINIC_MGMT_MSG_CB_RUNNING,
+			&pf_to_mgmt->mgmt_msg_cb_state[mod]))
+		usleep_range(900, 1000);
+
+	pf_to_mgmt->recv_mgmt_msg_cb[mod] = NULL;
+	pf_to_mgmt->recv_mgmt_msg_data[mod] = NULL;
 }
 EXPORT_SYMBOL(hinic_unregister_mgmt_msg_cb);
 
@@ -216,6 +225,29 @@ static void prepare_header(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 			   enum hinic_mgmt_cmd cmd, u32 msg_id)
 {
 	struct hinic_hwif *hwif = pf_to_mgmt->hwdev->hwif;
+
+	*header = HINIC_MSG_HEADER_SET(msg_len, MSG_LEN) |
+		HINIC_MSG_HEADER_SET(mod, MODULE) |
+		HINIC_MSG_HEADER_SET(msg_len, SEG_LEN) |
+		HINIC_MSG_HEADER_SET(ack_type, NO_ACK) |
+		HINIC_MSG_HEADER_SET(0, ASYNC_MGMT_TO_PF) |
+		HINIC_MSG_HEADER_SET(0, SEQID) |
+		HINIC_MSG_HEADER_SET(LAST_SEGMENT, LAST) |
+		HINIC_MSG_HEADER_SET(direction, DIRECTION) |
+		HINIC_MSG_HEADER_SET(cmd, CMD) |
+		HINIC_MSG_HEADER_SET(HINIC_PCI_INTF_IDX(hwif), PCI_INTF_IDX) |
+		HINIC_MSG_HEADER_SET(hwif->attr.port_to_port_idx, P2P_IDX) |
+		HINIC_MSG_HEADER_SET(msg_id, MSG_ID);
+}
+
+static void clp_prepare_header(struct hinic_hwdev *hwdev,
+			       u64 *header, int msg_len,
+			       enum hinic_mod_type mod,
+			       enum hinic_msg_ack_type ack_type,
+			       enum hinic_msg_direction_type direction,
+			       enum hinic_mgmt_cmd cmd, u32 msg_id)
+{
+	struct hinic_hwif *hwif = hwdev->hwif;
 
 	*header = HINIC_MSG_HEADER_SET(msg_len, MSG_LEN) |
 		HINIC_MSG_HEADER_SET(mod, MODULE) |
@@ -392,18 +424,15 @@ int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 	timeo = msecs_to_jiffies(timeout ? timeout : MGMT_MSG_TIMEOUT);
 
 	ret = wait_for_completion_timeout(recv_done, timeo);
-	down(&pf_to_mgmt->msg_sem);
 	if (!ret) {
 		sdk_err(dev, "Mgmt response sync cmd timeout, sync_msg_id: %d\n",
 			pf_to_mgmt->sync_msg_id);
 		hinic_dump_aeq_info((struct hinic_hwdev *)hwdev);
 		err = -ETIMEDOUT;
-		pf_to_mgmt->event_flag = SEND_EVENT_TIMEOUT;
-		up(&pf_to_mgmt->msg_sem);
+		pf_to_mgmt_send_event_set(pf_to_mgmt, SEND_EVENT_TIMEOUT);
 		goto unlock_sync_msg;
 	}
-	pf_to_mgmt->event_flag = SEND_EVENT_END;
-	up(&pf_to_mgmt->msg_sem);
+	pf_to_mgmt_send_event_set(pf_to_mgmt, SEND_EVENT_END);
 
 	if (!(((struct hinic_hwdev *)hwdev)->chip_present_flag)) {
 		destroy_completion(recv_done);
@@ -430,6 +459,410 @@ unlock_sync_msg:
 	up(&pf_to_mgmt->sync_msg_lock);
 
 	return err;
+}
+
+static int __get_clp_reg(void *hwdev, enum clp_data_type data_type,
+			 enum clp_reg_type reg_type, u32 *reg_addr)
+{
+	struct hinic_hwdev *dev = hwdev;
+	u32 offset;
+
+	offset = HINIC_CLP_REG_GAP * hinic_pcie_itf_id(dev);
+
+	switch (reg_type) {
+	case HINIC_CLP_BA_HOST:
+		*reg_addr = (data_type == HINIC_CLP_REQ_HOST) ?
+			     HINIC_CLP_REG(REQ_SRAM_BA) :
+			     HINIC_CLP_REG(RSP_SRAM_BA);
+		break;
+
+	case HINIC_CLP_SIZE_HOST:
+		*reg_addr = HINIC_CLP_REG(SRAM_SIZE);
+		break;
+
+	case HINIC_CLP_LEN_HOST:
+		*reg_addr = (data_type == HINIC_CLP_REQ_HOST) ?
+			     HINIC_CLP_REG(REQ) : HINIC_CLP_REG(RSP);
+		break;
+
+	case HINIC_CLP_START_REQ_HOST:
+		*reg_addr = HINIC_CLP_REG(REQ);
+		break;
+
+	case HINIC_CLP_READY_RSP_HOST:
+		*reg_addr = HINIC_CLP_REG(RSP);
+		break;
+
+	default:
+		*reg_addr = 0;
+		break;
+	}
+	if (*reg_addr == 0)
+		return -EINVAL;
+
+	*reg_addr += offset;
+
+	return 0;
+}
+
+static int hinic_read_clp_reg(struct hinic_hwdev *hwdev,
+			      enum clp_data_type data_type,
+			      enum clp_reg_type reg_type, u32 *read_value)
+{
+	int err;
+	u32 reg_addr, reg_value;
+
+	if (data_type == HINIC_CLP_REQ_HOST &&
+	    reg_type == HINIC_CLP_READY_RSP_HOST)
+		return -EINVAL;
+	if (data_type == HINIC_CLP_RSP_HOST &&
+	    reg_type == HINIC_CLP_START_REQ_HOST)
+		return -EINVAL;
+
+	err = __get_clp_reg(hwdev, data_type, reg_type, &reg_addr);
+	if (err)
+		return err;
+
+	reg_value = hinic_hwif_read_reg(hwdev->hwif, reg_addr);
+
+	switch (reg_type) {
+	case HINIC_CLP_BA_HOST:
+		reg_value = ((reg_value >>
+			      HINIC_CLP_OFFSET(SRAM_BASE)) &
+			      HINIC_CLP_MASK(SRAM_BASE));
+		break;
+
+	case HINIC_CLP_SIZE_HOST:
+		reg_value = ((reg_value >>
+			      HINIC_CLP_OFFSET(SRAM_SIZE)) &
+			      HINIC_CLP_MASK(SRAM_SIZE));
+		break;
+
+	case HINIC_CLP_LEN_HOST:
+		reg_value = ((reg_value >> HINIC_CLP_OFFSET(LEN)) &
+			      HINIC_CLP_MASK(LEN));
+		break;
+
+	case HINIC_CLP_START_REQ_HOST:
+		reg_value = ((reg_value >> HINIC_CLP_OFFSET(START)) &
+			      HINIC_CLP_MASK(START));
+		break;
+
+	case HINIC_CLP_READY_RSP_HOST:
+		reg_value = ((reg_value >> HINIC_CLP_OFFSET(READY)) &
+			      HINIC_CLP_MASK(READY));
+		break;
+
+	default:
+		break;
+	}
+
+	*read_value = reg_value;
+	return 0;
+}
+
+static int __check_reg_value(enum clp_reg_type reg_type, u32 value)
+{
+	if (reg_type == HINIC_CLP_BA_HOST &&
+	    value > HINIC_CLP_SRAM_BASE_REG_MAX)
+		return -EINVAL;
+
+	if (reg_type == HINIC_CLP_SIZE_HOST &&
+	    value > HINIC_CLP_SRAM_SIZE_REG_MAX)
+		return -EINVAL;
+
+	if (reg_type == HINIC_CLP_LEN_HOST &&
+	    value > HINIC_CLP_LEN_REG_MAX)
+		return -EINVAL;
+
+	if (reg_type == HINIC_CLP_START_REQ_HOST &&
+	    value > HINIC_CLP_START_OR_READY_REG_MAX)
+		return -EINVAL;
+
+	if (reg_type == HINIC_CLP_READY_RSP_HOST &&
+	    value > HINIC_CLP_START_OR_READY_REG_MAX)
+		return -EINVAL;
+
+	return 0;
+}
+
+static void hinic_write_clp_reg(struct hinic_hwdev *hwdev,
+				enum clp_data_type data_type,
+				enum clp_reg_type reg_type, u32 value)
+{
+	u32 reg_addr, reg_value;
+
+	if (data_type == HINIC_CLP_REQ_HOST &&
+	    reg_type == HINIC_CLP_READY_RSP_HOST)
+		return;
+	if (data_type == HINIC_CLP_RSP_HOST &&
+	    reg_type == HINIC_CLP_START_REQ_HOST)
+		return;
+
+	if (__check_reg_value(reg_type, value))
+		return;
+
+	if (__get_clp_reg(hwdev, data_type, reg_type, &reg_addr))
+		return;
+
+	reg_value = hinic_hwif_read_reg(hwdev->hwif, reg_addr);
+
+	switch (reg_type) {
+	case HINIC_CLP_LEN_HOST:
+		reg_value = reg_value &
+			    (~(HINIC_CLP_MASK(LEN) << HINIC_CLP_OFFSET(LEN)));
+		reg_value = reg_value | (value << HINIC_CLP_OFFSET(LEN));
+		break;
+
+	case HINIC_CLP_START_REQ_HOST:
+		reg_value = reg_value &
+			    (~(HINIC_CLP_MASK(START) <<
+			      HINIC_CLP_OFFSET(START)));
+		reg_value = reg_value | (value << HINIC_CLP_OFFSET(START));
+		break;
+
+	case HINIC_CLP_READY_RSP_HOST:
+		reg_value = reg_value &
+			    (~(HINIC_CLP_MASK(READY) <<
+			       HINIC_CLP_OFFSET(READY)));
+		reg_value = reg_value | (value << HINIC_CLP_OFFSET(READY));
+		break;
+
+	default:
+		return;
+	}
+
+	hinic_hwif_write_reg(hwdev->hwif, reg_addr, reg_value);
+}
+
+static int hinic_read_clp_data(struct hinic_hwdev *hwdev,
+			       void *buf_out, u16 *out_size)
+{
+	int err;
+	u32 reg = HINIC_CLP_DATA(RSP);
+	u32 ready, delay_cnt;
+	u32 *ptr = (u32 *)buf_out;
+	u32 temp_out_size = 0;
+
+	err = hinic_read_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
+				 HINIC_CLP_READY_RSP_HOST, &ready);
+	if (err)
+		return err;
+
+	delay_cnt = 0;
+	while (ready == 0) {
+		usleep_range(9000, 10000);
+		delay_cnt++;
+		err = hinic_read_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
+					 HINIC_CLP_READY_RSP_HOST, &ready);
+		if (err || delay_cnt > HINIC_CLP_DELAY_CNT_MAX) {
+			sdk_err(hwdev->dev_hdl, "timeout with delay_cnt:%d\n",
+				delay_cnt);
+			return -EINVAL;
+		}
+	}
+
+	err = hinic_read_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
+				 HINIC_CLP_LEN_HOST, &temp_out_size);
+	if (err)
+		return err;
+
+	if (temp_out_size > HINIC_CLP_SRAM_SIZE_REG_MAX || !temp_out_size) {
+		sdk_err(hwdev->dev_hdl, "invalid temp_out_size:%d\n",
+			temp_out_size);
+		return -EINVAL;
+	}
+
+	*out_size = (u16)(temp_out_size & 0xffff);
+	for (; temp_out_size > 0; temp_out_size--) {
+		*ptr = hinic_hwif_read_reg(hwdev->hwif, reg);
+		ptr++;
+		reg = reg + 4;
+	}
+
+	hinic_write_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
+			    HINIC_CLP_READY_RSP_HOST, (u32)0x0);
+	hinic_write_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
+			    HINIC_CLP_LEN_HOST, (u32)0x0);
+
+	return 0;
+}
+
+static int hinic_write_clp_data(struct hinic_hwdev *hwdev,
+				void *buf_in, u16 in_size)
+{
+	int err;
+	u32 reg = HINIC_CLP_DATA(REQ);
+	u32 start = 1;
+	u32 delay_cnt = 0;
+	u32 *ptr = (u32 *)buf_in;
+
+	err = hinic_read_clp_reg(hwdev, HINIC_CLP_REQ_HOST,
+				 HINIC_CLP_START_REQ_HOST, &start);
+	if (err)
+		return err;
+
+	while (start == 1) {
+		usleep_range(9000, 10000);
+		delay_cnt++;
+		err = hinic_read_clp_reg(hwdev, HINIC_CLP_REQ_HOST,
+					 HINIC_CLP_START_REQ_HOST, &start);
+		if (err || delay_cnt > HINIC_CLP_DELAY_CNT_MAX)
+			return -EINVAL;
+	}
+
+	hinic_write_clp_reg(hwdev, HINIC_CLP_REQ_HOST,
+			    HINIC_CLP_LEN_HOST, in_size);
+	hinic_write_clp_reg(hwdev, HINIC_CLP_REQ_HOST,
+			    HINIC_CLP_START_REQ_HOST, (u32)0x1);
+
+	for (; in_size > 0; in_size--) {
+		hinic_hwif_write_reg(hwdev->hwif, reg, *ptr);
+		ptr++;
+		reg = reg + 4;
+	}
+
+	return 0;
+}
+
+static int hinic_check_clp_init_status(struct hinic_hwdev *hwdev)
+{
+	int err;
+	u32 reg_value = 0;
+
+	err = hinic_read_clp_reg(hwdev, HINIC_CLP_REQ_HOST,
+				 HINIC_CLP_BA_HOST, &reg_value);
+	if (err || !reg_value) {
+		sdk_err(hwdev->dev_hdl, "Wrong req ba value:0x%x\n", reg_value);
+		return -EINVAL;
+	}
+
+	err = hinic_read_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
+				 HINIC_CLP_BA_HOST, &reg_value);
+	if (err || !reg_value) {
+		sdk_err(hwdev->dev_hdl, "Wrong rsp ba value:0x%x\n", reg_value);
+		return -EINVAL;
+	}
+
+	err = hinic_read_clp_reg(hwdev, HINIC_CLP_REQ_HOST,
+				 HINIC_CLP_SIZE_HOST, &reg_value);
+	if (err || !reg_value) {
+		sdk_err(hwdev->dev_hdl, "Wrong req size\n");
+		return -EINVAL;
+	}
+
+	err = hinic_read_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
+				 HINIC_CLP_SIZE_HOST, &reg_value);
+	if (err || !reg_value) {
+		sdk_err(hwdev->dev_hdl, "Wrong rsp size\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void hinic_clear_clp_data(struct hinic_hwdev *hwdev,
+				 enum clp_data_type data_type)
+{
+	u32 reg = (data_type == HINIC_CLP_REQ_HOST) ?
+		   HINIC_CLP_DATA(REQ) : HINIC_CLP_DATA(RSP);
+	u32 count = HINIC_CLP_INPUT_BUFFER_LEN_HOST / HINIC_CLP_DATA_UNIT_HOST;
+
+	for (; count > 0; count--) {
+		hinic_hwif_write_reg(hwdev->hwif, reg, 0x0);
+		reg = reg + 4;
+	}
+}
+
+int hinic_pf_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
+			 void *buf_in, u16 in_size,
+			 void *buf_out, u16 *out_size)
+{
+	struct hinic_clp_pf_to_mgmt *clp_pf_to_mgmt;
+	struct hinic_hwdev *dev = hwdev;
+	u64 header;
+	u16 real_size;
+	u8 *clp_msg_buf;
+	int err;
+
+	clp_pf_to_mgmt = ((struct hinic_hwdev *)hwdev)->clp_pf_to_mgmt;
+	clp_msg_buf = clp_pf_to_mgmt->clp_msg_buf;
+
+	/*4 bytes alignment*/
+	if (in_size % HINIC_CLP_DATA_UNIT_HOST)
+		real_size = (in_size + (u16)sizeof(header)
+		     + HINIC_CLP_DATA_UNIT_HOST);
+	else
+		real_size = in_size + (u16)sizeof(header);
+	real_size = real_size / HINIC_CLP_DATA_UNIT_HOST;
+
+	if (real_size >
+	    (HINIC_CLP_INPUT_BUFFER_LEN_HOST / HINIC_CLP_DATA_UNIT_HOST)) {
+		sdk_err(dev->dev_hdl, "Invalid real_size:%d\n", real_size);
+		return -EINVAL;
+	}
+	down(&clp_pf_to_mgmt->clp_msg_lock);
+
+	err = hinic_check_clp_init_status(dev);
+	if (err) {
+		sdk_err(dev->dev_hdl, "Check clp init status failed\n");
+		up(&clp_pf_to_mgmt->clp_msg_lock);
+		return err;
+	}
+
+	hinic_clear_clp_data(dev, HINIC_CLP_RSP_HOST);
+	hinic_write_clp_reg(dev, HINIC_CLP_RSP_HOST,
+			    HINIC_CLP_READY_RSP_HOST, 0x0);
+
+	/*Send request*/
+	memset(clp_msg_buf, 0x0, HINIC_CLP_INPUT_BUFFER_LEN_HOST);
+	clp_prepare_header(dev, &header, in_size, mod, 0, 0, cmd, 0);
+
+	memcpy(clp_msg_buf, &header, sizeof(header));
+	clp_msg_buf += sizeof(header);
+	memcpy(clp_msg_buf, buf_in, in_size);
+
+	clp_msg_buf = clp_pf_to_mgmt->clp_msg_buf;
+
+	hinic_clear_clp_data(dev, HINIC_CLP_REQ_HOST);
+	err = hinic_write_clp_data(hwdev,
+				   clp_pf_to_mgmt->clp_msg_buf, real_size);
+	if (err) {
+		sdk_err(dev->dev_hdl, "Send clp request failed\n");
+		up(&clp_pf_to_mgmt->clp_msg_lock);
+		return -EINVAL;
+	}
+
+	/*Get response*/
+	clp_msg_buf = clp_pf_to_mgmt->clp_msg_buf;
+	memset(clp_msg_buf, 0x0, HINIC_CLP_INPUT_BUFFER_LEN_HOST);
+	err = hinic_read_clp_data(hwdev, clp_msg_buf, &real_size);
+	hinic_clear_clp_data(dev, HINIC_CLP_RSP_HOST);
+	if (err) {
+		sdk_err(dev->dev_hdl, "Read clp response failed\n");
+		up(&clp_pf_to_mgmt->clp_msg_lock);
+		return -EINVAL;
+	}
+
+	real_size = (u16)((real_size * HINIC_CLP_DATA_UNIT_HOST) & 0xffff);
+	if (real_size <= sizeof(header) ||
+	    real_size > HINIC_CLP_INPUT_BUFFER_LEN_HOST) {
+		sdk_err(dev->dev_hdl, "Invalid response size:%d", real_size);
+		up(&clp_pf_to_mgmt->clp_msg_lock);
+		return -EINVAL;
+	}
+	real_size = real_size - sizeof(header);
+	if (real_size != *out_size) {
+		sdk_err(dev->dev_hdl, "Invalid real_size:%d, out_size:%d\n",
+			real_size, *out_size);
+		up(&clp_pf_to_mgmt->clp_msg_lock);
+		return -EINVAL;
+	}
+
+	memcpy(buf_out, (clp_msg_buf + sizeof(header)), real_size);
+	up(&clp_pf_to_mgmt->clp_msg_lock);
+
+	return 0;
 }
 
 int hinic_msg_to_mgmt_poll_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
@@ -566,9 +999,16 @@ static void mgmt_recv_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 		goto resp;
 	}
 
-	if (!pf_to_mgmt->recv_mgmt_msg_cb[mod]) {
+	set_bit(HINIC_MGMT_MSG_CB_RUNNING,
+		&pf_to_mgmt->mgmt_msg_cb_state[tmp_mod]);
+
+	if (!pf_to_mgmt->recv_mgmt_msg_cb[mod] ||
+	    !test_bit(HINIC_MGMT_MSG_CB_REG,
+	    &pf_to_mgmt->mgmt_msg_cb_state[tmp_mod])) {
 		sdk_warn(dev, "Receive mgmt callback is null, mod = %d\n",
 			 mod);
+		clear_bit(HINIC_MGMT_MSG_CB_RUNNING,
+			  &pf_to_mgmt->mgmt_msg_cb_state[tmp_mod]);
 		goto resp;
 	}
 
@@ -586,6 +1026,9 @@ static void mgmt_recv_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 					pf_to_mgmt->recv_mgmt_msg_data[tmp_mod],
 					cmd, buf_in, in_size,
 					buf_out, &out_size);
+
+	clear_bit(HINIC_MGMT_MSG_CB_RUNNING,
+		  &pf_to_mgmt->mgmt_msg_cb_state[tmp_mod]);
 
 resp:
 	if (!ack_first && need_resp)
@@ -607,7 +1050,7 @@ static void mgmt_resp_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 	if (recv_msg->msg_id & ASYNC_MSG_FLAG)
 		return;
 
-	down(&pf_to_mgmt->msg_sem);
+	spin_lock(&pf_to_mgmt->sync_event_lock);
 	if (recv_msg->msg_id == pf_to_mgmt->sync_msg_id &&
 	    pf_to_mgmt->event_flag == SEND_EVENT_START) {
 		complete(&recv_msg->recv_done);
@@ -620,7 +1063,7 @@ static void mgmt_resp_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 			pf_to_mgmt->sync_msg_id, recv_msg->msg_id,
 			pf_to_mgmt->event_flag);
 	}
-	up(&pf_to_mgmt->msg_sem);
+	spin_unlock(&pf_to_mgmt->sync_event_lock);
 }
 
 static void recv_mgmt_msg_work_handler(struct work_struct *work)
@@ -639,6 +1082,24 @@ static void recv_mgmt_msg_work_handler(struct work_struct *work)
 	kfree(mgmt_work);
 }
 
+static bool check_mgmt_seq_id_and_seg_len(struct hinic_recv_msg *recv_msg,
+					  u8 seq_id, u8 seg_len)
+{
+	if (seq_id > MGMT_MSG_MAX_SEQ_ID || seg_len > SEGMENT_LEN)
+		return false;
+
+	if (seq_id == 0) {
+		recv_msg->seq_id = seq_id;
+	} else {
+		if (seq_id != recv_msg->seq_id + 1)
+			return false;
+
+		recv_msg->seq_id = seq_id;
+	}
+
+	return true;
+}
+
 /**
  * recv_mgmt_msg_handler - handler a message from mgmt cpu
  * @pf_to_mgmt: PF to MGMT channel
@@ -651,7 +1112,8 @@ static void recv_mgmt_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 	struct hinic_mgmt_msg_handle_work *mgmt_work;
 	u64 mbox_header = *((u64 *)header);
 	void *msg_body = header + sizeof(mbox_header);
-	u32 seq_id, seq_len;
+	u8 seq_id, seq_len;
+	u32 offset;
 	u64 dir;
 
 	/* Don't need to get anything from hw when cmd is async */
@@ -662,9 +1124,18 @@ static void recv_mgmt_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 
 	seq_len = HINIC_MSG_HEADER_GET(mbox_header, SEG_LEN);
 	seq_id  = HINIC_MSG_HEADER_GET(mbox_header, SEQID);
-	seq_id  = seq_id * SEGMENT_LEN;
 
-	memcpy((u8 *)recv_msg->msg + seq_id, msg_body, seq_len);
+	if (!check_mgmt_seq_id_and_seg_len(recv_msg, seq_id, seq_len)) {
+		sdk_err(pf_to_mgmt->hwdev->dev_hdl,
+			"Mgmt msg sequence id and segment length check fail, front seq_id: 0x%x, current seq_id: 0x%x, seg len: 0x%x\n",
+			recv_msg->seq_id, seq_id, seq_len);
+		/* set seq_id to invalid seq_id */
+		recv_msg->seq_id = MGMT_MSG_MAX_SEQ_ID;
+		return;
+	}
+
+	offset  = seq_id * SEGMENT_LEN;
+	memcpy((u8 *)recv_msg->msg + offset, msg_body, seq_len);
 
 	if (!HINIC_MSG_HEADER_GET(mbox_header, LAST))
 		return;
@@ -675,6 +1146,7 @@ static void recv_mgmt_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 							  ASYNC_MGMT_TO_PF);
 	recv_msg->msg_len = HINIC_MSG_HEADER_GET(mbox_header, MSG_LEN);
 	recv_msg->msg_id = HINIC_MSG_HEADER_GET(mbox_header, MSG_ID);
+	recv_msg->seq_id = MGMT_MSG_MAX_SEQ_ID;
 
 	if (HINIC_MSG_HEADER_GET(mbox_header, DIRECTION) ==
 	    HINIC_MSG_RESPONSE) {
@@ -727,10 +1199,6 @@ void hinic_mgmt_msg_aeqe_handler(void *hwdev, u8 *header, u8 size)
 	is_send_dir = (HINIC_MSG_HEADER_GET(*(u64 *)header, DIRECTION) ==
 		       HINIC_MSG_DIRECT_SEND) ? true : false;
 
-	/* ignore mgmt initiative report events when function deinit */
-	if (test_bit(HINIC_HWDEV_FUNC_DEINIT, &dev->func_state) && is_send_dir)
-		return;
-
 	recv_msg = is_send_dir ? &pf_to_mgmt->recv_msg_from_mgmt :
 		   &pf_to_mgmt->recv_resp_msg_from_mgmt;
 
@@ -744,6 +1212,8 @@ void hinic_mgmt_msg_aeqe_handler(void *hwdev, u8 *header, u8 size)
  **/
 static int alloc_recv_msg(struct hinic_recv_msg *recv_msg)
 {
+	recv_msg->seq_id = MGMT_MSG_MAX_SEQ_ID;
+
 	recv_msg->msg = kzalloc(MAX_PF_MGMT_BUF_SIZE, GFP_KERNEL);
 	if (!recv_msg->msg)
 		return -ENOMEM;
@@ -850,7 +1320,7 @@ int hinic_pf_to_mgmt_init(struct hinic_hwdev *hwdev)
 	hwdev->pf_to_mgmt = pf_to_mgmt;
 	pf_to_mgmt->hwdev = hwdev;
 	spin_lock_init(&pf_to_mgmt->async_msg_lock);
-	sema_init(&pf_to_mgmt->msg_sem, 1);
+	spin_lock_init(&pf_to_mgmt->sync_event_lock);
 	sema_init(&pf_to_mgmt->sync_msg_lock, 1);
 	pf_to_mgmt->workq = create_singlethread_workqueue(HINIC_MGMT_WQ_NAME);
 	if (!pf_to_mgmt->workq) {
@@ -880,7 +1350,7 @@ alloc_msg_buf_err:
 	destroy_workqueue(pf_to_mgmt->workq);
 
 create_mgmt_workq_err:
-	sema_deinit(&pf_to_mgmt->msg_sem);
+	spin_lock_deinit(&pf_to_mgmt->sync_event_lock);
 	spin_lock_deinit(&pf_to_mgmt->async_msg_lock);
 	sema_deinit(&pf_to_mgmt->sync_msg_lock);
 	kfree(pf_to_mgmt);
@@ -896,10 +1366,13 @@ void hinic_pf_to_mgmt_free(struct hinic_hwdev *hwdev)
 {
 	struct hinic_msg_pf_to_mgmt *pf_to_mgmt = hwdev->pf_to_mgmt;
 
+	/* destroy workqueue before free related pf_to_mgmt resources in case of
+	 * illegal resource access
+	 */
+	destroy_workqueue(pf_to_mgmt->workq);
 	hinic_api_cmd_free(pf_to_mgmt->cmd_chain);
 	free_msg_buf(pf_to_mgmt);
-	destroy_workqueue(pf_to_mgmt->workq);
-	sema_deinit(&pf_to_mgmt->msg_sem);
+	spin_lock_deinit(&pf_to_mgmt->sync_event_lock);
 	spin_lock_deinit(&pf_to_mgmt->async_msg_lock);
 	sema_deinit(&pf_to_mgmt->sync_msg_lock);
 	kfree(pf_to_mgmt);
@@ -914,4 +1387,34 @@ void hinic_flush_mgmt_workq(void *hwdev)
 	if (hinic_func_type(dev) != TYPE_VF &&
 	    hinic_is_hwdev_mod_inited(hwdev, HINIC_HWDEV_MGMT_INITED))
 		flush_workqueue(dev->pf_to_mgmt->workq);
+}
+
+int hinic_clp_pf_to_mgmt_init(struct hinic_hwdev *hwdev)
+{
+	struct hinic_clp_pf_to_mgmt *clp_pf_to_mgmt;
+
+	clp_pf_to_mgmt = kzalloc(sizeof(*clp_pf_to_mgmt), GFP_KERNEL);
+	if (!clp_pf_to_mgmt)
+		return -ENOMEM;
+
+	clp_pf_to_mgmt->clp_msg_buf = kzalloc(HINIC_CLP_INPUT_BUFFER_LEN_HOST,
+					      GFP_KERNEL);
+	if (!clp_pf_to_mgmt->clp_msg_buf) {
+		kfree(clp_pf_to_mgmt);
+		return -ENOMEM;
+	}
+	sema_init(&clp_pf_to_mgmt->clp_msg_lock, 1);
+
+	hwdev->clp_pf_to_mgmt = clp_pf_to_mgmt;
+
+	return 0;
+}
+
+void hinic_clp_pf_to_mgmt_free(struct hinic_hwdev *hwdev)
+{
+	struct hinic_clp_pf_to_mgmt *clp_pf_to_mgmt = hwdev->clp_pf_to_mgmt;
+
+	sema_deinit(&clp_pf_to_mgmt->clp_msg_lock);
+	kfree(clp_pf_to_mgmt->clp_msg_buf);
+	kfree(clp_pf_to_mgmt);
 }

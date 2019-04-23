@@ -103,7 +103,9 @@ enum driver_cmd_type {
 	GET_WIN_STAT = 0x60,
 	WIN_CSR_READ = 0x61,
 	WIN_CSR_WRITE = 0x62,
-	WIN_API_CMD_RD = 0x63
+	WIN_API_CMD_RD = 0x63,
+
+	VM_COMPAT_TEST = 0xFF
 };
 
 enum hinic_nic_link_mode {

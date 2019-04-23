@@ -52,6 +52,59 @@
 
 #define HINIC_MGMT_WQ_NAME "hinic_mgmt"
 
+/*CLP*/
+enum clp_data_type {
+	HINIC_CLP_REQ_HOST = 0,
+	HINIC_CLP_RSP_HOST = 1
+};
+
+enum clp_reg_type {
+	HINIC_CLP_BA_HOST = 0,
+	HINIC_CLP_SIZE_HOST = 1,
+	HINIC_CLP_LEN_HOST = 2,
+	HINIC_CLP_START_REQ_HOST = 3,
+	HINIC_CLP_READY_RSP_HOST = 4
+};
+
+#define HINIC_CLP_REG_GAP			(0x20)
+#define HINIC_CLP_INPUT_BUFFER_LEN_HOST		(2048UL)
+#define HINIC_CLP_OUTPUT_BUFFER_LEN_HOST	(2048UL)
+#define HINIC_CLP_DATA_UNIT_HOST		(4UL)
+
+#define HINIC_BAR01_GLOABAL_CTL_OFFSET		(0x4000)
+#define HINIC_BAR01_CLP_OFFSET			(0x5000)
+
+#define HINIC_CLP_SRAM_SIZE_REG		(HINIC_BAR01_GLOABAL_CTL_OFFSET + 0x220)
+#define HINIC_CLP_REQ_SRAM_BA_REG	(HINIC_BAR01_GLOABAL_CTL_OFFSET + 0x224)
+#define HINIC_CLP_RSP_SRAM_BA_REG	(HINIC_BAR01_GLOABAL_CTL_OFFSET + 0x228)
+#define HINIC_CLP_REQ_REG		(HINIC_BAR01_GLOABAL_CTL_OFFSET + 0x22c)
+#define HINIC_CLP_RSP_REG		(HINIC_BAR01_GLOABAL_CTL_OFFSET + 0x230)
+#define HINIC_CLP_REG(member)		(HINIC_CLP_##member##_REG)
+
+#define HINIC_CLP_REQ_DATA			(HINIC_BAR01_CLP_OFFSET)
+#define HINIC_CLP_RSP_DATA		(HINIC_BAR01_CLP_OFFSET + 0x1000)
+#define HINIC_CLP_DATA(member)			(HINIC_CLP_##member##_DATA)
+
+#define HINIC_CLP_SRAM_SIZE_OFFSET		(16)
+#define HINIC_CLP_SRAM_BASE_OFFSET		(0)
+#define HINIC_CLP_LEN_OFFSET			(0)
+#define HINIC_CLP_START_OFFSET			(31)
+#define HINIC_CLP_READY_OFFSET			(31)
+#define HINIC_CLP_OFFSET(member)		(HINIC_CLP_##member##_OFFSET)
+
+#define HINIC_CLP_SRAM_SIZE_BIT_LEN		(0x7ffUL)
+#define HINIC_CLP_SRAM_BASE_BIT_LEN		(0x7ffffffUL)
+#define HINIC_CLP_LEN_BIT_LEN			(0x7ffUL)
+#define HINIC_CLP_START_BIT_LEN			(0x1UL)
+#define HINIC_CLP_READY_BIT_LEN			(0x1UL)
+#define HINIC_CLP_MASK(member)			(HINIC_CLP_##member##_BIT_LEN)
+
+#define HINIC_CLP_DELAY_CNT_MAX			(200UL)
+#define HINIC_CLP_SRAM_SIZE_REG_MAX		(0x3ff)
+#define HINIC_CLP_SRAM_BASE_REG_MAX		(0x7ffffff)
+#define HINIC_CLP_LEN_REG_MAX			(0x3ff)
+#define HINIC_CLP_START_OR_READY_REG_MAX	(0x1)
+
 enum hinic_msg_direction_type {
 	HINIC_MSG_DIRECT_SEND	= 0,
 	HINIC_MSG_RESPONSE	= 1
@@ -80,6 +133,7 @@ struct hinic_recv_msg {
 	u16			msg_len;
 	enum hinic_mod_type	mod;
 	u8			cmd;
+	u8			seq_id;
 	u16			msg_id;
 	int			async_mgmt_to_pf;
 };
@@ -102,6 +156,16 @@ enum comm_pf_to_mgmt_event_state {
 	SEND_EVENT_FAIL,
 	SEND_EVENT_TIMEOUT,
 	SEND_EVENT_END,
+};
+
+enum hinic_mgmt_msg_cb_state {
+	HINIC_MGMT_MSG_CB_REG = 0,
+	HINIC_MGMT_MSG_CB_RUNNING,
+};
+
+struct hinic_clp_pf_to_mgmt {
+	struct semaphore	clp_msg_lock;
+	void			*clp_msg_buf;
 };
 
 struct hinic_msg_pf_to_mgmt {
@@ -127,6 +191,7 @@ struct hinic_msg_pf_to_mgmt {
 
 	hinic_mgmt_msg_cb		recv_mgmt_msg_cb[HINIC_MOD_HW_MAX];
 	void				*recv_mgmt_msg_data[HINIC_MOD_HW_MAX];
+	unsigned long			mgmt_msg_cb_state[HINIC_MOD_HW_MAX];
 
 	void	(*async_msg_cb[HINIC_MOD_HW_MAX])(void *handle,
 						  enum hinic_mgmt_cmd cmd,
@@ -137,8 +202,8 @@ struct hinic_msg_pf_to_mgmt {
 
 	struct comm_up_self_msg_info	proc;
 
-	/* lock when sending msg */
-	struct semaphore	msg_sem;
+	/* spinlock when sending msg */
+	spinlock_t		sync_event_lock;
 	enum comm_pf_to_mgmt_event_state event_flag;
 };
 
@@ -171,5 +236,12 @@ int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 
 int hinic_pf_to_mgmt_async(void *hwdev, enum hinic_mod_type mod,
 			   u8 cmd, void *buf_in, u16 in_size);
+
+int hinic_pf_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
+			 void *buf_in, u16 in_size,
+			 void *buf_out, u16 *out_size);
+
+int hinic_clp_pf_to_mgmt_init(struct hinic_hwdev *hwdev);
+void hinic_clp_pf_to_mgmt_free(struct hinic_hwdev *hwdev);
 
 #endif

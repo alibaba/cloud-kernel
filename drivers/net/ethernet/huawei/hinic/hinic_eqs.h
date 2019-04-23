@@ -102,12 +102,21 @@ struct hinic_aeq_elem {
 	u32	desc;
 };
 
+enum hinic_aeq_cb_state {
+	HINIC_AEQ_HW_CB_REG = 0,
+	HINIC_AEQ_HW_CB_RUNNING,
+	HINIC_AEQ_SW_CB_REG,
+	HINIC_AEQ_SW_CB_RUNNING,
+};
+
 struct hinic_aeqs {
 	struct hinic_hwdev	*hwdev;
 
 	hinic_aeq_hwe_cb	aeq_hwe_cb[HINIC_MAX_AEQ_EVENTS];
 
 	hinic_aeq_swe_cb	aeq_swe_cb[HINIC_MAX_AEQ_SW_EVENTS];
+	unsigned long		aeq_hw_cb_state[HINIC_MAX_AEQ_EVENTS];
+	unsigned long		aeq_sw_cb_state[HINIC_MAX_AEQ_SW_EVENTS];
 
 	struct hinic_eq		aeq[HINIC_MAX_AEQS];
 	u16			num_aeqs;
@@ -115,11 +124,17 @@ struct hinic_aeqs {
 	struct workqueue_struct *workq;
 };
 
+enum hinic_ceq_cb_state {
+	HINIC_CEQ_CB_REG = 0,
+	HINIC_CEQ_CB_RUNNING,
+};
+
 struct hinic_ceqs {
 	struct hinic_hwdev	*hwdev;
 
 	hinic_ceq_event_cb	ceq_cb[HINIC_MAX_CEQ_EVENTS];
 	void			*ceq_data[HINIC_MAX_CEQ_EVENTS];
+	unsigned long		ceq_cb_state[HINIC_MAX_CEQ_EVENTS];
 
 	struct hinic_eq		ceq[HINIC_MAX_CEQS];
 	u16			num_ceqs;

@@ -466,14 +466,12 @@ static int hinic_tso(struct hinic_sq_task *task, u32 *queue_info,
 		l4.hdr = skb_transport_header(skb);
 		network_hdr_len = skb_inner_network_header_len(skb);
 
-		if (ip.v4->version == 4) {
-			ip.v4->tot_len = 0;
+		if (ip.v4->version == 4)
 			l3_type = IPV4_PKT_WITH_CHKSUM_OFFLOAD;
-		} else if (ip.v4->version == 6) {
+		else if (ip.v4->version == 6)
 			l3_type = IPV6_PKT;
-		} else {
+		else
 			l3_type = 0;
-		}
 
 		hinic_task_set_outter_l3(task, l3_type,
 					 skb_network_header_len(skb));
@@ -505,12 +503,6 @@ static int hinic_tso(struct hinic_sq_task *task, u32 *queue_info,
 		l4.hdr = skb_transport_header(skb);
 		network_hdr_len = skb_network_header_len(skb);
 	}
-
-	/* initialize inner IP header fields */
-	if (ip.v4->version == 4)
-		ip.v4->tot_len = 0;
-	else
-		ip.v6->payload_len = 0;
 
 	get_inner_l3_l4_type(skb, &ip, &l4, TX_OFFLOAD_TSO,
 			     &l3_type, &l4_proto);
@@ -997,6 +989,7 @@ int hinic_tx_poll(struct hinic_txq *txq, int budget)
 	u16 hw_ci, sw_ci = 0, q_id = txq->q_id;
 
 	hw_ci = hinic_get_sq_hw_ci(nic_dev->hwdev, q_id);
+	dma_rmb();
 	sw_ci = hinic_get_sq_local_ci(nic_dev->hwdev, q_id);
 
 	do {

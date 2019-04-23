@@ -16,6 +16,9 @@
 #ifndef HINIC_LLD_H_
 #define HINIC_LLD_H_
 
+#define HINIC_SLAVE_NIC_DELAY "hinic_slave_nic_delay"
+#define HINIC_SLAVE_NIC_DELAY_TIME  (5 * HZ)
+
 struct hinic_lld_dev {
 	struct pci_dev *pdev;
 	void *hwdev;
@@ -24,6 +27,7 @@ struct hinic_lld_dev {
 enum hinic_init_state {
 	HINIC_INIT_STATE_NONE,
 	HINIC_INIT_STATE_PCI_INITED,
+	HINIC_INIT_STATE_HW_IF_INITED,
 	HINIC_INIT_STATE_HW_PART_INITED,
 	HINIC_INIT_STATE_HWDEV_INITED,
 	HINIC_INIT_STATE_DBGTOOL_INITED,
@@ -83,7 +87,7 @@ void hinic_get_all_chip_id(void *card_id);
 void hinic_get_card_info(void *hwdev, void *bufin);
 int hinic_get_device_id(void *hwdev, u16 *dev_id);
 void get_fc_devname(char *devname);
-int hinic_get_pf_id(void *hwdev, u32 port_id, u32 *pf_id);
+int hinic_get_pf_id(void *hwdev, u32 port_id, u32 *pf_id, u32 *isvalid);
 
 void hinic_tool_cnt_inc(void);
 void hinic_tool_cnt_dec(void);

@@ -524,6 +524,7 @@ struct hinic_micro_log_info {
 int hinic_register_micro_log(struct hinic_micro_log_info *micro_log_info);
 void hinic_unregister_micro_log(struct hinic_micro_log_info *micro_log_info);
 
+void hinic_disable_mgmt_msg_report(void *hwdev);
 void hinic_set_func_deinit_flag(void *hwdev);
 void hinic_flush_mgmt_workq(void *hwdev);
 
@@ -542,5 +543,6 @@ struct hinic_func_nic_state {
 
 int hinic_set_func_nic_state(void *hwdev, struct hinic_func_nic_state *state);
 int hinic_get_func_nic_enable(void *hwdev, u16 glb_func_idx, bool *en);
+bool hinic_get_master_host_mbox_enable(void *hwdev);
 
 #endif

@@ -37,7 +37,7 @@
 uint intr_mode;
 
 uint timer_enable = 1;
-uint bloomfilter_enable = 1;
+uint bloomfilter_enable;
 uint g_test_qpc_num;
 uint g_test_qpc_resvd_num;
 uint g_test_pagesize_reorder;
@@ -522,6 +522,19 @@ static void parse_dev_cap(struct hinic_hwdev *dev,
 	if (IS_NIC_TYPE(dev))
 		parse_l2nic_res_cap(cap, dev_cap, type);
 
+
+	/* FCoE/IOE/TOE/FC without virtulization */
+	if (type == TYPE_PF || type == TYPE_PPF) {
+		if (IS_FC_TYPE(dev))
+			parse_fc_res_cap(cap, dev_cap, type);
+
+		if (IS_FCOE_TYPE(dev))
+			parse_fcoe_res_cap(cap, dev_cap, type);
+
+		if (IS_TOE_TYPE(dev))
+			parse_toe_res_cap(cap, dev_cap, type);
+	}
+
 	/* RoCE resource */
 	if (IS_ROCE_TYPE(dev))
 		parse_roce_res_cap(cap, dev_cap, type);
@@ -529,18 +542,6 @@ static void parse_dev_cap(struct hinic_hwdev *dev,
 	/* iWARP resource */
 	if (IS_IWARP_TYPE(dev))
 		parse_iwarp_res_cap(cap, dev_cap, type);
-
-	/* FCoE/IOE/TOE/FC without virtulization */
-	if (type == TYPE_PF || type == TYPE_PPF) {
-		if (IS_FCOE_TYPE(dev))
-			parse_fcoe_res_cap(cap, dev_cap, type);
-
-		if (IS_TOE_TYPE(dev))
-			parse_toe_res_cap(cap, dev_cap, type);
-
-		if (IS_FC_TYPE(dev))
-			parse_fc_res_cap(cap, dev_cap, type);
-	}
 
 	if (IS_OVS_TYPE(dev))
 		parse_ovs_res_cap(cap, dev_cap, type);
@@ -1445,9 +1446,12 @@ int init_cfg_mgmt(struct hinic_hwdev *dev)
 
 free_interrupt_mem:
 	kfree(cfg_mgmt->irq_param_info.alloc_info);
+	mutex_deinit(&((cfg_mgmt->irq_param_info).irq_mutex));
+	cfg_mgmt->irq_param_info.alloc_info = NULL;
 
 free_eq_mem:
 	kfree(cfg_mgmt->eq_info.eq);
+	mutex_deinit(&cfg_mgmt->eq_info.eq_mutex);
 	cfg_mgmt->eq_info.eq = NULL;
 
 free_mgmt_mem:
@@ -1726,7 +1730,10 @@ bool hinic_func_for_mgmt(void *hwdev)
 	if (!hwdev)
 		return false;
 
-	return !dev->cfg_mgmt->svc_cap.chip_svc_type;
+	if (dev->cfg_mgmt->svc_cap.chip_svc_type >= CFG_SVC_NIC_BIT0)
+		return false;
+	else
+		return true;
 }
 
 int cfg_set_func_sf_en(void *hwdev, u32 enbits, u32 enmask)
@@ -2026,7 +2033,7 @@ bool hinic_is_hwdev_mod_inited(void *hwdev, enum hinic_hwdev_init_state state)
 {
 	struct hinic_hwdev *dev = hwdev;
 
-	if (!hwdev || state > HINIC_HWDEV_ALL_INITED)
+	if (!hwdev || state >= HINIC_HWDEV_MAX_INVAL_INITED)
 		return false;
 
 	return !!test_bit(state, &dev->func_state);
@@ -2132,32 +2139,44 @@ int hinic_init_hwdev(struct hinic_init_para *para)
 	struct hinic_hwdev *hwdev;
 	int err;
 
-	hwdev = kzalloc(sizeof(*hwdev), GFP_KERNEL);
-	if (!hwdev)
-		return -ENOMEM;
+	if (!(*para->hwdev)) {
+		hwdev = kzalloc(sizeof(*hwdev), GFP_KERNEL);
+		if (!hwdev)
+			return -ENOMEM;
 
-	*para->hwdev = hwdev;
-	hwdev->adapter_hdl = para->adapter_hdl;
-	hwdev->pcidev_hdl = para->pcidev_hdl;
-	hwdev->dev_hdl = para->dev_hdl;
-	hwdev->chip_node = para->chip_node;
-	hwdev->ppf_hwdev = para->ppf_hwdev;
-	sema_init(&hwdev->ppf_sem, 1);
+		*para->hwdev = hwdev;
+		hwdev->adapter_hdl = para->adapter_hdl;
+		hwdev->pcidev_hdl = para->pcidev_hdl;
+		hwdev->dev_hdl = para->dev_hdl;
+		hwdev->chip_node = para->chip_node;
+		hwdev->ppf_hwdev = para->ppf_hwdev;
+		sema_init(&hwdev->ppf_sem, 1);
 
-	hwdev->chip_fault_stats = vzalloc(HINIC_CHIP_FAULT_SIZE);
-	if (!hwdev->chip_fault_stats)
-		goto alloc_chip_fault_stats_err;
+		hwdev->chip_fault_stats = vzalloc(HINIC_CHIP_FAULT_SIZE);
+		if (!hwdev->chip_fault_stats)
+			goto alloc_chip_fault_stats_err;
 
-	err = hinic_init_hwif(hwdev, para->cfg_reg_base, para->intr_reg_base,
-			      para->db_base_phy, para->db_base,
-			      para->dwqe_mapping);
-	if (err) {
-		sdk_err(hwdev->dev_hdl, "Failed to init hwif\n");
-		goto init_hwif_err;
+		err = hinic_init_hwif(hwdev, para->cfg_reg_base,
+				      para->intr_reg_base,
+				      para->db_base_phy, para->db_base,
+				      para->dwqe_mapping);
+		if (err) {
+			sdk_err(hwdev->dev_hdl, "Failed to init hwif\n");
+			goto init_hwif_err;
+		}
+	} else {
+		hwdev = *para->hwdev;
 	}
 
 	/* detect slave host according to BAR reg */
 	detect_host_mode_pre(hwdev);
+
+	if (IS_BMGW_SLAVE_HOST(hwdev) &&
+	    (!hinic_get_master_host_mbox_enable(hwdev))) {
+		set_bit(HINIC_HWDEV_NONE_INITED, &hwdev->func_state);
+		sdk_info(hwdev->dev_hdl, "Master host not ready, init hwdev later\n");
+		return (1 << HINIC_HWDEV_ALL_INITED);
+	}
 
 	err = hinic_os_dep_init(hwdev);
 	if (err) {
@@ -2227,8 +2246,8 @@ init_hwif_err:
 	vfree(hwdev->chip_fault_stats);
 
 alloc_chip_fault_stats_err:
+	sema_deinit(&hwdev->ppf_sem);
 	kfree(hwdev);
-
 	*para->hwdev = NULL;
 
 	return -EFAULT;
@@ -2237,6 +2256,8 @@ alloc_chip_fault_stats_err:
 void hinic_free_hwdev(void *hwdev)
 {
 	struct hinic_hwdev *dev = hwdev;
+	enum hinic_hwdev_init_state state = HINIC_HWDEV_ALL_INITED;
+	int flag = 0;
 
 	if (!hwdev)
 		return;
@@ -2252,11 +2273,20 @@ void hinic_free_hwdev(void *hwdev)
 
 		free_capability(dev);
 	}
-
-	hinic_uninit_comm_ch(dev);
-	free_cfg_mgmt(dev);
-	hinic_destroy_heartbeat(dev);
-	hinic_os_dep_deinit(dev);
+	while (state > HINIC_HWDEV_NONE_INITED) {
+		if (test_bit(state, &dev->func_state)) {
+			flag = 1;
+			break;
+		}
+		state--;
+	}
+	if (flag) {
+		hinic_uninit_comm_ch(dev);
+		free_cfg_mgmt(dev);
+		hinic_destroy_heartbeat(dev);
+		hinic_os_dep_deinit(dev);
+	}
+	clear_bit(HINIC_HWDEV_NONE_INITED, &dev->func_state);
 	hinic_free_hwif(dev);
 	vfree(dev->chip_fault_stats);
 	sema_deinit(&dev->ppf_sem);
@@ -2291,7 +2321,7 @@ u64 hinic_get_func_feature_cap(void *hwdev)
 	struct hinic_hwdev *dev = hwdev;
 
 	if (!dev) {
-		pr_err("Hwdev pointer is NULL for getting pf number capability\n");
+		pr_err("Hwdev pointer is NULL for getting function feature capability\n");
 		return 0;
 	}
 
@@ -2303,9 +2333,21 @@ enum hinic_func_mode hinic_get_func_mode(void *hwdev)
 	struct hinic_hwdev *dev = hwdev;
 
 	if (!dev) {
-		pr_err("Hwdev pointer is NULL for getting pf number capability\n");
+		pr_err("Hwdev pointer is NULL for getting function mode\n");
 		return 0;
 	}
 
 	return dev->func_mode;
+}
+
+enum hinic_service_mode hinic_get_service_mode(void *hwdev)
+{
+	struct hinic_hwdev *dev = hwdev;
+
+	if (!dev) {
+		pr_err("Hwdev pointer is NULL for getting service mode\n");
+		return HINIC_WORK_MODE_INVALID;
+	}
+
+	return dev->board_info.service_mode;
 }

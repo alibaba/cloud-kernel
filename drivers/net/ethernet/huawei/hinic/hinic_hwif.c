@@ -523,7 +523,8 @@ static void __print_selftest_reg(struct hinic_hwdev *hwdev)
 
 	addr   = HINIC_CSR_FUNC_ATTR0_ADDR;
 	attr0  = hinic_hwif_read_reg(hwdev->hwif, addr);
-	if (HINIC_AF0_GET(attr0, FUNC_TYPE) != TYPE_VF)
+	if (HINIC_AF0_GET(attr0, FUNC_TYPE) != TYPE_VF &&
+	    !HINIC_AF0_GET(attr0, PCI_INTF_IDX))
 		sdk_err(hwdev->dev_hdl, "Selftest reg: 0x%08x\n",
 			hinic_hwif_read_reg(hwdev->hwif,
 					    HINIC_SELFTEST_RESULT));
@@ -583,6 +584,8 @@ int hinic_init_hwif(struct hinic_hwdev *hwdev, void *cfg_reg_base,
 	}
 
 	disable_all_msix(hwdev);
+	/* disable mgmt cpu report any event */
+	hinic_set_pf_status(hwdev->hwif, HINIC_PF_STATUS_INIT);
 
 	pr_info("global_func_idx: %d, func_type: %d, host_id: %d, ppf: %d, mpf: %d\n",
 		hwif->attr.func_global_idx, hwif->attr.func_type,

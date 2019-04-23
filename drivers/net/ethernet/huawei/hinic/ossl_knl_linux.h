@@ -156,6 +156,17 @@ enum ethtool_link_mode_bit_indices {
  */
 #define UBUNTU_VERSION(a, b, c, d) ((KERNEL_VERSION(a, b, 0) << 8) + (d))
 
+#ifndef DEEPIN_PRODUCT_VERSION
+#define DEEPIN_PRODUCT_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
+#endif
+
+#ifdef CONFIG_DEEPIN_KERNEL
+#endif
+
+#ifndef DEEPIN_VERSION_CODE
+#define DEEPIN_VERSION_CODE 0
+#endif
+
 /* SuSE version macros are the same as Linux kernel version macro. */
 #ifndef SLE_VERSION
 #define SLE_VERSION(a, b, c)	KERNEL_VERSION(a, b, c)
@@ -474,4 +485,7 @@ int local_atoi(const char *name);
 #define sema_deinit(lock)
 #define mutex_deinit(lock)
 #define rwlock_deinit(lock)
+
+#define tasklet_state(tasklet) ((tasklet)->state)
+
 #endif

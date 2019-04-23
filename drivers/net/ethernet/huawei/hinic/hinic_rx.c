@@ -158,6 +158,7 @@ static int hinic_rx_fill_buffers(struct hinic_rxq *rxq)
 
 	if (likely(i)) {
 		/* Write all the wqes before pi update */
+		wmb();
 
 		hinic_update_rq_hw_pi(nic_dev->hwdev, rxq->q_id,
 				      rxq->next_to_update);
