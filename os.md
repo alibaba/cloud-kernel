@@ -21,7 +21,7 @@ Table of Contents
 
 Alibaba Cloud Linux (a.k.a. Aliyun Linux) OS is an open-source Linux distribution originated by Alibaba Operating System team, aiming to deliver OS services with various functionality, high performance and stability to Alibaba Cloud Elastic Compute Service (ECS) customers.
 
-Current released version is Alibaba Cloud Linux OS version 2, or known as 'Aliyun Linux 2'.
+Current released version is Alibaba Cloud Linux OS version 2, or known as 'Aliyun Linux 2', please refer to the [release note](https://www.alibabacloud.com/help/doc-detail/111881.html) for more details.
 
 ## 2. How to use
 

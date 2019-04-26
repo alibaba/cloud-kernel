@@ -9,6 +9,12 @@ CREDITS
 ----------------------------
 
 ```
+N: Alibaba Dragonwell developer team
+W: https://github.com/alibaba/dragonwell8
+D: Alibaba Dragonwell JDK
+```
+
+```
 N: Aliyun CLI developer team
 W: https://github.com/aliyun/aliyun-cli
 D: Universal Command Line Interface for Alibaba Cloud

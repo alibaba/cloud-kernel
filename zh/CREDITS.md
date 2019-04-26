@@ -6,6 +6,12 @@
 ----------------------------
 
 ```
+N: Alibaba Dragonwell (“龙井”)
+W: https://github.com/alibaba/dragonwell8
+D: Alibaba Dragonwell JDK
+```
+
+```
 N: Aliyun CLI 开发团队
 W: https://github.com/aliyun/aliyun-cli
 D: Aliyun CLI 命令行工具
