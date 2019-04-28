@@ -1208,6 +1208,8 @@ static void mpam_domains_init(struct resctrl_resource *r)
 
 		if (!d)
 			d = kzalloc(sizeof(*d), GFP_KERNEL);
+		else
+			continue;
 
 		if (!d) {
 			mpam_domains_destroy(r);
@@ -1263,7 +1265,8 @@ static void mpam_domains_init(struct resctrl_resource *r)
 			return;
 		}
 
-		list_add_tail(&d->list, add_pos);
+		if (add_pos)
+			list_add_tail(&d->list, add_pos);
 
 		id++;
 	}
