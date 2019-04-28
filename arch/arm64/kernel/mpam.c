@@ -135,26 +135,6 @@ int mpam_nodes_init(void)
 	return ret;
 }
 
-void mpam_nodes_show(void)
-{
-	int i, cpu;
-	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
-	struct mpam_node *n;
-
-	char *types[] = {"MPAM_RESOURCE_SMMU", "MPAM_RESOURCE_CACHE", "MPAM_RESOURCE_MC"};
-
-	for (i = 0; i < num_nodes; i++) {
-		n = &mpam_node_all[i];
-		pr_cont("%s: type: %s; addr = %016llx; base = %016llx; cpus_list = %s; cpus: ",
-			__func__, types[n->type], n->addr, (u64)n->base, n->cpus_list);
-
-		for_each_cpu(cpu, &n->cpu_mask) {
-			pr_cont("%d, ", cpu);
-		}
-		pr_cont("\n");
-	}
-}
-
 static void
 cat_wrmsr(struct rdt_domain *d, int partid);
 static void
@@ -364,7 +344,6 @@ static int mpam_online_cpu(unsigned int cpu)
 /* [FIXME] remove related resource when cpu offline */
 static int mpam_offline_cpu(unsigned int cpu)
 {
-	pr_info("offline cpu\n");
 	return 0;
 }
 
@@ -404,7 +383,6 @@ void post_resctrl_mount(void)
 
 static int reset_all_ctrls(struct resctrl_resource *r)
 {
-	pr_info("%s\n", __func__);
 	return 0;
 }
 
@@ -425,11 +403,7 @@ void release_rdtgroupfs_options(void)
 
 int parse_rdtgroupfs_options(char *data)
 {
-	int ret = 0;
-
-	pr_err("Invalid mount option\n");
-
-	return ret;
+	return 0;
 }
 
 /*
@@ -706,7 +680,8 @@ static int resctrl_num_mon_show(struct kernfs_open_file *of,
 int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 		   cpumask_var_t tmpmask)
 {
-	return 0;
+	pr_info("unsupported on mon_groups, please use ctrlmon groups\n");
+	return -EINVAL;
 }
 
 static ssize_t resctrl_group_cpus_write(struct kernfs_open_file *of,
@@ -925,8 +900,6 @@ int resctrl_ctrlmon_enable(struct kernfs_node *parent_kn,
 {
 	int ret;
 
-	pr_info("%s: out of monitors: ret %d, MON_GROUP %d\n",
-		__func__, prgrp->type, RDTMON_GROUP);
 	/* only for RDTCTRL_GROUP */
 	if (prgrp->type == RDTMON_GROUP)
 		return 0;
@@ -940,19 +913,11 @@ int resctrl_ctrlmon_enable(struct kernfs_node *parent_kn,
 	prgrp->mon.mon = ret;
 	prgrp->mon.rmid = 0;
 
-	pr_info("%s: prev dest_kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
-		__func__, (u64)*dest_kn, prgrp->closid, prgrp->flags, prgrp->type,
-		prgrp->mon.rmid, prgrp->mon.mon);
-
 	ret = mkdir_mondata_all(parent_kn, prgrp, dest_kn);
 	if (ret) {
 		rdt_last_cmd_puts("kernfs subdir error\n");
 		free_mon(ret);
 	}
-
-	pr_info("%s: post dest_kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
-		__func__, (u64)*dest_kn, prgrp->closid, prgrp->flags, prgrp->type,
-		prgrp->mon.rmid, prgrp->mon.mon);
 
 	return ret;
 }
@@ -981,16 +946,7 @@ void resctrl_ctrlmon_disable(struct kernfs_node *kn_mondata,
 	}
 
 	free_mon(mon);
-
-	pr_info("%s: prev kn_mondta %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
-		__func__, (u64)kn_mondata, prgrp->closid, prgrp->flags, prgrp->type,
-		prgrp->mon.rmid, prgrp->mon.mon);
-
 	kernfs_remove(kn_mondata);
-
-	pr_info("%s: post kn_mondta %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
-		__func__, (u64)kn_mondata, prgrp->closid, prgrp->flags, prgrp->type,
-		prgrp->mon.rmid, prgrp->mon.mon);
 
 	return;
 }
@@ -1012,10 +968,6 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 		goto unlock;
 	}
 
-	pr_info("%s: prev of->kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
-		__func__, (u64)of->kn, rdtgrp->closid, rdtgrp->flags, rdtgrp->type,
-		rdtgrp->mon.rmid, rdtgrp->mon.mon);
-
 	if ((rdtgrp->flags & RDT_CTRLMON) && !ctrlmon) {
 		/* [FIXME] disable & remove mon_data dir */
 		rdtgrp->flags &= ~RDT_CTRLMON;
@@ -1028,10 +980,6 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 	} else {
 		ret = -ENOENT;
 	}
-
-	pr_info("%s: post of->kn %016llx, closid %d, flags %d, type %d, rmid %d, mon %d\n",
-		__func__, (u64)of->kn, rdtgrp->closid, rdtgrp->flags, rdtgrp->type,
-		rdtgrp->mon.rmid, rdtgrp->mon.mon);
 
 unlock:
 	resctrl_group_kn_unlock(of->kn);
@@ -1169,33 +1117,23 @@ static void mpam_domains_destroy(struct resctrl_resource *r)
 
 static void mpam_domains_init(struct resctrl_resource *r)
 {
-	int i, cpu, id = 0;
+	int i, id = 0;
 	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
 	struct mpam_node *n;
-	struct list_head *add_pos = NULL, *l;
+	struct list_head *add_pos = NULL;
 	struct rdt_domain *d;
 	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
 	u32 val;
-
-	char *types[] = {"MPAM_RESOURCE_SMMU", "MPAM_RESOURCE_CACHE", "MPAM_RESOURCE_MC"};
 
 	for (i = 0; i < num_nodes; i++) {
 		n = &mpam_node_all[i];
 		if (r->rid != n->type)
 			continue;
 
-		pr_cont("%s: type: %s; addr = %016llx; base = %016llx; cpus_list = %s; cpus: ",
-			__func__, types[n->type], n->addr, (u64)n->base, n->cpus_list);
-
-		for_each_cpu(cpu, &n->cpu_mask) {
-			pr_cont("%d, ", cpu);
-		}
-		pr_cont("\n");
-
 		d = mpam_find_domain(r, id, &add_pos);
 		if (IS_ERR(d)) {
 			mpam_domains_destroy(r);
-			pr_warn("Could't find cache id for cpu %d\n", cpu);
+			pr_warn("Could't find cache id %d\n", id);
 			return;
 		}
 
@@ -1235,14 +1173,6 @@ static void mpam_domains_init(struct resctrl_resource *r)
 			rr->num_mon = MPAMF_IDR_NUM_MON(val);
 		}
 
-		pr_info("%s: type: %s; alloc = %d %d; mon = %d %d\n",
-			__func__, types[n->type],
-			r->alloc_capable,
-			r->alloc_enabled,
-			r->mon_capable,
-			r->mon_enabled
-			);
-
 		r->alloc_capable = 1;
 		r->alloc_enabled = 1;
 		r->mon_capable = 1;
@@ -1263,25 +1193,9 @@ static void mpam_domains_init(struct resctrl_resource *r)
 
 		id++;
 	}
-
-	/*
-	 * for debug
-	 */
-	list_for_each(l, &r->domains) {
-		d = list_entry(l, struct rdt_domain, list);
-
-		pr_cont("domain: %d; type: %s; base = %016llx; cpus_list = %s; cpus: ",
-			d->id, types[r->rid], (u64)d->base, d->cpus_list);
-
-		for_each_cpu(cpu, &d->cpu_mask) {
-			pr_cont("%d, ", cpu);
-		}
-		pr_cont("\n");
-	}
 }
 
 int __read_mostly mpam_enabled;
-
 static int __init mpam_setup(char *str)
 {
 	mpam_enabled = 1;
@@ -1310,9 +1224,6 @@ static int __init mpam_late_init(void)
 		pr_err("internal error: bad cpu list\n");
 		return ret;
 	}
-
-	/* for debug */
-	mpam_nodes_show();
 
 	mpam_domains_init(&resctrl_resources_all[MPAM_RESOURCE_CACHE]);
 	mpam_domains_init(&resctrl_resources_all[MPAM_RESOURCE_MC]);

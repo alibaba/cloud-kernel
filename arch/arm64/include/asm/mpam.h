@@ -227,8 +227,6 @@ void free_rmid(u32 rmid);
 int resctrl_group_mondata_show(struct seq_file *m, void *arg);
 void rmdir_mondata_subdir_allrdtgrp(struct resctrl_resource *r,
 				    unsigned int dom_id);
-void mkdir_mondata_subdir_allrdtgrp(struct resctrl_resource *r,
-				    struct rdt_domain *d);
 
 void closid_init(void);
 int closid_alloc(void);
