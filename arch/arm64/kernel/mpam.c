@@ -172,14 +172,6 @@ static int csu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable);
 #define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
 
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
-	[MPAM_RESOURCE_SMMU] = {
-		.msr_update		= cat_wrmsr,
-		.msr_read		= cat_rdmsr,
-		.parse_ctrlval		= parse_cbm,
-		.format_str		= "%d=%0*x",
-		.mon_read		= csu_read,
-		.mon_write		= csu_write,
-	},
 	[MPAM_RESOURCE_CACHE] = {
 		.msr_update		= cat_wrmsr,
 		.msr_read		= cat_rdmsr,
@@ -199,14 +191,6 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 };
 
 struct resctrl_resource resctrl_resources_all[] = {
-	[MPAM_RESOURCE_SMMU] = {
-		.rid			= MPAM_RESOURCE_SMMU,
-		.name			= "SMMU",
-		.domains		= domain_init(MPAM_RESOURCE_SMMU),
-		.res			= &raw_resctrl_resources_all[MPAM_RESOURCE_SMMU],
-		.fflags			= RFTYPE_RES_SMMU,
-		.alloc_enabled		= 1,
-	},
 	[MPAM_RESOURCE_CACHE] = {
 		.rid			= MPAM_RESOURCE_CACHE,
 		.name			= "L3",
