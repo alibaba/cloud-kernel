@@ -354,8 +354,8 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 	if (!rdtgrp) {
-		resctrl_group_kn_unlock(of->kn);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto out;
 	}
 
 	md.priv = of->kn->priv;
@@ -365,14 +365,16 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 
 	/* show monitor data */
 	d = mpam_find_domain(r, md.u.domid, NULL);
-	if (IS_ERR(d)) {
+	if (IS_ERR_OR_NULL(d)) {
 		pr_warn("Could't find domain id %d\n", md.u.domid);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto out;
 	}
 
 	usage = rr->mon_read(d, rdtgrp);
 	seq_printf(m, "%llu\n", usage);
 
+out:
 	put_resource_name(resname);
 	resctrl_group_kn_unlock(of->kn);
 	return ret;
