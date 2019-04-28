@@ -101,6 +101,21 @@ struct mpam_node mpam_node_all[] = {
 	MPAM_NODE(HHAALL3, MPAM_RESOURCE_MC, 0x200090ULL, 0xC1),
 };
 
+void mpam_nodes_unmap(void)
+{
+	int i;
+	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
+	struct mpam_node *n;
+
+	for (i = 0; i < num_nodes; i++) {
+		n = &mpam_node_all[i];
+		if (n->base) {
+			iounmap(n->base);
+			n->base = NULL;
+		}
+	}
+}
+
 int mpam_nodes_init(void)
 {
 	int i, ret = 0;
@@ -111,6 +126,10 @@ int mpam_nodes_init(void)
 		n = &mpam_node_all[i];
 		ret |= cpulist_parse(n->cpus_list, &n->cpu_mask);
 		n->base = ioremap(n->addr, 0x10000);
+		if (!n->base) {
+			mpam_nodes_unmap();
+			return -ENOMEM;
+		}
 	}
 
 	return ret;
