@@ -322,9 +322,17 @@ static int closid_free_map;
 
 void closid_init(void)
 {
-	int resctrl_min_closid = 32;
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+	int num_closid = INT_MAX;
 
-	closid_free_map = BIT_MASK(resctrl_min_closid) - 1;
+	for_each_resctrl_resource(r) {
+		if (r->alloc_enabled) {
+			rr = r->res;
+			num_closid = min(num_closid, rr->num_partid);
+		}
+	}
+	closid_free_map = BIT_MASK(num_closid) - 1;
 
 	/* CLOSID 0 is always reserved for the default group */
 	closid_free_map &= ~1;
