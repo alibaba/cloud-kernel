@@ -18,13 +18,31 @@ D: Aliyun CLI 命令行工具
 ```
 
 ```
+N: Dragonfly (“蜻蜓”)
+W: http://d7y.io/
+D: 一个开源的基于P2P镜像及文件分发系统
+```
+
+```
 N: 穆阿浩(姜弋)
 W: https://yq.aliyun.com/articles/697679
 D: eBCC (Extended BPF Compiler Collection)
 ```
 
 ```
+N: ossfs 开发团队
+W: https://github.com/aliyun/ossfs
+D: 用于将阿里云 OSS buckets 挂载到本地的工具。
+```
+
+```
 N: PouchContainer 开发团队
 W: https://pouchcontainer.io/
 D: Pouch -- 一个高效的容器引擎
+```
+
+```
+N: Tengine 开发团队
+W: http://tengine.taobao.org/
+D: 在 Nginx 的基础上，针对大访问量网站的需求，添加了很多高级功能和特性的 Web 服务器项目。
 ```
