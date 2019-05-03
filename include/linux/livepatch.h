@@ -85,7 +85,6 @@ struct klp_func {
 	struct list_head node;
 	struct list_head stack_node;
 	unsigned long old_size, new_size;
-	bool kobj_added;
 	bool patched;
 	bool transition;
 };
@@ -138,7 +137,6 @@ struct klp_object {
 	struct list_head func_list;
 	struct list_head node;
 	struct module *mod;
-	bool kobj_added;
 	bool patched;
 };
 
@@ -164,7 +162,6 @@ struct klp_patch {
 	struct list_head list;
 	struct kobject kobj;
 	struct list_head obj_list;
-	bool kobj_added;
 	bool enabled;
 	bool forced;
 	struct work_struct free_work;
