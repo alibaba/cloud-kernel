@@ -2525,7 +2525,7 @@ static void refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
  * Drains all per-CPU charge caches for given root_memcg resp. subtree
  * of the hierarchy under it.
  */
-static void drain_all_stock(struct mem_cgroup *root_memcg)
+void drain_all_stock(struct mem_cgroup *root_memcg)
 {
 	int cpu, curcpu;
 
@@ -6516,6 +6516,8 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 	struct mem_cgroup_event *event, *tmp;
+
+	memcg->offline_jiffies = jiffies;
 
 	/*
 	 * Unregister events and notify userspace.
