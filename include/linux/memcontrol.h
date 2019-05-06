@@ -331,6 +331,8 @@ struct mem_cgroup {
 	struct idle_page_stats idle_stats[KIDLED_STATS_NR_TYPE];
 #endif
 
+	unsigned long offline_jiffies;
+
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
 	ALI_HOTFIX_RESERVE(3)
@@ -845,6 +847,8 @@ mem_cgroup_idle_page_stats_switch(struct mem_cgroup *memcg)
 				 memcg->idle_stable_idx;
 }
 #endif /* CONFIG_KIDLED */
+
+void drain_all_stock(struct mem_cgroup *root_memcg);
 
 static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
 {
