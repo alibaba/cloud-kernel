@@ -52,6 +52,8 @@ struct ffm_intr_info {
 void *g_card_node_array[MAX_CARD_NUM] = {0};
 void *g_card_vir_addr[MAX_CARD_NUM] = {0};
 u64 g_card_phy_addr[MAX_CARD_NUM] = {0};
+/* lock for g_card_vir_addr  */
+struct mutex	g_addr_lock;
 int card_id;
 
 /* dbgtool character device name, class name, dev path*/
@@ -113,6 +115,10 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 		return -EAGAIN;
 	}
 
+	if (offset && offset != g_card_phy_addr[card_id]) {
+		pr_err("offset is invalid, offset addr %llx\n", offset);
+		return -EAGAIN;
+	}
 	/* old version of tool set vma->vm_pgoff to 0 */
 	phy_addr = offset ? offset : g_card_phy_addr[card_id];
 
@@ -171,6 +177,11 @@ long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 	}
 
 	ack_size = para->param.api_rd.ack_size;
+	if (para->param.api_rd.ack_size == 0) {
+		pr_err("Read cmd ack size is 0\n");
+		ret = -EINVAL;
+		goto alloc_ack_mem_fail;
+	}
 	ack = kzalloc((unsigned long long)ack_size, GFP_KERNEL);
 	if (!ack) {
 		pr_err("Alloc read ack mem fail\n");
@@ -313,12 +324,14 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
 	unsigned char *tmp;
 	int i;
 
+	mutex_lock(&g_addr_lock);
 	if (!g_card_vir_addr[card_id]) {
 		g_card_vir_addr[card_id] =
 			(void *)__get_free_pages(GFP_KERNEL,
 						 DBGTOOL_PAGE_ORDER);
 		if (!g_card_vir_addr[card_id]) {
 			pr_err("Alloc dbgtool api chain fail!\n");
+			mutex_unlock(&g_addr_lock);
 			return -EFAULT;
 		}
 
@@ -328,11 +341,12 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
 		g_card_phy_addr[card_id] =
 			virt_to_phys(g_card_vir_addr[card_id]);
 		if (!g_card_phy_addr[card_id]) {
-			pr_err("phy addr for card %d is 0, vir_addr: 0x%p\n",
+			pr_err("phy addr for card %d is 0, vir_addr: 0x%llx\n",
 			       card_id, g_card_vir_addr[card_id]);
 			free_pages((unsigned long)g_card_vir_addr[card_id],
 				   DBGTOOL_PAGE_ORDER);
 			g_card_vir_addr[card_id] = NULL;
+			mutex_unlock(&g_addr_lock);
 			return -EFAULT;
 		}
 
@@ -342,6 +356,7 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
 			tmp += PAGE_SIZE;
 		}
 	}
+	mutex_unlock(&g_addr_lock);
 
 	chipif_get_all_pf_dev_info(dev_info, card_id, g_func_handle_array);
 
@@ -525,6 +540,7 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 		return -EFAULT;
 	}
 
+	param.chip_name[IFNAMSIZ - 1] = '\0';
 	for (i = 0; i < MAX_CARD_NUM; i++) {
 		card_info = (struct card_node *)g_card_node_array[i];
 		if (!card_info)
@@ -774,6 +790,7 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 	}
 	g_dbgtool_init_flag = 1;
 	g_dbgtool_ref_cnt = 1;
+	mutex_init(&g_addr_lock);
 
 	return 0;
 

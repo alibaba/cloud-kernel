@@ -38,6 +38,7 @@
 
 #define MAJOR_DEV_NUM 921
 #define	HINIC_CMDQ_BUF_MAX_SIZE		2048U
+#define MSG_MAX_IN_SIZE	(2048 * 1024)
 
 static dev_t g_dev_id = {0};
 /*lint -save -e104 -e808*/
@@ -99,6 +100,10 @@ static int alloc_buff_in(void *hwdev, struct msg_module *nt_msg,
 		*buf_in = (void *)cmd_buf;
 		cmd_buf->size = (u16)in_size;
 	} else {
+		if (in_size > MSG_MAX_IN_SIZE) {
+			pr_err("In size(%u) more than 2M\n", in_size);
+			return -ENOMEM;
+		}
 		msg_buf = kzalloc(in_size, GFP_KERNEL);
 		*buf_in = msg_buf;
 	}
@@ -1013,6 +1018,7 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 	unsigned char *tmp;
 	int i;
 
+	mutex_lock(&g_addr_lock);
 	card_id = card_idx;
 	if (!g_card_vir_addr[card_idx]) {
 		g_card_vir_addr[card_idx] =
@@ -1021,6 +1027,7 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 		if (!g_card_vir_addr[card_idx]) {
 			pr_err("Alloc api chain memory fail for card %d, virt_addr: %p!\n",
 			       card_idx, g_card_vir_addr[card_idx]);
+			mutex_unlock(&g_addr_lock);
 			return -EFAULT;
 		}
 
@@ -1035,6 +1042,7 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 			free_pages((unsigned long)g_card_vir_addr[card_idx],
 				   DBGTOOL_PAGE_ORDER);
 			g_card_vir_addr[card_idx] = NULL;
+			mutex_unlock(&g_addr_lock);
 			return -EFAULT;
 		}
 
@@ -1044,6 +1052,7 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 			tmp += PAGE_SIZE;
 		}
 	}
+	mutex_unlock(&g_addr_lock);
 
 	return 0;
 }

@@ -210,6 +210,7 @@ extern void *g_card_node_array[MAX_CARD_NUM];
 extern void *g_card_vir_addr[MAX_CARD_NUM];
 extern u64 g_card_phy_addr[MAX_CARD_NUM];
 extern int card_id;
+extern struct mutex	g_addr_lock;
 
 struct hinic_nic_loop_mode {
 	u32 loop_mode;
