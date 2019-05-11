@@ -244,45 +244,10 @@ static inline int __resctrl_group_show_options(struct seq_file *seq)
 
 void post_resctrl_mount(void);
 
-#ifdef MPAM_SYS_REG_DEBUG
-static inline u64 mpam_read_sysreg_s(u64 reg, char *name)
-{
-	pr_info("cpu %2d (cur: %s(%d)): read_sysreg_s: %s (addr %016llx)\n",
-		smp_processor_id(), current->comm, current->pid, name, reg);
-	return 0;
-}
-#else
 #define mpam_read_sysreg_s(reg, name) read_sysreg_s(reg)
-#endif
-
-#ifdef MPAM_SYS_REG_DEBUG
-static inline u64 mpam_write_sysreg_s(u64 v, u64 reg, char *name)
-{
-	pr_info("cpu %2d (cur %s(%d)): write_sysreg_s: %s (addr %016llx), value %016llx\n",
-		smp_processor_id(), current->comm, current->pid, name, reg, v);
-	return 0;
-}
-#else
 #define mpam_write_sysreg_s(v, r, n) write_sysreg_s(v, r)
-#endif
-
-#ifdef MPAM_SYS_REG_DEBUG
-static inline u32 mpam_readl(const volatile void __iomem *addr)
-{
-	return pr_info("readl: %016llx\n", (u64)addr);
-}
-#else
 #define mpam_readl(addr) readl(addr)
-#endif
-
-#ifdef MPAM_SYS_REG_DEBUG
-static inline u32 mpam_writel(u64 v, const volatile void __iomem *addr)
-{
-	return pr_info("writel: %016llx to %016llx\n", v, (u64)addr);
-}
-#else
 #define mpam_writel(v, addr) writel(v, addr)
-#endif
 
 /**
  * struct msr_param - set a range of MSRs from a domain
