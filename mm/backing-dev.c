@@ -51,6 +51,9 @@ static void bdi_debug_init(void)
 	if (!bdi_debug_root)
 		return;
 
+	if (!cgwb_v1)
+		return;
+
 	memcg_blkcg_file = debugfs_create_file("bdi_wb_link", 0444, bdi_debug_root,
 			NULL, &memcg_blkcg_debug_fops);
 #endif
@@ -433,6 +436,9 @@ int allocate_memcg_blkcg_links(int count, struct list_head *tmp_links)
 	struct memcg_blkcg_link *link;
 	int i;
 
+	if (!cgwb_v1)
+		return 0;
+
 	for (i = 0; i < count; i++) {
 		link = kzalloc(sizeof(*link), GFP_KERNEL);
 		if (!link) {
@@ -459,6 +465,9 @@ void insert_memcg_blkcg_link(struct cgroup_subsys *ss,
 	struct cgroup_subsys_state *blkcg_css;
 	struct cgroup_subsys_state *memcg_css;
 	int err;
+
+	if (!cgwb_v1)
+		return;
 
 	if (ss->id != io_cgrp_id && ss->id != memory_cgrp_id)
 		return;
@@ -545,6 +554,9 @@ static void delete_blkcg_link(struct cgroup_subsys_state *blkcg_css)
 void delete_memcg_blkcg_link(struct cgroup_subsys *ss,
 			     struct cgroup_subsys_state *css)
 {
+	if (!cgwb_v1)
+		return;
+
 	if (ss->id != io_cgrp_id && ss->id != memory_cgrp_id)
 		return;
 
