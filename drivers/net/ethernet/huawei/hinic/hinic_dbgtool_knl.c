@@ -116,7 +116,7 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 
 	if (offset && offset != g_card_phy_addr[card_id]) {
-		pr_err("offset is invalid, offset addr %llx\n", offset);
+		pr_err("offset is invalid\n");
 		return -EAGAIN;
 	}
 	/* old version of tool set vma->vm_pgoff to 0 */
@@ -280,7 +280,7 @@ void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
 	struct hinic_hwdev *hwdev;
 
 	if (!dev_info) {
-		pr_err("Params error! dev_info:%p\n", dev_info);
+		pr_err("Params error!\n");
 		return;
 	}
 
@@ -341,8 +341,7 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
 		g_card_phy_addr[card_id] =
 			virt_to_phys(g_card_vir_addr[card_id]);
 		if (!g_card_phy_addr[card_id]) {
-			pr_err("phy addr for card %d is 0, vir_addr: 0x%llx\n",
-			       card_id, g_card_vir_addr[card_id]);
+			pr_err("phy addr for card %d is 0\n", card_id);
 			free_pages((unsigned long)g_card_vir_addr[card_id],
 				   DBGTOOL_PAGE_ORDER);
 			g_card_vir_addr[card_id] = NULL;

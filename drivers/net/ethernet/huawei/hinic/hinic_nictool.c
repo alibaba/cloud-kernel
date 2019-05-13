@@ -1025,8 +1025,8 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 			(void *)__get_free_pages(GFP_KERNEL,
 						 DBGTOOL_PAGE_ORDER);
 		if (!g_card_vir_addr[card_idx]) {
-			pr_err("Alloc api chain memory fail for card %d, virt_addr: %p!\n",
-			       card_idx, g_card_vir_addr[card_idx]);
+			pr_err("Alloc api chain memory fail for card %d.\n",
+			       card_idx);
 			mutex_unlock(&g_addr_lock);
 			return -EFAULT;
 		}
@@ -1037,8 +1037,7 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 		g_card_phy_addr[card_idx] =
 			virt_to_phys(g_card_vir_addr[card_idx]);
 		if (!g_card_phy_addr[card_idx]) {
-			pr_err("phy addr for card %d is 0, vir_addr: 0x%p\n",
-			       card_idx, g_card_vir_addr[card_idx]);
+			pr_err("phy addr for card %d is 0.\n", card_idx);
 			free_pages((unsigned long)g_card_vir_addr[card_idx],
 				   DBGTOOL_PAGE_ORDER);
 			g_card_vir_addr[card_idx] = NULL;

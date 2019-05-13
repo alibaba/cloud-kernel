@@ -278,8 +278,7 @@ void hinic_free_cmd_buf(void *hwdev, struct hinic_cmd_buf *cmd_buf)
 	struct hinic_cmdqs *cmdqs;
 
 	if (!hwdev || !cmd_buf) {
-		pr_err("Failed to free cmd buf: hwdev: %p, cmd_buf: %p\n",
-		       hwdev, cmd_buf);
+		pr_err("Failed to free cmd buf.\n");
 		return;
 	}
 
@@ -892,8 +891,7 @@ static int cmdq_set_arm_bit(struct hinic_cmdq *cmdq, void *buf_in, u16 in_size)
 static int cmdq_params_valid(void *hwdev, struct hinic_cmd_buf *buf_in)
 {
 	if (!buf_in || !hwdev) {
-		pr_err("Invalid CMDQ buffer addr: %p or hwdev: %p\n",
-		       buf_in, hwdev);
+		pr_err("Invalid CMDQ buffer addr\n");
 		return -EINVAL;
 	}
 

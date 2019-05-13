@@ -552,7 +552,6 @@ int hinic_init_hwif(struct hinic_hwdev *hwdev, void *cfg_reg_base,
 
 	hwif->cfg_regs_base = cfg_reg_base;
 	hwif->intr_regs_base = intr_reg_base;
-	pr_info("init intr_regs_base=%p", hwif->intr_regs_base);
 
 	hwif->db_base_phy = db_base_phy;
 	hwif->db_base = db_base;
