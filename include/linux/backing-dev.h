@@ -178,6 +178,21 @@ void wb_memcg_offline(struct mem_cgroup *memcg);
 void wb_blkcg_offline(struct blkcg *blkcg);
 int inode_congested(struct inode *inode, int cong_bits);
 
+extern bool cgwb_v1;
+
+static inline bool memcg_blkcg_on_dfl(void)
+{
+	return cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
+	       cgroup_subsys_on_dfl(io_cgrp_subsys);
+}
+
+static inline bool cgroup_writeback_support_v1(void)
+{
+	return cgwb_v1 &&
+	       !cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
+	       !cgroup_subsys_on_dfl(io_cgrp_subsys);
+}
+
 /**
  * inode_cgwb_enabled - test whether cgroup writeback is enabled on an inode
  * @inode: inode of interest
@@ -193,7 +208,9 @@ static inline bool inode_cgwb_enabled(struct inode *inode)
 {
 	struct backing_dev_info *bdi = inode_to_bdi(inode);
 
-	return (bdi->capabilities & BDI_CAP_WRITEBACK) &&
+	return (memcg_blkcg_on_dfl() ||
+		cgroup_writeback_support_v1()) &&
+		(bdi->capabilities & BDI_CAP_WRITEBACK) &&
 		(inode->i_sb->s_iflags & SB_I_CGROUPWB);
 }
 
