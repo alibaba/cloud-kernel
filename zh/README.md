@@ -94,7 +94,7 @@ ALK 和 Alibaba Cloud Linux OS 项目是“站在巨人的肩膀上”且聚合�
 
 ## 5. 许可证
 
-我们和上游社区使用同样的许可证，请参阅 [COPYING](COPYING) 文件。
+我们和上游社区使用同样的许可证，请参阅 [COPYING](../COPYING) 文件。
 
 ## 6. 联系我们
 
