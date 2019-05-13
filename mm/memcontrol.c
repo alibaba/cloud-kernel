@@ -535,7 +535,8 @@ struct cgroup_subsys_state *mem_cgroup_css_from_page(struct page *page)
 
 	memcg = page->mem_cgroup;
 
-	if (!memcg)
+	if (!memcg ||
+	   (!cgroup_subsys_on_dfl(memory_cgrp_subsys) && !cgwb_v1))
 		memcg = root_mem_cgroup;
 
 	return &memcg->css;
@@ -7127,6 +7128,16 @@ static int __init cgroup_memory(char *s)
 	return 0;
 }
 __setup("cgroup.memory=", cgroup_memory);
+
+bool cgwb_v1;
+
+static int __init enable_cgroup_writeback_v1(char *s)
+{
+	cgwb_v1 = true;
+
+	return 0;
+}
+__setup("cgwb_v1", enable_cgroup_writeback_v1);
 
 /*
  * subsys_initcall() for memory controller.
