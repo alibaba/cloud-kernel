@@ -192,8 +192,8 @@ do_reap_zombie_memcg(struct mem_cgroup *memcg, bool background)
 	/* Let dirty dying memcgs be controlled a while by writeback */
 	if (background &&
 	    time_before(jiffies, memcg->offline_jiffies + jiffies_thresh) &&
-	    (memcg_page_state(memcg, NR_FILE_DIRTY) +
-	     memcg_page_state(memcg, NR_WRITEBACK)))
+	    (memcg_page_state_local(memcg, NR_FILE_DIRTY) +
+	     memcg_page_state_local(memcg, NR_WRITEBACK)))
 		return 0;
 
 	/* try to free all pages in this cgroup */
