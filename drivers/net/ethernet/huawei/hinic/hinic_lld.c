@@ -1329,6 +1329,31 @@ static bool __is_func_valid(struct hinic_pcidev *dev)
 	return true;
 }
 
+bool hinic_is_valid_bar_addr(u64 offset)
+{
+	struct card_node *chip_node = NULL;
+	struct hinic_pcidev *dev;
+
+	lld_dev_hold();
+	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
+		list_for_each_entry(dev, &chip_node->func_list, node) {
+			if (hinic_func_type(dev->hwdev) == TYPE_VF)
+				continue;
+
+			if (test_bit(HINIC_FUNC_IN_REMOVE, &dev->flag))
+				continue;
+
+			if (offset == pci_resource_start(dev->pcidev, 0)) {
+				lld_dev_put();
+				return true;
+			}
+		}
+	}
+	lld_dev_put();
+
+	return false;
+}
+
 void hinic_get_card_info(void *hwdev, void *bufin)
 {
 	struct card_node *chip_node = NULL;

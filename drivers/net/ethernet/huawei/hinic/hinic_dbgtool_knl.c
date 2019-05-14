@@ -33,6 +33,7 @@
 #include "hinic_hwdev.h"
 #include "hinic_hw_mgmt.h"
 #include "hinic_nic_dev.h"
+#include "hinic_lld.h"
 #include "hinic_dbgtool_knl.h"
 
 struct ffm_intr_info {
@@ -104,6 +105,18 @@ static ssize_t dbgtool_knl_write(struct file *pfile,
 	return 0;
 }
 
+static bool is_valid_phy_addr(u64 offset)
+{
+	int i = 0;
+
+	for (i = 0; i < MAX_CARD_NUM; i++) {
+		if (offset == g_card_phy_addr[i])
+			return true;
+	}
+
+	return false;
+}
+
 int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	unsigned long vmsize = vma->vm_end - vma->vm_start;
@@ -115,10 +128,12 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 		return -EAGAIN;
 	}
 
-	if (offset && offset != g_card_phy_addr[card_id]) {
+	if (offset && !is_valid_phy_addr((u64)offset) &&
+	    !hinic_is_valid_bar_addr((u64)offset)) {
 		pr_err("offset is invalid\n");
 		return -EAGAIN;
 	}
+
 	/* old version of tool set vma->vm_pgoff to 0 */
 	phy_addr = offset ? offset : g_card_phy_addr[card_id];
 
@@ -143,7 +158,7 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 			      void **g_func_handle_array)
 {
-	long ret;
+	long ret = 0;
 	u8 *cmd;
 	u16 size;
 	void *ack;
@@ -224,7 +239,7 @@ alloc_ack_mem_fail:
 long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
 			       void **g_func_handle_array)
 {
-	long ret;
+	long ret = 0;
 	u8 *cmd;
 	u16 size;
 	u32 pf_id;
@@ -410,7 +425,7 @@ long dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
 long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 			   void **g_func_handle_array)
 {
-	long ret;
+	long ret = 0;
 	void *buf_in;
 	void *buf_out;
 	u16 out_size;
@@ -525,7 +540,7 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 				unsigned int cmd,
 				unsigned long arg)
 {
-	long ret;
+	long ret = 0;
 	unsigned int real_cmd;
 	struct dbgtool_param param;
 	struct dbgtool_k_glb_info *dbgtool_info;
@@ -723,6 +738,7 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 			kzalloc(sizeof(struct dbgtool_k_glb_info), GFP_KERNEL);
 	if (!dbgtool_info) {
 		pr_err("Failed to allocate dbgtool_info\n");
+		ret = -EFAULT;
 		goto dbgtool_info_fail;
 	}
 	chip_info->dbgtool_info = dbgtool_info;
@@ -733,15 +749,17 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 					GFP_KERNEL);
 	if (!dbgtool_info->ffm) {
 		pr_err("Failed to allocate cell contexts for a chain\n");
+		ret = -EFAULT;
 		goto dbgtool_info_ffm_fail;
 	}
 
 	sema_init(&dbgtool_info->dbgtool_sem, 1);
 
 	ret = sscanf(chip_info->chip_name, HINIC_CHIP_NAME "%d", &id);
-	if (ret < 0)
+	if (ret < 0) {
 		pr_err("Failed to get hinic id\n");
-
+		goto sscanf_chdev_fail;
+	}
 	g_card_node_array[id] = chip_info;
 	chip_info->func_num++;
 
@@ -801,6 +819,7 @@ cdev_add_fail:
 	unregister_chrdev_region(dbgtool_dev_id, 1);
 alloc_chdev_fail:
 	g_card_node_array[id] = NULL;
+sscanf_chdev_fail:
 	kfree(dbgtool_info->ffm);
 dbgtool_info_ffm_fail:
 	kfree(dbgtool_info);

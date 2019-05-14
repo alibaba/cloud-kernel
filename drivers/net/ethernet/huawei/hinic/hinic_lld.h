@@ -117,4 +117,5 @@ extern struct hinic_uld_info g_uld_info[SERVICE_T_MAX];
 
 struct pci_device_id *hinic_get_pci_device_id(struct pci_dev *pdev);
 bool hinic_is_in_host(void);
+bool hinic_is_valid_bar_addr(u64 offset);
 #endif
