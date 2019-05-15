@@ -23,6 +23,7 @@
 #include <linux/kernel.h>
 #include <linux/bug.h>
 #include <linux/errno.h>
+#include <linux/mm.h>
 
 /*
  * was unsigned short, but we might as well be ready for > 64kB I/O pages
@@ -45,6 +46,11 @@ struct bvec_iter {
 	unsigned int            bi_bvec_done;	/* number of bytes completed in
 						   current bvec */
 };
+
+static inline struct page *bvec_nth_page(struct page *page, int idx)
+{
+	return idx == 0 ? page : nth_page(page, idx);
+}
 
 /*
  * various member access, note that bio_data should of course not be used
