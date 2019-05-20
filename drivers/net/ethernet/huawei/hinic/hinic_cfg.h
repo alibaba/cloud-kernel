@@ -122,7 +122,7 @@ enum {
 
 #define LOCAL_ACK_DELAY     15
 #define RDMA_NUM_PORTS      1
-#define ROCE_MAX_MSG_SZ     (2 * G_UNIT) /*  */
+#define ROCE_MAX_MSG_SZ     (2 * G_UNIT)
 #define IWARP_MAX_MSG_SZ    (1 * G_UNIT)
 
 #define DB_PAGE_SZ          (4 * K_UNIT)

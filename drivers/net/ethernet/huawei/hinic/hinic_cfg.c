@@ -711,9 +711,7 @@ static void rdma_param_fix(struct hinic_hwdev *dev)
 	rdma_cap->max_gid_per_port = MAX_GID_PER_PORT;
 	rdma_cap->gid_entry_sz = GID_ENTRY_SZ;
 	rdma_cap->reserved_lkey = RSVD_LKEY;
-	/* start */
 	rdma_cap->num_comp_vectors = (u32)dev->cfg_mgmt->eq_info.num_ceq;
-	/* end */
 	rdma_cap->page_size_cap = PAGE_SZ_CAP;
 	rdma_cap->flags = (RDMA_BMME_FLAG_LOCAL_INV |
 			   RDMA_BMME_FLAG_REMOTE_INV |

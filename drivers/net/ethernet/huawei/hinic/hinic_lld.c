@@ -1923,7 +1923,7 @@ static int mapping_bar(struct pci_dev *pdev, struct hinic_pcidev *pci_adapter)
 
 	dwqe_addr = pci_adapter->db_base_phy + HINIC_DB_DWQE_SIZE;
 
-	/* arm do not support call ioremap_wc(), refer to  */
+	/* arm do not support call ioremap_wc() */
 	pci_adapter->dwqe_mapping = __ioremap(dwqe_addr, HINIC_DB_DWQE_SIZE,
 					      __pgprot(PROT_DEVICE_nGnRnE));
 	if (!pci_adapter->dwqe_mapping) {

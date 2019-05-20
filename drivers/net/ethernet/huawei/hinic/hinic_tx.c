@@ -804,7 +804,7 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 
 	num_sge = skb_nr_frags + 1;
 
-	/* :if skb->len is more than 65536B but num_sge is 1,
+	/* if skb->len is more than 65536B but num_sge is 1,
 	 * driver will drop it
 	 */
 	if (unlikely(skb->len > HINIC_GSO_MAX_SIZE && num_sge == 1)) {
