@@ -288,6 +288,7 @@ new_segment:
 			seg_size = bv.bv_len;
 		}
 		bbio = bio;
+		prev = 0;
 	}
 
 	if (nr_phys_segs == 1 && seg_size > fbio->bi_seg_front_size)
@@ -603,7 +604,6 @@ static int ll_merge_requests_fn(struct request_queue *q, struct request *req,
 			req->bio->bi_seg_front_size = seg_size;
 		if (next->nr_phys_segments == 1)
 			next->biotail->bi_seg_back_size = seg_size;
-		total_phys_segments--;
 	}
 
 	if (total_phys_segments > queue_max_segments(q))
