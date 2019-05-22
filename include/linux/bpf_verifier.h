@@ -165,6 +165,7 @@ struct bpf_idx_pair {
 struct bpf_verifier_state {
 	/* call stack tracking */
 	struct bpf_func_state *frame[MAX_CALL_FRAMES];
+	u32 insn_idx;
 	struct bpf_verifier_state *parent;
 	u32 curframe;
 	bool speculative;
