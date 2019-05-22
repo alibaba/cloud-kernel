@@ -5499,6 +5499,18 @@ static int *insn_stack;	/* stack of insns to process */
 static int cur_stack;	/* current stack index */
 static int *insn_state;
 
+static struct bpf_verifier_state_list **explored_state(
+					struct bpf_verifier_env *env,
+					int idx)
+{
+	return &env->explored_states[idx];
+}
+
+static void init_explored_state(struct bpf_verifier_env *env, int idx)
+{
+	env->explored_states[idx] = STATE_LIST_MARK;
+}
+
 /* t, w, e - match pseudo-code above:
  * t - index of current instruction
  * w - next instruction
@@ -5519,7 +5531,7 @@ static int push_insn(int t, int w, int e, struct bpf_verifier_env *env)
 
 	if (e == BRANCH)
 		/* mark branch target for state pruning */
-		env->explored_states[w] = STATE_LIST_MARK;
+		init_explored_state(env, w);
 
 	if (insn_state[w] == 0) {
 		/* tree-edge */
@@ -5587,9 +5599,9 @@ peek_stack:
 			else if (ret < 0)
 				goto err_free;
 			if (t + 1 < insn_cnt)
-				env->explored_states[t + 1] = STATE_LIST_MARK;
+				init_explored_state(env, t + 1);
 			if (insns[t].src_reg == BPF_PSEUDO_CALL) {
-				env->explored_states[t] = STATE_LIST_MARK;
+				init_explored_state(env, t);
 				ret = push_insn(t, t + insns[t].imm + 1, BRANCH, env);
 				if (ret == 1)
 					goto peek_stack;
@@ -5612,15 +5624,15 @@ peek_stack:
 			 * but it's marked, since backtracking needs
 			 * to record jmp history in is_state_visited().
 			 */
-			env->explored_states[t + insns[t].off + 1] = STATE_LIST_MARK;
+			init_explored_state(env, t + insns[t].off + 1);
 			/* tell verifier to check for equivalent states
 			 * after every call and jump
 			 */
 			if (t + 1 < insn_cnt)
-				env->explored_states[t + 1] = STATE_LIST_MARK;
+				init_explored_state(env, t + 1);
 		} else {
 			/* conditional jump with two edges */
-			env->explored_states[t] = STATE_LIST_MARK;
+			init_explored_state(env, t);
 			ret = push_insn(t, t + 1, FALLTHROUGH, env);
 			if (ret == 1)
 				goto peek_stack;
@@ -5788,7 +5800,7 @@ static void clean_live_states(struct bpf_verifier_env *env, int insn,
 	struct bpf_verifier_state_list *sl;
 	int i;
 
-	sl = env->explored_states[insn];
+	sl = *explored_state(env, insn);
 	if (!sl)
 		return;
 
@@ -6112,7 +6124,7 @@ static int is_state_visited(struct bpf_verifier_env *env, int insn_idx)
 	int i, j, err, states_cnt = 0;
 
 	cur->last_insn_idx = env->prev_insn_idx;
-	pprev = &env->explored_states[insn_idx];
+	pprev = explored_state(env, insn_idx);
 	sl = *pprev;
 
 	if (!sl)
@@ -6202,8 +6214,8 @@ static int is_state_visited(struct bpf_verifier_env *env, int insn_idx)
 	cur->parent = new;
 	cur->first_insn_idx = insn_idx;
 	clear_jmp_history(cur);
-	new_sl->next = env->explored_states[insn_idx];
-	env->explored_states[insn_idx] = new_sl;
+	new_sl->next = *explored_state(env, insn_idx);
+	*explored_state(env, insn_idx) = new_sl;
 	/* connect new state to parentage chain */
 	for (i = 0; i < BPF_REG_FP; i++)
 		cur_regs(env)[i].parent = &new->frame[new->curframe]->regs[i];
