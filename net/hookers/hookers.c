@@ -36,6 +36,10 @@ ipv4_specific_syn_recv_sock_stub(struct sock *sk,
 				 struct dst_entry *dst,
 				 struct request_sock *req_unhash,
 				 bool *own_req);
+static int
+inet_stream_ops_getname_stub(struct socket *sock,
+			     struct sockaddr *uaddr, int peer);
+#if IS_ENABLED(CONFIG_IPV6)
 static struct sock *
 ipv6_specific_syn_recv_sock_stub(struct sock *sk,
 				 struct sk_buff *skb, struct request_sock *req,
@@ -49,11 +53,20 @@ ipv6_mapped_syn_recv_sock_stub(struct sock *sk,
 			       struct request_sock *req_unhash,
 			       bool *own_req);
 static int
-inet_stream_ops_getname_stub(struct socket *sock,
-			     struct sockaddr *uaddr, int peer);
-static int
 inet6_stream_ops_getname_stub(struct socket *sock,
 			      struct sockaddr *uaddr, int peer);
+#endif
+
+enum pt_types {
+	IPV4_SPECIFIC_SYN_RECV_SOCK = 0,
+	INET_STREAM_OPS_GETNAME,
+#if IS_ENABLED(CONFIG_IPV6)
+	IPV6_SPECIFIC_SYN_RECV_SOCK,
+	IPV6_MAPPED_SYN_RECV_SOCK,
+	INET6_STREAM_OPS_GETNAME,
+#endif
+	PLACE_TABLE_SZ
+};
 
 static struct hooked_place place_table[] = {
 	{
@@ -62,6 +75,13 @@ static struct hooked_place place_table[] = {
 		.stub = ipv4_specific_syn_recv_sock_stub,
 	},
 
+	{
+		.name = "inet_stream_ops.getname",
+		.place = (void *)&inet_stream_ops.getname,
+		.stub = inet_stream_ops_getname_stub,
+	},
+
+#if IS_ENABLED(CONFIG_IPV6)
 	{
 		.name = "ipv6_specific.syn_recv_sock",
 		.place = (void *)&ipv6_specific.syn_recv_sock,
@@ -75,16 +95,11 @@ static struct hooked_place place_table[] = {
 	},
 
 	{
-		.name = "inet_stream_ops.getname",
-		.place = (void *)&inet_stream_ops.getname,
-		.stub = inet_stream_ops_getname_stub,
-	},
-
-	{
 		.name = "inet6_stream_ops.getname",
 		.place = (void *)&inet6_stream_ops.getname,
 		.stub = inet6_stream_ops_getname_stub,
 	},
+#endif
 };
 
 static struct sock *
@@ -151,10 +166,19 @@ ipv4_specific_syn_recv_sock_stub(struct sock *sk,
 				 struct request_sock *req_unhash,
 				 bool *own_req)
 {
-	return __syn_recv_sock_hstub(&place_table[0], sk, skb, req, dst,
-				     req_unhash, own_req);
+	return __syn_recv_sock_hstub(&place_table[IPV4_SPECIFIC_SYN_RECV_SOCK],
+				     sk, skb, req, dst, req_unhash, own_req);
 }
 
+static int
+inet_stream_ops_getname_stub(struct socket *sock,
+			     struct sockaddr *uaddr, int peer)
+{
+	return __getname_hstub(&place_table[INET_STREAM_OPS_GETNAME], sock,
+			       uaddr, peer);
+}
+
+#if IS_ENABLED(CONFIG_IPV6)
 static struct sock *
 ipv6_specific_syn_recv_sock_stub(struct sock *sk,
 				 struct sk_buff *skb, struct request_sock *req,
@@ -162,8 +186,8 @@ ipv6_specific_syn_recv_sock_stub(struct sock *sk,
 				 struct request_sock *req_unhash,
 				 bool *own_req)
 {
-	return __syn_recv_sock_hstub(&place_table[1], sk, skb, req, dst,
-				     req_unhash, own_req);
+	return __syn_recv_sock_hstub(&place_table[IPV6_SPECIFIC_SYN_RECV_SOCK],
+				     sk, skb, req, dst, req_unhash, own_req);
 }
 
 static struct sock *
@@ -173,29 +197,22 @@ ipv6_mapped_syn_recv_sock_stub(struct sock *sk,
 			       struct request_sock *req_unhash,
 			       bool *own_req)
 {
-	return __syn_recv_sock_hstub(&place_table[2], sk, skb, req, dst,
-				     req_unhash, own_req);
-}
-
-static int
-inet_stream_ops_getname_stub(struct socket *sock,
-			     struct sockaddr *uaddr, int peer)
-{
-	return __getname_hstub(&place_table[3], sock, uaddr, peer);
+	return __syn_recv_sock_hstub(&place_table[IPV6_MAPPED_SYN_RECV_SOCK],
+				     sk, skb, req, dst, req_unhash, own_req);
 }
 
 static int
 inet6_stream_ops_getname_stub(struct socket *sock,
 			      struct sockaddr *uaddr, int peer)
 {
-	return __getname_hstub(&place_table[4], sock, uaddr, peer);
+	return __getname_hstub(&place_table[INET6_STREAM_OPS_GETNAME], sock,
+			       uaddr, peer);
 }
-
-#define PLACE_TABLE_SZ	(sizeof((place_table)) / sizeof((place_table)[0]))
+#endif
 
 int hooker_install(const void *place, struct hooker *h)
 {
-	int i;
+	enum pt_types i;
 	struct hooked_place *hplace;
 
 	/* synchronize_rcu() */
@@ -299,7 +316,7 @@ static const struct file_operations hookers_seq_fops = {
 
 static int hookers_init(void)
 {
-	int i;
+	enum pt_types i;
 
 	if (!proc_create("hookers", 0444, NULL, &hookers_seq_fops))
 		return -ENODEV;
@@ -325,7 +342,7 @@ static int hookers_init(void)
 
 static void hookers_exit(void)
 {
-	int i;
+	enum pt_types i;
 
 	remove_proc_entry("hookers", NULL);
 
