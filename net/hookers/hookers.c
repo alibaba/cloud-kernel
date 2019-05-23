@@ -191,7 +191,7 @@ inet6_stream_ops_getname_stub(struct socket *sock,
 	return __getname_hstub(&place_table[4], sock, uaddr, peer);
 }
 
-#define PLACE_TABLE_SZ	(sizeof((place_table)) / sizeof((place_table)[0]))
+#define PLACE_TABLE_SZ	ARRAY_SIZE(place_table)
 
 int hooker_install(const void *place, struct hooker *h)
 {
