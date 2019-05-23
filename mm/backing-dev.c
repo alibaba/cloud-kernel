@@ -417,7 +417,7 @@ struct memcg_blkcg_link {
 };
 
 static RADIX_TREE(memcg_blkcg_tree, GFP_ATOMIC);
-DEFINE_SPINLOCK(memcg_blkcg_tree_lock);
+static DEFINE_SPINLOCK(memcg_blkcg_tree_lock);
 
 static int memcg_blkcg_link_show(struct seq_file *m, void *v)
 {
