@@ -1689,10 +1689,8 @@ static struct bpf_map *sock_map_alloc(union bpf_attr *attr)
 	if (cost >= U32_MAX - PAGE_SIZE)
 		goto free_stab;
 
-	stab->map.pages = round_up(cost, PAGE_SIZE) >> PAGE_SHIFT;
-
-	/* if map size is larger than memlock limit, reject it early */
-	err = bpf_map_precharge_memlock(stab->map.pages);
+	stab->map.memory.pages = round_up(cost, PAGE_SIZE) >> PAGE_SHIFT;
+	err = bpf_map_precharge_memlock(stab->map.memory.pages);
 	if (err)
 		goto free_stab;
 
@@ -2217,8 +2215,8 @@ static struct bpf_map *sock_hash_alloc(union bpf_attr *attr)
 	if (cost >= U32_MAX - PAGE_SIZE)
 		goto free_htab;
 
-	htab->map.pages = round_up(cost, PAGE_SIZE) >> PAGE_SHIFT;
-	err = bpf_map_precharge_memlock(htab->map.pages);
+	htab->map.memory.pages = round_up(cost, PAGE_SIZE) >> PAGE_SHIFT;
+	err = bpf_map_precharge_memlock(htab->map.memory.pages);
 	if (err)
 		goto free_htab;
 
