@@ -784,6 +784,9 @@ void fuse_queue_forget(struct fuse_conn *fc, struct fuse_forget_link *forget,
 
 struct fuse_forget_link *fuse_alloc_forget(void);
 
+struct fuse_forget_link *fuse_dequeue_forget(struct fuse_iqueue *fiq,
+					     unsigned max, unsigned *countp);
+
 /* Used by READDIRPLUS */
 void fuse_force_forget(struct file *file, u64 nodeid);
 
