@@ -18,6 +18,12 @@ D: Aliyun CLI 命令行工具
 ```
 
 ```
+N: 邓颉伟(得志) - 阿里巴巴 OPSX 服务团队
+W: https://opsx.alibaba.com/mirror
+D: Alibaba Cloud Linux YUM 源仓库维护者。
+```
+
+```
 N: Dragonfly (“蜻蜓”)
 W: http://d7y.io/
 D: 一个开源的基于P2P镜像及文件分发系统

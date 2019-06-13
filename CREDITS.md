@@ -21,6 +21,12 @@ D: Universal Command Line Interface for Alibaba Cloud
 ```
 
 ```
+N: Deng, Xiewei (Dezhi), Alibaba OPSX Team
+W: https://opsx.alibaba.com/mirror
+D: Maintainer of Alibaba Cloud Linux YUM Repo
+```
+
+```
 N: Dragonfly developer team
 W: http://d7y.io/
 D: An Open-source P2P-based Image and File Distribution System
