@@ -87,6 +87,7 @@ extern void watchdog_hardlockup_check(struct pt_regs *regs);
 extern unsigned int hardlockup_panic;
 #else
 static inline void hardlockup_detector_disable(void) {}
+static inline void watchdog_hardlockup_check(struct pt_regs *regs) {}
 #endif
 
 #if defined(CONFIG_HAVE_NMI_WATCHDOG) || defined(CONFIG_HARDLOCKUP_DETECTOR)
