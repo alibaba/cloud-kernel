@@ -1269,25 +1269,77 @@ static const struct seq_operations jbd2_seq_info_ops = {
 	.show   = jbd2_seq_info_show,
 };
 
-static int jbd2_seq_info_open(struct inode *inode, struct file *file)
+static void *jbd2_seq_stats_start(struct seq_file *seq, loff_t *pos)
+{
+	return *pos ? NULL : SEQ_START_TOKEN;
+}
+
+static void *jbd2_seq_stats_next(struct seq_file *seq, void *v, loff_t *pos)
+{
+	return NULL;
+}
+
+static int jbd2_seq_stats_show(struct seq_file *seq, void *v)
+{
+	struct jbd2_stats_proc_session *s = seq->private;
+
+	if (v != SEQ_START_TOKEN)
+		return 0;
+
+	seq_printf(seq, "%lu %lu %d %lu %lu %lu %lu %lu %lu %llu %u %u %u %d %d\n",
+		s->stats->ts_tid, s->stats->ts_requested,
+		s->journal->j_max_transaction_buffers, s->stats->run.rs_wait,
+		s->stats->run.rs_request_delay, s->stats->run.rs_running,
+		s->stats->run.rs_locked, s->stats->run.rs_flushing,
+		s->stats->run.rs_logging,
+		div_u64(s->journal->j_average_commit_time, NSEC_PER_MSEC),
+		s->stats->run.rs_handle_count, s->stats->run.rs_blocks,
+		s->stats->run.rs_blocks_logged, HZ, jiffies_to_msecs(HZ));
+	return 0;
+}
+
+static void jbd2_seq_stats_stop(struct seq_file *seq, void *v)
+{
+}
+
+static const struct seq_operations jbd2_seq_stats_ops = {
+	.start  = jbd2_seq_stats_start,
+	.next   = jbd2_seq_stats_next,
+	.stop   = jbd2_seq_stats_stop,
+	.show   = jbd2_seq_stats_show,
+};
+
+static struct jbd2_stats_proc_session *__jbd2_seq_open(struct inode *inode,
+			struct file *file)
 {
 	journal_t *journal = PDE_DATA(inode);
 	struct jbd2_stats_proc_session *s;
-	int rc, size;
+	int size;
 
 	s = kmalloc(sizeof(*s), GFP_KERNEL);
 	if (s == NULL)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 	size = sizeof(struct transaction_stats_s);
 	s->stats = kmalloc(size, GFP_KERNEL);
 	if (s->stats == NULL) {
 		kfree(s);
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 	}
 	spin_lock(&journal->j_history_lock);
 	memcpy(s->stats, &journal->j_stats, size);
 	s->journal = journal;
 	spin_unlock(&journal->j_history_lock);
+	return s;
+}
+
+static int jbd2_seq_info_open(struct inode *inode, struct file *file)
+{
+	struct jbd2_stats_proc_session *s;
+	int rc;
+
+	s = __jbd2_seq_open(inode, file);
+	if (IS_ERR(s))
+		return PTR_ERR(s);
 
 	rc = seq_open(file, &jbd2_seq_info_ops);
 	if (rc == 0) {
@@ -1298,7 +1350,6 @@ static int jbd2_seq_info_open(struct inode *inode, struct file *file)
 		kfree(s);
 	}
 	return rc;
-
 }
 
 static int jbd2_seq_info_release(struct inode *inode, struct file *file)
@@ -1317,6 +1368,44 @@ static const struct proc_ops jbd2_info_proc_ops = {
 	.proc_release	= jbd2_seq_info_release,
 };
 
+static int jbd2_seq_stats_open(struct inode *inode, struct file *file)
+{
+	struct jbd2_stats_proc_session *s;
+	int rc;
+
+	s = __jbd2_seq_open(inode, file);
+	if (IS_ERR(s))
+		return PTR_ERR(s);
+
+	rc = seq_open(file, &jbd2_seq_stats_ops);
+	if (rc == 0) {
+		struct seq_file *m = file->private_data;
+
+		m->private = s;
+	} else {
+		kfree(s->stats);
+		kfree(s);
+	}
+	return rc;
+}
+
+static int jbd2_seq_stats_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *seq = file->private_data;
+	struct jbd2_stats_proc_session *s = seq->private;
+
+	kfree(s->stats);
+	kfree(s);
+	return seq_release(inode, file);
+}
+
+static const struct proc_ops jbd2_stats_proc_ops = {
+	.proc_open		= jbd2_seq_stats_open,
+	.proc_read		= seq_read,
+	.proc_lseek		= seq_lseek,
+	.proc_release	= jbd2_seq_stats_release,
+};
+
 static struct proc_dir_entry *proc_jbd2_stats;
 
 static void jbd2_stats_proc_init(journal_t *journal)
@@ -1325,12 +1414,15 @@ static void jbd2_stats_proc_init(journal_t *journal)
 	if (journal->j_proc_entry) {
 		proc_create_data("info", S_IRUGO, journal->j_proc_entry,
 				 &jbd2_info_proc_ops, journal);
+		proc_create_data("stats", 0444, journal->j_proc_entry,
+				 &jbd2_stats_proc_ops, journal);
 	}
 }
 
 static void jbd2_stats_proc_exit(journal_t *journal)
 {
 	remove_proc_entry("info", journal->j_proc_entry);
+	remove_proc_entry("stats", journal->j_proc_entry);
 	remove_proc_entry(journal->j_devname, proc_jbd2_stats);
 }
 
