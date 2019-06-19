@@ -2753,6 +2753,9 @@ void blk_account_io_done(struct request *req, u64 now)
 
 		part_stat_inc(cpu, part, ios[sgrp]);
 		part_stat_add(cpu, part, nsecs[sgrp], now - req->start_time_ns);
+		if (req->io_start_time_ns)
+			part_stat_add(cpu, part, d2c_nsecs[sgrp],
+				      now - req->io_start_time_ns);
 		part_round_stats(req->q, cpu, part);
 		part_dec_in_flight(req->q, part, rq_data_dir(req));
 

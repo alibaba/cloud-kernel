@@ -184,6 +184,24 @@ your ``/etc/fstab``::
 
 	none /sys sysfs defaults 0 0
 
+Field 12 -- # of discards completed
+    This is the total number of discards completed successfully.
+
+Field 13 -- # of discards merged
+    See the description of field 2
+
+Field 14 -- # of sectors discarded
+    This is the total number of sectors discarded successfully.
+
+Field 15 -- # of milliseconds spent discarding
+    This is the total number of milliseconds spent by all discards (as
+    measured from __make_request() to end_that_request_last()).
+
+Field 16 -- # of milliseconds spent reading on device driver's side
+
+Field 17 -- # of milliseconds spent writing on device driver's side
+
+Field 18 -- # of milliseconds spent discarding on device driver's side
 
 In 2.6+, all disk statistics were removed from ``/proc/stat``.  In 2.4, they
 appear in both ``/proc/partitions`` and ``/proc/stat``, although the ones in
