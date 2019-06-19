@@ -84,6 +84,7 @@ struct partition {
 
 struct disk_stats {
 	u64 nsecs[NR_STAT_GROUPS];
+	u64 d2c_nsecs[NR_STAT_GROUPS];
 	unsigned long sectors[NR_STAT_GROUPS];
 	unsigned long ios[NR_STAT_GROUPS];
 	unsigned long merges[NR_STAT_GROUPS];
@@ -360,6 +361,9 @@ static inline void free_part_stats(struct hd_struct *part)
 
 #define part_stat_read_msecs(part, which)				\
 	div_u64(part_stat_read(part, nsecs[which]), NSEC_PER_MSEC)
+
+#define part_stat_read_d2c_msecs(part, which)			\
+	div_u64(part_stat_read(part, d2c_nsecs[which]), NSEC_PER_MSEC)
 
 #define part_stat_read_accum(part, field)				\
 	(part_stat_read(part, field[STAT_READ]) +			\

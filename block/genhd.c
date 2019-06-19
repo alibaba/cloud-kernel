@@ -1356,7 +1356,7 @@ static int diskstats_show(struct seq_file *seqf, void *v)
 			   "%lu %lu %lu %u "
 			   "%lu %lu %lu %u "
 			   "%u %u %u "
-			   "%lu %lu %lu %u\n",
+			   "%lu %lu %lu %u %u %u %u\n",
 			   MAJOR(part_devt(hd)), MINOR(part_devt(hd)),
 			   disk_name(gp, hd->partno, buf),
 			   part_stat_read(hd, ios[STAT_READ]),
@@ -1373,7 +1373,10 @@ static int diskstats_show(struct seq_file *seqf, void *v)
 			   part_stat_read(hd, ios[STAT_DISCARD]),
 			   part_stat_read(hd, merges[STAT_DISCARD]),
 			   part_stat_read(hd, sectors[STAT_DISCARD]),
-			   (unsigned int)part_stat_read_msecs(hd, STAT_DISCARD)
+			   (unsigned int)part_stat_read_msecs(hd, STAT_DISCARD),
+			   (unsigned int)part_stat_read_d2c_msecs(hd, STAT_READ),
+			   (unsigned int)part_stat_read_d2c_msecs(hd, STAT_WRITE),
+			   (unsigned int)part_stat_read_d2c_msecs(hd, STAT_DISCARD)
 			);
 	}
 	disk_part_iter_exit(&piter);
