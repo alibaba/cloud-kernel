@@ -287,14 +287,19 @@ static void do_cpuid_1_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 {
 	entry->function = function;
 	entry->index = index;
+	entry->flags = 0;
+
 	cpuid_count(entry->function, entry->index,
 		    &entry->eax, &entry->ebx, &entry->ecx, &entry->edx);
-	entry->flags = 0;
 }
 
-static int __do_cpuid_ent_emulated(struct kvm_cpuid_entry2 *entry,
-				   u32 func, u32 index, int *nent, int maxnent)
+static int __do_cpuid_func_emulated(struct kvm_cpuid_entry2 *entry,
+				    u32 func, int *nent, int maxnent)
 {
+	entry->function = func;
+	entry->index = 0;
+	entry->flags = 0;
+
 	switch (func) {
 	case 0:
 		entry->eax = 7;
@@ -306,21 +311,18 @@ static int __do_cpuid_ent_emulated(struct kvm_cpuid_entry2 *entry,
 		break;
 	case 7:
 		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
-		if (index == 0)
-			entry->ecx = F(RDPID);
+		entry->eax = 0;
+		entry->ecx = F(RDPID);
 		++*nent;
 	default:
 		break;
 	}
 
-	entry->function = func;
-	entry->index = index;
-
 	return 0;
 }
 
-static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
-				 u32 index, int *nent, int maxnent)
+static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
+				  int *nent, int maxnent)
 {
 	int r;
 	unsigned f_nx = is_efer_nx() ? F(NX) : 0;
@@ -423,7 +425,7 @@ static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 	if (WARN_ON(*nent >= maxnent))
 		goto out;
 
-	do_cpuid_1_ent(entry, function, index);
+	do_cpuid_1_ent(entry, function, 0);
 	++*nent;
 
 	switch (function) {
@@ -486,42 +488,36 @@ static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 		break;
 	case 7: {
 		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
-		/* Mask ebx against host capability word 9 */
-		if (index == 0) {
-			entry->ebx &= kvm_cpuid_7_0_ebx_x86_features;
-			cpuid_mask(&entry->ebx, CPUID_7_0_EBX);
-			// TSC_ADJUST is emulated
-			entry->ebx |= F(TSC_ADJUST);
-			entry->ecx &= kvm_cpuid_7_0_ecx_x86_features;
-			f_la57 = entry->ecx & F(LA57);
-			cpuid_mask(&entry->ecx, CPUID_7_ECX);
-			/* Set LA57 based on hardware capability. */
-			entry->ecx |= f_la57;
-			entry->ecx |= f_umip;
-			/* PKU is not yet implemented for shadow paging. */
-			if (!tdp_enabled || !boot_cpu_has(X86_FEATURE_OSPKE))
-				entry->ecx &= ~F(PKU);
-
-			entry->edx &= kvm_cpuid_7_0_edx_x86_features;
-			cpuid_mask(&entry->edx, CPUID_7_EDX);
-			if (boot_cpu_has(X86_FEATURE_IBPB) &&
-			    boot_cpu_has(X86_FEATURE_IBRS))
-				entry->edx |= F(SPEC_CTRL);
-			if (boot_cpu_has(X86_FEATURE_STIBP))
-				entry->edx |= F(INTEL_STIBP);
-			if (boot_cpu_has(X86_FEATURE_SSBD))
-				entry->edx |= F(SPEC_CTRL_SSBD);
-			/*
-			 * We emulate ARCH_CAPABILITIES in software even
-			 * if the host doesn't support it.
-			 */
-			entry->edx |= F(ARCH_CAPABILITIES);
-		} else {
-			entry->ebx = 0;
-			entry->ecx = 0;
-			entry->edx = 0;
-		}
 		entry->eax = 0;
+		/* Mask ebx against host capability word 9 */
+		entry->ebx &= kvm_cpuid_7_0_ebx_x86_features;
+		cpuid_mask(&entry->ebx, CPUID_7_0_EBX);
+		// TSC_ADJUST is emulated
+		entry->ebx |= F(TSC_ADJUST);
+		entry->ecx &= kvm_cpuid_7_0_ecx_x86_features;
+		f_la57 = entry->ecx & F(LA57);
+		cpuid_mask(&entry->ecx, CPUID_7_ECX);
+		/* Set LA57 based on hardware capability. */
+		entry->ecx |= f_la57;
+		entry->ecx |= f_umip;
+		/* PKU is not yet implemented for shadow paging. */
+		if (!tdp_enabled || !boot_cpu_has(X86_FEATURE_OSPKE))
+			entry->ecx &= ~F(PKU);
+
+		entry->edx &= kvm_cpuid_7_0_edx_x86_features;
+		cpuid_mask(&entry->edx, CPUID_7_EDX);
+		if (boot_cpu_has(X86_FEATURE_IBPB) &&
+		    boot_cpu_has(X86_FEATURE_IBRS))
+			entry->edx |= F(SPEC_CTRL);
+		if (boot_cpu_has(X86_FEATURE_STIBP))
+			entry->edx |= F(INTEL_STIBP);
+		if (boot_cpu_has(X86_FEATURE_SSBD))
+			entry->edx |= F(SPEC_CTRL_SSBD);
+		/*
+		 * We emulate ARCH_CAPABILITIES in software even
+		 * if the host doesn't support it.
+		 */
+		entry->edx |= F(ARCH_CAPABILITIES);
 		break;
 	}
 	case 9:
@@ -726,23 +722,22 @@ out:
 	return r;
 }
 
-static int do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 func,
-			u32 idx, int *nent, int maxnent, unsigned int type)
+static int do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 func,
+			 int *nent, int maxnent, unsigned int type)
 {
 	if (*nent >= maxnent)
 		return -E2BIG;
 
 	if (type == KVM_GET_EMULATED_CPUID)
-		return __do_cpuid_ent_emulated(entry, func, idx, nent, maxnent);
+		return __do_cpuid_func_emulated(entry, func, nent, maxnent);
 
-	return __do_cpuid_ent(entry, func, idx, nent, maxnent);
+	return __do_cpuid_func(entry, func, nent, maxnent);
 }
 
 #undef F
 
 struct kvm_cpuid_param {
 	u32 func;
-	u32 idx;
 	bool has_leaf_count;
 	bool (*qualifier)(const struct kvm_cpuid_param *param);
 };
@@ -815,8 +810,8 @@ int kvm_dev_ioctl_get_cpuid(struct kvm_cpuid2 *cpuid,
 		if (ent->qualifier && !ent->qualifier(ent))
 			continue;
 
-		r = do_cpuid_ent(&cpuid_entries[nent], ent->func, ent->idx,
-				&nent, cpuid->nent, type);
+		r = do_cpuid_func(&cpuid_entries[nent], ent->func,
+				  &nent, cpuid->nent, type);
 
 		if (r)
 			goto out_free;
@@ -826,8 +821,8 @@ int kvm_dev_ioctl_get_cpuid(struct kvm_cpuid2 *cpuid,
 
 		limit = cpuid_entries[nent - 1].eax;
 		for (func = ent->func + 1; func <= limit && nent < cpuid->nent && r == 0; ++func)
-			r = do_cpuid_ent(&cpuid_entries[nent], func, ent->idx,
-				     &nent, cpuid->nent, type);
+			r = do_cpuid_func(&cpuid_entries[nent], func,
+				          &nent, cpuid->nent, type);
 
 		if (r)
 			goto out_free;
