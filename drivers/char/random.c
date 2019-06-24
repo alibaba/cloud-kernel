@@ -357,6 +357,7 @@
 #define OUTPUT_POOL_SHIFT	10
 #define OUTPUT_POOL_WORDS	(1 << (OUTPUT_POOL_SHIFT-5))
 #define EXTRACT_SIZE		10
+#define INIT_SEED_MAX_SIZE	32
 
 
 #define LONGS(x) (((x) + sizeof(unsigned long) - 1)/sizeof(unsigned long))
@@ -477,9 +478,13 @@ static struct ratelimit_state urandom_warning =
 	RATELIMIT_STATE_INIT("warn_urandom_randomness", HZ, 3);
 
 static int ratelimit_disable __read_mostly;
+static char *init_seed = "";
+static bool seed_inited;
 
 module_param_named(ratelimit_disable, ratelimit_disable, int, 0644);
 MODULE_PARM_DESC(ratelimit_disable, "Disable random ratelimit suppression");
+module_param(init_seed, charp, 0400);
+MODULE_PARM_DESC(init_seed, "Initialization random seed");
 
 /**********************************************************************
  *
@@ -1214,6 +1219,36 @@ void add_input_randomness(unsigned int type, unsigned int code,
 }
 EXPORT_SYMBOL_GPL(add_input_randomness);
 
+static void add_init_randomness(const char *buffer, size_t count)
+{
+	struct entropy_store *poolp = &input_pool;
+
+	mix_pool_bytes(poolp, buffer, count);
+	credit_entropy_bits(poolp, count * 8);
+}
+
+static size_t ascii_hex2bin(const char *buffer, size_t count,
+			    char *bin_buf, size_t len)
+{
+	const char *pbuf = buffer;
+	size_t bin_cnt;
+	char buf[4];
+	int i;
+
+	if (count == 0)
+		return 0;
+
+	bin_cnt = min(len, count / 2);
+	buf[2] = buf[3] = 0;
+	for (i = 0; i < bin_cnt; i++) {
+		buf[0] = *pbuf++;
+		buf[1] = *pbuf++;
+		if (kstrtou8(buf, 16, &bin_buf[i]) != 0)
+			return 0;
+	}
+	return bin_cnt;
+}
+
 static DEFINE_PER_CPU(struct fast_pool, irq_randomness);
 
 #ifdef ADD_INTERRUPT_BENCH
@@ -1263,6 +1298,8 @@ void add_interrupt_randomness(int irq, int irq_flags)
 	__u64			ip;
 	unsigned long		seed;
 	int			credit = 0;
+	size_t			seedlen;
+	char			seed_bin[INIT_SEED_MAX_SIZE];
 
 	if (cycles == 0)
 		cycles = get_reg(fast_pool, regs);
@@ -1291,6 +1328,15 @@ void add_interrupt_randomness(int irq, int irq_flags)
 	if ((fast_pool->count < 64) &&
 	    !time_after(now, fast_pool->last + HZ))
 		return;
+
+	if (!seed_inited) {
+		seed_inited = 1;
+		seedlen = strlen(init_seed);
+		seedlen = ascii_hex2bin(init_seed, seedlen,
+					seed_bin, sizeof(seed_bin));
+		if (seedlen != 0)
+			add_init_randomness(seed_bin, seedlen);
+	}
 
 	r = &input_pool;
 	if (!spin_trylock(&r->lock))
