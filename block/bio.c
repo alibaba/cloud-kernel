@@ -933,7 +933,7 @@ int bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter)
 	 * If this is a BVEC iter, then the pages are kernel pages. Don't
 	 * release them on IO completion, if the caller asked us to.
 	 */
-	if (is_bvec && iov_iter_bvec_no_ref(iter))
+	if (is_bvec)
 		bio_set_flag(bio, BIO_NO_PAGE_REF);
 
 	do {
