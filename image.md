@@ -16,6 +16,7 @@ Currently the image is available for QEMU/KVM virtualization platform only, the 
 | File | SHA256SUM |
 |------|-----------|
 | [seed.img](https://alinux2.oss-cn-hangzhou.aliyuncs.com/seed.img) | 7fd5c245c2daef9454b98b251215f5f667d415d5759389f12d0de77d15225586 |
+| [aliyun_2_1903_64_20G_alibase_20190619.onprem.vhd](https://alinux2.oss-cn-hangzhou.aliyuncs.com/aliyun_2_1903_64_20G_alibase_20190619.onprem.vhd) | 426400dfb706770a090808de5ffee0e6f725f1d9dab525b88365a70484788ddf |
 | [aliyun_2_1903_64_20G_alibase_20190619.onprem.qcow2](https://alinux2.oss-cn-hangzhou.aliyuncs.com/aliyun_2_1903_64_20G_alibase_20190619.onprem.qcow2) | 1e0d7620fc34f928666ce945f2da9583b126a40638b20b79c7c17142aefcb638 |
 
 ## Step 2: Prepare the seed.img Boot Image
