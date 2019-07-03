@@ -23,6 +23,17 @@ config CPU_IDLE_GOV_LADDER
 config CPU_IDLE_GOV_MENU
 	bool "Menu governor (for tickless system)"
 
+config CPU_IDLE_GOV_HALTPOLL
+	bool "Haltpoll governor (for virtualized systems)"
+	depends on KVM_GUEST
+	help
+	  This governor implements haltpoll idle state selection, to be
+	  used in conjunction with the haltpoll cpuidle driver, allowing
+	  for polling for a certain amount of time before entering idle
+	  state.
+
+	  Some virtualized workloads benefit from using it.
+
 config DT_IDLE_STATES
 	bool
 
