@@ -11,10 +11,14 @@
  */
 
 #include <linux/init.h>
+#include <linux/cpu.h>
 #include <linux/cpuidle.h>
 #include <linux/module.h>
 #include <linux/sched/idle.h>
 #include <linux/kvm_para.h>
+
+static struct cpuidle_device __percpu *haltpoll_cpuidle_devices;
+static enum cpuhp_state haltpoll_hp_state;
 
 static int default_enter_idle(struct cpuidle_device *dev,
 			      struct cpuidle_driver *drv, int index)
@@ -45,8 +49,46 @@ static struct cpuidle_driver haltpoll_driver = {
 	.state_count = 2,
 };
 
+static int haltpoll_cpu_online(unsigned int cpu)
+{
+	struct cpuidle_device *dev;
+
+	dev = per_cpu_ptr(haltpoll_cpuidle_devices, cpu);
+	if (!dev->registered) {
+		dev->cpu = cpu;
+		if (cpuidle_register_device(dev)) {
+			pr_notice("cpuidle_register_device %d failed!\n", cpu);
+			return -EIO;
+		}
+	}
+
+	return 0;
+}
+
+static int haltpoll_cpu_offline(unsigned int cpu)
+{
+	struct cpuidle_device *dev;
+
+	dev = per_cpu_ptr(haltpoll_cpuidle_devices, cpu);
+	if (dev->registered)
+		cpuidle_unregister_device(dev);
+
+	return 0;
+}
+
+static void haltpoll_uninit(void)
+{
+	if (haltpoll_hp_state)
+		cpuhp_remove_state(haltpoll_hp_state);
+	cpuidle_unregister_driver(&haltpoll_driver);
+
+	free_percpu(haltpoll_cpuidle_devices);
+	haltpoll_cpuidle_devices = NULL;
+}
+
 static int __init haltpoll_init(void)
 {
+	int ret;
 	struct cpuidle_driver *drv = &haltpoll_driver;
 
 	cpuidle_poll_state_init(drv);
@@ -54,12 +96,31 @@ static int __init haltpoll_init(void)
 	if (!kvm_para_available())
 		return 0;
 
-	return cpuidle_register(&haltpoll_driver, NULL);
+	ret = cpuidle_register_driver(drv);
+	if (ret < 0)
+		return ret;
+
+	haltpoll_cpuidle_devices = alloc_percpu(struct cpuidle_device);
+	if (haltpoll_cpuidle_devices == NULL) {
+		cpuidle_unregister_driver(drv);
+		return -ENOMEM;
+	}
+
+	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "cpuidle/haltpoll:online",
+				haltpoll_cpu_online, haltpoll_cpu_offline);
+	if (ret < 0) {
+		haltpoll_uninit();
+	} else {
+		haltpoll_hp_state = ret;
+		ret = 0;
+	}
+
+	return ret;
 }
 
 static void __exit haltpoll_exit(void)
 {
-	cpuidle_unregister(&haltpoll_driver);
+	haltpoll_uninit();
 }
 
 module_init(haltpoll_init);
