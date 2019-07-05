@@ -212,6 +212,7 @@ int nvdimm_flush(struct nd_region *nd_region, struct bio *bio);
 int generic_nvdimm_flush(struct nd_region *nd_region);
 int nvdimm_has_flush(struct nd_region *nd_region);
 int nvdimm_has_cache(struct nd_region *nd_region);
+bool is_nvdimm_sync(struct nd_region *nd_region);
 
 #ifdef CONFIG_ARCH_HAS_PMEM_API
 #define ARCH_MEMREMAP_PMEM MEMREMAP_WB
