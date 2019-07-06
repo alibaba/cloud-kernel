@@ -513,8 +513,12 @@ long dbgtool_knl_free_mem(int id)
 	unsigned char *tmp;
 	int i;
 
-	if (!g_card_vir_addr[id])
+	mutex_lock(&g_addr_lock);
+
+	if (!g_card_vir_addr[id]) {
+		mutex_unlock(&g_addr_lock);
 		return 0;
+	}
 
 	tmp = g_card_vir_addr[id];
 	for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
@@ -525,6 +529,8 @@ long dbgtool_knl_free_mem(int id)
 	free_pages((unsigned long)g_card_vir_addr[id], DBGTOOL_PAGE_ORDER);
 	g_card_vir_addr[id] = NULL;
 	g_card_phy_addr[id] = 0;
+
+	mutex_unlock(&g_addr_lock);
 
 	return 0;
 }

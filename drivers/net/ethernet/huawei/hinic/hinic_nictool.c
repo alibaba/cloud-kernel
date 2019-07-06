@@ -1087,8 +1087,7 @@ static int get_pf_dev_info(char *dev_name, struct msg_module *nt_msg)
 				   card_info->func_handle_array);
 
 	/* Copy the dev_info to user mode*/
-	if (copy_to_user(nt_msg->out_buf, dev_info,
-			 nt_msg->lenInfo.inBuffLen)) {
+	if (copy_to_user(nt_msg->out_buf, dev_info, sizeof(dev_info))) {
 		pr_err("Copy dev_info to user fail\n");
 		return -EFAULT;
 	}
@@ -1672,7 +1671,6 @@ static int get_self_test_cmd(struct msg_module *nt_msg)
 {
 	int ret;
 	u32 res = 0;
-	u32 out_size_expect = nt_msg->lenInfo.outBuffLen;
 
 	ret = hinic_get_self_test_result(nt_msg->device_name, &res);
 	if (ret) {
@@ -1680,7 +1678,7 @@ static int get_self_test_cmd(struct msg_module *nt_msg)
 		return -EFAULT;
 	}
 
-	ret = copy_buf_out_to_user(nt_msg, out_size_expect, &res);
+	ret = copy_buf_out_to_user(nt_msg, sizeof(res), &res);
 	if (ret)
 		pr_err("%s:%d:: Copy to user failed\n", __func__, __LINE__);
 
@@ -1689,16 +1687,16 @@ static int get_self_test_cmd(struct msg_module *nt_msg)
 
 static int get_all_chip_id_cmd(struct msg_module *nt_msg)
 {
-	int ret = 0;
-	u32 out_size_expect = nt_msg->lenInfo.outBuffLen;
 	struct nic_card_id card_id;
 
 	hinic_get_all_chip_id((void *)&card_id);
 
-	if (copy_to_user(nt_msg->out_buf, &card_id, out_size_expect))
+	if (copy_to_user(nt_msg->out_buf, &card_id, sizeof(card_id))) {
 		pr_err("Copy chip id to user failed\n");
+		return -EFAULT;
+	}
 
-	return ret;
+	return 0;
 }
 
 int nic_ioctl(void *uld_dev, u32 cmd, void *buf_in,
@@ -1907,6 +1905,9 @@ static long nictool_k_unlocked_ioctl(struct file *pfile,
 		pr_err("Copy information from user failed\n");
 		return -EFAULT;
 	}
+
+	/* end with '\0' */
+	nt_msg.device_name[IFNAMSIZ - 1] = '\0';
 
 	cmd_raw = nt_msg.module;
 
