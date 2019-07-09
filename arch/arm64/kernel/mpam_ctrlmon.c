@@ -415,7 +415,7 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 	md.u.partid = prgrp->closid;
 	md.u.pmg = prgrp->mon.rmid;
 
-	sprintf(name, "mon_%s_%02d", r->name, d->id);
+	snprintf(name, sizeof(name), "mon_%s_%02d", r->name, d->id);
 	kn = __kernfs_create_file(parent_kn, name, 0444,
 				  GLOBAL_ROOT_UID, GLOBAL_ROOT_GID, 0,
 				  &kf_mondata_ops, md.priv, NULL, NULL);
