@@ -1370,10 +1370,12 @@ static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
 	rd_addr = csr_write_msg->addr;
 	node_id = (u8)nt_msg->up_cmd.up_db.comm_mod_type;
 
-	rd_cnt = rd_len / 4;
-	if (rd_len % 4)
-		rd_cnt++;
+	if (rd_len % 4) {
+		pr_err("Csr length must be a multiple of 4\n");
+		return -EFAULT;
+	}
 
+	rd_cnt = rd_len / 4;
 	data = kzalloc(rd_len, GFP_KERNEL);
 	if (!data) {
 		pr_err("No more memory\n");
@@ -1388,7 +1390,7 @@ static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
 	for (i = 0; i < rd_cnt; i++) {
 		ret = hinic_api_csr_wr32(hwdev, node_id,
 					 rd_addr + offset,
-					 *(data + offset));
+					 *((u32 *)(data + offset)));
 		if (ret) {
 			pr_err("Csr wr fail, ret: %d, node_id: %d, csr addr: 0x%08x\n",
 			       ret, rd_addr + offset, node_id);
