@@ -735,6 +735,28 @@ static void virtio_fs_cleanup_dax(void *data)
 	put_dax(dax_dev);
 }
 
+static void virtio_fs_release_pgmap_ops(void *_pgmap)
+{
+	dev_pagemap_put_ops();
+}
+
+static void virtio_fs_fsdax_pagefree(struct page *page, void *data)
+{
+	wake_up_var(&page->_refcount);
+}
+
+static int virtio_fs_setup_pagemap_fsdax(struct device *dev,
+					 struct dev_pagemap *pgmap)
+{
+	dev_pagemap_get_ops();
+	if (devm_add_action_or_reset(dev, virtio_fs_release_pgmap_ops, pgmap))
+		return -ENOMEM;
+	pgmap->type = MEMORY_DEVICE_FS_DAX;
+	pgmap->page_free = virtio_fs_fsdax_pagefree;
+
+	return 0;
+}
+
 static int virtio_fs_setup_dax(struct virtio_device *vdev, struct virtio_fs *fs)
 {
 	struct virtio_shm_region cache_reg;
@@ -787,7 +809,9 @@ static int virtio_fs_setup_dax(struct virtio_device *vdev, struct virtio_fs *fs)
 	pgmap->altmap_valid = false;
 	pgmap->ref = &mi->ref;
 	pgmap->kill = virtio_fs_percpu_kill;
-	pgmap->type = MEMORY_DEVICE_FS_DAX;
+
+	if (virtio_fs_setup_pagemap_fsdax(&vdev->dev, pgmap))
+		return -ENOMEM;
 
 	/* Ideally we would directly use the PCI BAR resource but
 	 * devm_memremap_pages() wants its own copy in pgmap.  So
