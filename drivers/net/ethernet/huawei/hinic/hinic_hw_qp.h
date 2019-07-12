@@ -115,6 +115,7 @@ struct hinic_rq {
 
 	u16                     *pi_virt_addr;
 	dma_addr_t              pi_dma_addr;
+	cpumask_t 				mask;
 };
 
 struct hinic_qp {
