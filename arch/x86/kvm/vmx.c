@@ -7879,7 +7879,7 @@ static void vmx_enable_tdp(void)
 
 static bool vmx_need_emulation_on_page_fault(struct kvm_vcpu *vcpu)
 {
-	return 0;
+	return false;
 }
 
 static __init int hardware_setup(void)
