@@ -557,6 +557,8 @@ unsigned long invalidate_mapping_pages(struct address_space *mapping,
 	while (index <= end && pagevec_lookup_entries(&pvec, mapping, index,
 			min(end - index, (pgoff_t)PAGEVEC_SIZE - 1) + 1,
 			indices)) {
+		pgoff_t nr_pages = 1;
+
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 
@@ -568,6 +570,15 @@ unsigned long invalidate_mapping_pages(struct address_space *mapping,
 			if (radix_tree_exceptional_entry(page)) {
 				invalidate_exceptional_entry(mapping, index,
 							     page);
+				/*
+				 * Account for multi-order entries at
+				 * the end of the pagevec.
+				 */
+				if (i < pagevec_count(&pvec) - 1)
+					continue;
+
+				nr_pages = dax_get_multi_order(mapping, index,
+							       page);
 				continue;
 			}
 
@@ -607,7 +618,7 @@ unsigned long invalidate_mapping_pages(struct address_space *mapping,
 		pagevec_remove_exceptionals(&pvec);
 		pagevec_release(&pvec);
 		cond_resched();
-		index++;
+		index += nr_pages;
 	}
 	return count;
 }
@@ -688,6 +699,8 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 	while (index <= end && pagevec_lookup_entries(&pvec, mapping, index,
 			min(end - index, (pgoff_t)PAGEVEC_SIZE - 1) + 1,
 			indices)) {
+		pgoff_t nr_pages = 1;
+
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 
@@ -700,6 +713,15 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 				if (!invalidate_exceptional_entry2(mapping,
 								   index, page))
 					ret = -EBUSY;
+				/*
+				 * Account for multi-order entries at
+				 * the end of the pagevec.
+				 */
+				if (i < pagevec_count(&pvec) - 1)
+					continue;
+
+				nr_pages = dax_get_multi_order(mapping, index,
+							       page);
 				continue;
 			}
 
@@ -739,7 +761,7 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 		pagevec_remove_exceptionals(&pvec);
 		pagevec_release(&pvec);
 		cond_resched();
-		index++;
+		index += nr_pages;
 	}
 	/*
 	 * For DAX we invalidate page tables after invalidating radix tree.  We

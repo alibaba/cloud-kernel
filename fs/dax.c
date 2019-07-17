@@ -784,6 +784,25 @@ int dax_invalidate_mapping_entry_sync(struct address_space *mapping,
 	return __dax_invalidate_mapping_entry(mapping, index, false);
 }
 
+pgoff_t dax_get_multi_order(struct address_space *mapping, pgoff_t index,
+			    void *entry)
+{
+	struct radix_tree_root *pages = &mapping->i_pages;
+	pgoff_t nr_pages = 1;
+
+	if (!dax_mapping(mapping))
+		return nr_pages;
+
+	xa_lock_irq(pages);
+	entry = get_unlocked_mapping_entry(mapping, index, NULL);
+	if (entry)
+		nr_pages = 1UL << dax_radix_order(entry);
+	put_unlocked_mapping_entry(mapping, index, entry);
+	xa_unlock_irq(pages);
+
+	return nr_pages;
+}
+
 static int copy_user_dax(struct block_device *bdev, struct dax_device *dax_dev,
 		sector_t sector, size_t size, struct page *to,
 		unsigned long vaddr)

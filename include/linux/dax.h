@@ -128,6 +128,8 @@ struct page *dax_layout_busy_page(struct address_space *mapping);
 struct page *dax_layout_busy_page_range(struct address_space *mapping, loff_t start, loff_t end);
 bool dax_lock_mapping_entry(struct page *page);
 void dax_unlock_mapping_entry(struct page *page);
+pgoff_t dax_get_multi_order(struct address_space *mapping, pgoff_t index,
+			    void *entry);
 #else
 static inline bool bdev_dax_supported(struct block_device *bdev,
 		int blocksize)
@@ -174,6 +176,12 @@ static inline bool dax_lock_mapping_entry(struct page *page)
 
 static inline void dax_unlock_mapping_entry(struct page *page)
 {
+}
+
+static inline pgoff_t dax_get_multi_order(struct address_space *mapping,
+					  pgoff_t index, void *entry)
+{
+	return 1;
 }
 #endif
 
