@@ -161,6 +161,9 @@ struct cgroup_subsys_state {
 	struct work_struct destroy_work;
 	struct rcu_work destroy_rwork;
 
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+
 	/*
 	 * PI: the parent css.	Placed here for cache proximity to following
 	 * fields of the containing structure.
@@ -262,6 +265,9 @@ struct css_set {
 
 	/* For RCU-protected deletion */
 	struct rcu_head rcu_head;
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
 };
 
 struct cgroup_base_stat {
@@ -489,6 +495,9 @@ struct cgroup_root {
 	/* IDs for cgroups in this hierarchy */
 	struct idr cgroup_idr;
 
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+
 	/* The path to use for release notifications. */
 	char release_agent_path[PATH_MAX];
 
@@ -613,6 +622,9 @@ struct cgroup_subsys {
 	void (*exit)(struct task_struct *task);
 	void (*release)(struct task_struct *task);
 	void (*bind)(struct cgroup_subsys_state *root_css);
+
+	ALI_HOTFIX_RESERVE_P(1)
+	ALI_HOTFIX_RESERVE_P(2)
 
 	bool early_init:1;
 

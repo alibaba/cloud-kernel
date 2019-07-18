@@ -88,6 +88,11 @@ struct dst_entry {
 #ifndef CONFIG_64BIT
 	atomic_t		__refcnt;	/* 32-bit offset 64 */
 #endif
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+	ALI_HOTFIX_RESERVE(3)
+	ALI_HOTFIX_RESERVE(4)
 };
 
 struct dst_metrics {

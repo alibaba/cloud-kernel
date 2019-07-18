@@ -58,6 +58,11 @@ struct blkcg {
 	struct list_head		cgwb_list;
 	refcount_t			cgwb_refcnt;
 #endif
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+	ALI_HOTFIX_RESERVE(3)
+	ALI_HOTFIX_RESERVE(4)
 };
 
 /*
@@ -178,6 +183,9 @@ struct blkcg_policy {
 	blkcg_pol_free_pd_fn		*pd_free_fn;
 	blkcg_pol_reset_pd_stats_fn	*pd_reset_stats_fn;
 	blkcg_pol_stat_pd_fn		*pd_stat_fn;
+
+	ALI_HOTFIX_RESERVE_P(1)
+	ALI_HOTFIX_RESERVE_P(2)
 };
 
 extern struct blkcg blkcg_root;

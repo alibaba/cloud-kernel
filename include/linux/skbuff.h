@@ -849,6 +849,9 @@ struct sk_buff {
 	__u32			headers_end[0];
 	/* public: */
 
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+
 	/* These elements must be at the end, see alloc_skb() for details.  */
 	sk_buff_data_t		tail;
 	sk_buff_data_t		end;

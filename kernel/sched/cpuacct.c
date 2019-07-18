@@ -30,6 +30,11 @@ struct cpuacct {
 	/* cpuusage holds pointer to a u64-type object on every CPU */
 	struct cpuacct_usage __percpu	*cpuusage;
 	struct kernel_cpustat __percpu	*cpustat;
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+	ALI_HOTFIX_RESERVE(3)
+	ALI_HOTFIX_RESERVE(4)
 };
 
 static inline struct cpuacct *css_ca(struct cgroup_subsys_state *css)
