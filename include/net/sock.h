@@ -511,6 +511,9 @@ struct sock {
 	struct sock_reuseport __rcu	*sk_reuseport_cb;
 	__be32			sk_toa_data[16];
 	struct rcu_head		sk_rcu;
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
 };
 
 enum sk_pacing {
