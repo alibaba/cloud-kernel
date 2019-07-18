@@ -29,6 +29,8 @@
 #include <linux/task_io_accounting.h>
 #include <linux/rseq.h>
 
+#include <linux/ali_hotfix.h>
+
 /* task_struct member predeclarations (sorted alphabetically): */
 struct audit_context;
 struct backing_dev_info;
@@ -440,6 +442,9 @@ struct sched_statistics {
 	u64				nr_wakeups_affine_attempts;
 	u64				nr_wakeups_passive;
 	u64				nr_wakeups_idle;
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
 #endif
 };
 
@@ -478,6 +483,9 @@ struct sched_entity {
 	 */
 	struct sched_avg		avg;
 #endif
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
 };
 
 struct sched_rt_entity {
@@ -1208,6 +1216,15 @@ struct task_struct {
 	/* Used by LSM modules for access restriction: */
 	void				*security;
 #endif
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+	ALI_HOTFIX_RESERVE(3)
+	ALI_HOTFIX_RESERVE(4)
+	ALI_HOTFIX_RESERVE(5)
+	ALI_HOTFIX_RESERVE(6)
+	ALI_HOTFIX_RESERVE(7)
+	ALI_HOTFIX_RESERVE(8)
 
 	/*
 	 * New fields for task_struct should be added above here, so that

@@ -11,6 +11,8 @@
 #include <linux/ktime.h>
 #include <linux/sched/clock.h>
 
+#include <linux/ali_hotfix.h>
+
 struct bio_set;
 struct bio;
 struct bio_integrity_payload;
@@ -211,6 +213,9 @@ struct bio {
 	struct bio_vec		*bi_io_vec;	/* the actual vec list */
 
 	struct bio_set		*bi_pool;
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid

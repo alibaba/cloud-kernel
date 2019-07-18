@@ -332,6 +332,10 @@ struct mem_cgroup {
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	struct deferred_split deferred_split_queue;
 #endif
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+	ALI_HOTFIX_RESERVE(3)
+	ALI_HOTFIX_RESERVE(4)
 
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */

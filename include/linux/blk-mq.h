@@ -70,6 +70,11 @@ struct blk_mq_hw_ctx {
 	struct dentry		*sched_debugfs_dir;
 #endif
 
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+	ALI_HOTFIX_RESERVE(3)
+	ALI_HOTFIX_RESERVE(4)
+
 	/* Must be the last member - see also blk_mq_hw_ctx_size(). */
 	struct srcu_struct	srcu[0];
 };
@@ -90,11 +95,18 @@ struct blk_mq_tag_set {
 
 	struct mutex		tag_list_lock;
 	struct list_head	tag_list;
+
+	ALI_HOTFIX_RESERVE(1)
+	ALI_HOTFIX_RESERVE(2)
+	ALI_HOTFIX_RESERVE(3)
+	ALI_HOTFIX_RESERVE(4)
 };
 
 struct blk_mq_queue_data {
 	struct request *rq;
 	bool last;
+
+	ALI_HOTFIX_RESERVE(1)
 };
 
 typedef blk_status_t (queue_rq_fn)(struct blk_mq_hw_ctx *,
@@ -181,6 +193,9 @@ struct blk_mq_ops {
 	 */
 	void (*show_rq)(struct seq_file *m, struct request *rq);
 #endif
+
+	ALI_HOTFIX_RESERVE_P(1)
+	ALI_HOTFIX_RESERVE_P(2)
 };
 
 enum {
