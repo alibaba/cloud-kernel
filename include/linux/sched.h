@@ -1969,4 +1969,9 @@ static inline void rseq_syscall(struct pt_regs *regs)
 
 #endif
 
+struct cpuacct_usage_result {
+	u64 user, nice, system, irq, softirq;
+	u64 steal, iowait, idle, guest, guest_nice;
+};
+
 #endif

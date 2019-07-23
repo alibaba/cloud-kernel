@@ -2277,6 +2277,11 @@ unsigned long scale_irq_capacity(unsigned long util, unsigned long irq, unsigned
 }
 #endif
 
+#ifdef CONFIG_SCHED_SLI
+extern u64 get_idle_time(int cpu);
+extern u64 get_iowait_time(int cpu);
+#endif
+
 #ifdef CONFIG_PSI
 extern struct cftype cgroup_v1_psi_files[];
 #endif
