@@ -105,8 +105,23 @@ static unsigned char lro_en_status = HINIC_LRO_STATUS_UNSET;
 module_param(lro_en_status, byte, 0444);
 MODULE_PARM_DESC(lro_en_status, "lro enable status. 0 - disable, 1 - enable, other - unset. (default unset)");
 
+static unsigned char qp_pending_limit_low = HINIC_RX_PENDING_LIMIT_LOW;
+module_param(qp_pending_limit_low, byte, 0444);
+MODULE_PARM_DESC(qp_pending_limit_low, "MSI-X adaptive low coalesce pending limit, range is 0 - 255");
 
-static unsigned int enable_bp;/*lint !e728*/
+static unsigned char qp_coalesc_timer_low = HINIC_RX_COAL_TIME_LOW;
+module_param(qp_coalesc_timer_low, byte, 0444);
+MODULE_PARM_DESC(qp_coalesc_timer_low, "MSI-X adaptive low coalesce time, range is 0 - 255");
+
+static unsigned char qp_pending_limit_high = HINIC_RX_PENDING_LIMIT_HIGH;
+module_param(qp_pending_limit_high, byte, 0444);
+MODULE_PARM_DESC(qp_pending_limit_high, "MSI-X adaptive high coalesce pending limit, range is 0 - 255");
+
+static unsigned char qp_coalesc_timer_high = HINIC_RX_COAL_TIME_HIGH;
+module_param(qp_coalesc_timer_high, byte, 0444);
+MODULE_PARM_DESC(qp_coalesc_timer_high, "MSI-X adaptive high coalesce time, range is 0 - 255");
+
+static unsigned int enable_bp;
 
 static unsigned int bp_lower_thd = HINIC_RX_BP_LOWER_THD;
 static unsigned int bp_upper_thd = HINIC_RX_BP_UPPER_THD;
@@ -445,6 +460,8 @@ int hinic_poll(struct napi_struct *napi, int budget)
 					     HINIC_MSIX_ENABLE);
 		else if (!nic_dev->in_vm)
 			enable_irq(irq_cfg->irq_id);
+	} else {
+		hinic_rx_poll(irq_cfg->rxq, HINIC_RX_BUFFER_WRITE);
 	}
 
 	return max(tx_pkts, rx_pkts);
@@ -572,6 +589,12 @@ static void __calc_coal_para(struct hinic_nic_dev *nic_dev,
 			     struct hinic_intr_coal_info *q_coal, u64 rate,
 			     u8 *coalesc_timer_cfg, u8 *pending_limt)
 {
+	if (nic_dev->is_vm_slave && nic_dev->in_vm) {
+		*coalesc_timer_cfg = HINIC_MULTI_VM_LATENCY;
+		*pending_limt = HINIC_MULTI_VM_PENDING_LIMIT;
+		return;
+	}
+
 	if (rate < q_coal->pkt_rate_low) {
 		*coalesc_timer_cfg = q_coal->rx_usecs_low;
 		*pending_limt = q_coal->rx_pending_limt_low;
@@ -609,6 +632,7 @@ static void hinic_auto_moderation_work(struct work_struct *work)
 			nic_dev->last_moder_jiffies);
 
 	u64 rx_packets, rx_bytes, rx_pkt_diff, rate, avg_pkt_size;
+	u64 tx_packets, tx_bytes, tx_pkt_diff, tx_rate;
 	u8 coalesc_timer_cfg, pending_limt;
 	u16 qid;
 
@@ -624,6 +648,8 @@ static void hinic_auto_moderation_work(struct work_struct *work)
 	for (qid = 0; qid < nic_dev->num_qps; qid++) {
 		rx_packets = nic_dev->rxqs[qid].rxq_stats.packets;
 		rx_bytes = nic_dev->rxqs[qid].rxq_stats.bytes;
+		tx_packets = nic_dev->txqs[qid].txq_stats.packets;
+		tx_bytes = nic_dev->txqs[qid].txq_stats.bytes;
 		q_coal = &nic_dev->intr_coalesce[qid];
 
 		rx_pkt_diff =
@@ -634,14 +660,24 @@ static void hinic_auto_moderation_work(struct work_struct *work)
 			 rx_pkt_diff : 0;
 
 		rate = rx_pkt_diff * HZ / period;
+		tx_pkt_diff =
+			tx_packets - nic_dev->txqs[qid].last_moder_packets;
+		tx_rate = tx_pkt_diff * HZ / period;
 
 		if ((rate > HINIC_RX_RATE_THRESH &&
-		     avg_pkt_size > HINIC_AVG_PKT_SMALL) || nic_dev->in_vm) {
+		     avg_pkt_size > HINIC_AVG_PKT_SMALL) ||
+		    (nic_dev->in_vm && (rate > HINIC_RX_RATE_THRESH ||
+					 (nic_dev->is_vm_slave &&
+					 tx_rate > HINIC_TX_RATE_THRESH)))) {
 			__calc_coal_para(nic_dev, q_coal, rate,
 					 &coalesc_timer_cfg, &pending_limt);
 		} else {
-			coalesc_timer_cfg = HINIC_LOWEST_LATENCY;
-			pending_limt = q_coal->rx_pending_limt_low;
+			coalesc_timer_cfg =
+				(nic_dev->is_vm_slave && nic_dev->in_vm) ?
+				 0 : HINIC_LOWEST_LATENCY;
+			pending_limt =
+				(nic_dev->is_vm_slave && nic_dev->in_vm) ?
+				 0 : q_coal->rx_pending_limt_low;
 		}
 
 		set_interrupt_moder(nic_dev, qid, coalesc_timer_cfg,
@@ -649,6 +685,8 @@ static void hinic_auto_moderation_work(struct work_struct *work)
 
 		nic_dev->rxqs[qid].last_moder_packets = rx_packets;
 		nic_dev->rxqs[qid].last_moder_bytes = rx_bytes;
+		nic_dev->txqs[qid].last_moder_packets = tx_packets;
+		nic_dev->txqs[qid].last_moder_bytes = tx_bytes;
 	}
 
 	nic_dev->last_moder_jiffies = jiffies;
@@ -1039,8 +1077,8 @@ static u16 select_queue_by_toeplitz(struct net_device *dev,
 #if defined(HAVE_NDO_SELECT_QUEUE_ACCEL_FALLBACK)
 #if defined(HAVE_NDO_SELECT_QUEUE_SB_DEV)
 static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb,
-			      struct net_device *sb_dev,
-			      select_queue_fallback_t fallback)
+				      struct net_device *sb_dev,
+				      select_queue_fallback_t fallback)
 #else
 static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb,
 			      __always_unused void *accel,
@@ -1084,7 +1122,7 @@ fallback:
 #ifdef HAVE_NDO_GET_STATS64
 #ifdef HAVE_VOID_NDO_GET_STATS64
 static void hinic_get_stats64(struct net_device *netdev,
-			      struct rtnl_link_stats64 *stats)
+				struct rtnl_link_stats64 *stats)
 #else
 static struct rtnl_link_stats64
 	*hinic_get_stats64(struct net_device *netdev,
@@ -1191,6 +1229,7 @@ static int hinic_set_mac_addr(struct net_device *netdev, void *addr)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct sockaddr *saddr = addr;
+	u16 func_id;
 	int err;
 
 	if (!FUNC_SUPPORT_CHANGE_MAC(nic_dev->hwdev)) {
@@ -1209,8 +1248,12 @@ static int hinic_set_mac_addr(struct net_device *netdev, void *addr)
 		return 0;
 	}
 
+	err = hinic_global_func_id_get(nic_dev->hwdev, &func_id);
+	if (err)
+		return err;
+
 	err = hinic_update_mac(nic_dev->hwdev, netdev->dev_addr, saddr->sa_data,
-			       0, hinic_global_func_id(nic_dev->hwdev));
+			       0, func_id);
 	if (err)
 		return err;
 
@@ -1233,12 +1276,16 @@ hinic_vlan_rx_add_vid(struct net_device *netdev,
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	unsigned long *vlan_bitmap = nic_dev->vlan_bitmap;
-	u16 func_id = hinic_global_func_id(nic_dev->hwdev);
+	u16 func_id;
 	u32 col, line;
 	int err;
 
 	col = VID_COL(nic_dev, vid);
 	line = VID_LINE(nic_dev, vid);
+
+	err = hinic_global_func_id_get(nic_dev->hwdev, &func_id);
+	if (err)
+		goto end;
 
 	err = hinic_add_vlan(nic_dev->hwdev, vid, func_id);
 	if (err) {
@@ -1261,11 +1308,15 @@ hinic_vlan_rx_kill_vid(struct net_device *netdev,
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	unsigned long *vlan_bitmap = nic_dev->vlan_bitmap;
-	u16 func_id = hinic_global_func_id(nic_dev->hwdev);
+	u16 func_id;
 	int err, col, line;
 
 	col  = VID_COL(nic_dev, vid);
 	line = VID_LINE(nic_dev, vid);
+
+	err = hinic_global_func_id_get(nic_dev->hwdev, &func_id);
+	if (err)
+		goto end;
 
 	err = hinic_del_vlan(nic_dev->hwdev, vid, func_id);
 	if (err) {
@@ -1409,7 +1460,7 @@ static int hinic_set_default_hw_feature(struct hinic_nic_dev *nic_dev)
 		if (set_link_status_follow < HINIC_LINK_FOLLOW_STATUS_MAX &&
 		    FUNC_SUPPORT_PORT_SETTING(nic_dev->hwdev)) {
 			err = hinic_set_link_status_follow(nic_dev->hwdev,
-							   set_link_status_follow);
+						set_link_status_follow);
 			if (err == HINIC_MGMT_CMD_UNSUPPORTED)
 				nic_warn(&nic_dev->pdev->dev,
 					 "Current version of firmware don't support to set link status follow port status\n");
@@ -1481,21 +1532,33 @@ static void hinic_netpoll(struct net_device *netdev)
 static int hinic_uc_sync(struct net_device *netdev, u8 *addr)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u16 func_id;
+	int err;
 
-	return hinic_set_mac(nic_dev->hwdev, addr, 0,
-			     hinic_global_func_id(nic_dev->hwdev));
+	err = hinic_global_func_id_get(nic_dev->hwdev, &func_id);
+	if (err)
+		return err;
+
+	err = hinic_set_mac(nic_dev->hwdev, addr, 0, func_id);
+	return err;
 }
 
 static int hinic_uc_unsync(struct net_device *netdev, u8 *addr)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u16 func_id;
+	int err;
 
 	/* The addr is in use */
 	if (ether_addr_equal(addr, netdev->dev_addr))
 		return 0;
 
-	return hinic_del_mac(nic_dev->hwdev, addr, 0,
-			     hinic_global_func_id(nic_dev->hwdev));
+	err = hinic_global_func_id_get(nic_dev->hwdev, &func_id);
+	if (err)
+		return err;
+
+	err = hinic_del_mac(nic_dev->hwdev, addr, 0, func_id);
+	return err;
 }
 
 static void hinic_clean_mac_list_filter(struct hinic_nic_dev *nic_dev)
@@ -2164,14 +2227,14 @@ static void netdev_feature_init(struct net_device *netdev)
 }
 
 #define MOD_PARA_VALIDATE_NUM_QPS(nic_dev, num_qps, out_qps)	{	\
-	if ((num_qps) > (nic_dev)->max_qps)				\
+	if ((num_qps) > nic_dev->max_qps)				\
 		nic_warn(&nic_dev->pdev->dev,				\
 			 "Module Parameter %s value %d is out of range, "\
 			 "Maximum value for the device: %d, using %d\n",\
-			 #num_qps, num_qps, (nic_dev)->max_qps,		\
-			 (nic_dev)->max_qps);				\
-	if (!(num_qps) || (num_qps) > (nic_dev)->max_qps)		\
-		out_qps = (nic_dev)->max_qps;				\
+			 #num_qps, num_qps, nic_dev->max_qps,		\
+			 nic_dev->max_qps);				\
+	if (!(num_qps) || (num_qps) > nic_dev->max_qps)			\
+		out_qps = nic_dev->max_qps;				\
 	else								\
 		out_qps = num_qps;					\
 }
@@ -2197,8 +2260,12 @@ static void hinic_try_to_enable_rss(struct hinic_nic_dev *nic_dev)
 
 	err = hinic_rss_template_alloc(nic_dev->hwdev, &nic_dev->rss_tmpl_idx);
 	if (err) {
-		nic_err(&nic_dev->pdev->dev,
-			"Failed to alloc tmpl_idx for rss, can't enable rss for this function\n");
+		if (err == -ENOSPC)
+			nic_warn(&nic_dev->pdev->dev,
+				 "Failed to alloc tmpl_idx for rss, table is full\n");
+		else
+			nic_err(&nic_dev->pdev->dev,
+				"Failed to alloc tmpl_idx for rss, can't enable rss for this function\n");
 		clear_bit(HINIC_RSS_ENABLE, &nic_dev->flags);
 		nic_dev->max_qps = 1;
 		nic_dev->rss_limit = nic_dev->max_qps;
@@ -2244,6 +2311,7 @@ static void hinic_try_to_enable_rss(struct hinic_nic_dev *nic_dev)
 static int hinic_sw_init(struct hinic_nic_dev *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
+	u16 func_id;
 	int err = 0;
 
 	sema_init(&adapter->port_state_sem, 1);
@@ -2285,8 +2353,11 @@ static int hinic_sw_init(struct hinic_nic_dev *adapter)
 		eth_hw_addr_random(netdev);
 	}
 
-	err = hinic_set_mac(adapter->hwdev, netdev->dev_addr, 0,
-			    hinic_global_func_id(adapter->hwdev));
+	err = hinic_global_func_id_get(adapter->hwdev, &func_id);
+	if (err)
+		goto func_id_err;
+
+	err = hinic_set_mac(adapter->hwdev, netdev->dev_addr, 0, func_id);
 	/* When this is VF driver, we must consider that PF has already set VF
 	 * MAC, and we can't consider this condition is error status during
 	 * driver probe procedure.
@@ -2309,6 +2380,7 @@ static int hinic_sw_init(struct hinic_nic_dev *adapter)
 	return 0;
 
 set_mac_err:
+func_id_err:
 err_mac:
 get_mac_err:
 	if (test_bit(HINIC_RSS_ENABLE, &adapter->flags))
@@ -2405,16 +2477,20 @@ static void init_intr_coal_param(struct hinic_nic_dev *nic_dev)
 		info->resend_timer_cfg =
 			HINIC_DEAULT_TXRX_MSIX_RESEND_TIMER_CFG;
 		info->pkt_rate_high = HINIC_RX_RATE_HIGH;
-		info->rx_usecs_high = HINIC_RX_COAL_TIME_HIGH;
-		info->rx_pending_limt_high = HINIC_RX_PENDING_LIMIT_HIGH;
+		info->rx_usecs_high = qp_coalesc_timer_high;
+		info->rx_pending_limt_high = qp_pending_limit_high;
 		info->pkt_rate_low = HINIC_RX_RATE_LOW;
-		info->rx_usecs_low = HINIC_RX_COAL_TIME_LOW;
-		info->rx_pending_limt_low = HINIC_RX_PENDING_LIMIT_LOW;
+		info->rx_usecs_low = qp_coalesc_timer_low;
+		info->rx_pending_limt_low = qp_pending_limit_low;
 
 		if (nic_dev->in_vm) {
+			if (qp_pending_limit_high ==
+			    HINIC_RX_PENDING_LIMIT_HIGH)
+				qp_pending_limit_high =
+					HINIC_RX_PENDING_LIMIT_HIGH_VM;
 			info->pkt_rate_low = HINIC_RX_RATE_LOW_VM;
 			info->rx_pending_limt_high =
-					HINIC_RX_PENDING_LIMIT_HIGH_VM;
+					qp_pending_limit_high;
 		}
 	}
 }
@@ -2521,6 +2597,20 @@ static int hinic_validate_parameters(struct hinic_lld_dev *lld_dev)
 		nic_warn(&pdev->dev, "Module Parameter rx_buff value %d is out of range, must be 2^n. Valid range is 2 - 16, resetting to %dKB",
 			 rx_buff, DEFAULT_RX_BUFF_LEN);
 		rx_buff = DEFAULT_RX_BUFF_LEN;
+	}
+
+	if (qp_coalesc_timer_high <= qp_coalesc_timer_low) {
+		nic_warn(&pdev->dev, "Module Parameter qp_coalesc_timer_high: %d, qp_coalesc_timer_low: %d is invalid, resetting to default\n",
+			 qp_coalesc_timer_high, qp_coalesc_timer_low);
+		qp_coalesc_timer_high = HINIC_RX_COAL_TIME_HIGH;
+		qp_coalesc_timer_low = HINIC_RX_COAL_TIME_LOW;
+	}
+
+	if (qp_pending_limit_high <= qp_pending_limit_low) {
+		nic_warn(&pdev->dev, "Module Parameter qp_pending_limit_high: %d, qp_pending_limit_low: %d is invalid, resetting to default\n",
+			 qp_pending_limit_high, qp_pending_limit_low);
+		qp_pending_limit_high = HINIC_RX_PENDING_LIMIT_HIGH;
+		qp_pending_limit_low = HINIC_RX_PENDING_LIMIT_LOW;
 	}
 
 	return 0;
@@ -2723,6 +2813,7 @@ static int nic_probe(struct hinic_lld_dev *lld_dev, void **uld_dev,
 	nic_dev->msg_enable = DEFAULT_MSG_ENABLE;
 	nic_dev->heart_status = true;
 	nic_dev->in_vm = !hinic_is_in_host();
+	nic_dev->is_vm_slave = is_multi_vm_slave(lld_dev->hwdev);
 	nic_dev->lro_replenish_thld = lro_replenish_thld;
 	nic_dev->rx_buff_len = (u16)(rx_buff * CONVERT_UNIT);
 	page_num = (RX_BUFF_NUM_PER_PAGE * nic_dev->rx_buff_len) / PAGE_SIZE;
@@ -2812,7 +2903,7 @@ create_workq_err:
 
 alloc_qps_err:
 	hinic_del_mac(nic_dev->hwdev, netdev->dev_addr, 0,
-		      hinic_global_func_id(nic_dev->hwdev));
+		      hinic_global_func_id_hw(nic_dev->hwdev));
 
 sw_init_err:
 	(void)hinic_set_super_cqe_state(nic_dev->hwdev, false);
@@ -2851,7 +2942,7 @@ static void nic_remove(struct hinic_lld_dev *lld_dev, void *adapter)
 
 	hinic_clean_mac_list_filter(nic_dev);
 	hinic_del_mac(nic_dev->hwdev, netdev->dev_addr, 0,
-		      hinic_global_func_id(nic_dev->hwdev));
+		      hinic_global_func_id_hw(nic_dev->hwdev));
 	if (test_bit(HINIC_RSS_ENABLE, &nic_dev->flags))
 		hinic_rss_template_free(nic_dev->hwdev, nic_dev->rss_tmpl_idx);
 
@@ -2927,7 +3018,12 @@ int hinic_enable_func_rss(struct hinic_nic_dev *nic_dev)
 
 	err = hinic_rss_template_alloc(nic_dev->hwdev, &nic_dev->rss_tmpl_idx);
 	if (err) {
-		nicif_err(nic_dev, drv, netdev, "Failed to alloc RSS template\n");
+		if (err == -ENOSPC)
+			nicif_warn(nic_dev, drv, netdev,
+				   "Failed to alloc RSS template,table is full\n");
+		else
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed to alloc RSS template\n");
 	} else {
 		set_bit(HINIC_RSS_ENABLE, &nic_dev->flags);
 		nicif_info(nic_dev, drv, netdev, "Success to alloc RSS template\n");

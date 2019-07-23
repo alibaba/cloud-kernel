@@ -74,6 +74,50 @@ struct up_cmd_st {
 	};
 };
 
+struct _dcb_data {
+	u8 wr_flag;
+	u8 dcb_en;
+	u8 err;
+	u8 rsvd;
+};
+
+union _dcb_ctl {
+	struct _dcb_data dcb_data;
+	u32 data;
+};
+
+struct _pfc_data {
+	u8 pfc_en;
+	u8 pfc_priority;
+	u8 num_of_tc;
+	u8 err;
+};
+
+union _pfc {
+	struct _pfc_data pfc_data;
+	u32 data;
+};
+
+union _flag_com {
+	struct _ets_flag {
+		u8 flag_ets_enable:1;
+		u8 flag_ets_percent:1;
+		u8 flag_ets_cos:1;
+		u8 flag_ets_strict:1;
+		u8 rev:4;
+	} ets_flag;
+	u8 data;
+};
+
+struct _ets {
+	u8 ets_en;
+	u8 err;
+	u8 strict;
+	u8 tc[8];
+	u8 ets_percent[8];
+	union _flag_com flag_com;
+};
+
 #define API_CMD 0x1
 #define API_CHAIN 0x2
 #define API_CLP 0x3
@@ -209,8 +253,8 @@ struct hinic_card_func_info {
 extern void *g_card_node_array[MAX_CARD_NUM];
 extern void *g_card_vir_addr[MAX_CARD_NUM];
 extern u64 g_card_phy_addr[MAX_CARD_NUM];
-extern int card_id;
 extern struct mutex	g_addr_lock;
+extern int card_id;
 
 struct hinic_nic_loop_mode {
 	u32 loop_mode;
@@ -237,6 +281,7 @@ struct hinic_pf_info {
 
 int nictool_k_init(void);
 void nictool_k_uninit(void);
+
 extern u32 hinic_get_io_stats_size(struct hinic_nic_dev *nic_dev);
 extern void hinic_get_io_stats(struct hinic_nic_dev *nic_dev,
 			       struct hinic_show_item *items);

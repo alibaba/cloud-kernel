@@ -39,6 +39,7 @@
 #define MAJOR_DEV_NUM 921
 #define	HINIC_CMDQ_BUF_MAX_SIZE		2048U
 #define MSG_MAX_IN_SIZE	(2048 * 1024)
+#define MSG_MAX_OUT_SIZE	(2048 * 1024)
 
 static dev_t g_dev_id = {0};
 /*lint -save -e104 -e808*/
@@ -153,6 +154,10 @@ static int alloc_buff_out(void *hwdev, struct msg_module *nt_msg,
 		cmd_buf = hinic_alloc_cmd_buf(hwdev);
 		*buf_out = (void *)cmd_buf;
 	} else {
+		if (out_size > MSG_MAX_OUT_SIZE) {
+			pr_err("out size(%u) more than 2M\n", out_size);
+			return -ENOMEM;
+		}
 		*buf_out = kzalloc(out_size, GFP_KERNEL);
 	}
 	if (!(*buf_out)) {
@@ -656,6 +661,248 @@ static int set_link_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 	return 0;
 }
 
+static int set_dcb_cfg(struct hinic_nic_dev *nic_dev, void *buf_in,
+		       u32 in_size, void *buf_out, u32 *out_size)
+{
+	union _dcb_ctl dcb_ctl = {.data = 0};
+	int err;
+
+	if (!buf_in || !buf_out || !out_size)
+		return -EINVAL;
+
+	dcb_ctl.data = *((u32 *)buf_in);
+
+	err = hinic_setup_dcb_tool(nic_dev->netdev,
+				   &dcb_ctl.dcb_data.dcb_en,
+				   !!dcb_ctl.dcb_data.wr_flag);
+	if (err) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Failed to setup dcb state to %d\n",
+			  !!dcb_ctl.dcb_data.dcb_en);
+		err = EINVAL;
+	}
+	dcb_ctl.dcb_data.err = (u8)err;
+	*((u32 *)buf_out) = (u32)dcb_ctl.data;
+	*out_size = sizeof(u32);
+
+	return 0;
+}
+
+int get_pfc_info(struct hinic_nic_dev *nic_dev, void *buf_in,
+		 u32 in_size, void *buf_out, u32 *out_size)
+{
+	union _pfc pfc = {.data = 0};
+
+	if (!buf_in || !buf_out || !out_size)
+		return -EINVAL;
+
+	pfc.data = *((u32 *)buf_in);
+
+	hinic_dcbnl_set_pfc_en_tool(nic_dev->netdev,
+				    &pfc.pfc_data.pfc_en, false);
+	hinic_dcbnl_get_pfc_cfg_tool(nic_dev->netdev,
+				     &pfc.pfc_data.pfc_priority);
+	hinic_dcbnl_get_tc_num_tool(nic_dev->netdev,
+				    &pfc.pfc_data.num_of_tc);
+	*((u32 *)buf_out) = (u32)pfc.data;
+	*out_size = sizeof(u32);
+
+	return 0;
+}
+
+int set_pfc_control(struct hinic_nic_dev *nic_dev, void *buf_in,
+		    u32 in_size, void *buf_out, u32 *out_size)
+{
+	u8 pfc_en = 0;
+	u8 err = 0;
+
+	if (!buf_in || !buf_out || !out_size)
+		return -EINVAL;
+
+	pfc_en = *((u8 *)buf_in);
+	if (!(test_bit(HINIC_DCB_ENABLE, &nic_dev->flags))) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Need to enable dcb first.\n");
+		err = 0xff;
+		goto exit;
+	}
+
+	hinic_dcbnl_set_pfc_en_tool(nic_dev->netdev, &pfc_en, true);
+	err = hinic_dcbnl_set_pfc_tool(nic_dev->netdev);
+	if (err) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Failed to set pfc to %s\n",
+			  pfc_en ? "enable" : "disable");
+	}
+
+exit:
+	*((u8 *)buf_out) = (u8)err;
+	*out_size = sizeof(u8);
+	return 0;
+}
+
+int set_ets(struct hinic_nic_dev *nic_dev, void *buf_in,
+	    u32 in_size, void *buf_out, u32 *out_size)
+{
+	struct _ets ets =  {0};
+	u8 err = 0;
+	u8 i;
+	u8 support_tc = nic_dev->max_cos;
+
+	if (!buf_in || !buf_out || !out_size)
+		return -EINVAL;
+	memcpy(&ets, buf_in, sizeof(struct _ets));
+
+	if (!(test_bit(HINIC_DCB_ENABLE, &nic_dev->flags))) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Need to enable dcb first.\n");
+		err = 0xff;
+		goto exit;
+	}
+	if (ets.flag_com.ets_flag.flag_ets_enable) {
+		hinic_dcbnl_set_ets_en_tool(nic_dev->netdev, &ets.ets_en, true);
+
+		if (!ets.ets_en)
+			goto exit;
+	}
+
+	if (!(test_bit(HINIC_ETS_ENABLE, &nic_dev->flags))) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Need to enable ets first.\n");
+		err = 0xff;
+		goto exit;
+	}
+	if (ets.flag_com.ets_flag.flag_ets_cos)
+		hinic_dcbnl_set_ets_tc_tool(nic_dev->netdev, ets.tc, true);
+
+	if (ets.flag_com.ets_flag.flag_ets_percent) {
+		for (i = support_tc; i < HINIC_DCB_TC_MAX; i++) {
+			if (ets.ets_percent[i]) {
+				nicif_err(nic_dev, drv, nic_dev->netdev,
+					  "ETS setting out of range\n");
+				break;
+			}
+		}
+
+		hinic_dcbnl_set_ets_pecent_tool(nic_dev->netdev,
+						ets.ets_percent, true);
+	}
+
+	if (ets.flag_com.ets_flag.flag_ets_strict)
+		hinic_dcbnl_set_ets_strict_tool(nic_dev->netdev,
+						&ets.strict, true);
+
+	err = hinic_dcbnl_set_ets_tool(nic_dev->netdev);
+	if (err) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Failed to set ets [%d].\n", err);
+	}
+exit:
+	*((u8 *)buf_out) = err;
+	*out_size = sizeof(err);
+	return 0;
+}
+
+int get_support_up(struct hinic_nic_dev *nic_dev, void *buf_in,
+		   u32 in_size, void *buf_out, u32 *out_size)
+{
+	u8 *up_num = buf_out;
+	u8 support_up = 0;
+	u8 i;
+	u8 up_valid_bitmap = nic_dev->up_valid_bitmap;
+
+	if (!buf_in || !buf_out || !out_size)
+		return -EINVAL;
+
+	if (*out_size != sizeof(*up_num)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
+			  *out_size, sizeof(*up_num));
+		return -EFAULT;
+	}
+
+	for (i = 0; i < HINIC_DCB_UP_MAX; i++) {
+		if (up_valid_bitmap & BIT(i))
+			support_up++;
+	}
+
+	*up_num = support_up;
+
+	return 0;
+}
+
+int get_support_tc(struct hinic_nic_dev *nic_dev, void *buf_in,
+		   u32 in_size, void *buf_out, u32 *out_size)
+{
+	u8 *tc_num = buf_out;
+
+	if (!buf_in || !buf_out || !out_size)
+		return -EINVAL;
+
+	if (*out_size != sizeof(*tc_num)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Unexpect out buf size from user :%d, expect:	%lu\n",
+			  *out_size, sizeof(*tc_num));
+		return -EFAULT;
+	}
+
+	hinic_dcbnl_get_tc_num_tool(nic_dev->netdev, tc_num);
+
+	return 0;
+}
+
+int get_ets_info(struct hinic_nic_dev *nic_dev, void *buf_in,
+		 u32 in_size, void *buf_out, u32 *out_size)
+{
+	struct _ets *ets = buf_out;
+
+	if (!buf_in || !buf_out || !out_size)
+		return -EINVAL;
+
+	hinic_dcbnl_set_ets_pecent_tool(nic_dev->netdev,
+					ets->ets_percent, false);
+	hinic_dcbnl_set_ets_tc_tool(nic_dev->netdev, ets->tc, false);
+	hinic_dcbnl_set_ets_en_tool(nic_dev->netdev, &ets->ets_en, false);
+	hinic_dcbnl_set_ets_strict_tool(nic_dev->netdev, &ets->strict, false);
+	ets->err = 0;
+
+	*out_size = sizeof(*ets);
+	return 0;
+}
+
+int set_pfc_priority(struct hinic_nic_dev *nic_dev, void *buf_in,
+		     u32 in_size, void *buf_out, u32 *out_size)
+{
+	u8 pfc_prority = 0;
+	u8 err = 0;
+
+	if (!buf_in || !buf_out || !out_size)
+		return -EINVAL;
+
+	pfc_prority = *((u8 *)buf_in);
+	if (!((test_bit(HINIC_DCB_ENABLE, &nic_dev->flags)) &&
+	      nic_dev->tmp_dcb_cfg.pfc_state)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Need to enable pfc first.\n");
+		err = 0xff;
+		goto exit;
+	}
+
+	hinic_dcbnl_set_pfc_cfg_tool(nic_dev->netdev, pfc_prority);
+
+	err = hinic_dcbnl_set_pfc_tool(nic_dev->netdev);
+	if (err) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Failed to set pfc to %x priority\n",
+			  pfc_prority);
+	}
+exit:
+	*((u8 *)buf_out) = (u8)err;
+	*out_size = sizeof(u8);
+
+	return 0;
+}
+
 static int set_pf_bw_limit(struct hinic_nic_dev *nic_dev, void *buf_in,
 			   u32 in_size, void *buf_out, u32 *out_size)
 {
@@ -719,7 +966,6 @@ static int get_poll_weight(struct hinic_nic_dev *nic_dev, void *buf_in,
 			   u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct hinic_nic_poll_weight *weight_info = buf_out;
-
 	if (*out_size != sizeof(*weight_info)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect out buf size from user :%d, expect: %lu\n",
@@ -744,7 +990,6 @@ static int get_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 			 u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct hinic_homologues *homo = buf_out;
-
 	if (*out_size != sizeof(*homo)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect out buf size from user :%d, expect: %lu\n",
@@ -788,8 +1033,8 @@ static int get_sset_count(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (!buf_in || in_size != sizeof(u32) || !out_size ||
 	    *out_size != sizeof(u32) || !buf_out) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Invalid parameters, in_size: %d, out_size: %d\n",
-			  in_size, *out_size);
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Invalid parameters.\n");
 		return -EINVAL;
 	}
 
@@ -873,7 +1118,7 @@ static int get_func_id(void *hwdev, void *buf_in, u32 in_size,
 		return -EFAULT;
 	}
 
-	func_id = hinic_global_func_id(hwdev);
+	func_id = hinic_global_func_id_hw(hwdev);
 	*(u16 *)buf_out = func_id;
 	*out_size = sizeof(u16);
 	return 0;
@@ -957,7 +1202,6 @@ static int get_device_id(void *hwdev, void *buf_in, u32 in_size,
 {
 	u16 dev_id;
 	int err;
-
 	if (*out_size != sizeof(u16)) {
 		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
 		       *out_size, sizeof(u16));
@@ -992,7 +1236,7 @@ static int is_driver_in_vm(void *hwdev, void *buf_in, u32 in_size,
 }
 
 static int get_pf_id(void *hwdev, void *buf_in, u32 in_size,
-		     void *buf_out, u32 *out_size)
+			   void *buf_out, u32 *out_size)
 {
 	struct hinic_pf_info *pf_info;
 	u32 port_id = 0;
@@ -1118,7 +1362,7 @@ static int knl_free_mem(char *dev_name, struct msg_module *nt_msg)
 	return 0;
 }
 
-extern int hinic_get_card_func_info_by_card_name(char *chip_name,
+extern int hinic_get_card_func_info_by_card_name(const char *chip_name,
 						 struct hinic_card_func_info
 						 *card_func);
 
@@ -1220,6 +1464,14 @@ struct nic_drv_module_handle nic_driv_module_cmd_handle[] = {
 	{SET_HOMOLOGUE,         set_homologue},
 	{GET_SSET_COUNT,	get_sset_count},
 	{GET_SSET_ITEMS,	get_sset_stats},
+	{SET_PFC_CONTROL,	set_pfc_control},
+	{SET_ETS,		set_ets},
+	{GET_ETS_INFO,		get_ets_info},
+	{SET_PFC_PRIORITY,	set_pfc_priority},
+	{SET_DCB_CFG,		set_dcb_cfg},
+	{GET_PFC_INFO,		get_pfc_info},
+	{GET_SUPPORT_UP,	get_support_up},
+	{GET_SUPPORT_TC,	get_support_tc},
 };
 
 struct hw_drv_module_handle hw_driv_module_cmd_handle[] = {
@@ -1550,7 +1802,7 @@ static int send_to_sm(void *hwdev, struct msg_module *nt_msg,
 }
 
 static bool is_hwdev_cmd_support(unsigned int mod,
-				 char *ifname, u32 up_api_type)
+					   char *ifname, u32 up_api_type)
 {
 	void *hwdev;
 
@@ -1606,7 +1858,7 @@ static bool is_hwdev_cmd_support(unsigned int mod,
 }
 
 static bool nictool_k_is_cmd_support(unsigned int mod,
-				     char *ifname, u32 up_api_type)
+					      char *ifname, u32 up_api_type)
 {
 	enum hinic_init_state init_state =
 			hinic_get_init_state_by_ifname(ifname);

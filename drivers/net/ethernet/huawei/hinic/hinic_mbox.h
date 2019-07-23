@@ -215,12 +215,12 @@ int hinic_mbox_to_pf_no_ack(struct hinic_hwdev *hwdev, enum hinic_mod_type mod,
 
 int hinic_mbox_ppf_to_pf(struct hinic_hwdev *hwdev, enum hinic_mod_type mod,
 			 u16 dst_pf_id, u8 cmd,
-			 void *buf_in, u16 in_size, void *buf_out,
-			 u16 *out_size, u32 timeout);
+			void *buf_in, u16 in_size, void *buf_out,
+			u16 *out_size, u32 timeout);
 int hinic_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
-		       enum hinic_mod_type mod, u16 cmd, u16 dst_func,
-		       void *buf_in, u16 in_size, void *buf_out,
-		       u16 *out_size, u32 timeout);
+			      enum hinic_mod_type mod, u16 cmd, u16 dst_func,
+			      void *buf_in, u16 in_size, void *buf_out,
+			      u16 *out_size, u32 timeout);
 
 int __hinic_mbox_to_vf(void *hwdev,
 		       enum hinic_mod_type mod, u16 vf_id, u8 cmd, void *buf_in,

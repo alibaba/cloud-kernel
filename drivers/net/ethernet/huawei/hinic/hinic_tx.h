@@ -1,5 +1,5 @@
-/*
- * Huawei HiNIC PCI Express Linux driver
+/* SPDX-License-Identifier: GPL-2.0*/
+/* Huawei HiNIC PCI Express Linux driver
  * Copyright(c) 2017 Huawei Technologies Co., Ltd
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -77,7 +77,8 @@ struct hinic_txq {
 	u16			q_depth;
 	u16			q_mask;
 	struct hinic_txq_stats	txq_stats;
-
+	u64			last_moder_packets;
+	u64			last_moder_bytes;
 	struct hinic_tx_info	*tx_info;
 };
 
@@ -96,6 +97,9 @@ void hinic_txq_clean_stats(struct hinic_txq_stats *txq_stats);
 
 void hinic_txq_get_stats(struct hinic_txq *txq,
 			 struct hinic_txq_stats *stats);
+
+netdev_tx_t hinic_lb_xmit_frame(struct sk_buff *skb,
+				struct net_device *netdev);
 
 netdev_tx_t hinic_xmit_frame(struct sk_buff *skb, struct net_device *netdev);
 

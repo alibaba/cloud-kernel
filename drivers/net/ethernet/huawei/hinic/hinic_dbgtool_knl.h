@@ -118,4 +118,5 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma);
 void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_id,
 				void **g_func_handle_array);
 long dbgtool_knl_free_mem(int id);
+
 #endif

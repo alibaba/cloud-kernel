@@ -53,13 +53,9 @@ struct ffm_intr_info {
 void *g_card_node_array[MAX_CARD_NUM] = {0};
 void *g_card_vir_addr[MAX_CARD_NUM] = {0};
 u64 g_card_phy_addr[MAX_CARD_NUM] = {0};
-/* lock for g_card_vir_addr  */
+/* lock for g_card_vir_addr */
 struct mutex	g_addr_lock;
 int card_id;
-unsigned long card_id_flag;
-enum hinic_card_id_status {
-	HINIC_CARD_ID_USE	= BIT(0),
-};
 
 /* dbgtool character device name, class name, dev path*/
 #define CHR_DEV_DBGTOOL "dbgtool_chr_dev"
@@ -111,7 +107,7 @@ static ssize_t dbgtool_knl_write(struct file *pfile,
 
 static bool is_valid_phy_addr(u64 offset)
 {
-	int i = 0;
+	int i;
 
 	for (i = 0; i < MAX_CARD_NUM; i++) {
 		if (offset == g_card_phy_addr[i])
@@ -129,20 +125,17 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	if (vmsize > (PAGE_SIZE * (1 << DBGTOOL_PAGE_ORDER))) {
 		pr_err("Map size = %lu is bigger than alloc\n", vmsize);
-		clear_bit(HINIC_CARD_ID_USE, &card_id_flag);
 		return -EAGAIN;
 	}
 
 	if (offset && !is_valid_phy_addr((u64)offset) &&
 	    !hinic_is_valid_bar_addr((u64)offset)) {
-		pr_err("offset is invalid\n");
-		clear_bit(HINIC_CARD_ID_USE, &card_id_flag);
+		pr_err("offset is invalid");
 		return -EAGAIN;
 	}
 
 	/* old version of tool set vma->vm_pgoff to 0 */
 	phy_addr = offset ? offset : g_card_phy_addr[card_id];
-	clear_bit(HINIC_CARD_ID_USE, &card_id_flag);
 	if (!phy_addr) {
 		pr_err("Card_id = %d physical address is 0\n", card_id);
 		return -EAGAIN;
@@ -200,9 +193,10 @@ long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 	ack_size = para->param.api_rd.ack_size;
 	if (para->param.api_rd.ack_size == 0) {
 		pr_err("Read cmd ack size is 0\n");
-		ret = -EINVAL;
+		ret = -ENOMEM;
 		goto alloc_ack_mem_fail;
 	}
+
 	ack = kzalloc((unsigned long long)ack_size, GFP_KERNEL);
 	if (!ack) {
 		pr_err("Alloc read ack mem fail\n");
@@ -557,7 +551,7 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 	struct dbgtool_param param;
 	struct dbgtool_k_glb_info *dbgtool_info;
 	struct card_node *card_info = NULL;
-	int i, cnt = 0;
+	int i;
 
 	(void)memset(&param, 0, sizeof(param));
 
@@ -580,20 +574,7 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 		return -EFAULT;
 	}
 
-	while (cnt < 10) {
-		if (!test_and_set_bit(HINIC_CARD_ID_USE, &card_id_flag))
-			break;
-		usleep_range(500, 1000);
-		cnt++;
-	}
-
-	if (cnt < 10) {
-		card_id = i;
-	} else {
-		pr_err("Card id in using!\n");
-		clear_bit(HINIC_CARD_ID_USE, &card_id_flag);
-		return -EFAULT;
-	}
+	card_id = i;
 
 	dbgtool_info = (struct dbgtool_k_glb_info *)card_info->dbgtool_info;
 
@@ -651,6 +632,7 @@ void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 	struct timex txc;
 	struct rtc_time rctm;
 	struct card_node *card_info = NULL;
+	bool flag = false;
 	int i, j;
 
 	for (i = 0; i < MAX_CARD_NUM; i++) {
@@ -659,10 +641,14 @@ void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 			continue;
 
 		for (j = 0; j < MAX_FUNCTION_NUM; j++) {
-			if (handle == card_info->func_handle_array[j])
+			if (handle == card_info->func_handle_array[j]) {
+				flag = true;
 				break;
+			}
 		}
-		break;
+
+		if (flag)
+			break;
 	}
 
 	if (i == MAX_CARD_NUM || !card_info) {
@@ -787,6 +773,7 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 		pr_err("Failed to get hinic id\n");
 		goto sscanf_chdev_fail;
 	}
+
 	g_card_node_array[id] = chip_info;
 	chip_info->func_num++;
 

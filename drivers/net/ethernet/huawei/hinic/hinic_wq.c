@@ -663,7 +663,7 @@ void *hinic_read_wqe(struct hinic_wq *wq, int num_wqebbs, u16 *cons_idx)
 	return WQ_PAGE_ADDR(wq, *cons_idx) + WQE_PAGE_OFF(wq, *cons_idx);
 }
 
-static inline int wqe_shadow(struct hinic_wq *wq, void *wqe)
+static inline int wqe_shadow(struct hinic_wq *wq, const void *wqe)
 {
 	void *end_wqe_shadow_addr;
 	u32 wqe_shadow_size = wq->num_q_pages * wq->max_wqe_size;

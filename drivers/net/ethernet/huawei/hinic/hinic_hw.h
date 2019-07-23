@@ -84,8 +84,8 @@ int hinic_msg_to_mgmt_async(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			    void *buf_in, u16 in_size);
 
 int hinic_mbox_to_vf(void *hwdev, enum hinic_mod_type mod,
-		     u16 vf_id, u8 cmd, void *buf_in, u16 in_size,
-		     void *buf_out, u16 *out_size, u32 timeout);
+				u16 vf_id, u8 cmd, void *buf_in, u16 in_size,
+				void *buf_out, u16 *out_size, u32 timeout);
 
 int hinic_api_cmd_write_nack(void *hwdev, u8 dest,
 			     void *cmd, u16 size);
@@ -375,11 +375,13 @@ enum hinic_func_cap {
  *	    allocation or dev_err print the parameter
  */
 int hinic_init_hwdev(struct hinic_init_para *para);
+int hinic_set_vf_dev_cap(void *hwdev);
 void hinic_free_hwdev(void *hwdev);
 void hinic_shutdown_hwdev(void *hwdev);
 
 void hinic_ppf_hwdev_unreg(void *hwdev);
 void hinic_ppf_hwdev_reg(void *hwdev, void *ppf_hwdev);
+
 bool hinic_is_hwdev_mod_inited(void *hwdev, enum hinic_hwdev_init_state state);
 enum hinic_func_mode hinic_get_func_mode(void *hwdev);
 u64 hinic_get_func_feature_cap(void *hwdev);
@@ -390,7 +392,6 @@ enum hinic_service_mode {
 	HINIC_WORK_MODE_NIC,
 	HINIC_WORK_MODE_INVALID	= 0xFF,
 };
-
 enum hinic_service_mode hinic_get_service_mode(void *hwdev);
 
 int hinic_slq_init(void *dev, int num_wqs);
@@ -616,6 +617,7 @@ enum hinic_event_type {
 	HINIC_EVENT_PORT_MODULE_EVENT = 7,
 	HINIC_EVENT_MCTP_GET_HOST_INFO,
 	HINIC_EVENT_MULTI_HOST_MGMT,
+	HINIC_EVENT_INIT_MIGRATE_PF,
 };
 
 struct hinic_event_info {
@@ -726,14 +728,16 @@ struct hinic_hw_pf_infos {
 int hinic_get_hw_pf_infos(void *hwdev, struct hinic_hw_pf_infos *infos);
 int hinic_set_ip_check(void *hwdev, bool ip_check_ctl);
 int hinic_mbox_to_host_sync(void *hwdev, enum hinic_mod_type mod,
-			    u8 cmd, void *buf_in, u16 in_size, void *buf_out,
-			    u16 *out_size, u32 timeout);
+		u8 cmd, void *buf_in, u16 in_size, void *buf_out,
+		u16 *out_size, u32 timeout);
 int hinic_mbox_ppf_to_vf(void *hwdev,
-			 enum hinic_mod_type mod, u16 func_id, u8 cmd,
-			 void *buf_in, u16 in_size, void *buf_out,
-			 u16 *out_size, u32 timeout);
+		enum hinic_mod_type mod, u16 func_id, u8 cmd, void *buf_in,
+		u16 in_size, void *buf_out, u16 *out_size, u32 timeout);
 
 int hinic_get_card_present_state(void *hwdev, bool *card_present_state);
+
+void hinic_migrate_report(void *dev);
 int hinic_set_vxlan_udp_dport(void *hwdev, u32 udp_port);
+bool is_multi_vm_slave(void *hwdev);
 
 #endif

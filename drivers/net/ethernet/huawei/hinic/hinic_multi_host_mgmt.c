@@ -63,18 +63,20 @@ void set_slave_host_enable(struct hinic_hwdev *hwdev, u8 host_id, bool enable)
 		 host_id, enable, reg_val);
 }
 
-bool get_slave_host_enable(struct hinic_hwdev *hwdev, u8 host_id)
+bool hinic_get_slave_host_enable(void *hwdev, u8 host_id)
 {
 	u32 reg_val;
+	struct hinic_hwdev *dev = hwdev;
 
-	if (HINIC_FUNC_TYPE(hwdev) != TYPE_PPF)
+	if (HINIC_FUNC_TYPE(dev) != TYPE_PPF)
 		return false;
 
-	reg_val = hinic_hwif_read_reg(hwdev->hwif,
+	reg_val = hinic_hwif_read_reg(dev->hwif,
 				      HINIC_MULT_HOST_SLAVE_STATUS_ADDR);
 
 	return SLAVE_HOST_STATUS_GET(host_id, reg_val);
 }
+EXPORT_SYMBOL(hinic_get_slave_host_enable);
 
 void set_master_host_mbox_enable(struct hinic_hwdev *hwdev, bool enable)
 {
@@ -136,6 +138,16 @@ void set_func_host_mode(struct hinic_hwdev *hwdev, enum hinic_func_mode mode)
 		hwdev->feature_cap = HINIC_NORMAL_HOST_CAP;
 		break;
 	}
+}
+
+bool is_multi_vm_slave(void *hwdev)
+{
+	struct hinic_hwdev *hw_dev = hwdev;
+
+	if (!hwdev)
+		return false;
+
+	return (hw_dev->func_mode == FUNC_MOD_MULTI_VM_SLAVE) ? true : false;
 }
 
 int rectify_host_mode(struct hinic_hwdev *hwdev)
@@ -304,7 +316,7 @@ int sw_func_pf_mbox_handler(void *handle, u16 vf_id, u8 cmd, void *buf_in,
 	int err;
 
 	switch (cmd) {
-	case HINIC_SW_GET_SLAVE_FUNC_NIC_STATE:
+	case HINIC_SW_CMD_GET_SLAVE_FUNC_NIC_STATE:
 		nic_state = buf_in;
 		out_state = buf_out;
 		*out_size = sizeof(*nic_state);
@@ -416,8 +428,7 @@ static int multi_host_event_handler(struct hinic_hwdev *hwdev,
 }
 
 static int sw_fwd_msg_to_vf(struct hinic_hwdev *hwdev,
-			    void *buf_in, u16 in_size,
-			    void *buf_out, u16 *out_size)
+	void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
 {
 	struct hinic_host_fwd_head *fwd_head;
 	u16 fwd_head_len;
@@ -428,9 +439,9 @@ static int sw_fwd_msg_to_vf(struct hinic_hwdev *hwdev,
 	fwd_head_len = sizeof(struct hinic_host_fwd_head);
 	msg = (void *)((u8 *)buf_in + fwd_head_len);
 	err = hinic_mbox_ppf_to_vf(hwdev, fwd_head->mod,
-				   fwd_head->dst_glb_func_idx, fwd_head->cmd,
-				   msg, (in_size - fwd_head_len),
-				   buf_out, out_size, 0);
+				fwd_head->dst_glb_func_idx, fwd_head->cmd,
+				msg, (in_size - fwd_head_len),
+				buf_out, out_size, 0);
 	if (err)
 		nic_err(hwdev->dev_hdl,
 			"Fwd msg to func %u failed, err: %d\n",
@@ -438,7 +449,6 @@ static int sw_fwd_msg_to_vf(struct hinic_hwdev *hwdev,
 
 	return err;
 }
-
 static int __slave_host_sw_func_handler(struct hinic_hwdev *hwdev, u16 pf_idx,
 					u8 cmd, void *buf_in, u16 in_size,
 					void *buf_out, u16 *out_size)
@@ -473,9 +483,12 @@ static int __slave_host_sw_func_handler(struct hinic_hwdev *hwdev, u16 pf_idx,
 
 	case HINIC_SW_CMD_SEND_MSG_TO_VF:
 		err = sw_fwd_msg_to_vf(hwdev, buf_in, in_size,
-				       buf_out, out_size);
+				buf_out, out_size);
 		break;
 
+	case HINIC_SW_CMD_MIGRATE_READY:
+		hinic_migrate_report(hwdev);
+		break;
 	default:
 		err = -EINVAL;
 		break;
@@ -515,8 +528,7 @@ int __ppf_process_mbox_msg(struct hinic_hwdev *hwdev, u16 pf_idx, u16 vf_id,
 
 	if (IS_SLAVE_HOST(hwdev)) {
 		err = hinic_mbox_to_host_sync(hwdev, mod, cmd,
-					      buf_in, in_size, buf_out,
-					      out_size, 0);
+				buf_in, in_size, buf_out, out_size, 0);
 		if (err)
 			sdk_err(hwdev->dev_hdl, "send to mpf failed, err: %d\n",
 				err);
@@ -751,7 +763,7 @@ int hinic_set_func_nic_state(void *hwdev, struct hinic_func_nic_state *state)
 		return -EFAULT;
 	}
 
-	host_enable = get_slave_host_enable(hwdev, host_id);
+	host_enable = hinic_get_slave_host_enable(hwdev, host_id);
 	sdk_info(ppf_hwdev->dev_hdl, "Set slave host %d(status: %d) func %d %s nic\n",
 		 host_id, host_enable,
 		 state->func_idx, state->state ? "enable" : "disable");
@@ -801,18 +813,23 @@ int hinic_get_func_nic_enable(void *hwdev, u16 glb_func_idx, bool *en)
 
 	if (!hwdev || !en)
 		return -EINVAL;
-
+	/*if card mode is OVS, VFs donot need attach_uld, so return false.*/
 	if (!IS_SLAVE_HOST((struct hinic_hwdev *)hwdev)) {
-		*en = true;
+		if (hinic_func_type(hwdev) == TYPE_VF &&
+		    hinic_support_ovs(hwdev, NULL)) {
+			*en = false;
+		} else {
+			*en = true;
+		}
 		return 0;
 	}
 
 	if (hinic_func_type(hwdev) == TYPE_VF) {
 		nic_state.func_idx = glb_func_idx;
 		err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_SW_FUNC,
-					     HINIC_SW_GET_SLAVE_FUNC_NIC_STATE,
-					     &nic_state, sizeof(nic_state),
-					     &nic_state, &out_size, 0);
+					HINIC_SW_CMD_GET_SLAVE_FUNC_NIC_STATE,
+					&nic_state, sizeof(nic_state),
+					&nic_state, &out_size, 0);
 		if (err || !out_size || nic_state.status) {
 			sdk_err(((struct hinic_hwdev *)hwdev)->dev_hdl, "Failed to get func %d nic state, err: %d, out_size: 0x%x, status: 0x%x\n",
 				glb_func_idx, err, out_size, nic_state.status);
@@ -861,11 +878,16 @@ int hinic_multi_host_mgmt_init(struct hinic_hwdev *hwdev)
 
 	/* master ppf idx fix to 0 */
 	hwdev->mhost_mgmt->mhost_ppf_idx = 0;
-	/* fix slave host ppf 6 and host 2 in bmwg mode
-	 * TODO: get ppf_idx and host_idx according to pf_infos
-	 */
-	hwdev->mhost_mgmt->shost_ppf_idx = 6;
-	hwdev->mhost_mgmt->shost_host_idx = 2;
+	if (IS_BMGW_MASTER_HOST(hwdev) || IS_BMGW_SLAVE_HOST(hwdev)) {
+		/* fix slave host ppf 6 and host 2 in bmwg mode
+		 * TODO: get ppf_idx and host_idx according to pf_infos
+		 */
+		hwdev->mhost_mgmt->shost_ppf_idx = 6;
+		hwdev->mhost_mgmt->shost_host_idx = 2;
+	} else {
+		hwdev->mhost_mgmt->shost_ppf_idx = 7;
+		hwdev->mhost_mgmt->shost_host_idx = 2;
+	}
 
 	hinic_register_ppf_mbox_cb(hwdev, HINIC_MOD_COMM,
 				   comm_ppf_mbox_handler);
@@ -885,10 +907,16 @@ int hinic_multi_host_mgmt_init(struct hinic_hwdev *hwdev)
 	if (IS_SLAVE_HOST(hwdev)) {
 		/* PXE don't support to receive mbox from master host */
 		set_slave_host_enable(hwdev, hinic_pcie_itf_id(hwdev), true);
-		if (IS_BMGW_SLAVE_HOST(hwdev)) {
+		if ((IS_VM_SLAVE_HOST(hwdev) &&
+		     hinic_get_master_host_mbox_enable(hwdev)) ||
+		     IS_BMGW_SLAVE_HOST(hwdev)) {
 			err = hinic_register_slave_ppf(hwdev, true);
-			if (err)
+			if (err) {
+				set_slave_host_enable(hwdev,
+						      hinic_pcie_itf_id(hwdev),
+						      false);
 				goto out_free_mhost_mgmt;
+			}
 		}
 	} else {
 		/* slave host can send message to mgmt cpu after setup master
@@ -912,8 +940,7 @@ int hinic_multi_host_mgmt_free(struct hinic_hwdev *hwdev)
 		return 0;
 
 	if (IS_SLAVE_HOST(hwdev)) {
-		if (IS_BMGW_SLAVE_HOST(hwdev))
-			hinic_register_slave_ppf(hwdev, false);
+		hinic_register_slave_ppf(hwdev, false);
 
 		set_slave_host_enable(hwdev, hinic_pcie_itf_id(hwdev), false);
 	} else {

@@ -14,11 +14,13 @@
  */
 
 #ifndef HINIC_EQS_H
+#include <linux/interrupt.h>
+
 #define HINIC_EQS_H
 
 #define HINIC_EQ_PAGE_SIZE		0x00001000
 
-#define HINIC_MAX_AEQS			4
+#define HINIC_MAX_AEQS			3
 #define HINIC_MAX_CEQS			32
 
 #define HINIC_EQ_MAX_PAGES		8
@@ -65,7 +67,6 @@ struct hinic_eq_work {
 struct hinic_ceq_tasklet_data {
 	void	*data;
 };
-
 struct hinic_eq {
 	struct hinic_hwdev		*hwdev;
 	u16				q_id;
@@ -113,7 +114,6 @@ struct hinic_aeqs {
 	struct hinic_hwdev	*hwdev;
 
 	hinic_aeq_hwe_cb	aeq_hwe_cb[HINIC_MAX_AEQ_EVENTS];
-
 	hinic_aeq_swe_cb	aeq_swe_cb[HINIC_MAX_AEQ_SW_EVENTS];
 	unsigned long		aeq_hw_cb_state[HINIC_MAX_AEQ_EVENTS];
 	unsigned long		aeq_sw_cb_state[HINIC_MAX_AEQ_SW_EVENTS];
@@ -139,6 +139,24 @@ struct hinic_ceqs {
 	struct hinic_eq		ceq[HINIC_MAX_CEQS];
 	u16			num_ceqs;
 };
+
+enum hinic_msg_pipe_state {
+	PIPE_STATE_IDLE,
+	PIPE_STATE_BUSY,
+	PIPE_STATE_SUSPEND,
+};
+
+#define PIPE_CYCLE_MAX 10000
+
+u32 hinic_func_busy_state_get(struct hinic_hwdev *hwdev);
+
+void hinic_func_busy_state_set(struct hinic_hwdev *hwdev, u32 cfg);
+
+u32 hinic_func_own_bit_get(struct hinic_hwdev *hwdev);
+
+void hinic_func_own_bit_set(struct hinic_hwdev *hwdev, u32 cfg);
+
+void hinic_qps_num_set(struct hinic_hwdev *hwdev, u32 num_qps);
 
 int hinic_aeqs_init(struct hinic_hwdev *hwdev, u16 num_aeqs,
 		    struct irq_info *msix_entries);

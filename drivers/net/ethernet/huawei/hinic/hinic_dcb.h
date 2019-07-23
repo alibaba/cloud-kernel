@@ -48,5 +48,20 @@ int hinic_get_num_cos(struct hinic_nic_dev *nic_dev, u8 *num_cos);
 
 int hinic_get_cos_up_map(struct hinic_nic_dev *nic_dev,
 			 u8 *num_cos, u8 *cos_up);
+u8 hinic_setup_dcb_tool(struct net_device *netdev, u8 *dcb_en, bool wr_flag);
+void hinic_dcbnl_set_pfc_en_tool(struct net_device *netdev,
+				 u8 *value, bool flag);
+void hinic_dcbnl_set_pfc_cfg_tool(struct net_device *netdev, u8 setting);
+void hinic_dcbnl_get_pfc_cfg_tool(struct net_device *netdev, u8 *setting);
+u8 hinic_dcbnl_set_pfc_tool(struct net_device *netdev);
+void hinic_dcbnl_get_tc_num_tool(struct net_device *netdev, u8 *tc_num);
+void hinic_dcbnl_set_ets_tc_tool(struct net_device *netdev, u8 tc[], bool flag);
+void hinic_dcbnl_set_ets_pecent_tool(struct net_device *netdev,
+				     u8 percent[], bool flag);
+void hinic_dcbnl_set_ets_en_tool(struct net_device *netdev,
+				 u8 *value, bool flag);
+void hinic_dcbnl_set_ets_strict_tool(struct net_device *netdev,
+				     u8 *setting, bool flag);
+u8 hinic_dcbnl_set_ets_tool(struct net_device *netdev);
 
 #endif

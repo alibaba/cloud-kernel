@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0*/
 /******************************************************************************
- *
- * Copyright (C), 2001-2011, Huawei Tech. Co., Ltd.
- *
+
+  Copyright (C), 2001-2011, Huawei Tech. Co., Ltd.
+
  ******************************************************************************
   File Name     : hinic_ctx_def.h
   Version       : Initial Draft
@@ -32,6 +32,8 @@ extern "C"{
 #define HINIC_CEQE_QN_MASK			0x3FFU
 
 #define HINIC_Q_CTXT_MAX				42
+
+#define HINIC_RQ_CQ_MAX					128
 
 #define MAX_WQE_SIZE(max_sge, wqebb_size)	\
 			(((max_sge) <= 2) ? (wqebb_size) : \
@@ -214,6 +216,7 @@ enum cfg_svc_type_en {
 	CFG_SVC_OVS_BIT7    = (1 << 7),
 	CFG_SVC_ACL_BIT8    = (1 << 8),
 	CFG_SVC_IOE_BIT9    = (1 << 9),
+	CFG_SVC_HWPT_BIT10  = (1 << 10),
 
 	CFG_SVC_FT_EN       = (CFG_SVC_FCOE_BIT2 | CFG_SVC_TOE_BIT3 |
 			       CFG_SVC_FC_BIT5 | CFG_SVC_IOE_BIT9),
@@ -244,6 +247,8 @@ enum cfg_svc_type_en {
 	((dev)->cfg_mgmt->svc_cap.chip_svc_type & CFG_SVC_FT_EN)
 #define IS_RDMA_TYPE(dev) \
 	((dev)->cfg_mgmt->svc_cap.chip_svc_type & CFG_SVC_RDMA_EN)
+#define IS_HWPT_TYPE(dev) \
+	((dev)->cfg_mgmt->svc_cap.chip_svc_type & CFG_SVC_HWPT_BIT10)
 
 #ifdef __cplusplus
     #if __cplusplus

@@ -432,9 +432,9 @@ static inline void __kc_eth_zero_addr(u8 *addr)
 
 typedef struct file sdk_file;
 
-sdk_file *file_creat(char *file_name);
+sdk_file *file_creat(const char *file_name);
 
-sdk_file *file_open(char *file_name);
+sdk_file *file_open(const char *file_name);
 
 void file_close(sdk_file *file_handle);
 

@@ -35,6 +35,7 @@
 #include "hinic_nic.h"
 #include "hinic_mgmt_interface.h"
 #include "hinic_hwif.h"
+#include "hinic_eqs.h"
 
 static unsigned char set_vf_link_state;
 module_param(set_vf_link_state, byte, 0444);
@@ -150,8 +151,11 @@ int hinic_init_function_table(void *hwdev, u16 rx_buf_sz)
 	if (!hwdev)
 		return -EINVAL;
 
+	err = hinic_global_func_id_get(hwdev, &function_table.func_id);
+	if (err)
+		return err;
+
 	function_table.version = HINIC_CMD_VER_FUNC_ID;
-	function_table.func_id = hinic_global_func_id(hwdev);
 	function_table.mtu = 0x3FFF;	/* default, max mtu */
 	function_table.rx_wqe_buf_size = rx_buf_sz;
 
@@ -178,7 +182,9 @@ int hinic_get_base_qpn(void *hwdev, u16 *global_qpn)
 	if (!hwdev || !global_qpn)
 		return -EINVAL;
 
-	cmd_qpn.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &cmd_qpn.func_id);
+	if (err)
+		return err;
 
 	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_L2NIC,
 				     HINIC_PORT_CMD_GET_GLOBAL_QPN,
@@ -196,6 +202,7 @@ int hinic_get_base_qpn(void *hwdev, u16 *global_qpn)
 	return 0;
 }
 
+#define HINIC_ADD_VLAN_IN_MAC	0x8000
 #define HINIC_VLAN_ID_MASK	0x7FFF
 
 int hinic_set_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id)
@@ -332,6 +339,55 @@ int hinic_update_mac(void *hwdev, u8 *old_mac, u8 *new_mac, u16 vlan_id,
 	return 0;
 }
 
+int hinic_update_mac_vlan(void *hwdev, u16 old_vlan, u16 new_vlan, int vf_id)
+{
+	struct hinic_hwdev *dev = hwdev;
+	struct vf_data_storage *vf_info;
+	u16 func_id, vlan_id;
+	int err;
+
+	if (!hwdev || !old_vlan || !new_vlan)
+		return -EINVAL;
+
+	vf_info = dev->nic_io->vf_infos + HW_VF_ID_TO_OS(vf_id);
+	if (!vf_info->pf_set_mac)
+		return 0;
+
+	func_id = hinic_glb_pf_vf_offset(dev) + (u16)vf_id;
+	vlan_id = old_vlan;
+	if (vlan_id)
+		vlan_id |= HINIC_ADD_VLAN_IN_MAC;
+	err = hinic_del_mac(dev, vf_info->vf_mac_addr, vlan_id,
+			    func_id);
+	if (err) {
+		nic_err(dev->dev_hdl, "Failed to delete VF %d MAC %pM vlan %d\n",
+			HW_VF_ID_TO_OS(vf_id), vf_info->vf_mac_addr, vlan_id);
+		return err;
+	}
+
+	vlan_id = new_vlan;
+	if (vlan_id)
+		vlan_id |= HINIC_ADD_VLAN_IN_MAC;
+	err = hinic_set_mac(dev, vf_info->vf_mac_addr, vlan_id,
+			    func_id);
+	if (err) {
+		nic_err(dev->dev_hdl, "Failed to add VF %d MAC %pM vlan %d\n",
+			HW_VF_ID_TO_OS(vf_id), vf_info->vf_mac_addr, vlan_id);
+		goto out;
+	}
+
+	return 0;
+
+out:
+	vlan_id = old_vlan;
+	if (vlan_id)
+		vlan_id |= HINIC_ADD_VLAN_IN_MAC;
+	hinic_set_mac(dev, vf_info->vf_mac_addr, vlan_id,
+		      func_id);
+
+	return err;
+}
+
 int hinic_get_default_mac(void *hwdev, u8 *mac_addr)
 {
 	struct hinic_hwdev *nic_hwdev = (struct hinic_hwdev *)hwdev;
@@ -342,11 +398,13 @@ int hinic_get_default_mac(void *hwdev, u8 *mac_addr)
 	if (!hwdev || !mac_addr)
 		return -EINVAL;
 
-	mac_info.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &mac_info.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_MAC,
 				     &mac_info, sizeof(mac_info),
-		&mac_info, &out_size);
+				     &mac_info, &out_size);
 	if (err || !out_size || mac_info.status) {
 		nic_err(nic_hwdev->dev_hdl,
 			"Failed to get mac, err: %d, status: 0x%x, out size: 0x%x\n",
@@ -380,7 +438,10 @@ int hinic_set_port_mtu(void *hwdev, u32 new_mtu)
 		return -EINVAL;
 	}
 
-	mtu_info.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &mtu_info.func_id);
+	if (err)
+		return err;
+
 	mtu_info.mtu = new_mtu;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_CHANGE_MTU,
@@ -457,7 +518,10 @@ int hinic_enable_netq(void *hwdev, u8 en)
 	if (!hwdev)
 		return -EINVAL;
 
-	netq_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &netq_cfg.func_id);
+	if (err)
+		return err;
+
 	netq_cfg.netq_en = en;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_NETQ,
@@ -500,8 +564,11 @@ int hinic_add_hw_rqfilter(void *hwdev, struct hinic_rq_filter_info *filter_info)
 		return -EINVAL;
 	}
 
+	err = hinic_global_func_id_get(hwdev, &filter_msg.func_id);
+	if (err)
+		return err;
+
 	filter_msg.filter_type = filter_info->filter_type;
-	filter_msg.func_id = hinic_global_func_id(hwdev);
 	filter_msg.qid = filter_info->qid;
 	filter_msg.qflag = filter_info->qflag;
 
@@ -547,8 +614,11 @@ int hinic_del_hw_rqfilter(void *hwdev, struct hinic_rq_filter_info *filter_info)
 		return -EINVAL;
 	}
 
+	err = hinic_global_func_id_get(hwdev, &filter_msg.func_id);
+	if (err)
+		return err;
+
 	filter_msg.filter_type = filter_info->filter_type;
-	filter_msg.func_id = hinic_global_func_id(hwdev);
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_DEL_RQ_FILTER,
 				     &filter_msg, sizeof(filter_msg),
@@ -628,7 +698,9 @@ int hinic_set_vlan_fliter(void *hwdev, u32 vlan_filter_ctrl)
 	if (!hwdev)
 		return -EINVAL;
 
-	vlan_filter.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &vlan_filter.func_id);
+	if (err)
+		return err;
 	vlan_filter.vlan_filter_ctrl = vlan_filter_ctrl;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_VLAN_FILTER,
@@ -659,11 +731,13 @@ int hinic_get_port_info(void *hwdev, struct nic_port_info *port_info)
 	if (!hwdev || !port_info)
 		return -EINVAL;
 
-	port_msg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &port_msg.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_PORT_INFO,
 				     &port_msg, sizeof(port_msg),
-				&port_msg, &out_size);
+				     &port_msg, &out_size);
 	if (err || !out_size || port_msg.status) {
 		nic_err(nic_hwdev->dev_hdl,
 			"Failed to get port info, err: %d, status: 0x%x, out size: 0x%x\n",
@@ -691,7 +765,10 @@ int hinic_set_autoneg(void *hwdev, bool enable)
 	if (!hwdev)
 		return -EINVAL;
 
-	autoneg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &autoneg.func_id);
+	if (err)
+		return err;
+
 	autoneg.enable = enable;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_AUTONEG,
@@ -739,7 +816,9 @@ int hinic_get_link_mode(void *hwdev, enum hinic_link_mode *supported,
 	if (!hwdev || !supported || !advertised)
 		return -EINVAL;
 
-	link_mode.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &link_mode.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_LINK_MODE,
 				     &link_mode, sizeof(link_mode),
@@ -767,7 +846,10 @@ int hinic_set_port_link_status(void *hwdev, bool enable)
 	if (!hwdev)
 		return -EINVAL;
 
-	link_status.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &link_status.func_id);
+	if (err)
+		return err;
+
 	link_status.enable = enable;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_PORT_LINK_STATUS,
@@ -793,7 +875,10 @@ int hinic_set_speed(void *hwdev, enum nic_speed_level speed)
 	if (!hwdev)
 		return -EINVAL;
 
-	speed_info.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &speed_info.func_id);
+	if (err)
+		return err;
+
 	speed_info.speed = speed;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_SPEED,
@@ -819,7 +904,9 @@ int hinic_get_speed(void *hwdev, enum nic_speed_level *speed)
 	if (!hwdev || !speed)
 		return -EINVAL;
 
-	speed_info.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &speed_info.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_SPEED,
 				     &speed_info, sizeof(speed_info),
@@ -851,7 +938,9 @@ int hinic_get_link_state(void *hwdev, u8 *link_state)
 		return 0;
 	}
 
-	get_link.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &get_link.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_LINK_STATE,
 				     &get_link, sizeof(get_link),
@@ -878,7 +967,10 @@ static int hinic_set_hw_pause_info(void *hwdev,
 	if (!hwdev)
 		return -EINVAL;
 
-	pause_info.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &pause_info.func_id);
+	if (err)
+		return err;
+
 	pause_info.auto_neg = nic_pause.auto_neg;
 	pause_info.rx_pause = nic_pause.rx_pause;
 	pause_info.tx_pause = nic_pause.tx_pause;
@@ -936,7 +1028,9 @@ int hinic_get_hw_pause_info(void *hwdev, struct nic_pause_config *nic_pause)
 	if (!hwdev || !nic_pause)
 		return -EINVAL;
 
-	pause_info.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &pause_info.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_PAUSE_INFO,
 				     &pause_info, sizeof(pause_info),
@@ -982,7 +1076,10 @@ int hinic_set_rx_mode(void *hwdev, u32 enable)
 	if (!hwdev)
 		return -EINVAL;
 
-	rx_mode_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &rx_mode_cfg.func_id);
+	if (err)
+		return err;
+
 	rx_mode_cfg.rx_mode = enable;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_RX_MODE,
@@ -1008,7 +1105,10 @@ int hinic_set_rx_vlan_offload(void *hwdev, u8 en)
 	if (!hwdev)
 		return -EINVAL;
 
-	vlan_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &vlan_cfg.func_id);
+	if (err)
+		return err;
+
 	vlan_cfg.vlan_rx_offload = en;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_RX_VLAN_OFFLOAD,
@@ -1033,7 +1133,10 @@ int hinic_set_rx_csum_offload(void *hwdev, u32 en)
 	if (!hwdev)
 		return -EINVAL;
 
-	rx_csum_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &rx_csum_cfg.func_id);
+	if (err)
+		return err;
+
 	rx_csum_cfg.rx_csum_offload = en;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_RX_CSUM,
@@ -1058,7 +1161,10 @@ int hinic_set_tx_tso(void *hwdev, u8 tso_en)
 	if (!hwdev)
 		return -EINVAL;
 
-	tso_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &tso_cfg.func_id);
+	if (err)
+		return err;
+
 	tso_cfg.tso_en = tso_en;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_TSO,
@@ -1144,7 +1250,10 @@ int hinic_set_rx_lro(void *hwdev, u8 ipv4_en, u8 ipv6_en, u8 max_wqe_num)
 	if (!hwdev)
 		return -EINVAL;
 
-	lro_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &lro_cfg.func_id);
+	if (err)
+		return err;
+
 	lro_cfg.lro_ipv4_en = ipv4_en;
 	lro_cfg.lro_ipv6_en = ipv6_en;
 	lro_cfg.lro_max_wqe_num = max_wqe_num;
@@ -1168,9 +1277,12 @@ static int hinic_dcb_set_hw_pfc(void *hwdev, u8 pfc_en, u8 pfc_bitmap)
 	u16 out_size = sizeof(pfc);
 	int err;
 
+	err = hinic_global_func_id_get(hwdev, &pfc.func_id);
+	if (err)
+		return err;
+
 	pfc.pfc_bitmap = pfc_bitmap;
 	pfc.pfc_en = pfc_en;
-	pfc.func_id = hinic_global_func_id(hwdev);
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_PFC,
 				     &pfc, sizeof(pfc), &pfc, &out_size);
@@ -1306,7 +1418,12 @@ int hinic_dcb_set_rq_iq_mapping(void *hwdev, u32 num_rqs, u8 *map)
 	dev = hwdev;
 	nic_io = dev->nic_io;
 
-	rq_iq_mapping.func_id = hinic_global_func_id(hwdev);
+	hinic_qps_num_set(dev, nic_io->num_qps);
+
+	err = hinic_global_func_id_get(hwdev, &rq_iq_mapping.func_id);
+	if (err)
+		return err;
+
 	rq_iq_mapping.num_rqs = num_rqs;
 	rq_iq_mapping.rq_depth = (u16)ilog2(nic_io->rq_depth);
 
@@ -1323,6 +1440,7 @@ int hinic_dcb_set_rq_iq_mapping(void *hwdev, u32 num_rqs, u8 *map)
 
 	return 0;
 }
+EXPORT_SYMBOL(hinic_dcb_set_rq_iq_mapping);
 
 int hinic_set_pfc_threshold(void *hwdev, u16 op_type, u16 threshold)
 {
@@ -1337,7 +1455,10 @@ int hinic_set_pfc_threshold(void *hwdev, u16 op_type, u16 threshold)
 	else
 		return -EINVAL;
 
-	pfc_thd.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &pfc_thd.func_id);
+	if (err)
+		return err;
+
 	pfc_thd.op_type = op_type;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_PFC_THD,
@@ -1468,7 +1589,9 @@ int hinic_get_rx_lro(void *hwdev, struct nic_lro_info *cfg)
 	if (!hwdev || !cfg)
 		return -EINVAL;
 
-	lro_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &lro_cfg.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_LRO,
 				     &lro_cfg, sizeof(lro_cfg),
@@ -1577,7 +1700,10 @@ int hinic_set_vport_enable(void *hwdev, bool enable)
 	if (!hwdev)
 		return -EINVAL;
 
-	en_state.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &en_state.func_id);
+	if (err)
+		return err;
+
 	en_state.state = enable ? 1 : 0;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_VPORT_ENABLE,
@@ -1608,8 +1734,11 @@ int hinic_set_port_enable(void *hwdev, bool enable)
 	if (HINIC_IS_VF(nic_hwdev))
 		return 0;
 
+	err = hinic_global_func_id_get(hwdev, &en_state.func_id);
+	if (err)
+		return err;
+
 	en_state.version = HINIC_CMD_VER_FUNC_ID;
-	en_state.func_id = hinic_global_func_id(hwdev);
 	en_state.state = enable ? NIC_PORT_ENABLE : NIC_PORT_DISABLE;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_PORT_ENABLE,
@@ -1691,7 +1820,10 @@ int hinic_get_rss_type(void *hwdev, u32 tmpl_idx, struct nic_rss_type *rss_type)
 	if (!hwdev || !rss_type)
 		return -EINVAL;
 
-	ctx_tbl.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &ctx_tbl.func_id);
+	if (err)
+		return err;
+
 	ctx_tbl.template_id = (u8)tmpl_idx;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_RSS_CTX_TBL,
@@ -1726,7 +1858,10 @@ int hinic_rss_set_template_tbl(void *hwdev, u32 tmpl_idx, const u8 *temp)
 	if (!hwdev || !temp)
 		return -EINVAL;
 
-	temp_key.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &temp_key.func_id);
+	if (err)
+		return err;
+
 	temp_key.template_id = (u8)tmpl_idx;
 	memcpy(temp_key.key, temp, HINIC_RSS_KEY_SIZE);
 
@@ -1752,7 +1887,10 @@ int hinic_rss_get_template_tbl(void *hwdev, u32 tmpl_idx, u8 *temp)
 	if (!hwdev || !temp)
 		return -EINVAL;
 
-	temp_key.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &temp_key.func_id);
+	if (err)
+		return err;
+
 	temp_key.template_id = (u8)tmpl_idx;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_RSS_TEMPLATE_TBL,
@@ -1779,7 +1917,10 @@ int hinic_rss_get_hash_engine(void *hwdev, u8 tmpl_idx, u8 *type)
 	if (!hwdev || !type)
 		return -EINVAL;
 
-	hash_type.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &hash_type.func_id);
+	if (err)
+		return err;
+
 	hash_type.template_id = tmpl_idx;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_RSS_HASH_ENGINE,
@@ -1805,7 +1946,10 @@ int hinic_rss_set_hash_engine(void *hwdev, u8 tmpl_idx, u8 type)
 	if (!hwdev)
 		return -EINVAL;
 
-	hash_type.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &hash_type.func_id);
+	if (err)
+		return err;
+
 	hash_type.hash_engine = type;
 	hash_type.template_id = tmpl_idx;
 
@@ -1826,7 +1970,7 @@ int hinic_rss_set_indir_tbl(void *hwdev, u32 tmpl_idx, const u32 *indir_table)
 	struct hinic_hwdev *nic_hwdev = (struct hinic_hwdev *)hwdev;
 	struct nic_rss_indirect_tbl *indir_tbl;
 	struct hinic_cmd_buf *cmd_buf;
-	int i;
+	u32 i;
 	u32 *temp;
 	u32 indir_size;
 	u64 out_param;
@@ -1896,7 +2040,10 @@ int hinic_rss_get_indir_tbl(void *hwdev, u32 tmpl_idx, u32 *indir_table)
 	u16 out_size = sizeof(rss_cfg);
 	int err = 0, i;
 
-	rss_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &rss_cfg.func_id);
+	if (err)
+		return err;
+
 	rss_cfg.template_id = (u8)tmpl_idx;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev,
@@ -1927,7 +2074,10 @@ int hinic_rss_cfg(void *hwdev, u8 rss_en, u8 tmpl_idx, u8 tc_num, u8 *prio_tc)
 	if (!hwdev || !prio_tc || (tc_num & (tc_num - 1)))
 		return -EINVAL;
 
-	rss_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &rss_cfg.func_id);
+	if (err)
+		return err;
+
 	rss_cfg.rss_en = rss_en;
 	rss_cfg.template_id = tmpl_idx;
 	rss_cfg.rq_priority_number = tc_num ? (u8)ilog2(tc_num) : 0;
@@ -1953,8 +2103,11 @@ int hinic_get_vport_stats(void *hwdev, struct hinic_vport_stats *stats)
 	u16 out_size = sizeof(vport_stats);
 	int err;
 
+	err = hinic_global_func_id_get(hwdev, &stats_info.func_id);
+	if (err)
+		return err;
+
 	stats_info.stats_version = HINIC_PORT_STATS_VERSION;
-	stats_info.func_id = hinic_global_func_id(hwdev);
 	stats_info.stats_size = sizeof(vport_stats);
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_VPORT_STAT,
@@ -2087,13 +2240,20 @@ int hinic_rss_template_alloc(void *hwdev, u8 *tmpl_idx)
 	if (!hwdev || !tmpl_idx)
 		return -EINVAL;
 
-	template_mgmt.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &template_mgmt.func_id);
+	if (err)
+		return err;
+
 	template_mgmt.cmd = NIC_RSS_CMD_TEMP_ALLOC;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_RSS_TEMP_MGR,
 				     &template_mgmt, sizeof(template_mgmt),
 				     &template_mgmt, &out_size);
 	if (err || !out_size || template_mgmt.status) {
+		if (template_mgmt.status == HINIC_MGMT_STATUS_ERR_FULL) {
+			nic_warn(nic_hwdev->dev_hdl, "Failed to alloc rss template, table is full\n");
+			return -ENOSPC;
+		}
 		nic_err(nic_hwdev->dev_hdl, "Failed to alloc rss template, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, template_mgmt.status, out_size);
 		return -EINVAL;
@@ -2114,7 +2274,10 @@ int hinic_rss_template_free(void *hwdev, u8 tmpl_idx)
 	if (!hwdev)
 		return -EINVAL;
 
-	template_mgmt.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &template_mgmt.func_id);
+	if (err)
+		return err;
+
 	template_mgmt.template_id = tmpl_idx;
 	template_mgmt.cmd = NIC_RSS_CMD_TEMP_FREE;
 
@@ -2140,7 +2303,10 @@ int hinic_set_port_funcs_state(void *hwdev, bool enable)
 	if (!hwdev)
 		return -EINVAL;
 
-	state.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &state.func_id);
+	if (err)
+		return err;
+
 	state.drop_en = enable ? 0 : 1;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_PORT_FUNCS_STATE,
@@ -2162,7 +2328,9 @@ int hinic_reset_port_link_cfg(void *hwdev)
 	u16 out_size = sizeof(reset_cfg);
 	int err;
 
-	reset_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &reset_cfg.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_RESET_LINK_CFG,
 				     &reset_cfg, sizeof(reset_cfg),
@@ -2207,6 +2375,11 @@ static int hinic_change_vf_mtu_msg_handler(struct hinic_hwdev *hwdev, u16 vf_id,
 	return 0;
 }
 
+static bool is_ether_addr_zero(const u8 *addr)
+{
+	return !(addr[0] | addr[1] | addr[2] | addr[3] | addr[4] | addr[5]);
+}
+
 static int hinic_get_vf_mac_msg_handler(struct hinic_nic_io *nic_io, u16 vf,
 					void *buf_in, u16 in_size,
 					void *buf_out, u16 *out_size)
@@ -2215,10 +2388,18 @@ static int hinic_get_vf_mac_msg_handler(struct hinic_nic_io *nic_io, u16 vf,
 	struct hinic_port_mac_set *mac_info = buf_out;
 	int err;
 
-	if (nic_io->hwdev->func_mode == FUNC_MOD_MULTI_BM_SLAVE) {
+	if (nic_io->hwdev->func_mode == FUNC_MOD_MULTI_BM_SLAVE ||
+	    nic_io->hwdev->func_mode == FUNC_MOD_MULTI_VM_SLAVE ||
+	    (hinic_support_ovs(nic_io->hwdev, NULL))) {
 		err = hinic_pf_msg_to_mgmt_sync(nic_io->hwdev, HINIC_MOD_L2NIC,
 						HINIC_PORT_CMD_GET_MAC, buf_in,
 						in_size, buf_out, out_size, 0);
+
+		if (!err) {
+			if (is_ether_addr_zero(&mac_info->mac[0]))
+				memcpy(mac_info->mac,
+				       vf_info->vf_mac_addr, ETH_ALEN);
+		}
 		return err;
 	}
 
@@ -2360,13 +2541,17 @@ static int hinic_set_vf_vlan(struct hinic_hwdev *hwdev, bool add, u16 vid,
 static int hinic_init_vf_config(struct hinic_hwdev *hwdev, u16 vf_id)
 {
 	struct vf_data_storage *vf_info;
-	u16 func_id;
+	u16 func_id, vlan_id;
 	int err = 0;
 
 	vf_info = hwdev->nic_io->vf_infos + HW_VF_ID_TO_OS(vf_id);
 	if (vf_info->pf_set_mac) {
 		func_id = hinic_glb_pf_vf_offset(hwdev) + vf_id;
-		err = hinic_set_mac(hwdev, vf_info->vf_mac_addr, 0, func_id);
+		vlan_id = vf_info->pf_vlan;
+		if (vlan_id)
+			vlan_id |= HINIC_ADD_VLAN_IN_MAC;
+		err = hinic_set_mac(hwdev, vf_info->vf_mac_addr, vlan_id,
+				    func_id);
 		if (err) {
 			nic_err(hwdev->dev_hdl, "Failed to set VF %d MAC\n",
 				HW_VF_ID_TO_OS(vf_id));
@@ -2774,7 +2959,8 @@ int hinic_kill_vf_vlan(void *hwdev, int vf_id)
 
 	err = hinic_set_vf_vlan(hw_dev, false,
 				nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].pf_vlan,
-			nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].pf_qos, vf_id);
+				nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].pf_qos,
+				vf_id);
 	if (err)
 		return err;
 
@@ -3247,7 +3433,10 @@ int hinic_set_anti_attack(void *hwdev, bool enable)
 	if (!hwdev)
 		return -EINVAL;
 
-	rate.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &rate.func_id);
+	if (err)
+		return err;
+
 	rate.enable = enable;
 	rate.cir = ANTI_ATTACK_DEFAULT_CIR;
 	rate.xir = ANTI_ATTACK_DEFAULT_XIR;
@@ -3277,7 +3466,12 @@ int hinic_flush_sq_res(void *hwdev)
 	u16 out_size = sizeof(sq_res);
 	int err;
 
-	sq_res.func_id = hinic_global_func_id(hwdev);
+	if (!hwdev)
+		return -EINVAL;
+
+	err = hinic_global_func_id_get(hwdev, &sq_res.func_id);
+	if (err)
+		return err;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_CLEAR_SQ_RES,
 				     &sq_res, sizeof(sq_res), &sq_res,
@@ -3290,6 +3484,7 @@ int hinic_flush_sq_res(void *hwdev)
 
 	return 0;
 }
+EXPORT_SYMBOL(hinic_flush_sq_res);
 
 static int __set_pf_bw(struct hinic_hwdev *hwdev, u8 speed_level);
 
@@ -3336,7 +3531,10 @@ int hinic_set_super_cqe_state(void *hwdev, bool enable)
 	if (!hwdev)
 		return -EINVAL;
 
-	super_cqe.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &super_cqe.func_id);
+	if (err)
+		return err;
+
 	super_cqe.super_cqe_en = enable;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_SUPER_CQE,
@@ -3438,7 +3636,10 @@ static int __set_pf_bw(struct hinic_hwdev *hwdev, u8 speed_level)
 			pf_bw = 1;
 	}
 
-	rate_cfg.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &rate_cfg.func_id);
+	if (err)
+		return err;
+
 	rate_cfg.tx_rate = pf_bw;
 
 	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_L2NIC,
@@ -3543,7 +3744,10 @@ int hinic_set_link_status_follow(void *hwdev,
 		return -EINVAL;
 	}
 
-	follow.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &follow.func_id);
+	if (err)
+		return err;
+
 	follow.follow_status = status;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_LINK_FOLLOW,
@@ -3617,7 +3821,10 @@ int hinic_set_link_settings(void *hwdev, struct hinic_link_ksettings *settings)
 	u16 out_size = sizeof(info);
 	int err;
 
-	info.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &info.func_id);
+	if (err)
+		return err;
+
 	info.valid_bitmap = settings->valid_bitmap;
 	info.autoneg = settings->autoneg;
 	info.speed = settings->speed;
@@ -3637,15 +3844,17 @@ int hinic_set_link_settings(void *hwdev, struct hinic_link_ksettings *settings)
 
 	return info.status;
 }
-
 int hinic_disable_tx_promisc(void *hwdev)
 {
 	struct hinic_promsic_info info = {0};
 	u16 out_size = sizeof(info);
 	int err;
 
+	err = hinic_global_func_id_get(hwdev, &info.func_id);
+	if (err)
+		return err;
+
 	info.cfg = HINIC_TX_PROMISC_DISABLE;
-	info.func_id = hinic_global_func_id(hwdev);
 	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_L2NIC,
 				     HINIC_PORT_CMD_DISABLE_PROMISIC, &info,
 				     sizeof(info), &info, &out_size, 0);

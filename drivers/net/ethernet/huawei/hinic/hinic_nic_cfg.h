@@ -53,6 +53,8 @@
 #define HINIC_LRO_RX_TIMER_DEFAULT_PG_100GE 8
 
 #define HINIC_LOWEST_LATENCY		1
+#define HINIC_MULTI_VM_LATENCY		32
+#define HINIC_MULTI_VM_PENDING_LIMIT	4
 #define HINIC_RX_RATE_LOW		400000
 #define HINIC_RX_COAL_TIME_LOW		20
 #define HINIC_RX_PENDING_LIMIT_LOW	2
@@ -60,6 +62,7 @@
 #define HINIC_RX_COAL_TIME_HIGH		225
 #define HINIC_RX_PENDING_LIMIT_HIGH	50
 #define HINIC_RX_RATE_THRESH		35000
+#define HINIC_TX_RATE_THRESH		35000
 #define HINIC_RX_RATE_LOW_VM		400000
 #define HINIC_RX_PENDING_LIMIT_HIGH_VM	50
 
@@ -413,6 +416,7 @@ int hinic_del_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id);
 
 int hinic_update_mac(void *hwdev, u8 *old_mac, u8 *new_mac,
 		     u16 vlan_id, u16 func_id);
+int hinic_update_mac_vlan(void *hwdev, u16 old_vlan, u16 new_vlan, int vf_id);
 /* Obtaining the permanent mac */
 int hinic_get_default_mac(void *hwdev, u8 *mac_addr);
 /* Check whether the current solution is using this interface,
@@ -615,8 +619,8 @@ int hinic_set_link_settings(void *hwdev, struct hinic_link_ksettings *settings);
 
 int hinic_enable_netq(void *hwdev, u8 en);
 int hinic_add_hw_rqfilter(void *hwdev,
-			  struct hinic_rq_filter_info *filter_info);
+			struct hinic_rq_filter_info *filter_info);
 int hinic_del_hw_rqfilter(void *hwdev,
-			  struct hinic_rq_filter_info *filter_info);
+			struct hinic_rq_filter_info *filter_info);
 
 #endif

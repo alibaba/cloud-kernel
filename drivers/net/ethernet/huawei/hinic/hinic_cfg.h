@@ -222,6 +222,7 @@ struct service_cap {
 	u8 er_id;       /* PF/VF's ER */
 	u8 port_id;     /* PF/VF's physical port */
 	u8 max_vf;      /* max VF number that PF supported */
+	u8 force_up;
 	bool sf_en;     /* stateful business status */
 	u8 timer_en;    /* 0:disable, 1:enable */
 	u8 bloomfilter_en; /* 0:disable, 1:enable*/
@@ -363,7 +364,7 @@ struct hinic_dev_cap {
 	u8 cfg_file_ver;
 	u8 net_port_mode;
 	u8 valid_cos_bitmap;	/* every bit indicate cos is valid */
-	u8 rsvd1;
+	u8 force_up;
 	u32 pf_num;
 	u32 pf_id_start;
 	u32 vf_num;
@@ -386,7 +387,7 @@ struct hinic_dev_cap {
 	u8 nic_lro_en;
 	u8 nic_lro_sz;
 	u8 nic_tso_sz;
-	u8 rsvd3;
+	u8 max_queue_allowed;
 
 	/* RoCE */
 	u32 roce_max_qp;

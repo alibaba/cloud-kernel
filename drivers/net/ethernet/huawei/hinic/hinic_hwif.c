@@ -10,6 +10,7 @@
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
  * for more details.
+ *
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
 
@@ -26,6 +27,7 @@
 
 #include "hinic_csr.h"
 #include "hinic_hwif.h"
+#include "hinic_eqs.h"
 
 #define WAIT_HWIF_READY_TIMEOUT		10000
 
@@ -671,6 +673,108 @@ u16 hinic_global_func_id(void *hwdev)
 }
 EXPORT_SYMBOL(hinic_global_func_id);
 
+/*get function id from register,used by sriov hot migration process*/
+u16 hinic_global_func_id_hw(void *hwdev)
+{
+	u32 addr, attr0;
+	struct hinic_hwdev *dev;
+
+	dev = (struct hinic_hwdev *)hwdev;
+	addr   = HINIC_CSR_FUNC_ATTR0_ADDR;
+	attr0  = hinic_hwif_read_reg(dev->hwif, addr);
+
+	return HINIC_AF0_GET(attr0, FUNC_GLOBAL_IDX);
+}
+
+static int func_busy_state_check(struct hinic_hwdev *hwdev)
+{
+	u32 func_state;
+	int cycle;
+
+	/*set BUSY before src vm suspend and clear it before dst vm resume*/
+	cycle = PIPE_CYCLE_MAX;
+	func_state = hinic_func_busy_state_get(hwdev);
+	while (func_state && cycle) {
+		msleep(20);
+		cycle--;
+		if (!cycle) {
+			sdk_err(hwdev->dev_hdl, "busy_state suspend timeout");
+			return -ETIMEDOUT;
+		}
+
+		func_state = hinic_func_busy_state_get(hwdev);
+	}
+
+	return 0;
+}
+
+int hinic_func_own_get(void *hwdev)
+{
+	struct hinic_hwdev *dev = (struct hinic_hwdev *)hwdev;
+	u32 func_state;
+	int err;
+
+	if (!HINIC_IS_VF(dev))
+		return 0;
+
+restart:
+	down(&dev->func_sem);
+
+	dev->func_ref++;
+	hinic_func_own_bit_set(dev, 1);
+
+	func_state = hinic_func_busy_state_get(hwdev);
+	if (func_state) {
+		dev->func_ref--;
+		if (dev->func_ref == 0)
+			hinic_func_own_bit_set(dev, 0);
+
+		up(&dev->func_sem);
+		err = func_busy_state_check(dev);
+		if (err)
+			return err;
+		goto restart;
+	}
+
+	up(&dev->func_sem);
+	return 0;
+}
+
+void hinic_func_own_free(void *hwdev)
+{
+	struct hinic_hwdev *dev = (struct hinic_hwdev *)hwdev;
+
+	if (!HINIC_IS_VF(dev))
+		return;
+
+	down(&dev->func_sem);
+	dev->func_ref--;
+	if (dev->func_ref == 0)
+		hinic_func_own_bit_set(dev, 0);
+
+	up(&dev->func_sem);
+}
+
+/*get function id, used by sriov hot migratition process.*/
+int hinic_global_func_id_get(void *hwdev, u16 *func_id)
+{
+	struct hinic_hwdev *dev = (struct hinic_hwdev *)hwdev;
+	int err;
+
+	/*only vf get func_id from chip reg for sriov migrate*/
+	if (!HINIC_IS_VF(dev)) {
+		*func_id = hinic_global_func_id(hwdev);
+		return 0;
+	}
+
+	err = func_busy_state_check(dev);
+	if (err)
+		return err;
+
+	*func_id = hinic_global_func_id_hw(dev);
+	return 0;
+}
+
 u16 hinic_intr_num(void *hwdev)
 {
 	struct hinic_hwif *hwif;
@@ -696,6 +800,18 @@ u8 hinic_pf_id_of_vf(void *hwdev)
 	return hwif->attr.port_to_port_idx;
 }
 EXPORT_SYMBOL(hinic_pf_id_of_vf);
+
+u16 hinic_pf_id_of_vf_hw(void *hwdev)
+{
+	u32 addr, attr0;
+	struct hinic_hwdev *dev;
+
+	dev = (struct hinic_hwdev *)hwdev;
+	addr   = HINIC_CSR_FUNC_ATTR0_ADDR;
+	attr0  = hinic_hwif_read_reg(dev->hwif, addr);
+
+	return HINIC_AF0_GET(attr0, P2P_IDX);
+}
 
 u8 hinic_pcie_itf_id(void *hwdev)
 {

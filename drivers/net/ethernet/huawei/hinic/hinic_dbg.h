@@ -39,7 +39,7 @@ u64 hinic_dbg_get_rq_cla_addr(void *hwdev, u16 q_id);
 int hinic_dbg_get_sq_db_addr(void *hwdev, u16 q_id, u64 **map_addr,
 			     u64 *phy_addr, u32 *pg_idx);
 
-u16 hinic_dbg_get_global_qpn(void *hwdev);
+u16 hinic_dbg_get_global_qpn(const void *hwdev);
 
 int hinic_dbg_get_sq_wqe_info(void *hwdev, u16 q_id, u16 idx, u16 wqebb_cnt,
 			      u8 *wqe, u16 *wqe_size);
@@ -79,11 +79,12 @@ int hinic_api_csr_wr32(void *hwdev, u8 dest, u32 addr, u32 val);
 
 int hinic_api_csr_rd64(void *hwdev, u8 dest, u32 addr, u64 *val);
 
-int hinic_dbg_get_hw_stats(void *hwdev, u8 *hw_stats, u16 *out_size);
+int hinic_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, u16 *out_size);
 
 u16 hinic_dbg_clear_hw_stats(void *hwdev);
 
-void hinic_get_chip_fault_stats(void *hwdev, u8 *chip_fault_stats, int offset);
+void hinic_get_chip_fault_stats(const void *hwdev,
+				u8 *chip_fault_stats, int offset);
 
 int hinic_dbg_get_pf_bw_limit(void *hwdev, u32 *pf_bw_limit);
 

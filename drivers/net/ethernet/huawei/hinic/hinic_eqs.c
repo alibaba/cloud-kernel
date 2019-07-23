@@ -10,6 +10,7 @@
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
  * for more details.
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -35,14 +36,22 @@
 #define HINIC_EQS_WQ_NAME			"hinic_eqs"
 
 #define AEQ_CTRL_0_INTR_IDX_SHIFT		0
+#define AEQ_CTRL_0_FUNC_BUSY_SHIFT		10
 #define AEQ_CTRL_0_DMA_ATTR_SHIFT		12
 #define AEQ_CTRL_0_PCI_INTF_IDX_SHIFT		20
+#define AEQ_CTRL_0_QPS_NUM_SHIFT		22
 #define AEQ_CTRL_0_INTR_MODE_SHIFT		31
 
 #define AEQ_CTRL_0_INTR_IDX_MASK		0x3FFU
+#define AEQ_CTRL_0_FUNC_BUSY_MASK		0x1U
 #define AEQ_CTRL_0_DMA_ATTR_MASK		0x3FU
 #define AEQ_CTRL_0_PCI_INTF_IDX_MASK		0x3U
+#define AEQ_CTRL_0_QPS_NUM_MASK			0xFFU
 #define AEQ_CTRL_0_INTR_MODE_MASK		0x1U
+
+#define AEQ_CTRL_0_GET(val, member)		\
+				(((val) >> AEQ_CTRL_0_##member##_SHIFT) & \
+				AEQ_CTRL_0_##member##_MASK)
 
 #define AEQ_CTRL_0_SET(val, member)		\
 				(((val) & AEQ_CTRL_0_##member##_MASK) << \
@@ -53,12 +62,18 @@
 					<< AEQ_CTRL_0_##member##_SHIFT)))
 
 #define AEQ_CTRL_1_LEN_SHIFT			0
+#define AEQ_CTRL_1_FUNC_OWN_SHIFT		21
 #define AEQ_CTRL_1_ELEM_SIZE_SHIFT		24
 #define AEQ_CTRL_1_PAGE_SIZE_SHIFT		28
 
 #define AEQ_CTRL_1_LEN_MASK			0x1FFFFFU
+#define AEQ_CTRL_1_FUNC_OWN_MASK		0x1U
 #define AEQ_CTRL_1_ELEM_SIZE_MASK		0x3U
 #define AEQ_CTRL_1_PAGE_SIZE_MASK		0xFU
+
+#define AEQ_CTRL_1_GET(val, member)		\
+				(((val) >> AEQ_CTRL_1_##member##_SHIFT) & \
+				AEQ_CTRL_1_##member##_MASK)
 
 #define AEQ_CTRL_1_SET(val, member)		\
 				(((val) & AEQ_CTRL_1_##member##_MASK) << \
@@ -213,6 +228,66 @@ MODULE_PARM_DESC(g_num_ceqe_in_tasklet,
 
 static irqreturn_t aeq_interrupt(int irq, void *data);
 static irqreturn_t ceq_interrupt(int irq, void *data);
+
+void hinic_qps_num_set(struct hinic_hwdev *hwdev, u32 num_qps)
+{
+	struct hinic_hwif *hwif = hwdev->hwif;
+	u32 addr, val, ctrl;
+
+	addr = HINIC_CSR_AEQ_CTRL_0_ADDR(0);
+	val = hinic_hwif_read_reg(hwif, addr);
+	val = AEQ_CTRL_0_CLEAR(val, QPS_NUM);
+	ctrl = AEQ_CTRL_0_SET(num_qps, QPS_NUM);
+	val |= ctrl;
+	hinic_hwif_write_reg(hwif, addr, val);
+}
+
+u32 hinic_func_busy_state_get(struct hinic_hwdev *hwdev)
+{
+	struct hinic_hwif *hwif = hwdev->hwif;
+	u32 addr, val;
+
+	addr = HINIC_CSR_AEQ_CTRL_0_ADDR(0);
+	val = hinic_hwif_read_reg(hwif, addr);
+	return AEQ_CTRL_0_GET(val, FUNC_BUSY);
+}
+
+void hinic_func_busy_state_set(struct hinic_hwdev *hwdev, u32 cfg)
+{
+	struct hinic_hwif *hwif = hwdev->hwif;
+	u32 addr, val, ctrl;
+
+	addr = HINIC_CSR_AEQ_CTRL_0_ADDR(0);
+	val = hinic_hwif_read_reg(hwif, addr);
+	val = AEQ_CTRL_0_CLEAR(val, FUNC_BUSY);
+	ctrl = AEQ_CTRL_0_SET(cfg, FUNC_BUSY);
+	val |= ctrl;
+	hinic_hwif_write_reg(hwif, addr, val);
+}
+
+u32 hinic_func_own_bit_get(struct hinic_hwdev *hwdev)
+{
+	struct hinic_hwif *hwif = hwdev->hwif;
+	u32 addr, val;
+
+	addr = HINIC_CSR_AEQ_CTRL_1_ADDR(0);
+	val = hinic_hwif_read_reg(hwif, addr);
+	return AEQ_CTRL_1_GET(val, FUNC_OWN);
+}
+
+void hinic_func_own_bit_set(struct hinic_hwdev *hwdev, u32 cfg)
+{
+	struct hinic_hwif *hwif = hwdev->hwif;
+	u32 addr, val, ctrl;
+
+	addr = HINIC_CSR_AEQ_CTRL_1_ADDR(0);
+	val = hinic_hwif_read_reg(hwif, addr);
+	val = AEQ_CTRL_1_CLEAR(val, FUNC_OWN);
+	ctrl = AEQ_CTRL_1_SET(cfg, FUNC_OWN);
+	val |= ctrl;
+	hinic_hwif_write_reg(hwif, addr, val);
+}
+
 static void ceq_tasklet(ulong eq_tasklet);
 
 static u8 eq_cons_idx_checksum_set(u32 val)
@@ -463,7 +538,7 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
 				&aeqs->aeq_sw_cb_state[sw_event]);
 			if (aeqs->aeq_swe_cb[sw_event] &&
 			    test_bit(HINIC_AEQ_SW_CB_REG,
-				     &aeqs->aeq_sw_cb_state[sw_event])) {
+			    &aeqs->aeq_sw_cb_state[sw_event])) {
 				lev = aeqs->aeq_swe_cb[sw_event](aeqs->hwdev,
 								 ucode_event,
 								 aeqe_data);
@@ -479,7 +554,7 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
 					&aeqs->aeq_hw_cb_state[event]);
 				if (aeqs->aeq_hwe_cb[event] &&
 				    test_bit(HINIC_AEQ_HW_CB_REG,
-					     &aeqs->aeq_hw_cb_state[event]))
+				    &aeqs->aeq_hw_cb_state[event]))
 					aeqs->aeq_hwe_cb[event](aeqs->hwdev,
 						aeqe_pos->aeqe_data, size);
 				clear_bit(HINIC_AEQ_HW_CB_RUNNING,
@@ -709,7 +784,10 @@ static int set_ceq_ctrl_reg(struct hinic_hwdev *hwdev, u16 q_id,
 	u16 out_size = sizeof(ceq_ctrl);
 	int err;
 
-	ceq_ctrl.func_id = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(hwdev, &ceq_ctrl.func_id);
+	if (err)
+		return err;
+
 	ceq_ctrl.q_id = q_id;
 	ceq_ctrl.ctrl0 = ctrl0;
 	ceq_ctrl.ctrl1 = ctrl1;
@@ -750,6 +828,11 @@ static int set_eq_ctrls(struct hinic_eq *eq)
 			AEQ_CTRL_0_CLEAR(val, DMA_ATTR) &
 			AEQ_CTRL_0_CLEAR(val, PCI_INTF_IDX) &
 			AEQ_CTRL_0_CLEAR(val, INTR_MODE);
+
+		if (HINIC_IS_VF(eq->hwdev)) {
+			val = AEQ_CTRL_0_CLEAR(val, FUNC_BUSY) &
+			      AEQ_CTRL_1_CLEAR(val, FUNC_OWN);
+		}
 
 		ctrl0 = AEQ_CTRL_0_SET(eq_irq->msix_entry_idx, INTR_IDX) |
 			AEQ_CTRL_0_SET(AEQ_DMA_ATTR_DEFAULT, DMA_ATTR) |
@@ -955,7 +1038,6 @@ static void free_eq_pages(struct hinic_eq *eq)
 	kfree(eq->virt_addr);
 	kfree(eq->dma_addr);
 }
-
 static inline u32 get_page_size(struct hinic_eq *eq)
 {
 	u32 total_size;
@@ -979,7 +1061,6 @@ static inline u32 get_page_size(struct hinic_eq *eq)
 
 	return EQ_MIN_PAGE_SIZE << n;
 }
-
 /**
  * init_eq - initialize eq
  * @eq:	the event queue
@@ -1091,6 +1172,7 @@ static void remove_eq(struct hinic_eq *eq)
 	hinic_set_msix_state(eq->hwdev, entry->msix_entry_idx,
 			     HINIC_MSIX_DISABLE);
 	synchronize_irq(entry->irq_id);
+
 	free_irq(entry->irq_id, eq);
 
 	if (eq->type == HINIC_AEQ) {

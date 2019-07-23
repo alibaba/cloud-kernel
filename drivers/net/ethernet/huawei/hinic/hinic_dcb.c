@@ -120,6 +120,8 @@ void hinic_init_ieee_settings(struct hinic_nic_dev *nic_dev)
 		if (dcb_cfg->tc_cfg[i].pfc_en)
 			pfc->pfc_en |= (u8)BIT(i);
 	}
+
+	return;
 }
 
 static int hinic_set_up_cos_map(struct hinic_nic_dev *nic_dev,
@@ -330,6 +332,41 @@ int hinic_setup_tc(struct net_device *netdev, u8 tc)
 	return 0;
 }
 
+u8 hinic_setup_dcb_tool(struct net_device *netdev, u8 *dcb_en, bool wr_flag)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	int err = 0;
+
+	if (wr_flag) {
+		if (nic_dev->max_qps < nic_dev->dcb_cfg.pg_tcs && *dcb_en) {
+			netif_err(nic_dev, drv, netdev,
+				  "max_qps:%d is less than %d\n",
+				  nic_dev->max_qps, nic_dev->dcb_cfg.pg_tcs);
+			return 1;
+		}
+		if (*dcb_en)
+			set_bit(HINIC_DCB_ENABLE, &nic_dev->flags);
+		else
+			clear_bit(HINIC_DCB_ENABLE, &nic_dev->flags);
+		/*hinic_setup_tc need get the nic_mutex lock again */
+		mutex_unlock(&nic_dev->nic_mutex);
+		/*  kill the rtnl assert warning */
+		rtnl_lock();
+		err = hinic_setup_tc(netdev,
+				     *dcb_en ? nic_dev->dcb_cfg.pg_tcs : 0);
+		rtnl_unlock();
+		mutex_lock(&nic_dev->nic_mutex);
+
+		if (!err)
+			netif_info(nic_dev, drv, netdev, "%s DCB\n",
+				   *dcb_en ? "Enable" : "Disable");
+	} else {
+		*dcb_en = (u8)test_bit(HINIC_DCB_ENABLE, &nic_dev->flags);
+	}
+
+	return !!err;
+}
+
 static u8 hinic_dcbnl_get_state(struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
@@ -348,6 +385,13 @@ static u8 hinic_dcbnl_set_state(struct net_device *netdev, u8 state)
 
 	if (state == curr_state)
 		return 0;
+
+	if (nic_dev->max_qps < nic_dev->dcb_cfg.pg_tcs && state) {
+		netif_err(nic_dev, drv, netdev,
+			  "max_qps:%d is less than %d\n",
+			  nic_dev->max_qps, nic_dev->dcb_cfg.pg_tcs);
+		return 1;
+	}
 
 	err = hinic_setup_tc(netdev, state ? nic_dev->dcb_cfg.pg_tcs : 0);
 	if (!err)
@@ -368,6 +412,58 @@ static void hinic_dcbnl_get_perm_hw_addr(struct net_device *netdev,
 	err = hinic_get_default_mac(nic_dev->hwdev, perm_addr);
 	if (err)
 		nicif_err(nic_dev, drv, netdev, "Failed to get default mac\n");
+}
+
+void hinic_dcbnl_set_ets_tc_tool(struct net_device *netdev, u8 tc[], bool flag)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_tc_cfg *cfg = nic_dev->tmp_dcb_cfg.tc_cfg;
+	struct hinic_tc_cfg *tc_conf = nic_dev->dcb_cfg.tc_cfg;
+	u8 i, tc_tmp, j;
+
+	if (flag) {
+		/*need to clear first */
+		for (i = 0; i < HINIC_DCB_TC_MAX; i++) {
+			cfg[i].path[HINIC_DCB_CFG_TX].up_map = 0;
+			cfg[i].path[HINIC_DCB_CFG_RX].up_map = 0;
+		}
+		for (i = 0; i < HINIC_DCB_TC_MAX; i++) {
+			tc_tmp = tc[i];
+			cfg[tc_tmp].path[HINIC_DCB_CFG_TX].up_map |= (u8)BIT(i);
+			cfg[tc_tmp].path[HINIC_DCB_CFG_RX].up_map |= (u8)BIT(i);
+			cfg[tc_tmp].path[HINIC_DCB_CFG_TX].pg_id = (u8)tc_tmp;
+			cfg[tc_tmp].path[HINIC_DCB_CFG_RX].pg_id = (u8)tc_tmp;
+		}
+	} else {
+		for (i = 0; i < HINIC_DCB_TC_MAX; i++) {
+			for (j = 0; j < HINIC_DCB_TC_MAX; j++) {
+				if (tc_conf[i].path[HINIC_DCB_CFG_TX].up_map &
+					(u8)BIT(j)) {
+					tc[j] = i;
+				}
+			}
+		}
+	}
+}
+
+void hinic_dcbnl_set_ets_pecent_tool(struct net_device *netdev,
+				     u8 percent[], bool flag)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	int i;
+
+	if (flag) {
+		for (i = 0; i < HINIC_DCB_COS_MAX; i++) {
+			nic_dev->tmp_dcb_cfg.bw_pct[HINIC_DCB_CFG_TX][i] =
+				percent[i];
+			nic_dev->tmp_dcb_cfg.bw_pct[HINIC_DCB_CFG_RX][i] =
+				percent[i];
+		}
+	} else {
+		for (i = 0; i < HINIC_DCB_COS_MAX; i++)
+			percent[i] =
+			nic_dev->dcb_cfg.bw_pct[HINIC_DCB_CFG_TX][i];
+	}
 }
 
 static void hinic_dcbnl_set_pg_tc_cfg_tx(struct net_device *netdev, int tc,
@@ -460,6 +556,69 @@ static void hinic_dcbnl_get_pg_bwg_cfg_rx(struct net_device *netdev, int bwg_id,
 	*bw_pct = nic_dev->dcb_cfg.bw_pct[1][bwg_id];
 }
 
+void hinic_dcbnl_set_pfc_cfg_tool(struct net_device *netdev, u8 setting)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u8 i;
+
+	for (i = 0; i < HINIC_DCB_TC_MAX; i++) {
+		nic_dev->tmp_dcb_cfg.tc_cfg[i].pfc_en = !!(setting & BIT(i));
+		if (nic_dev->tmp_dcb_cfg.tc_cfg[i].pfc_en !=
+			nic_dev->dcb_cfg.tc_cfg[i].pfc_en) {
+			nic_dev->tmp_dcb_cfg.pfc_state = true;
+		}
+	}
+}
+
+void hinic_dcbnl_set_ets_strict_tool(struct net_device *netdev,
+				     u8 *setting, bool flag)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_tc_cfg *cfg = nic_dev->tmp_dcb_cfg.tc_cfg;
+	struct hinic_tc_cfg *conf = nic_dev->dcb_cfg.tc_cfg;
+	u8 i;
+
+	if (flag) {
+		for (i = 0; i < HINIC_DCB_COS_MAX; i++) {
+			cfg[i].path[HINIC_DCB_CFG_TX].prio_type =
+				!!(*setting & BIT(i)) ? 2 : 0;
+			cfg[i].path[HINIC_DCB_CFG_RX].prio_type =
+				!!(*setting & BIT(i)) ? 2 : 0;
+		}
+	} else {
+		for (i = 0; i < HINIC_DCB_COS_MAX; i++) {
+			*setting = *setting |
+				(u8)((u32)(!!(conf[i].path[0].prio_type)) << i);
+		}
+	}
+}
+
+void hinic_dcbnl_set_pfc_en_tool(struct net_device *netdev,
+				 u8 *value, bool flag)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	if (flag)
+		nic_dev->tmp_dcb_cfg.pfc_state = !!(*value);
+	else
+		*value = !!nic_dev->tmp_dcb_cfg.pfc_state;
+}
+
+void hinic_dcbnl_set_ets_en_tool(struct net_device *netdev,
+				 u8 *value, bool flag)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	if (flag) {
+		if (*value)
+			set_bit(HINIC_ETS_ENABLE, &nic_dev->flags);
+		else
+			clear_bit(HINIC_ETS_ENABLE, &nic_dev->flags);
+	} else {
+		*value = (u8)test_bit(HINIC_ETS_ENABLE, &nic_dev->flags);
+	}
+}
+
 static void hinic_dcbnl_set_pfc_cfg(struct net_device *netdev, int prio,
 				    u8 setting)
 {
@@ -469,6 +628,24 @@ static void hinic_dcbnl_set_pfc_cfg(struct net_device *netdev, int prio,
 	if (nic_dev->tmp_dcb_cfg.tc_cfg[prio].pfc_en !=
 	    nic_dev->dcb_cfg.tc_cfg[prio].pfc_en)
 		nic_dev->tmp_dcb_cfg.pfc_state = true;
+}
+
+void hinic_dcbnl_get_pfc_cfg_tool(struct net_device *netdev, u8 *setting)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u8 i;
+
+	for (i = 0; i < HINIC_DCB_TC_MAX; i++) {
+		*setting = *setting |
+			(u8)((u32)(nic_dev->dcb_cfg.tc_cfg[i].pfc_en) << i);
+	}
+}
+
+void hinic_dcbnl_get_tc_num_tool(struct net_device *netdev, u8 *tc_num)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	*tc_num = nic_dev->max_cos;
 }
 
 static void hinic_dcbnl_get_pfc_cfg(struct net_device *netdev, int prio,
@@ -598,7 +775,7 @@ static u8 hinic_sync_dcb_cfg(struct hinic_nic_dev *nic_dev)
 static void hinic_dcb_get_pfc_map(struct hinic_nic_dev *nic_dev,
 				  struct hinic_dcb_config *dcb_cfg, u8 *pfc_map)
 {
-	int i, up;
+	u8 i, up;
 	u8 pfc_en = 0, outof_range_pfc = 0;
 
 	for (i = 0; i < dcb_cfg->pfc_tcs; i++) {
@@ -624,7 +801,7 @@ static void hinic_dcb_get_pfc_map(struct hinic_nic_dev *nic_dev,
 
 static bool is_cos_in_use(u8 cos, u8 up_valid_bitmap, u8 *up_cos)
 {
-	int i;
+	u32 i;
 
 	for (i = 0; i < HINIC_DCB_UP_MAX; i++) {
 		if (!(up_valid_bitmap & BIT(i)))
@@ -869,6 +1046,52 @@ static int __set_hw_ets(struct hinic_nic_dev *nic_dev)
 	return 0;
 }
 
+u8 hinic_dcbnl_set_ets_tool(struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u8 state = DCB_HW_CFG_CHG;
+	int err;
+
+	nic_dev->dcb_changes |= hinic_sync_dcb_cfg(nic_dev);
+	if (!nic_dev->dcb_changes)
+		return DCB_HW_CFG_CHG;
+
+	err = hinic_stop_port_traffic_flow(nic_dev);
+	if (err)
+		return DCB_HW_CFG_ERR;
+	/* wait all traffic flow stopped */
+	if (netdev->reg_state == NETREG_REGISTERED)
+		msleep(HINIC_WAIT_PORT_IO_STOP);
+
+	if (nic_dev->dcb_changes & DCB_CFG_CHG_UP_COS) {
+		err = __set_hw_cos_up_map(nic_dev);
+		if (err) {
+			hinic_info(nic_dev, drv,
+				   "Set cos_up map to hardware failed\n");
+			state = DCB_HW_CFG_ERR;
+			goto out;
+		}
+
+		nic_dev->dcb_changes &= (~DCB_CFG_CHG_UP_COS);
+	}
+
+	if (nic_dev->dcb_changes & (DCB_CFG_CHG_PG_TX | DCB_CFG_CHG_PG_RX)) {
+		err = __set_hw_ets(nic_dev);
+		if (err) {
+			state = DCB_HW_CFG_ERR;
+			goto out;
+		}
+
+		nic_dev->dcb_changes &=
+				(~(DCB_CFG_CHG_PG_TX | DCB_CFG_CHG_PG_RX));
+	}
+
+out:
+	hinic_start_port_traffic_flow(nic_dev);
+
+	return state;
+}
+
 static int hinic_dcbnl_set_df_ieee_cfg(struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
@@ -910,7 +1133,44 @@ static int hinic_dcbnl_set_df_ieee_cfg(struct net_device *netdev)
 
 	hinic_start_port_traffic_flow(nic_dev);
 
-	return (err1 | err2) ? -EINVAL : 0;
+	return (err1 || err2) ? -EINVAL : 0;
+}
+
+u8 hinic_dcbnl_set_pfc_tool(struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
+	u8 state = DCB_HW_CFG_CHG;
+	int err;
+
+	nic_dev->dcb_changes |= hinic_sync_dcb_cfg(nic_dev);
+	if (!nic_dev->dcb_changes)
+		return DCB_HW_CFG_CHG;
+
+	if (nic_dev->dcb_changes & DCB_CFG_CHG_PFC) {
+		u8 pfc_map = 0;
+
+		hinic_dcb_get_pfc_map(nic_dev, dcb_cfg, &pfc_map);
+		err = hinic_dcb_set_pfc(nic_dev->hwdev, dcb_cfg->pfc_state,
+					pfc_map);
+		if (err) {
+			hinic_info(nic_dev, drv, "Failed to %s PFC\n",
+				   dcb_cfg->pfc_state ? "enable" : "disable");
+			state = DCB_HW_CFG_ERR;
+			goto out;
+		}
+
+		if (dcb_cfg->pfc_state)
+			hinic_info(nic_dev, drv, "Set PFC: 0x%x to hw done\n",
+				   pfc_map);
+		else
+			hinic_info(nic_dev, drv, "Disable PFC, enable tx/rx pause\n");
+
+		nic_dev->dcb_changes &= (~DCB_CFG_CHG_PFC);
+	}
+out:
+
+	return state;
 }
 
 u8 hinic_dcbnl_set_all(struct net_device *netdev)
@@ -986,7 +1246,7 @@ out:
 }
 
 static int hinic_dcbnl_ieee_get_ets(struct net_device *netdev,
-				    struct ieee_ets *ets)
+				   struct ieee_ets *ets)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct ieee_ets *my_ets = &nic_dev->hinic_ieee_ets;
@@ -1001,7 +1261,7 @@ static int hinic_dcbnl_ieee_get_ets(struct net_device *netdev,
 }
 
 static int hinic_dcbnl_ieee_set_ets(struct net_device *netdev,
-				    struct ieee_ets *ets)
+				   struct ieee_ets *ets)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
@@ -1067,7 +1327,7 @@ static int hinic_dcbnl_ieee_set_ets(struct net_device *netdev,
 }
 
 static int hinic_dcbnl_ieee_get_pfc(struct net_device *netdev,
-				    struct ieee_pfc *pfc)
+				   struct ieee_pfc *pfc)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct ieee_pfc *my_pfc = &nic_dev->hinic_ieee_pfc;
@@ -1079,7 +1339,7 @@ static int hinic_dcbnl_ieee_get_pfc(struct net_device *netdev,
 }
 
 static int hinic_dcbnl_ieee_set_pfc(struct net_device *netdev,
-				    struct ieee_pfc *pfc)
+				   struct ieee_pfc *pfc)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
@@ -1206,7 +1466,6 @@ static u8 hinic_dcbnl_setdcbx(struct net_device *netdev, u8 mode)
 
 	if (nic_dev->dcbx_cap == mode)
 		return 0;
-
 	nic_dev->dcbx_cap = mode;
 
 	if (mode & DCB_CAP_DCBX_VER_CEE) {
@@ -1224,7 +1483,9 @@ static u8 hinic_dcbnl_setdcbx(struct net_device *netdev, u8 mode)
 				return 1;
 			}
 		}
+
 		hinic_dcbnl_set_df_ieee_cfg(netdev);
+		hinic_force_port_relink(nic_dev->hwdev);
 	} else {
 		err = hinic_setup_tc(netdev, 0);
 		if (err) {
@@ -1309,7 +1570,7 @@ void hinic_configure_dcb(struct net_device *netdev)
 
 static bool __is_cos_up_map_change(struct hinic_nic_dev *nic_dev, u8 *cos_up)
 {
-	int cos, up;
+	u8 cos, up;
 
 	for (cos = 0; cos < nic_dev->max_cos; cos++) {
 		up = cos_up[cos];

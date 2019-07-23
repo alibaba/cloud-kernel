@@ -251,8 +251,8 @@ static void prepare_cell_ctrl(u64 *cell_ctrl, u16 cell_len)
  **/
 static void prepare_api_cmd(struct hinic_api_cmd_chain *chain,
 			    struct hinic_api_cmd_cell *cell,
-				enum hinic_node_id dest,
-				void *cmd, u16 cmd_size)
+			    enum hinic_node_id dest,
+			    const void *cmd, u16 cmd_size)
 {
 	struct hinic_api_cmd_cell_ctxt	*cell_ctxt;
 	u32 priv;

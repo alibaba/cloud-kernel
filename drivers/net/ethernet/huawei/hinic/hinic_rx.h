@@ -1,5 +1,5 @@
-/*
- * Huawei HiNIC PCI Express Linux driver
+/* SPDX-License-Identifier: GPL-2.0*/
+/* Huawei HiNIC PCI Express Linux driver
  * Copyright(c) 2017 Huawei Technologies Co., Ltd
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -33,6 +33,7 @@
 #define HINIC_RX_BP_UPPER_THD		400
 
 #define HINIC_SUPPORT_LRO_ADAP_QPS_MAX	16
+#define HINIC_RX_BUFFER_WRITE			16
 
 enum {
 	HINIC_RX_STATUS_BP_EN,

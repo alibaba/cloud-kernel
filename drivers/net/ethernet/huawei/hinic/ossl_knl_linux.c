@@ -19,12 +19,12 @@
 
 #define OSSL_MINUTE_BASE (60)
 
-sdk_file *file_creat(char *file_name)
+sdk_file *file_creat(const char *file_name)
 {
 	return filp_open(file_name, O_CREAT | O_RDWR | O_APPEND, 0);
 }
 
-sdk_file *file_open(char *file_name)
+sdk_file *file_open(const char *file_name)
 {
 	return filp_open(file_name, O_RDONLY, 0);
 }

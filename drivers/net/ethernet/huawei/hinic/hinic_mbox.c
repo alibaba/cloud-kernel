@@ -207,7 +207,7 @@ struct hinic_set_random_id {
 };
 
 static bool check_func_id(struct hinic_hwdev *hwdev, u16 src_func_idx,
-			  void *buf_in, u16 in_size, u16 offset)
+			  const void *buf_in, u16 in_size, u16 offset)
 {
 	u16 func_idx;
 
@@ -402,7 +402,7 @@ void hinic_unregister_vf_mbox_cb(struct hinic_hwdev *hwdev,
 	clear_bit(HINIC_VF_MBOX_CB_REG, &func_to_func->vf_mbox_cb_state[mod]);
 
 	while (test_bit(HINIC_VF_MBOX_CB_RUNNING,
-			&func_to_func->vf_mbox_cb_state[mod]))
+	       &func_to_func->vf_mbox_cb_state[mod]))
 		usleep_range(900, 1000);
 
 	func_to_func->vf_mbox_cb[mod] = NULL;
@@ -495,7 +495,7 @@ recv_pf_from_ppf_handler(struct hinic_mbox_func_to_func *func_to_func,
 			 recv_mbox->mbox, recv_mbox->mbox_len,
 			 buf_out, out_size);
 	} else {
-		sdk_warn(func_to_func->hwdev->dev_hdl, "PF receive ppf mailbox callback is not registered\n");
+		sdk_warn(func_to_func->hwdev->dev_hdl, "PF recvice ppf mailbox callback is not registered\n");
 		ret = -EINVAL;
 	}
 
@@ -659,11 +659,11 @@ out:
 				  buf_out, out_size, src_func_idx,
 				  HINIC_HWIF_RESPONSE, MBOX_ACK,
 				  &msg_info);
-	} else {
-		kfree(recv_mbox->buf_out);
-		kfree(recv_mbox->mbox);
-		kfree(recv_mbox);
 	}
+
+	kfree(recv_mbox->buf_out);
+	kfree(recv_mbox->mbox);
+	kfree(recv_mbox);
 }
 
 static bool check_mbox_seq_id_and_seg_len(struct hinic_recv_mbox *recv_mbox,
@@ -717,7 +717,7 @@ static void recv_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 {
 	u64 mbox_header = *((u64 *)header);
 	void *mbox_body = MBOX_BODY_FROM_HDR(header);
-	struct hinic_recv_mbox *asyc_rcv_mbox = NULL;
+	struct hinic_recv_mbox *rcv_mbox_temp = NULL;
 	u16 src_func_idx;
 	struct hinic_mbox_work *mbox_work;
 	int pos;
@@ -756,43 +756,34 @@ static void recv_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 		return;
 	}
 
-	if (recv_mbox->ack_type == MBOX_NO_ACK) {
-		asyc_rcv_mbox = kzalloc(sizeof(*asyc_rcv_mbox), GFP_KERNEL);
-		if (!asyc_rcv_mbox) {
-			sdk_err(func_to_func->hwdev->dev_hdl, "Allocate asynchronous receive mbox memory failed.\n");
-			return;
-		}
-		memcpy(asyc_rcv_mbox, recv_mbox, sizeof(*asyc_rcv_mbox));
+	rcv_mbox_temp = kzalloc(sizeof(*rcv_mbox_temp), GFP_KERNEL);
+	if (!rcv_mbox_temp) {
+		sdk_err(func_to_func->hwdev->dev_hdl, "Allocate receive mbox memory failed.\n");
+		return;
+	}
+	memcpy(rcv_mbox_temp, recv_mbox, sizeof(*rcv_mbox_temp));
 
-		asyc_rcv_mbox->mbox = kzalloc(MBOX_MAX_BUF_SZ, GFP_KERNEL);
-		if (!asyc_rcv_mbox->mbox) {
-			sdk_err(func_to_func->hwdev->dev_hdl, "Allocate asynchronous receive mbox message memory failed.\n");
-			goto asyc_rcv_mbox_msg_err;
-		}
-		memcpy(asyc_rcv_mbox->mbox, recv_mbox->mbox, MBOX_MAX_BUF_SZ);
+	rcv_mbox_temp->mbox = kzalloc(MBOX_MAX_BUF_SZ, GFP_KERNEL);
+	if (!rcv_mbox_temp->mbox) {
+		sdk_err(func_to_func->hwdev->dev_hdl, "Allocate receive mbox message memory failed.\n");
+		goto rcv_mbox_msg_err;
+	}
+	memcpy(rcv_mbox_temp->mbox, recv_mbox->mbox, MBOX_MAX_BUF_SZ);
 
-		asyc_rcv_mbox->buf_out = kzalloc(MBOX_MAX_BUF_SZ, GFP_KERNEL);
-		if (!asyc_rcv_mbox->buf_out) {
-			sdk_err(func_to_func->hwdev->dev_hdl, "Allocate asynchronous receive mbox out buffer memory failed.\n");
-			goto asyc_rcv_mbox_buf_err;
-		}
+	rcv_mbox_temp->buf_out = kzalloc(MBOX_MAX_BUF_SZ, GFP_KERNEL);
+	if (!rcv_mbox_temp->buf_out) {
+		sdk_err(func_to_func->hwdev->dev_hdl, "Allocate receive mbox out buffer memory failed.\n");
+		goto rcv_mbox_buf_err;
 	}
 
 	mbox_work = kzalloc(sizeof(*mbox_work), GFP_KERNEL);
 	if (!mbox_work) {
 		sdk_err(func_to_func->hwdev->dev_hdl, "Allocate mbox work memory failed.\n");
-		if (recv_mbox->ack_type == MBOX_NO_ACK)
-			goto mbox_work_err;
-		else
-			return;
+		goto mbox_work_err;
 	}
 
 	mbox_work->func_to_func = func_to_func;
-
-	if (recv_mbox->ack_type == MBOX_NO_ACK)
-		mbox_work->recv_mbox = asyc_rcv_mbox;
-	else
-		mbox_work->recv_mbox = recv_mbox;
+	mbox_work->recv_mbox = rcv_mbox_temp;
 
 	mbox_work->src_func_idx = src_func_idx;
 	INIT_WORK(&mbox_work->work, recv_func_mbox_work_handler);
@@ -801,13 +792,13 @@ static void recv_mbox_handler(struct hinic_mbox_func_to_func *func_to_func,
 	return;
 
 mbox_work_err:
-	kfree(asyc_rcv_mbox->buf_out);
+	kfree(rcv_mbox_temp->buf_out);
 
-asyc_rcv_mbox_buf_err:
-	kfree(asyc_rcv_mbox->mbox);
+rcv_mbox_buf_err:
+	kfree(rcv_mbox_temp->mbox);
 
-asyc_rcv_mbox_msg_err:
-	kfree(asyc_rcv_mbox);
+rcv_mbox_msg_err:
+	kfree(rcv_mbox_temp);
 }
 
 int set_vf_mbox_random_id(struct hinic_hwdev *hwdev, u16 func_id)
@@ -978,6 +969,13 @@ static void mbox_copy_send_data(struct hinic_hwdev *hwdev,
 	u32 *data = seg;
 	u32 data_len, chk_sz = sizeof(u32);
 	u32 i, idx_max;
+	u8 mbox_max_buf[MBOX_SEG_LEN] = {0};
+
+	/* The mbox message should be aligned in 4 bytes. */
+	if (seg_len % chk_sz) {
+		memcpy(mbox_max_buf, seg, seg_len);
+		data = (u32 *)mbox_max_buf;
+	}
 
 	data_len = seg_len;
 	idx_max = ALIGN(data_len, chk_sz) / chk_sz;
@@ -1124,7 +1122,7 @@ static int send_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 {
 	struct hinic_hwdev *hwdev = func_to_func->hwdev;
 	int err = 0;
-	int seq_id = 0;
+	u32 seq_id = 0;
 	u16 seg_len = MBOX_SEG_LEN;
 	u16 left = msg_len;
 	u8 *msg_seg = (u8 *)msg;
@@ -1143,7 +1141,7 @@ static int send_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 		 /* The vf's offset to it's associated pf */
 		 HINIC_MBOX_HEADER_SET(msg_info->msg_id, MSG_ID) |
 		 HINIC_MBOX_HEADER_SET(msg_info->status, STATUS) |
-		 HINIC_MBOX_HEADER_SET(hinic_global_func_id(hwdev),
+		 HINIC_MBOX_HEADER_SET(hinic_global_func_id_hw(hwdev),
 				       SRC_GLB_FUNC_IDX);
 
 	while (!(HINIC_MBOX_HEADER_GET(header, LAST))) {
@@ -1335,10 +1333,16 @@ int hinic_mbox_to_pf(struct hinic_hwdev *hwdev,
 		return -EINVAL;
 	}
 
+	err = hinic_func_own_get(hwdev);
+	if (err)
+		return err;
+
 	/* port_to_port_idx - imply which PCIE interface PF is connected */
-	return hinic_mbox_to_func(func_to_func, mod, cmd,
-				  hinic_pf_id_of_vf(hwdev), buf_in, in_size,
-				  buf_out, out_size, timeout);
+	err = hinic_mbox_to_func(func_to_func, mod, cmd,
+				 hinic_pf_id_of_vf_hw(hwdev), buf_in, in_size,
+				 buf_out, out_size, timeout);
+	hinic_func_own_free(hwdev);
+	return err;
 }
 
 int hinic_mbox_to_func_no_ack(struct hinic_hwdev *hwdev, u16 func_idx,
@@ -1367,8 +1371,16 @@ int hinic_mbox_to_func_no_ack(struct hinic_hwdev *hwdev, u16 func_idx,
 int hinic_mbox_to_pf_no_ack(struct hinic_hwdev *hwdev, enum hinic_mod_type mod,
 			    u8 cmd, void *buf_in, u16 in_size)
 {
-	return hinic_mbox_to_func_no_ack(hwdev, hinic_pf_id_of_vf(hwdev), mod,
-					 cmd, buf_in, in_size);
+	int err;
+
+	err = hinic_func_own_get(hwdev);
+	if (err)
+		return err;
+
+	err = hinic_mbox_to_func_no_ack(hwdev, hinic_pf_id_of_vf_hw(hwdev),
+					mod, cmd, buf_in, in_size);
+	hinic_func_own_free(hwdev);
+	return err;
 }
 
 int __hinic_mbox_to_vf(void *hwdev,
@@ -1409,9 +1421,8 @@ int __hinic_mbox_to_vf(void *hwdev,
 }
 
 int hinic_mbox_ppf_to_vf(void *hwdev,
-			 enum hinic_mod_type mod, u16 func_id, u8 cmd,
-			 void *buf_in, u16 in_size, void *buf_out,
-			 u16 *out_size, u32 timeout)
+		     enum hinic_mod_type mod, u16 func_id, u8 cmd, void *buf_in,
+		     u16 in_size, void *buf_out, u16 *out_size, u32 timeout)
 {
 	struct hinic_mbox_func_to_func *func_to_func;
 	int err;
@@ -1581,8 +1592,7 @@ int hinic_vf_mbox_random_id_init(struct hinic_hwdev *hwdev)
 
 	for (vf_in_pf = 1; vf_in_pf <= hinic_func_max_vf(hwdev); vf_in_pf++) {
 		err = set_vf_mbox_random_id(hwdev,
-					    (hinic_glb_pf_vf_offset(hwdev) +
-					    vf_in_pf));
+				(hinic_glb_pf_vf_offset(hwdev) + vf_in_pf));
 		if (err)
 			break;
 	}
@@ -1656,6 +1666,9 @@ alloc_mbox_for_send_err:
 	destroy_workqueue(func_to_func->workq);
 
 create_mbox_workq_err:
+	spin_lock_deinit(&func_to_func->mbox_lock);
+	sema_deinit(&func_to_func->msg_send_sem);
+	sema_deinit(&func_to_func->mbox_send_sem);
 	kfree(func_to_func);
 
 	return err;
@@ -1671,9 +1684,7 @@ void hinic_func_to_func_free(struct hinic_hwdev *hwdev)
 	destroy_workqueue(func_to_func->workq);
 
 	free_mbox_wb_status(func_to_func);
-
 	free_mbox_info(func_to_func->mbox_resp);
-
 	free_mbox_info(func_to_func->mbox_send);
 	spin_lock_deinit(&func_to_func->mbox_lock);
 	sema_deinit(&func_to_func->mbox_send_sem);

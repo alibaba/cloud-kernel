@@ -57,7 +57,6 @@ enum clp_data_type {
 	HINIC_CLP_REQ_HOST = 0,
 	HINIC_CLP_RSP_HOST = 1
 };
-
 enum clp_reg_type {
 	HINIC_CLP_BA_HOST = 0,
 	HINIC_CLP_SIZE_HOST = 1,
@@ -65,7 +64,6 @@ enum clp_reg_type {
 	HINIC_CLP_START_REQ_HOST = 3,
 	HINIC_CLP_READY_RSP_HOST = 4
 };
-
 #define HINIC_CLP_REG_GAP			(0x20)
 #define HINIC_CLP_INPUT_BUFFER_LEN_HOST		(2048UL)
 #define HINIC_CLP_OUTPUT_BUFFER_LEN_HOST	(2048UL)
@@ -202,7 +200,7 @@ struct hinic_msg_pf_to_mgmt {
 
 	struct comm_up_self_msg_info	proc;
 
-	/* spinlock when sending msg */
+	/* lock when sending msg */
 	spinlock_t		sync_event_lock;
 	enum comm_pf_to_mgmt_event_state event_flag;
 };
@@ -238,8 +236,8 @@ int hinic_pf_to_mgmt_async(void *hwdev, enum hinic_mod_type mod,
 			   u8 cmd, void *buf_in, u16 in_size);
 
 int hinic_pf_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
-			 void *buf_in, u16 in_size,
-			 void *buf_out, u16 *out_size);
+			const void *buf_in, u16 in_size,
+			void *buf_out, u16 *out_size);
 
 int hinic_clp_pf_to_mgmt_init(struct hinic_hwdev *hwdev);
 void hinic_clp_pf_to_mgmt_free(struct hinic_hwdev *hwdev);

@@ -155,17 +155,17 @@ extern "C"{
 		SQ_TASK_INFO4_##member##_SHIFT)
 
 /********************* SQ_DB *********************/
-#define SQ_DB_OFF					0x00000800
-#define SQ_DB_INFO_HI_PI_SHIFT				0
-#define SQ_DB_INFO_QID_SHIFT				8
+#define SQ_DB_OFF						0x00000800
+#define SQ_DB_INFO_HI_PI_SHIFT					0
+#define SQ_DB_INFO_QID_SHIFT					8
 #define SQ_DB_INFO_CFLAG_SHIFT				23
-#define SQ_DB_INFO_COS_SHIFT				24
-#define SQ_DB_INFO_TYPE_SHIFT				27
-#define SQ_DB_INFO_HI_PI_MASK				0xFFU
-#define SQ_DB_INFO_QID_MASK				0x3FFU
-#define SQ_DB_INFO_CFLAG_MASK				0x1U
-#define SQ_DB_INFO_COS_MASK				0x7U
-#define SQ_DB_INFO_TYPE_MASK				0x1FU
+#define SQ_DB_INFO_COS_SHIFT					24
+#define SQ_DB_INFO_TYPE_SHIFT					27
+#define SQ_DB_INFO_HI_PI_MASK					0xFFU
+#define SQ_DB_INFO_QID_MASK					0x3FFU
+#define SQ_DB_INFO_CFLAG_MASK					0x1U
+#define SQ_DB_INFO_COS_MASK					0x7U
+#define SQ_DB_INFO_TYPE_MASK					0x1FU
 #define SQ_DB_INFO_SET(val, member)			(((u32)(val) & \
 					SQ_DB_INFO_##member##_MASK) << \
 					SQ_DB_INFO_##member##_SHIFT)
@@ -174,21 +174,21 @@ extern "C"{
 #define SQ_DB_PI_LOW(pi)		((pi) & SQ_DB_PI_LOW_MASK)
 #define SQ_DB_PI_HI_SHIFT		8
 #define SQ_DB_PI_HIGH(pi)		((pi) >> SQ_DB_PI_HI_SHIFT)
-#define SQ_DB_ADDR(sq, pi)	((u64 *)((sq)->db_addr + SQ_DB_OFF) + \
-				 SQ_DB_PI_LOW(pi))
-#define SQ_DB						1
-#define SQ_CFLAG_DP					0
+#define SQ_DB_ADDR(sq, pi)		((u64 *)((sq)->db_addr + SQ_DB_OFF) + \
+					SQ_DB_PI_LOW(pi))
+#define SQ_DB				1
+#define SQ_CFLAG_DP			0	/* CFLAG_DATA_PATH */
 
 /*********************** RQ_CTRL ******************/
 #define	RQ_CTRL_BUFDESC_SECT_LEN_SHIFT		0
 #define	RQ_CTRL_COMPLETE_FORMAT_SHIFT		15
 #define RQ_CTRL_COMPLETE_LEN_SHIFT			27
-#define RQ_CTRL_LEN_SHIFT				29
+#define RQ_CTRL_LEN_SHIFT						29
 
 #define	RQ_CTRL_BUFDESC_SECT_LEN_MASK		0xFFU
 #define	RQ_CTRL_COMPLETE_FORMAT_MASK		0x1U
 #define RQ_CTRL_COMPLETE_LEN_MASK			0x3U
-#define RQ_CTRL_LEN_MASK				0x3U
+#define RQ_CTRL_LEN_MASK						0x3U
 
 #define RQ_CTRL_SET(val, member)			(((val) & \
 					RQ_CTRL_##member##_MASK) << \
@@ -232,8 +232,8 @@ extern "C"{
 #define RQ_CQE_SGE_VLAN_SHIFT					0
 #define RQ_CQE_SGE_LEN_SHIFT					16
 
-#define RQ_CQE_SGE_VLAN_MASK				0xFFFFU
-#define RQ_CQE_SGE_LEN_MASK				0xFFFFU
+#define RQ_CQE_SGE_VLAN_MASK					0xFFFFU
+#define RQ_CQE_SGE_LEN_MASK					0xFFFFU
 
 #define RQ_CQE_SGE_GET(val, member)			(((val) >> \
 					RQ_CQE_SGE_##member##_SHIFT) & \
@@ -313,10 +313,10 @@ extern "C"{
 #define WQS_PAGE_SIZE		(WQS_BLOCKS_PER_PAGE * WQ_BLOCK_SIZE)
 #define WQ_MAX_PAGES		(WQ_BLOCK_SIZE >> WQ_PAGE_ADDR_SIZE_SHIFT)
 
-#define CMDQ_BLOCKS_PER_PAGE	8
-#define CMDQ_BLOCK_SIZE		512UL
-#define CMDQ_PAGE_SIZE		ALIGN((CMDQ_BLOCKS_PER_PAGE * \
-					CMDQ_BLOCK_SIZE), PAGE_SIZE)
+#define CMDQ_BLOCKS_PER_PAGE		8
+#define CMDQ_BLOCK_SIZE			512UL
+#define CMDQ_PAGE_SIZE			ALIGN((CMDQ_BLOCKS_PER_PAGE * \
+						CMDQ_BLOCK_SIZE), PAGE_SIZE)
 
 #define ADDR_4K_ALIGNED(addr)		(0 == ((addr) & 0xfff))
 #define ADDR_256K_ALIGNED(addr)		(0 == ((addr) & 0x3ffff))
@@ -440,16 +440,16 @@ enum hinic_res_state {
 	((pkt_types) & RQ_CQE_PKT_TYPES_NON_L2_MASK)
 
 #define HINIC_PKT_TYPES_L2(pkt_types)	 \
-	((pkt_types) & RQ_CQE_PKT_TYPES_L2_MASK)
+	(pkt_types & RQ_CQE_PKT_TYPES_L2_MASK)
 
 #define HINIC_CSUM_ERR_BYPASSED(csum_err)	 \
-	((csum_err) == RQ_CQE_STATUS_CSUM_BYPASS_VAL)
+	(csum_err == RQ_CQE_STATUS_CSUM_BYPASS_VAL)
 
 #define HINIC_CSUM_ERR_IP(csum_err)	 \
-	((csum_err) & RQ_CQE_STATUS_CSUM_ERR_IP_MASK)
+	(csum_err & RQ_CQE_STATUS_CSUM_ERR_IP_MASK)
 
 #define HINIC_CSUM_ERR_L4(csum_err)	 \
-	((csum_err) & RQ_CQE_STATUS_CSUM_ERR_L4_MASK)
+	(csum_err & RQ_CQE_STATUS_CSUM_ERR_L4_MASK)
 
 #define TX_MSS_DEFAULT		0x3E00
 #define TX_MSS_MIN		0x50

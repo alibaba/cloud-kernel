@@ -24,6 +24,13 @@
 /* up to driver event */
 #define	HINIC_PORT_CMD_MGMT_RESET	0x0
 
+struct hinic_msg_head {
+	u8	status;
+	u8	version;
+	u8	resp_aeq_num;
+	u8	rsvd0[5];
+};
+
 struct hinic_register_vf {
 	u8	status;
 	u8	version;
@@ -909,12 +916,10 @@ struct hinic_link_ksettings_info {
 	u8	fec;		/* 0 - RSFEC; 1 - BASEFEC; 2 - NOFEC */
 	u8	rsvd2[18];	/* reserved for duplex, port, etc. */
 };
-
 enum hinic_tx_promsic {
 	HINIC_TX_PROMISC_ENABLE	= 0,
 	HINIC_TX_PROMISC_DISABLE	= 1,
 };
-
 struct hinic_promsic_info {
 	u8	status;
 	u8	version;

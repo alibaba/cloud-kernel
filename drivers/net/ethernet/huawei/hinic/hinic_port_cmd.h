@@ -1,19 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0*/
-/* Copyright (C), 2001-2011, Huawei Tech. Co., Ltd.
- *
- * File Name     : hinic_port_cmd.h
- * Version       : Initial Draft
- * Author        : Qu Huichun
- * Created       : 2018/5/29
- * Last Modified :
- * Description   : Commands between NIC and uP
- * Function List :
- * History       :
- * 1.Date        : 2018/5/29
- *   Author      : Qu Huichun
- *   Modification: Created file
- */
-
 #ifndef __HINIC_PORT_CMD_H__
 #define __HINIC_PORT_CMD_H__
 
@@ -225,7 +210,7 @@ enum hinic_mgmt_cmd {
 
 	HINIC_MGMT_CMD_MQM_FIX_INFO_GET		= 0x16,
 	HINIC_MGMT_CMD_MQM_CFG_INFO_SET		= 0x18,
-	HINIC_MGMT_MQM_SRCH_GPA_SET		= 0x20,
+	HINIC_MGMT_CMD_MQM_SRCH_GPA_SET		= 0x20,
 	HINIC_MGMT_CMD_PPF_TMR_SET		= 0x22,
 	HINIC_MGMT_CMD_PPF_HT_GPA_SET		= 0x23,
 	HINIC_MGMT_CMD_RES_STATE_SET		= 0x24,
@@ -276,9 +261,11 @@ enum hinic_mgmt_cmd {
 
 	HINIC_MGMT_CMD_GET_PHY_INIT_STATUS	= 0x6A,
 	HINIC_MGMT_CMD_HEARTBEAT_SUPPORTED	= 0x6B,
-	HINIC_MGMT_HEARTBEAT_EVENT		= 0x6C,
+	HINIC_MGMT_CMD_HEARTBEAT_EVENT		= 0x6C,
 	HINIC_MGMT_CMD_GET_HW_PF_INFOS		= 0x6D,
 	HINIC_MGMT_CMD_GET_SDI_MODE		= 0x6E,
+
+	HINIC_MGMT_CMD_ENABLE_MIGRATE	= 0x6F,
 };
 
 /* uCode relates commands */
@@ -299,9 +286,10 @@ enum hinic_ucode_cmd {
 enum hinic_sw_funcs_cmd {
 	HINIC_SW_CMD_SLAVE_HOST_PPF_REGISTER	= 0x0,
 	HINIC_SW_CMD_SLAVE_HOST_PPF_UNREGISTER	= 0x1,
-	HINIC_SW_GET_SLAVE_FUNC_NIC_STATE	= 0x2,
+	HINIC_SW_CMD_GET_SLAVE_FUNC_NIC_STATE	= 0x2,
 	HINIC_SW_CMD_SET_SLAVE_FUNC_NIC_STATE	= 0x3,
 	HINIC_SW_CMD_SEND_MSG_TO_VF             = 0x4,
+	HINIC_SW_CMD_MIGRATE_READY		= 0x5,
 };
 
 enum sq_l4offload_type {

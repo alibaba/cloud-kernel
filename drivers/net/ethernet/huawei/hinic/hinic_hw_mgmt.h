@@ -1,5 +1,5 @@
-/*
- * Huawei HiNIC PCI Express Linux driver
+/* SPDX-License-Identifier: GPL-2.0*/
+/* Huawei HiNIC PCI Express Linux driver
  * Copyright(c) 2017 Huawei Technologies Co., Ltd
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -27,6 +27,9 @@ enum hinic_service_type {
 	SERVICE_T_IWARP,
 	SERVICE_T_FC,
 	SERVICE_T_FCOE,
+	SERVICE_T_MIGRATE,
+	SERVICE_T_PT,
+	SERVICE_T_HWPT,
 	SERVICE_T_MAX,
 
 	/* Only used for interruption resource management,
@@ -68,6 +71,8 @@ struct nic_service_cap {
 	bool lro_en;    /* LRO feature enable bit*/
 	u8 lro_sz;      /* LRO context space: n*16B */
 	u8 tso_sz;      /* TSO context space: n*16B */
+
+	u16 max_queue_allowed;
 };
 
 struct dev_roce_svc_own_cap {
@@ -520,7 +525,6 @@ struct hinic_micro_log_info {
 	int (*init)(void *hwdev);
 	void (*deinit)(void *hwdev);
 };
-
 int hinic_register_micro_log(struct hinic_micro_log_info *micro_log_info);
 void hinic_unregister_micro_log(struct hinic_micro_log_info *micro_log_info);
 
@@ -544,5 +548,12 @@ struct hinic_func_nic_state {
 int hinic_set_func_nic_state(void *hwdev, struct hinic_func_nic_state *state);
 int hinic_get_func_nic_enable(void *hwdev, u16 glb_func_idx, bool *en);
 bool hinic_get_master_host_mbox_enable(void *hwdev);
-
+bool hinic_get_slave_host_enable(void *hwdev, u8 host_id);
+int hinic_func_own_get(void *hwdev);
+void hinic_func_own_free(void *hwdev);
+int hinic_global_func_id_get(void *hwdev, u16 *func_id);
+u16 hinic_pf_id_of_vf_hw(void *hwdev);
+u16 hinic_global_func_id_hw(void *hwdev);
+bool hinic_func_for_pt(void *hwdev);
+bool hinic_func_for_hwpt(void *hwdev);
 #endif

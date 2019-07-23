@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0*/
 /******************************************************************************
- *
- * Copyright (C), 2001-2011, Huawei Tech. Co., Ltd.
- *
+
+  Copyright (C), 2001-2011, Huawei Tech. Co., Ltd.
+
  ******************************************************************************
   File Name     : hinic_dfx_def.h
   Version       : Initial Draft
@@ -95,6 +95,14 @@ enum driver_cmd_type {
 	GET_NIC_STATS_STRING,
 	GET_NIC_STATS_INFO,
 	GET_PF_ID,
+	SET_DCB_CFG,
+	SET_PFC_PRIORITY,
+	GET_PFC_INFO,
+	SET_PFC_CONTROL,
+	SET_ETS,
+	GET_ETS_INFO,
+	GET_SUPPORT_UP,
+	GET_SUPPORT_TC,
 
 	RSS_CFG = 0x40,
 	RSS_INDIR,
@@ -121,9 +129,9 @@ enum api_chain_cmd_type {
 };
 
 enum sm_cmd_type {
-SM_CTR_RD32 = 1,
-SM_CTR_RD64_PAIR,
-SM_CTR_RD64
+	SM_CTR_RD32 = 1,
+	SM_CTR_RD64_PAIR,
+	SM_CTR_RD64
 };
 
 enum hinic_show_set {

@@ -140,7 +140,7 @@ static struct hinic_stats hinic_tx_queue_stats_extern[] = {
 	HINIC_TXQ_STAT(alloc_cpy_frag_err),
 	HINIC_TXQ_STAT(map_cpy_frag_err),
 	HINIC_TXQ_STAT(map_frag_err),
-}; /*lint -restore*/
+};/*lint -restore*/
 
 #define HINIC_FUNC_STAT(_stat_item) {	\
 	.name = #_stat_item, \
@@ -677,9 +677,9 @@ static int hinic_get_settings(struct net_device *netdev,
 }
 
 #ifdef ETHTOOL_GLINKSETTINGS
+#ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
 static int hinic_get_link_ksettings(struct net_device *netdev,
-				    struct ethtool_link_ksettings
-				    *link_settings)
+				struct ethtool_link_ksettings *link_settings)
 {
 	struct cmd_link_settings settings = {0};
 	struct ethtool_link_settings *base = &link_settings->base;
@@ -706,6 +706,7 @@ static int hinic_get_link_ksettings(struct net_device *netdev,
 
 	return 0;
 }
+#endif
 #endif
 
 static int hinic_is_speed_legal(struct hinic_nic_dev *nic_dev, u32 speed)
@@ -852,14 +853,15 @@ static int hinic_set_settings(struct net_device *netdev,
 }
 
 #ifdef ETHTOOL_GLINKSETTINGS
+#ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
 static int hinic_set_link_ksettings(struct net_device *netdev,
-				    const struct ethtool_link_ksettings
-				    *link_settings)
+			const struct ethtool_link_ksettings *link_settings)
 {
 	/* Only support to set autoneg and speed */
 	return set_link_settings(netdev, link_settings->base.autoneg,
 				 link_settings->base.speed);
 }
+#endif
 #endif
 
 static void hinic_get_drvinfo(struct net_device *netdev,
@@ -1374,27 +1376,27 @@ static int is_coalesce_legal(struct net_device *netdev,
 
 #define CHECK_COALESCE_ALIGN(coal, item, unit)				\
 do {									\
-	if ((coal)->item % (unit))					\
+	if (coal->item % (unit))					\
 		nicif_warn(nic_dev, drv, netdev,			\
 			   "%s in %d units, change to %d\n",		\
-			   #item, (unit), ALIGN_DOWN((coal)->item, unit));\
+			   #item, (unit), ALIGN_DOWN(coal->item, unit));\
 } while (0)
 
 #define CHECK_COALESCE_CHANGED(coal, item, unit, ori_val, obj_str)	\
 do {									\
-	if (((coal)->item / (unit)) != (ori_val))			\
+	if ((coal->item / (unit)) != (ori_val))				\
 		nicif_info(nic_dev, drv, netdev,			\
 			   "Change %s from %d to %d %s\n",		\
 			   #item, (ori_val) * (unit),			\
-			   ALIGN_DOWN((coal)->item, unit), (obj_str));	\
+			   ALIGN_DOWN(coal->item, unit), (obj_str));	\
 } while (0)
 
 #define CHECK_PKT_RATE_CHANGED(coal, item, ori_val, obj_str)		\
 do {									\
-	if ((coal)->item != (ori_val))					\
+	if (coal->item != (ori_val))					\
 		nicif_info(nic_dev, drv, netdev,			\
 			   "Change %s from %llu to %u %s\n",		\
-			   #item, (ori_val), (coal)->item, (obj_str));	\
+			   #item, (ori_val), coal->item, (obj_str));	\
 } while (0)
 
 static int __hinic_set_coalesce(struct net_device *netdev,
@@ -1865,7 +1867,7 @@ static int hinic_run_lp_test(struct hinic_nic_dev *nic_dev, u32 test_time)
 			/* mark index for every pkt */
 			skb->data[LP_PKT_LEN - 1] = j;
 
-			if (hinic_xmit_frame(skb, netdev)) {
+			if (hinic_lb_xmit_frame(skb, netdev)) {
 				dev_kfree_skb_any(skb);
 				dev_kfree_skb_any(skb_tmp);
 				nicif_err(nic_dev, drv, netdev,
@@ -2228,7 +2230,7 @@ static int __set_rss_rxfh(struct net_device *netdev,
 			/* We request double spaces for the hash key,
 			 * the second one holds the key of Big Edian
 			 * format.
-			 */
+			*/
 			nic_dev->rss_hkey_user =
 				kzalloc(HINIC_RSS_KEY_SIZE * 2, GFP_KERNEL);
 
@@ -2448,8 +2450,10 @@ static int hinic_set_rxfh_indir(struct net_device *netdev, const u32 *indir)
 
 static const struct ethtool_ops hinic_ethtool_ops = {
 #ifdef ETHTOOL_GLINKSETTINGS
+#ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
 	.get_link_ksettings = hinic_get_link_ksettings,
 	.set_link_ksettings = hinic_set_link_ksettings,
+#endif
 #endif
 	.get_settings = hinic_get_settings,
 	.set_settings = hinic_set_settings,
@@ -2521,7 +2525,9 @@ static const struct ethtool_ops_ext hinic_ethtool_ops_ext = {
 
 static const struct ethtool_ops hinicvf_ethtool_ops = {
 #ifdef ETHTOOL_GLINKSETTINGS
+#ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
 	.get_link_ksettings = hinic_get_link_ksettings,
+#endif
 #else
 	.get_settings = hinic_get_settings,
 #endif

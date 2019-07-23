@@ -107,9 +107,15 @@ struct hinic_sq_db {
 	u32	db_info;
 };
 
+struct hinic_addr {
+	u32	addr_hi;
+	u32	addr_lo;
+};
+
 struct hinic_clean_queue_ctxt {
 	struct hinic_qp_ctxt_header	cmdq_hdr;
 	u32				ctxt_size;
+	struct hinic_addr		cqe_dma_addr[HINIC_RQ_CQ_MAX];
 };
 
 static int init_sq(struct hinic_sq *sq, struct hinic_wq *wq, u16 q_id,
@@ -131,6 +137,7 @@ static int init_rq(struct hinic_rq *rq, void *dev_hdl, struct hinic_wq *wq,
 {
 	rq->wq = wq;
 	rq->q_id = q_id;
+	rq->cqe_dma_addr = 0;
 
 	rq->msix_entry_idx = rq_msix_idx;
 
@@ -142,6 +149,15 @@ static int init_rq(struct hinic_rq *rq, void *dev_hdl, struct hinic_wq *wq,
 	}
 
 	return 0;
+}
+
+void hinic_rq_cqe_addr_set(void *hwdev, u16 qid, dma_addr_t cqe_dma_ddr)
+{
+	struct hinic_hwdev *dev = (struct hinic_hwdev *)hwdev;
+	struct hinic_nic_io *nic_io;
+
+	nic_io = dev->nic_io;
+	nic_io->qps[qid].rq.cqe_dma_addr = cqe_dma_ddr;
 }
 
 static void clean_rq(struct hinic_rq *rq, void *dev_hdl)
@@ -624,8 +640,10 @@ static int clean_queue_offload_ctxt(struct hinic_nic_io *nic_io,
 	struct hinic_hwdev *hwdev = nic_io->hwdev;
 	struct hinic_clean_queue_ctxt *ctxt_block;
 	struct hinic_cmd_buf *cmd_buf;
+	dma_addr_t cqe_dma_addr;
+	struct hinic_addr *addr;
 	u64 out_param = 0;
-	int err;
+	int i, err;
 
 	cmd_buf = hinic_alloc_cmd_buf(hwdev);
 	if (!cmd_buf) {
@@ -640,6 +658,15 @@ static int clean_queue_offload_ctxt(struct hinic_nic_io *nic_io,
 
 	/* TSO/LRO ctxt size: 0x0:0B; 0x1:160B; 0x2:200B; 0x3:240B */
 	ctxt_block->ctxt_size = 0x3;
+	if ((hinic_func_type(hwdev) == TYPE_VF) &&
+	    ctxt_type == HINIC_QP_CTXT_TYPE_RQ) {
+		addr = ctxt_block->cqe_dma_addr;
+		for (i = 0; i < nic_io->max_qps; i++) {
+			cqe_dma_addr = nic_io->qps[i].rq.cqe_dma_addr;
+			addr[i].addr_hi = upper_32_bits(cqe_dma_addr);
+			addr[i].addr_lo = lower_32_bits(cqe_dma_addr);
+		}
+	}
 
 	hinic_cpu_to_be32(ctxt_block, sizeof(*ctxt_block));
 
@@ -725,6 +752,7 @@ set_cons_idx_table_err:
 
 	return err;
 }
+EXPORT_SYMBOL(hinic_init_qp_ctxts);
 
 void hinic_free_qp_ctxts(void *hwdev)
 {
@@ -791,6 +819,7 @@ int hinic_init_nic_hwdev(void *hwdev, u16 rx_buff_len)
 	}
 	return 0;
 }
+EXPORT_SYMBOL(hinic_init_nic_hwdev);
 
 void hinic_free_nic_hwdev(void *hwdev)
 {

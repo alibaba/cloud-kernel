@@ -34,6 +34,8 @@
 #include "hinic_hwif.h"
 #include "hinic_api_cmd.h"
 #include "hinic_mgmt.h"
+#include "hinic_nic_cfg.h"
+#include "hinic_mgmt_interface.h"
 #include "hinic_eqs.h"
 
 #define BUF_OUT_DEFAULT_SIZE		1
@@ -219,7 +221,7 @@ static u16 mgmt_msg_len(u16 msg_data_len)
  * @msg_id: message id
  **/
 static void prepare_header(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
-			   u64 *header, int msg_len, enum hinic_mod_type mod,
+			   u64 *header, u16 msg_len, enum hinic_mod_type mod,
 			   enum hinic_msg_ack_type ack_type,
 			   enum hinic_msg_direction_type direction,
 			   enum hinic_mgmt_cmd cmd, u32 msg_id)
@@ -241,11 +243,10 @@ static void prepare_header(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 }
 
 static void clp_prepare_header(struct hinic_hwdev *hwdev,
-			       u64 *header, int msg_len,
-			       enum hinic_mod_type mod,
-			       enum hinic_msg_ack_type ack_type,
-			       enum hinic_msg_direction_type direction,
-			       enum hinic_mgmt_cmd cmd, u32 msg_id)
+			   u64 *header, u16 msg_len, enum hinic_mod_type mod,
+			   enum hinic_msg_ack_type ack_type,
+			   enum hinic_msg_direction_type direction,
+			   enum hinic_mgmt_cmd cmd, u32 msg_id)
 {
 	struct hinic_hwif *hwif = hwdev->hwif;
 
@@ -270,7 +271,7 @@ static void clp_prepare_header(struct hinic_hwdev *hwdev,
  * @msg: the data of the message
  * @msg_len: the length of the message
  **/
-static void prepare_mgmt_cmd(u8 *mgmt_cmd, u64 *header, void *msg,
+static void prepare_mgmt_cmd(u8 *mgmt_cmd, u64 *header, const void *msg,
 			     int msg_len)
 {
 	memset(mgmt_cmd, 0, MGMT_MSG_RSVD_FOR_DEV);
@@ -392,15 +393,24 @@ static int send_msg_to_mgmt_sync(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 
 int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			  void *buf_in, u16 in_size, void *buf_out,
-				u16 *out_size, u32 timeout)
+			  u16 *out_size, u32 timeout)
 {
 	struct hinic_msg_pf_to_mgmt *pf_to_mgmt;
 	void *dev = ((struct hinic_hwdev *)hwdev)->dev_hdl;
 	struct hinic_recv_msg *recv_msg;
+	struct hinic_msg_head *msg_head;
 	struct completion *recv_done;
 	ulong timeo;
 	int err;
 	ulong ret;
+
+	/* set aeq fix num to 3, need to ensure response aeq id < 3*/
+	if (mod == HINIC_MOD_COMM || mod == HINIC_MOD_L2NIC) {
+		msg_head = buf_in;
+
+		if (msg_head->resp_aeq_num >= HINIC_MAX_AEQS)
+			msg_head->resp_aeq_num = 0;
+	}
 
 	pf_to_mgmt = ((struct hinic_hwdev *)hwdev)->pf_to_mgmt;
 
@@ -462,7 +472,7 @@ unlock_sync_msg:
 }
 
 static int __get_clp_reg(void *hwdev, enum clp_data_type data_type,
-			 enum clp_reg_type reg_type, u32 *reg_addr)
+			enum clp_reg_type reg_type, u32 *reg_addr)
 {
 	struct hinic_hwdev *dev = hwdev;
 	u32 offset;
@@ -506,8 +516,8 @@ static int __get_clp_reg(void *hwdev, enum clp_data_type data_type,
 }
 
 static int hinic_read_clp_reg(struct hinic_hwdev *hwdev,
-			      enum clp_data_type data_type,
-			      enum clp_reg_type reg_type, u32 *read_value)
+				enum clp_data_type data_type,
+				enum clp_reg_type reg_type, u32 *read_value)
 {
 	int err;
 	u32 reg_addr, reg_value;
@@ -636,7 +646,7 @@ static void hinic_write_clp_reg(struct hinic_hwdev *hwdev,
 }
 
 static int hinic_read_clp_data(struct hinic_hwdev *hwdev,
-			       void *buf_out, u16 *out_size)
+				void *buf_out, u16 *out_size)
 {
 	int err;
 	u32 reg = HINIC_CLP_DATA(RSP);
@@ -762,7 +772,7 @@ static int hinic_check_clp_init_status(struct hinic_hwdev *hwdev)
 }
 
 static void hinic_clear_clp_data(struct hinic_hwdev *hwdev,
-				 enum clp_data_type data_type)
+				enum clp_data_type data_type)
 {
 	u32 reg = (data_type == HINIC_CLP_REQ_HOST) ?
 		   HINIC_CLP_DATA(REQ) : HINIC_CLP_DATA(RSP);
@@ -775,8 +785,8 @@ static void hinic_clear_clp_data(struct hinic_hwdev *hwdev,
 }
 
 int hinic_pf_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
-			 void *buf_in, u16 in_size,
-			 void *buf_out, u16 *out_size)
+			const void *buf_in, u16 in_size,
+			void *buf_out, u16 *out_size)
 {
 	struct hinic_clp_pf_to_mgmt *clp_pf_to_mgmt;
 	struct hinic_hwdev *dev = hwdev;
@@ -1004,7 +1014,7 @@ static void mgmt_recv_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 
 	if (!pf_to_mgmt->recv_mgmt_msg_cb[mod] ||
 	    !test_bit(HINIC_MGMT_MSG_CB_REG,
-	    &pf_to_mgmt->mgmt_msg_cb_state[tmp_mod])) {
+		      &pf_to_mgmt->mgmt_msg_cb_state[tmp_mod])) {
 		sdk_warn(dev, "Receive mgmt callback is null, mod = %d\n",
 			 mod);
 		clear_bit(HINIC_MGMT_MSG_CB_RUNNING,
@@ -1093,7 +1103,6 @@ static bool check_mgmt_seq_id_and_seg_len(struct hinic_recv_msg *recv_msg,
 	} else {
 		if (seq_id != recv_msg->seq_id + 1)
 			return false;
-
 		recv_msg->seq_id = seq_id;
 	}
 

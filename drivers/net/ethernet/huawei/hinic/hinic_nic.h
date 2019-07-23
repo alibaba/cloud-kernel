@@ -41,6 +41,8 @@ struct hinic_rq {
 
 	u32			irq_id;
 	u16			msix_entry_idx;
+
+	dma_addr_t		cqe_dma_addr;
 };
 
 struct hinic_qp {

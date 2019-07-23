@@ -34,6 +34,20 @@
 #include "hinic_nic_cfg.h"
 #include "hinic_mgmt_interface.h"
 #include "hinic_multi_host_mgmt.h"
+
+uint g_rdma_mtts_num;
+uint g_rdma_qps_num;
+uint g_rdma_mpts_num;
+uint g_vfs_num;
+module_param(g_rdma_mtts_num, uint, 0444);
+MODULE_PARM_DESC(g_rdma_mtts_num, "number of roce used mtts, use default value when pass 0");
+module_param(g_rdma_qps_num, uint, 0444);
+MODULE_PARM_DESC(g_rdma_qps_num, "number of roce used qps, use default value when pass 0");
+module_param(g_rdma_mpts_num, uint, 0444);
+MODULE_PARM_DESC(g_rdma_mpts_num, "number of roce used mpts, use default value when pass 0");
+module_param(g_vfs_num, uint, 0444);
+MODULE_PARM_DESC(g_vfs_num, "number of used vfs, use default value when pass 0 ");
+
 uint intr_mode;
 
 uint timer_enable = 1;
@@ -149,6 +163,7 @@ static void parse_pub_res_cap(struct service_cap *cap,
 	cap->cos_valid_bitmap = dev_cap->valid_cos_bitmap;
 	cap->er_id = dev_cap->er_id;
 	cap->port_id = dev_cap->port_id;
+	cap->force_up = dev_cap->force_up;
 
 	parse_sf_en_cap(cap, dev_cap, type);
 
@@ -253,6 +268,7 @@ static void parse_l2nic_res_cap(struct service_cap *cap,
 		nic_cap->max_rqs = dev_cap->nic_max_rq;
 		nic_cap->vf_max_sqs = 0;
 		nic_cap->vf_max_rqs = 0;
+		nic_cap->max_queue_allowed = dev_cap->max_queue_allowed;
 	}
 
 	if (dev_cap->nic_lro_en)
@@ -263,11 +279,12 @@ static void parse_l2nic_res_cap(struct service_cap *cap,
 	nic_cap->lro_sz = dev_cap->nic_lro_sz;
 	nic_cap->tso_sz = dev_cap->nic_tso_sz;
 
-	pr_info("L2nic resource capbility, max_sqs=0x%x, max_rqs=0x%x, vf_max_sqs=0x%x, vf_max_rqs=0x%x\n",
+	pr_info("L2nic resource capbility, max_sqs=0x%x, max_rqs=0x%x, vf_max_sqs=0x%x, vf_max_rqs=0x%x, max_queue_allowed=0x%x\n",
 		nic_cap->max_sqs,
 		nic_cap->max_rqs,
 		nic_cap->vf_max_sqs,
-		nic_cap->vf_max_rqs);
+		nic_cap->vf_max_rqs,
+		nic_cap->max_queue_allowed);
 
 	/* Check parameters from firmware */
 	if (nic_cap->max_sqs > HINIC_CFG_MAX_QP ||
@@ -557,7 +574,9 @@ static int get_cap_from_fw(struct hinic_hwdev *dev, enum func_type type)
 	int err;
 
 	dev_cap.version = HINIC_CMD_VER_FUNC_ID;
-	dev_cap.func_id = hinic_global_func_id(dev);
+	err = hinic_global_func_id_get(dev, &dev_cap.func_id);
+	if (err)
+		return err;
 
 	sdk_info(dev->dev_hdl, "Get cap from fw, func_idx: %d\n",
 		 dev_cap.func_id);
@@ -630,6 +649,14 @@ static int get_dev_cap(struct hinic_hwdev *dev)
 
 static void nic_param_fix(struct hinic_hwdev *dev)
 {
+	struct nic_service_cap *nic_cap = &dev->cfg_mgmt->svc_cap.nic_cap;
+
+	if ((hinic_func_type(dev) == TYPE_VF) &&
+	    nic_cap->max_queue_allowed != 0) {
+		nic_cap->max_rqs = nic_cap->max_queue_allowed;
+		nic_cap->max_sqs = nic_cap->max_queue_allowed;
+	}
+
 }
 
 static void rdma_param_fix(struct hinic_hwdev *dev)
@@ -696,7 +723,8 @@ static void rdma_param_fix(struct hinic_hwdev *dev)
 	 * we use original 8bits directly for simpilification
 	 */
 	rdma_cap->max_fmr_maps = 255;
-	rdma_cap->num_mtts = RDMA_NUM_MTTS;
+	rdma_cap->num_mtts = (g_rdma_mtts_num > 0 ?
+				g_rdma_mtts_num : RDMA_NUM_MTTS);
 	rdma_cap->log_mtt_seg = LOG_MTT_SEG;
 	rdma_cap->mtt_entry_sz = MTT_ENTRY_SZ;
 	rdma_cap->log_rdmarc_seg = LOG_RDMARC_SEG;
@@ -1158,7 +1186,7 @@ int hinic_alloc_ceqs(void *hwdev, enum hinic_service_type type, int num,
 	for (i = 0; i < num; i++) {
 		if (eq->num_ceq_remain == 0) {
 			sdk_warn(dev->dev_hdl, "Alloc %d ceqs, less than required %d ceqs\n",
-				 *act_num, num);
+				*act_num, num);
 			mutex_unlock(&eq->eq_mutex);
 			return 0;
 		}
@@ -1322,15 +1350,16 @@ static int cfg_mbx_pf_proc_vf_msg(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 
 	dev_cap->nic_max_sq = dev_cap_tmp.nic_max_sq + 1;
 	dev_cap->nic_max_rq = dev_cap_tmp.nic_max_rq + 1;
-	sdk_info(dev->dev_hdl, "func_id(%u) fixed qnum %u\n",
-		 func_id, dev_cap->nic_max_sq);
+	dev_cap->max_queue_allowed = dev_cap_tmp.max_queue_allowed;
+	sdk_info(dev->dev_hdl, "func_id(%u) fixed qnum %u max_queue_allowed %u\n",
+		 func_id, dev_cap->nic_max_sq, dev_cap->max_queue_allowed);
 
 	return 0;
 }
 
 static int cfg_mbx_ppf_proc_msg(void *hwdev, u16 pf_id, u16 vf_id, u8 cmd,
-				void *buf_in, u16 in_size, void *buf_out,
-				u16 *out_size)
+				 void *buf_in, u16 in_size, void *buf_out,
+				 u16 *out_size)
 {
 	struct hinic_hwdev *dev = hwdev;
 
@@ -1343,7 +1372,7 @@ static int cfg_mbx_ppf_proc_msg(void *hwdev, u16 pf_id, u16 vf_id, u8 cmd,
 }
 
 static int cfg_mbx_vf_proc_msg(void *hwdev, u8 cmd, void *buf_in, u16 in_size,
-			       void *buf_out, u16 *out_size)
+				void *buf_out, u16 *out_size)
 {
 	struct hinic_hwdev *dev = hwdev;
 
@@ -1734,6 +1763,32 @@ bool hinic_func_for_mgmt(void *hwdev)
 		return true;
 }
 
+bool hinic_func_for_hwpt(void *hwdev)
+{
+	struct hinic_hwdev *dev = hwdev;
+
+	if (!hwdev)
+		return false;
+
+	if (IS_HWPT_TYPE(dev))
+		return true;
+	else
+		return false;
+}
+
+bool hinic_func_for_pt(void *hwdev)
+{
+	struct hinic_hwdev *dev = hwdev;
+
+	if (!hwdev)
+		return false;
+
+	if (dev->cfg_mgmt->svc_cap.force_up)
+		return true;
+	else
+		return false;
+}
+
 int cfg_set_func_sf_en(void *hwdev, u32 enbits, u32 enmask)
 {
 	struct hinic_hwdev *dev = hwdev;
@@ -1750,10 +1805,15 @@ int cfg_set_func_sf_en(void *hwdev, u32 enbits, u32 enmask)
 		return -ENOMEM;
 	}
 
-	glb_func_idx = hinic_global_func_id(hwdev);
-	func_sf_enbits->function_id = glb_func_idx;
+	err = hinic_global_func_id_get(dev, &glb_func_idx);
+	if (err) {
+		kfree(func_sf_enbits);
+		return err;
+	}
+
 	func_sf_enbits->stateful_enbits = enbits;
 	func_sf_enbits->stateful_enmask = enmask;
+	func_sf_enbits->function_id = glb_func_idx;
 
 	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_L2NIC,
 				     HINIC_MISC_SET_FUNC_SF_ENBITS,
@@ -1788,7 +1848,11 @@ int cfg_get_func_sf_en(void *hwdev, u32 *enbits)
 		return -ENOMEM;
 	}
 
-	glb_func_idx = hinic_global_func_id(hwdev);
+	err = hinic_global_func_id_get(dev, &glb_func_idx);
+	if (err) {
+		kfree(func_sf_enbits);
+		return err;
+	}
 
 	func_sf_enbits->function_id = glb_func_idx;
 
@@ -2056,7 +2120,9 @@ static int hinic_os_dep_init(struct hinic_hwdev *hwdev)
 static void hinic_os_dep_deinit(struct hinic_hwdev *hwdev)
 {
 	destroy_work(&hwdev->fault_work);
+
 	destroy_workqueue(hwdev->workq);
+
 	down(&hwdev->fault_list_sem);
 
 	up(&hwdev->fault_list_sem);
@@ -2068,7 +2134,6 @@ static void hinic_os_dep_deinit(struct hinic_hwdev *hwdev)
 void hinic_ppf_hwdev_unreg(void *hwdev)
 {
 	struct hinic_hwdev *dev = hwdev;
-
 	if (!hwdev)
 		return;
 
@@ -2082,7 +2147,6 @@ void hinic_ppf_hwdev_unreg(void *hwdev)
 void hinic_ppf_hwdev_reg(void *hwdev, void *ppf_hwdev)
 {
 	struct hinic_hwdev *dev = hwdev;
-
 	if (!hwdev)
 		return;
 
@@ -2149,6 +2213,8 @@ int hinic_init_hwdev(struct hinic_init_para *para)
 		hwdev->chip_node = para->chip_node;
 		hwdev->ppf_hwdev = para->ppf_hwdev;
 		sema_init(&hwdev->ppf_sem, 1);
+		sema_init(&hwdev->func_sem, 1);
+		hwdev->func_ref = 0;
 
 		hwdev->chip_fault_stats = vzalloc(HINIC_CHIP_FAULT_SIZE);
 		if (!hwdev->chip_fault_stats)
@@ -2208,6 +2274,9 @@ int hinic_init_hwdev(struct hinic_init_para *para)
 		goto init_cap_err;
 	}
 
+	if (hwdev->cfg_mgmt->svc_cap.force_up)
+		hwdev->feature_cap |= HINIC_FUNC_FORCE_LINK_UP;
+
 	err = __vf_func_init(hwdev);
 	if (err)
 		goto vf_func_init_err;
@@ -2244,11 +2313,39 @@ init_hwif_err:
 	vfree(hwdev->chip_fault_stats);
 
 alloc_chip_fault_stats_err:
+	sema_deinit(&hwdev->func_sem);
 	sema_deinit(&hwdev->ppf_sem);
 	kfree(hwdev);
 	*para->hwdev = NULL;
 
 	return -EFAULT;
+}
+
+/**
+ * hinic_set_vf_dev_cap - Set max queue num for VF
+ * @hwdev: the HW device for VF
+ **/
+int hinic_set_vf_dev_cap(void *hwdev)
+{
+	int err;
+	struct hinic_hwdev *dev;
+	enum func_type type;
+
+	if (!hwdev)
+		return -EFAULT;
+
+	dev = (struct hinic_hwdev *)hwdev;
+	type = HINIC_FUNC_TYPE(dev);
+	if (type != TYPE_VF)
+		return -EPERM;
+
+	err = get_dev_cap(dev);
+	if (err)
+		return err;
+
+	nic_param_fix(dev);
+
+	return 0;
 }
 
 void hinic_free_hwdev(void *hwdev)
@@ -2287,6 +2384,7 @@ void hinic_free_hwdev(void *hwdev)
 	clear_bit(HINIC_HWDEV_NONE_INITED, &dev->func_state);
 	hinic_free_hwif(dev);
 	vfree(dev->chip_fault_stats);
+	sema_deinit(&dev->func_sem);
 	sema_deinit(&dev->ppf_sem);
 	kfree(dev);
 }
@@ -2337,6 +2435,7 @@ enum hinic_func_mode hinic_get_func_mode(void *hwdev)
 
 	return dev->func_mode;
 }
+EXPORT_SYMBOL(hinic_get_func_mode);
 
 enum hinic_service_mode hinic_get_service_mode(void *hwdev)
 {

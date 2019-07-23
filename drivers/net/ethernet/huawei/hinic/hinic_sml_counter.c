@@ -28,11 +28,11 @@
 	| (((x) & 0xff000000) >> 24))
 #endif
 
-static void sml_ctr_htonl_n(u32 *node, u32 ullen)
+static void sml_ctr_htonl_n(u32 *node, u32 ulLen)
 {
 	u32 i;
 
-	for (i = 0; i < ullen; i++) {
+	for (i = 0; i < ulLen; i++) {
 		*node = HTONL(*node);
 		node++;
 	}

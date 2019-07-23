@@ -109,6 +109,11 @@ void hinic_detach_roce(struct hinic_lld_dev *lld_dev);
 int hinic_disable_nic_rss(struct hinic_lld_dev *lld_dev);
 int hinic_enable_nic_rss(struct hinic_lld_dev *lld_dev);
 
+int hinic_ovs_set_vf_nic_state(struct hinic_lld_dev *lld_dev,
+			       u16 vf_func_id, bool en);
+
+int hinic_ovs_set_vf_load_state(struct pci_dev *pdev);
+
 int hinic_get_self_test_result(char *ifname, u32 *result);
 enum hinic_init_state hinic_get_init_state_by_ifname(char *ifname);
 enum hinic_init_state hinic_get_init_state(struct pci_dev *pdev);
@@ -117,5 +122,7 @@ extern struct hinic_uld_info g_uld_info[SERVICE_T_MAX];
 
 struct pci_device_id *hinic_get_pci_device_id(struct pci_dev *pdev);
 bool hinic_is_in_host(void);
+
 bool hinic_is_valid_bar_addr(u64 offset);
+
 #endif

@@ -93,4 +93,7 @@ void hinic_be32_to_cpu(void *data, int len);
 void hinic_set_sge(struct hinic_sge *sge, dma_addr_t addr, u32 len);
 
 dma_addr_t hinic_sge_to_dma(struct hinic_sge *sge);
+
+void hinic_rq_cqe_addr_set(void *hwdev, u16 qid, dma_addr_t cqe_dma_ddr);
+
 #endif

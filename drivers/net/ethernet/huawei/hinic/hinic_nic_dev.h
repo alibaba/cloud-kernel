@@ -30,7 +30,7 @@
 #define HINIC_DRV_NAME		"hinic"
 #define HINIC_CHIP_NAME		"hinic"
 
-#define HINIC_DRV_VERSION	"1.8.3.1"
+#define HINIC_DRV_VERSION	"2.3.2.1"
 struct vf_data_storage;
 
 #define HINIC_FUNC_IS_VF(hwdev)	(hinic_func_type(hwdev) == TYPE_VF)
@@ -45,6 +45,7 @@ enum hinic_flags {
 	HINIC_SAME_RXTX,
 	HINIC_INTR_ADAPT,
 	HINIC_UPDATE_MAC_FILTER,
+	HINIC_ETS_ENABLE,
 };
 
 #define RX_BUFF_NUM_PER_PAGE	2
@@ -135,9 +136,9 @@ struct hinic_intr_coal_info {
 
 #define HINIC_NIC_STATS_INC(nic_dev, field)		\
 {							\
-	u64_stats_update_begin(&(nic_dev)->stats.syncp);	\
-	(nic_dev)->stats.field++;				\
-	u64_stats_update_end(&(nic_dev)->stats.syncp);	\
+	u64_stats_update_begin(&nic_dev->stats.syncp);	\
+	nic_dev->stats.field++;				\
+	u64_stats_update_end(&nic_dev->stats.syncp);	\
 }
 
 struct hinic_nic_stats {
@@ -232,6 +233,7 @@ struct hinic_nic_dev {
 	u32			his_link_speed;
 	/* interrupt coalesce must be different in virtual machine */
 	bool			in_vm;
+	bool			is_vm_slave;
 
 #ifndef HAVE_NETDEV_STATS_IN_NETDEV
 	struct net_device_stats net_stats;
@@ -275,12 +277,12 @@ int hinic_enable_func_rss(struct hinic_nic_dev *nic_dev);
 
 #define hinic_msg(level, nic_dev, msglvl, format, arg...)	\
 do {								\
-	if ((nic_dev)->netdev && (nic_dev)->netdev->reg_state	\
+	if (nic_dev->netdev && nic_dev->netdev->reg_state	\
 	    == NETREG_REGISTERED)				\
-		nicif_##level((nic_dev), msglvl, (nic_dev)->netdev,	\
+		nicif_##level(nic_dev, msglvl, nic_dev->netdev,	\
 			      format, ## arg);			\
 	else							\
-		nic_##level(&(nic_dev)->pdev->dev,		\
+		nic_##level(&nic_dev->pdev->dev,		\
 			    format, ## arg);			\
 } while (0)
 

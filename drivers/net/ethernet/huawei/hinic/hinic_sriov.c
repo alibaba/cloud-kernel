@@ -310,6 +310,13 @@ int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos)
 		err = hinic_kill_vf_vlan(sriov_info->hwdev, OS_VF_ID_TO_HW(vf));
 	}
 
+	if (err)
+		return err;
+
+	err = hinic_update_mac_vlan(sriov_info->hwdev,
+				    cur_vlanprio & VLAN_VID_MASK, vlan,
+				    OS_VF_ID_TO_HW(vf));
+
 out:
 	return err;
 }
@@ -334,7 +341,7 @@ int hinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
 		return 0;
 
 	err = hinic_set_vf_spoofchk(sriov_info->hwdev,
-				    OS_VF_ID_TO_HW(vf), setting);
+				      OS_VF_ID_TO_HW(vf), setting);
 
 	if (!err) {
 		nicif_info(adapter, drv, netdev, "Set VF %d spoofchk %s\n",
@@ -490,4 +497,6 @@ int hinic_ndo_set_vf_bw(struct net_device *netdev, int vf, int max_tx_rate)
 #endif
 
 	return 0;
-} /*lint -restore*/
+}
+
+/*lint -restore*/

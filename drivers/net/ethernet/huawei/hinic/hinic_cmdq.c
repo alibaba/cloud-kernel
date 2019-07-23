@@ -53,7 +53,7 @@
 #define CMDQ_DB_INFO_SRC_TYPE_MASK			0x1FU
 
 #define CMDQ_DB_INFO_SET(val, member)			\
-				(((val) & CMDQ_DB_INFO_##member##_MASK) \
+				((val & CMDQ_DB_INFO_##member##_MASK) \
 				<< CMDQ_DB_INFO_##member##_SHIFT)
 
 #define CMDQ_CTRL_PI_SHIFT				0
@@ -168,7 +168,7 @@
 #define CMDQ_DB_PI_OFF(pi)		(((u16)LOWER_8_BITS(pi)) << 3)
 
 #define CMDQ_DB_ADDR(db_base, pi)	\
-		(((u8 *)(db_base) + HINIC_DB_OFF) + CMDQ_DB_PI_OFF(pi))
+		(((u8 *)db_base + HINIC_DB_OFF) + CMDQ_DB_PI_OFF(pi))
 
 #define CMDQ_PFN_SHIFT			12
 #define CMDQ_PFN(addr)			((addr) >> CMDQ_PFN_SHIFT)
@@ -193,6 +193,9 @@
 
 #define CMDQ_SEND_CMPT_CODE		10
 #define CMDQ_COMPLETE_CMPT_CODE		11
+
+#define HINIC_GET_CMDQ_FREE_WQEBBS(cmdq_wq)	\
+				atomic_read(&(cmdq_wq)->delta)
 
 enum cmdq_scmd_type {
 	CMDQ_SET_ARM_CMD = 2,
@@ -278,7 +281,7 @@ void hinic_free_cmd_buf(void *hwdev, struct hinic_cmd_buf *cmd_buf)
 	struct hinic_cmdqs *cmdqs;
 
 	if (!hwdev || !cmd_buf) {
-		pr_err("Failed to free cmd buf.\n");
+		pr_err("Failed to free cmd buf\n");
 		return;
 	}
 
@@ -337,7 +340,7 @@ static void cmdq_set_lcmd_bufdesc(struct hinic_cmdq_wqe_lcmd *wqe,
 }
 
 static void cmdq_set_inline_wqe_data(struct hinic_cmdq_inline_wqe *wqe,
-				     void *buf_in, u32 in_size)
+				     const void *buf_in, u32 in_size)
 {
 	struct hinic_cmdq_wqe_scmd *wqe_scmd = &wqe->wqe_scmd;
 
@@ -368,7 +371,7 @@ static void cmdq_set_db(struct hinic_cmdq *cmdq,
 	writel(db.db_info, CMDQ_DB_ADDR(cmdq->db_base, prod_idx));
 }
 
-static void cmdq_wqe_fill(void *dst, void *src)
+static void cmdq_wqe_fill(void *dst, const void *src)
 {
 	memcpy((u8 *)dst + FIRST_DATA_TO_WRITE_LAST,
 	       (u8 *)src + FIRST_DATA_TO_WRITE_LAST,
@@ -541,8 +544,9 @@ static int hinic_cmdq_sync_timeout_check(struct hinic_cmdq *cmdq,
 	return 0;
 }
 
-static void __clear_cmd_info(struct hinic_cmdq_cmd_info *cmd_info, int *errcode,
-			     struct completion *done, u64 *out_param)
+static void __clear_cmd_info(struct hinic_cmdq_cmd_info *cmd_info,
+			     const int *errcode, struct completion *done,
+			     u64 *out_param)
 {
 	if (cmd_info->errcode == errcode)
 		cmd_info->errcode = NULL;
@@ -576,10 +580,20 @@ static int cmdq_sync_cmd_direct_resp(struct hinic_cmdq *cmdq,
 	/* Keep wrapped and doorbell index correct. bh - for tasklet(ceq) */
 	spin_lock_bh(&cmdq->cmdq_lock);
 
-	/* WQE_SIZE = WQEBB_SIZE, we will get the wq element and not shadow*/
+	/* in order to save a wqebb for setting arm_bit when
+	 * send cmdq commands frequently resulting in cmdq full
+	 */
+	if (HINIC_GET_CMDQ_FREE_WQEBBS(wq) < num_wqebbs + 1) {
+		spin_unlock_bh(&cmdq->cmdq_lock);
+		return -EBUSY;
+	}
+
+	/* WQE_SIZE = WQEBB_SIZE, we will get the wq element and not shadow */
 	curr_wqe = hinic_get_wqe(cmdq->wq, num_wqebbs, &curr_prod_idx);
 	if (!curr_wqe) {
 		spin_unlock_bh(&cmdq->cmdq_lock);
+		sdk_err(cmdq->hwdev->dev_hdl, "Can not get avalible wqebb, mod: %u, cmd: 0x%x\n",
+			mod, cmd);
 		return -EBUSY;
 	}
 
@@ -696,10 +710,20 @@ static int cmdq_sync_cmd_detail_resp(struct hinic_cmdq *cmdq,
 	/* Keep wrapped and doorbell index correct. bh - for tasklet(ceq) */
 	spin_lock_bh(&cmdq->cmdq_lock);
 
+	/* in order to save a wqebb for setting arm_bit when
+	 * send cmdq commands frequently resulting in cmdq full
+	 */
+	if (HINIC_GET_CMDQ_FREE_WQEBBS(wq) < num_wqebbs + 1) {
+		spin_unlock_bh(&cmdq->cmdq_lock);
+		return -EBUSY;
+	}
+
 	/* WQE_SIZE = WQEBB_SIZE, we will get the wq element and not shadow*/
 	curr_wqe = hinic_get_wqe(cmdq->wq, num_wqebbs, &curr_prod_idx);
 	if (!curr_wqe) {
 		spin_unlock_bh(&cmdq->cmdq_lock);
+		sdk_err(cmdq->hwdev->dev_hdl, "Can not get avalible wqebb, mod: %u, cmd: 0x%x\n",
+			mod, cmd);
 		return -EBUSY;
 	}
 
@@ -716,6 +740,7 @@ static int cmdq_sync_cmd_detail_resp(struct hinic_cmdq *cmdq,
 	cmd_info = &cmdq->cmd_infos[curr_prod_idx];
 
 	init_completion(&done);
+
 	cmd_info->done = &done;
 	cmd_info->errcode = &errcode;
 	cmd_info->cmpt_code = &cmpt_code;
@@ -856,6 +881,7 @@ static int cmdq_set_arm_bit(struct hinic_cmdq *cmdq, void *buf_in, u16 in_size)
 	curr_wqe = hinic_get_wqe(cmdq->wq, num_wqebbs, &curr_prod_idx);
 	if (!curr_wqe) {
 		spin_unlock_bh(&cmdq->cmdq_lock);
+		sdk_err(cmdq->hwdev->dev_hdl, "Can not get avalible wqebb setting arm\n");
 		return -EBUSY;
 	}
 
@@ -946,9 +972,13 @@ int hinic_cmdq_direct_resp(void *hwdev, enum hinic_ack_type ack_type,
 		return err;
 	}
 
+	err = hinic_func_own_get(hwdev);
+	if (err)
+		return err;
+
 	err = cmdq_sync_cmd_direct_resp(&cmdqs->cmdq[HINIC_CMDQ_SYNC], ack_type,
 					mod, cmd, buf_in, out_param, timeout);
-
+	hinic_func_own_free(hwdev);
 	if (!(((struct hinic_hwdev *)hwdev)->chip_present_flag))
 		return -ETIMEDOUT;
 	else
@@ -1109,7 +1139,8 @@ static void cmdq_sync_cmd_handler(struct hinic_cmdq *cmdq,
 	cmdq_update_cmd_status(cmdq, prod_idx, wqe);
 
 	if (cmdq->cmd_infos[prod_idx].cmpt_code) {
-		*cmdq->cmd_infos[prod_idx].cmpt_code = CMDQ_COMPLETE_CMPT_CODE;
+		*cmdq->cmd_infos[prod_idx].cmpt_code =
+							CMDQ_COMPLETE_CMPT_CODE;
 		cmdq->cmd_infos[prod_idx].cmpt_code = NULL;
 	}
 
@@ -1267,7 +1298,7 @@ static void cmdq_init_queue_ctxt(struct hinic_cmdq *cmdq,
 	ctxt_info->wq_block_pfn = CMDQ_CTXT_BLOCK_INFO_SET(start_ci, CI) |
 				CMDQ_CTXT_BLOCK_INFO_SET(pfn, WQ_BLOCK_PFN);
 
-	cmdq_ctxt->func_idx = HINIC_HWIF_GLOBAL_IDX(hwdev->hwif);
+	cmdq_ctxt->func_idx = hinic_global_func_id_hw(hwdev);
 	cmdq_ctxt->ppf_idx  = HINIC_HWIF_PPF_IDX(hwdev->hwif);
 	cmdq_ctxt->cmdq_id  = cmdq->cmdq_type;
 }
@@ -1348,6 +1379,7 @@ int hinic_set_cmdq_ctxts(struct hinic_hwdev *hwdev)
 	cmdq_type = HINIC_CMDQ_SYNC;
 	for (; cmdq_type < HINIC_MAX_CMDQ_TYPES; cmdq_type++) {
 		cmdq_ctxt = &cmdqs->cmdq[cmdq_type].cmdq_ctxt;
+		cmdq_ctxt->func_idx = hinic_global_func_id_hw(hwdev);
 		in_size = sizeof(*cmdq_ctxt);
 		err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_COMM,
 					     HINIC_MGMT_CMD_CMDQ_CTXT_SET,

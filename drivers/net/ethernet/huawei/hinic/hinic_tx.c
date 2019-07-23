@@ -1,5 +1,5 @@
-/*
- * Huawei HiNIC PCI Express Linux driver
+// SPDX-License-Identifier: GPL-2.0
+/* Huawei HiNIC PCI Express Linux driver
  * Copyright(c) 2017 Huawei Technologies Co., Ltd
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -47,9 +47,9 @@
 
 #define TXQ_STATS_INC(txq, field)			\
 {							\
-	u64_stats_update_begin(&(txq)->txq_stats.syncp);	\
-	(txq)->txq_stats.field++;				\
-	u64_stats_update_end(&(txq)->txq_stats.syncp);	\
+	u64_stats_update_begin(&txq->txq_stats.syncp);	\
+	txq->txq_stats.field++;				\
+	u64_stats_update_end(&txq->txq_stats.syncp);	\
 }
 
 void hinic_txq_get_stats(struct hinic_txq *txq,
@@ -162,7 +162,7 @@ static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 	}
 
 	dma_len[0].dma = dma_map_single(&pdev->dev, skb->data,
-					skb_headlen(skb), DMA_TO_DEVICE);
+				  skb_headlen(skb), DMA_TO_DEVICE);
 	if (dma_mapping_error(&pdev->dev, dma_len[0].dma)) {
 		TXQ_STATS_INC(txq, map_frag_err);
 		err = -EFAULT;
@@ -181,8 +181,8 @@ static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 		frag = &(skb_shinfo(skb)->frags[i]);
 		i++;
 		dma_len[i].dma = skb_frag_dma_map(&pdev->dev, frag, 0,
-						  skb_frag_size(frag),
-						  DMA_TO_DEVICE);
+					    skb_frag_size(frag),
+					    DMA_TO_DEVICE);
 		if (dma_mapping_error(&pdev->dev, dma_len[i].dma)) {
 			TXQ_STATS_INC(txq, map_frag_err);
 			i--;
@@ -298,14 +298,12 @@ static void get_inner_l3_l4_type(struct sk_buff *skb, union hinic_ip *ip,
 			int pld_off = 0;
 
 			pld_off = ipv6_skip_exthdr(skb,
-						   (int)(exthdr -
-						   skb->data),
-						   l4_proto,
-						   &frag_off);
+						   (int)(exthdr - skb->data),
+						   l4_proto, &frag_off);
 			l4->hdr = skb->data + pld_off;
 		} else {
 			l4->hdr = exthdr;
- #endif
+#endif
 		}
 	} else {
 		*l3_type = UNKNOWN_L3TYPE;
@@ -804,7 +802,7 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 
 	num_sge = skb_nr_frags + 1;
 
-	/* if skb->len is more than 65536B but num_sge is 1,
+	/* :if skb->len is more than 65536B but num_sge is 1,
 	 * driver will drop it
 	 */
 	if (unlikely(skb->len > HINIC_GSO_MAX_SIZE && num_sge == 1)) {
@@ -874,20 +872,38 @@ tx_skb_pad_err:
 	return NETDEV_TX_OK;
 }
 
+netdev_tx_t hinic_lb_xmit_frame(struct sk_buff *skb,
+				struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u16 q_id = skb_get_queue_mapping(skb);
+	struct hinic_txq *txq;
+	u8 flag = 0;
+
+	if (unlikely(!nic_dev->heart_status)) {
+		dev_kfree_skb_any(skb);
+		HINIC_NIC_STATS_INC(nic_dev, tx_carrier_off_drop);
+		return NETDEV_TX_OK;
+	}
+
+	txq = &nic_dev->txqs[q_id];
+
+	return hinic_send_one_skb(skb, netdev, txq, &flag, HINIC_TX_NON_AVD);
+}
+
 netdev_tx_t hinic_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-	struct hinic_txq *txq;
 	u16 q_id = skb_get_queue_mapping(skb);
+	struct hinic_txq *txq;
 	u8 flag = 0;
 #ifdef HAVE_IP6_FRAG_ID_ENABLE_UFO
 	struct sk_buff *ufo_skb;
 	int err;
 #endif
 
-	if (unlikely((!netif_carrier_ok(netdev) &&
-		      !test_bit(HINIC_LP_TEST, &nic_dev->flags)) ||
-		      !nic_dev->heart_status)) {
+	if (unlikely(!netif_carrier_ok(netdev) ||
+		     !nic_dev->heart_status)) {
 		dev_kfree_skb_any(skb);
 		HINIC_NIC_STATS_INC(nic_dev, tx_carrier_off_drop);
 		return NETDEV_TX_OK;
@@ -997,7 +1013,7 @@ int hinic_tx_poll(struct hinic_txq *txq, int budget)
 
 		/* Whether all of the wqebb of this wqe is completed */
 		if (hw_ci == sw_ci || ((hw_ci - sw_ci) &
-		    txq->q_mask) < tx_info->wqebb_cnt) {
+			txq->q_mask) < tx_info->wqebb_cnt) {
 			break;
 		}
 

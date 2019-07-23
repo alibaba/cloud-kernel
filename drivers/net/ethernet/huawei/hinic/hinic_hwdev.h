@@ -24,6 +24,30 @@
 
 #define HINIC_MSG_TO_MGMT_MAX_LEN		2016
 
+#define HINIC_MGMT_STATUS_ERR_OK          0   /* Ok */
+#define HINIC_MGMT_STATUS_ERR_PARAM       1   /* Invalid parameter */
+#define HINIC_MGMT_STATUS_ERR_FAILED      2   /* Operation failed */
+#define HINIC_MGMT_STATUS_ERR_PORT        3   /* Invalid port */
+#define HINIC_MGMT_STATUS_ERR_TIMEOUT     4   /* Operation time out */
+#define HINIC_MGMT_STATUS_ERR_NOMATCH     5   /* Version not match */
+#define HINIC_MGMT_STATUS_ERR_EXIST       6   /* Entry exists */
+#define HINIC_MGMT_STATUS_ERR_NOMEM       7   /* Out of memory */
+#define HINIC_MGMT_STATUS_ERR_INIT        8   /* Feature not initialized */
+#define HINIC_MGMT_STATUS_ERR_FAULT       9   /* Invalid address */
+#define HINIC_MGMT_STATUS_ERR_PERM        10  /* Operation not permitted */
+#define HINIC_MGMT_STATUS_ERR_EMPTY       11  /* Table empty */
+#define HINIC_MGMT_STATUS_ERR_FULL        12  /* Table full */
+#define HINIC_MGMT_STATUS_ERR_NOT_FOUND   13  /* Not found */
+#define HINIC_MGMT_STATUS_ERR_BUSY        14  /* Device or resource busy */
+#define HINIC_MGMT_STATUS_ERR_RESOURCE    15  /* No resources for operation */
+#define HINIC_MGMT_STATUS_ERR_CONFIG      16  /* Invalid configuration */
+#define HINIC_MGMT_STATUS_ERR_UNAVAIL     17  /* Feature unavailable */
+#define HINIC_MGMT_STATUS_ERR_CRC         18  /* CRC check failed */
+#define HINIC_MGMT_STATUS_ERR_NXIO        19  /* No such device or address */
+#define HINIC_MGMT_STATUS_ERR_ROLLBACK    20  /* Chip rollback fail */
+#define HINIC_MGMT_STATUS_ERR_LEN         32  /* Length too short or too long */
+#define HINIC_MGMT_STATUS_ERR_UNSUPPORT   0xFF/* Feature not supported*/
+
 struct cfg_mgmt_info;
 struct rdma_comp_resource;
 
@@ -193,7 +217,8 @@ struct hinic_heartbeat_enhanced {
 				 HINIC_FUNC_SUPP_DFX_REG | \
 				 HINIC_FUNC_SRIOV_EN_DFLT | \
 				 HINIC_FUNC_SUPP_RX_MODE | \
-				 HINIC_FUNC_SUPP_CHANGE_MAC)
+				 HINIC_FUNC_SUPP_CHANGE_MAC | \
+				 HINIC_FUNC_OFFLOAD_OVS_UNSUPP)
 
 #define MULTI_HOST_CHIP_MODE_SHIFT		0
 #define MULTI_HOST_MASTER_MBX_STS_SHIFT		0x4
@@ -294,6 +319,8 @@ struct hinic_hwdev {
 	struct semaphore ppf_sem;
 	void *ppf_hwdev;
 
+	struct semaphore func_sem;
+	int func_ref;
 	struct hinic_board_info board_info;
 #define MGMT_VERSION_MAX_LEN	32
 	u8	mgmt_ver[MGMT_VERSION_MAX_LEN];
@@ -347,8 +374,8 @@ int hinic_pf_msg_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			      void *buf_out, u16 *out_size, u32 timeout);
 
 int hinic_pf_send_clp_cmd(void *hwdev, enum hinic_mod_type mod, u8 cmd,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size);
+			void *buf_in, u16 in_size,
+			void *buf_out, u16 *out_size);
 
 int hinic_get_bios_pf_bw_limit(void *hwdev, u32 *pf_bw_limit);
 
@@ -379,4 +406,5 @@ int hinic_get_sdi_mode(struct hinic_hwdev *hwdev, u16 *cur_mode);
 
 void mgmt_heartbeat_event_handler(void *hwdev, void *buf_in, u16 in_size,
 				  void *buf_out, u16 *out_size);
+
 #endif
