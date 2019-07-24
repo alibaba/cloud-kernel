@@ -6,6 +6,8 @@
 #include <linux/seq_file.h>
 #include <linux/time.h>
 #include <linux/kernel_stat.h>
+#include <linux/sched/task.h>
+#include <linux/pid_namespace.h>
 
 static int uptime_proc_show(struct seq_file *m, void *v)
 {
@@ -15,11 +17,33 @@ static int uptime_proc_show(struct seq_file *m, void *v)
 	u32 rem;
 	int i;
 
-	nsec = 0;
-	for_each_possible_cpu(i)
-		nsec += (__force u64) kcpustat_cpu(i).cpustat[CPUTIME_IDLE];
-
 	ktime_get_boottime_ts64(&uptime);
+
+	nsec = 0;
+	rcu_read_lock();
+	if (in_rich_container(current)) {
+		struct task_struct *init_tsk;
+		struct cpuacct_usage_result res;
+
+		read_lock(&tasklist_lock);
+		init_tsk = task_active_pid_ns(current)->child_reaper;
+		get_task_struct(init_tsk);
+		read_unlock(&tasklist_lock);
+
+		for_each_possible_cpu(i) {
+			cpuacct_get_usage_result(init_tsk, i, &res);
+			nsec += res.idle;
+		}
+		uptime = timespec64_sub(uptime,
+				ns_to_timespec64(init_tsk->start_time));
+		put_task_struct(init_tsk);
+	} else {
+		for_each_possible_cpu(i)
+			nsec +=
+			(__force u64) kcpustat_cpu(i).cpustat[CPUTIME_IDLE];
+	}
+	rcu_read_unlock();
+
 	idle.tv_sec = div_u64_rem(nsec, NSEC_PER_SEC, &rem);
 	idle.tv_nsec = rem;
 	seq_printf(m, "%lu.%02lu %lu.%02lu\n",
