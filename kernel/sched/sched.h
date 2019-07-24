@@ -576,6 +576,8 @@ struct cfs_rq {
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
+	unsigned long nr_uninterruptible;
+
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
 	ALI_HOTFIX_RESERVE(3)
@@ -626,6 +628,8 @@ struct rt_rq {
 	struct rq		*rq;
 	struct task_group	*tg;
 #endif
+
+	unsigned long nr_uninterruptible;
 };
 
 static inline bool rt_rq_is_runnable(struct rt_rq *rt_rq)
@@ -836,7 +840,14 @@ struct rq {
 	struct task_struct	*idle;
 	struct task_struct	*stop;
 	unsigned long		next_balance;
-	struct mm_struct	*prev_mm;
+
+	/*
+	 * Frequent writing to prev_mm and clock_update_flags on local
+	 * CPU causes cacheline containing idle to be invalidated on
+	 * other CPUs. Put prev_mm and sequential fields on a new
+	 * cacheline to fix it.
+	 */
+	struct mm_struct	*prev_mm ____cacheline_aligned;
 
 	unsigned int		clock_update_flags;
 	u64			clock;
@@ -1670,6 +1681,8 @@ struct sched_class {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	void (*task_change_group)(struct task_struct *p, int type);
 #endif
+
+	void (*update_nr_uninterruptible)(struct task_struct *p, long inc);
 	void (*update_nr_iowait)(struct task_struct *p, long inc);
 };
 
