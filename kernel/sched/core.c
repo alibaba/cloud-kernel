@@ -744,18 +744,28 @@ static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 	p->sched_class->dequeue_task(rq, p, flags);
 }
 
+static void update_nr_uninterruptible(struct task_struct *tsk, long inc)
+{
+	if (tsk->sched_class->update_nr_uninterruptible)
+		tsk->sched_class->update_nr_uninterruptible(tsk, inc);
+}
+
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	if (task_contributes_to_load(p))
+	if (task_contributes_to_load(p)) {
+		update_nr_uninterruptible(p, -1);
 		rq->nr_uninterruptible--;
+	}
 
 	enqueue_task(rq, p, flags);
 }
 
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	if (task_contributes_to_load(p))
+	if (task_contributes_to_load(p)) {
+		update_nr_uninterruptible(p, 1);
 		rq->nr_uninterruptible++;
+	}
 
 	dequeue_task(rq, p, flags);
 }
@@ -1689,8 +1699,10 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
 	lockdep_assert_held(&rq->lock);
 
 #ifdef CONFIG_SMP
-	if (p->sched_contributes_to_load)
+	if (p->sched_contributes_to_load) {
+		update_nr_uninterruptible(p, -1);
 		rq->nr_uninterruptible--;
+	}
 
 	if (wake_flags & WF_MIGRATED)
 		en_flags |= ENQUEUE_MIGRATED;
@@ -6378,7 +6390,17 @@ void sched_move_task(struct task_struct *tsk)
 	if (running)
 		put_prev_task(rq, tsk);
 
+	/* decrease old group */
+	if ((!queued && task_contributes_to_load(tsk)) ||
+	    (tsk->state == TASK_WAKING && tsk->sched_contributes_to_load))
+		update_nr_uninterruptible(tsk, -1);
+
 	sched_change_group(tsk, TASK_MOVE_GROUP);
+
+	/* increase new group after change */
+	if ((!queued && task_contributes_to_load(tsk)) ||
+	    (tsk->state == TASK_WAKING && tsk->sched_contributes_to_load))
+		update_nr_uninterruptible(tsk, 1);
 
 	if (queued)
 		enqueue_task(rq, tsk, queue_flags);
