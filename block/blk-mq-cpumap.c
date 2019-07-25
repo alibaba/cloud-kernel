@@ -14,9 +14,9 @@
 #include "blk.h"
 #include "blk-mq.h"
 
-static int cpu_to_queue_index(unsigned int nr_queues, const int cpu)
+static int queue_index(unsigned int nr_queues, const int q)
 {
-	return cpu % nr_queues;
+	return q % nr_queues;
 }
 
 static int get_first_sibling(unsigned int cpu)
@@ -34,9 +34,24 @@ int blk_mq_map_queues(struct blk_mq_tag_set *set)
 {
 	unsigned int *map = set->mq_map;
 	unsigned int nr_queues = set->nr_hw_queues;
-	unsigned int cpu, first_sibling;
+	unsigned int cpu, first_sibling, q = 0;
+
+	for_each_possible_cpu(cpu)
+		map[cpu] = -1;
+
+	/*
+	 * Spread queues among present CPUs first for minimizing
+	 * count of dead queues which are mapped by all un-present CPUs
+	 */
+	for_each_present_cpu(cpu) {
+		if (q >= nr_queues)
+			break;
+		map[cpu] = queue_index(nr_queues, q++);
+	}
 
 	for_each_possible_cpu(cpu) {
+		if (map[cpu] != -1)
+			continue;
 		/*
 		 * First do sequential mapping between CPUs and queues.
 		 * In case we still have CPUs to map, and we have some number of
@@ -44,11 +59,11 @@ int blk_mq_map_queues(struct blk_mq_tag_set *set)
 		 * performace optimizations.
 		 */
 		if (cpu < nr_queues) {
-			map[cpu] = cpu_to_queue_index(nr_queues, cpu);
+			map[cpu] = queue_index(nr_queues, q++);
 		} else {
 			first_sibling = get_first_sibling(cpu);
 			if (first_sibling == cpu)
-				map[cpu] = cpu_to_queue_index(nr_queues, cpu);
+				map[cpu] = queue_index(nr_queues, q++);
 			else
 				map[cpu] = map[first_sibling];
 		}
