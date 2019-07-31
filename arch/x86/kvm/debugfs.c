@@ -36,29 +36,17 @@ static int vcpu_get_tsc_scaling_frac_bits(void *data, u64 *val)
 
 DEFINE_SIMPLE_ATTRIBUTE(vcpu_tsc_scaling_frac_fops, vcpu_get_tsc_scaling_frac_bits, NULL, "%llu\n");
 
-int kvm_arch_create_vcpu_debugfs(struct kvm_vcpu *vcpu)
+void kvm_arch_create_vcpu_debugfs(struct kvm_vcpu *vcpu)
 {
-	struct dentry *ret;
-
-	ret = debugfs_create_file("tsc-offset", 0444,
-							vcpu->debugfs_dentry,
-							vcpu, &vcpu_tsc_offset_fops);
-	if (!ret)
-		return -ENOMEM;
+	debugfs_create_file("tsc-offset", 0444, vcpu->debugfs_dentry, vcpu,
+		&vcpu_tsc_offset_fops);
 
 	if (kvm_has_tsc_control) {
-		ret = debugfs_create_file("tsc-scaling-ratio", 0444,
-							vcpu->debugfs_dentry,
-							vcpu, &vcpu_tsc_scaling_fops);
-		if (!ret)
-			return -ENOMEM;
-		ret = debugfs_create_file("tsc-scaling-ratio-frac-bits", 0444,
-							vcpu->debugfs_dentry,
-							vcpu, &vcpu_tsc_scaling_frac_fops);
-		if (!ret)
-			return -ENOMEM;
-
+		debugfs_create_file("tsc-scaling-ratio", 0444,
+			vcpu->debugfs_dentry, vcpu,
+			&vcpu_tsc_scaling_fops);
+		debugfs_create_file("tsc-scaling-ratio-frac-bits", 0444,
+			vcpu->debugfs_dentry, vcpu,
+			&vcpu_tsc_scaling_frac_fops);
 	}
-
-	return 0;
 }
