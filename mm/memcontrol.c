@@ -2181,9 +2181,9 @@ static void wmark_work_func(struct work_struct *work)
 
 	memcg = container_of(work, struct mem_cgroup, wmark_work);
 
-	current->flags |= PF_SWAPWRITE | PF_MEMALLOC;
+	current->flags |= PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD;
 	reclaim_wmark(memcg);
-	current->flags &= ~(PF_SWAPWRITE | PF_MEMALLOC);
+	current->flags &= ~(PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD);
 }
 
 static void reclaim_high(struct mem_cgroup *memcg,
