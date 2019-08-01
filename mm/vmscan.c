@@ -260,7 +260,9 @@ static bool sane_reclaim(struct scan_control *sc)
 	if (!memcg)
 		return true;
 #ifdef CONFIG_CGROUP_WRITEBACK
-	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+	/* AliOS Cloud Kernel has cgroup writeback support for v1 */
+	if (cgroup_subsys_on_dfl(memory_cgrp_subsys) ||
+	    cgwb_v1)
 		return true;
 #endif
 	return false;
