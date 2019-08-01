@@ -2755,9 +2755,13 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 			 * nr_to_reclaim pages to be reclaimed and it will
 			 * retry with decreasing priority if one round over the
 			 * whole hierarchy is not sufficient.
+			 *
+			 * Memcg background reclaim would break iter once water
+			 * mark is satisfied.
 			 */
 			if (!global_reclaim(sc) &&
-					sc->nr_reclaimed >= sc->nr_to_reclaim) {
+			    ((sc->nr_reclaimed >= sc->nr_to_reclaim) ||
+			    (current_is_kswapd() && is_wmark_ok(root, false)))) {
 				mem_cgroup_iter_break(root, memcg);
 				break;
 			}
@@ -2776,7 +2780,7 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 		if (sc->nr_reclaimed - nr_reclaimed)
 			reclaimable = true;
 
-		if (current_is_kswapd()) {
+		if (current_is_kswapd() && global_reclaim(sc)) {
 			/*
 			 * If reclaim is isolating dirty pages under writeback,
 			 * it implies that the long-lived page allocation rate
@@ -3022,6 +3026,10 @@ retry:
 		__count_zid_vm_events(ALLOCSTALL, sc->reclaim_idx, 1);
 
 	do {
+		if (current_is_kswapd() && !global_reclaim(sc) &&
+		    is_wmark_ok(sc->target_mem_cgroup, false))
+			break;
+
 		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
 				sc->priority);
 		sc->nr_scanned = 0;
@@ -3060,8 +3068,12 @@ retry:
 	if (sc->compaction_ready)
 		return 1;
 
-	/* Untapped cgroup reserves?  Don't OOM, retry. */
-	if (sc->memcg_low_skipped) {
+	/*
+	 * Untapped cgroup reserves?  Don't OOM, retry.
+	 *
+	 * Memcg kswapd should not break low protection.
+	 */
+	if (sc->memcg_low_skipped && !current_is_kswapd()) {
 		sc->priority = initial_priority;
 		sc->memcg_low_reclaim = 1;
 		sc->memcg_low_skipped = 0;
