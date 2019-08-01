@@ -2302,6 +2302,10 @@ generic_make_request_checks(struct bio *bio)
 		if (!blk_queue_is_zoned(q))
 			goto not_supported;
 		break;
+	case REQ_OP_ZONE_RESET_ALL:
+		if (!blk_queue_is_zoned(q) || !blk_queue_zone_resetall(q))
+			goto not_supported;
+		break;
 	case REQ_OP_WRITE_ZEROES:
 		if (!q->limits.max_write_zeroes_sectors)
 			goto not_supported;
