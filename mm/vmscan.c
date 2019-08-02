@@ -1083,6 +1083,9 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 	unsigned int nr_reclaimed = 0;
 	unsigned int pgactivate = 0;
 	u64 start = 0;
+	struct lruvec *target_lruvec;
+
+	target_lruvec = mem_cgroup_lruvec(sc->target_mem_cgroup, pgdat);
 
 	memset(stat, 0, sizeof(*stat));
 	cond_resched();
@@ -1189,7 +1192,7 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 			/* Case 1 above */
 			if (current_is_kswapd() &&
 			    PageReclaim(page) &&
-			    test_bit(PGDAT_WRITEBACK, &pgdat->flags)) {
+				test_bit(LRUVEC_WRITEBACK, &target_lruvec->flags)) {
 				stat->nr_immediate++;
 				goto activate_locked;
 
@@ -1329,7 +1332,7 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 			 */
 			if (page_is_file_lru(page) &&
 			    (!current_is_kswapd() || !PageReclaim(page) ||
-			     !test_bit(PGDAT_DIRTY, &pgdat->flags))) {
+			     !test_bit(LRUVEC_DIRTY, &target_lruvec->flags))) {
 				/*
 				 * Immediately reclaim when written back.
 				 * Similar in principal to deactivate_page()
@@ -2809,7 +2812,7 @@ again:
 	if (sc->nr_reclaimed - nr_reclaimed)
 		reclaimable = true;
 
-	if (current_is_kswapd() && !cgroup_reclaim(sc)) {
+	if (current_is_kswapd()) {
 		/*
 		 * If reclaim is isolating dirty pages under writeback,
 		 * it implies that the long-lived page allocation rate
@@ -2828,11 +2831,11 @@ again:
 		 * in the nr_immediate check below.
 		 */
 		if (sc->nr.writeback && sc->nr.writeback == sc->nr.taken)
-			set_bit(PGDAT_WRITEBACK, &pgdat->flags);
+			set_bit(LRUVEC_WRITEBACK, &target_lruvec->flags);
 
 		/* Allow kswapd to start writing pages during reclaim.*/
 		if (sc->nr.unqueued_dirty == sc->nr.file_taken)
-			set_bit(PGDAT_DIRTY, &pgdat->flags);
+			set_bit(LRUVEC_DIRTY, &target_lruvec->flags);
 
 		/*
 		 * If kswapd scans pages marked for immediate
@@ -2852,7 +2855,7 @@ again:
 	 * Legacy memcg will stall in page writeback so avoid forcibly
 	 * stalling in wait_iff_congested().
 	 */
-	if ((current_is_kswapd() ||
+	if (((current_is_kswapd() && !cgroup_reclaim(sc)) ||
 	     (cgroup_reclaim(sc) && writeback_throttling_sane(sc))) &&
 	    sc->nr.dirty && sc->nr.dirty == sc->nr.congested)
 		set_bit(LRUVEC_CONGESTED, &target_lruvec->flags);
@@ -3087,6 +3090,10 @@ retry:
 			lruvec = mem_cgroup_lruvec(sc->target_mem_cgroup,
 						   zone->zone_pgdat);
 			clear_bit(LRUVEC_CONGESTED, &lruvec->flags);
+			if (current_is_kswapd()) {
+				clear_bit(LRUVEC_DIRTY, &lruvec->flags);
+				clear_bit(LRUVEC_WRITEBACK, &lruvec->flags);
+			}
 		}
 	}
 
@@ -3476,8 +3483,8 @@ static void clear_pgdat_congested(pg_data_t *pgdat)
 	struct lruvec *lruvec = mem_cgroup_lruvec(NULL, pgdat);
 
 	clear_bit(LRUVEC_CONGESTED, &lruvec->flags);
-	clear_bit(PGDAT_DIRTY, &pgdat->flags);
-	clear_bit(PGDAT_WRITEBACK, &pgdat->flags);
+	clear_bit(LRUVEC_DIRTY, &lruvec->flags);
+	clear_bit(LRUVEC_WRITEBACK, &lruvec->flags);
 }
 
 /*

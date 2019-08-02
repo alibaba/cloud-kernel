@@ -274,6 +274,13 @@ enum lruvec_flags {
 	LRUVEC_CONGESTED,		/* lruvec has many dirty pages
 					 * backed by a congested BDI
 					 */
+	LRUVEC_DIRTY,			/* reclaim scanning has recently found
+					 * many dirty file pages at the tail
+					 * of the LRU.
+					 */
+	LRUVEC_WRITEBACK,		/* reclaim scanning has recently found
+					 * many pages under writeback
+					 */
 };
 
 struct lruvec {
@@ -581,13 +588,6 @@ struct zone {
 } ____cacheline_internodealigned_in_smp;
 
 enum pgdat_flags {
-	PGDAT_DIRTY,			/* reclaim scanning has recently found
-					 * many dirty file pages at the tail
-					 * of the LRU.
-					 */
-	PGDAT_WRITEBACK,		/* reclaim scanning has recently found
-					 * many pages under writeback
-					 */
 	PGDAT_RECLAIM_LOCKED,		/* prevents concurrent reclaim */
 };
 
