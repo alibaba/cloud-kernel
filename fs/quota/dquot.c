@@ -82,6 +82,7 @@
 #include "../internal.h" /* ugh */
 
 #include <linux/uaccess.h>
+#include <linux/pid_namespace.h>
 
 /*
  * There are five quota SMP locks:
@@ -1257,6 +1258,13 @@ static void flush_warnings(struct dquot_warn *warn)
 static int ignore_hardlimit(struct dquot *dquot)
 {
 	struct mem_dqinfo *info = &sb_dqopt(dquot->dq_sb)->info[dquot->dq_id.type];
+	bool rich_container;
+
+	rcu_read_lock();
+	rich_container = in_rich_container(current);
+	rcu_read_unlock();
+	if (rich_container)
+		return 0;
 
 	return capable(CAP_SYS_RESOURCE) &&
 	       (info->dqi_format->qf_fmt_id != QFMT_VFS_OLD ||
