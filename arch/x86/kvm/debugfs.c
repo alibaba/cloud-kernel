@@ -10,11 +10,6 @@
 #include <linux/kvm_host.h>
 #include <linux/debugfs.h>
 
-bool kvm_arch_has_vcpu_debugfs(void)
-{
-	return true;
-}
-
 static int vcpu_get_tsc_offset(void *data, u64 *val)
 {
 	struct kvm_vcpu *vcpu = (struct kvm_vcpu *) data;

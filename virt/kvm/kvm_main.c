@@ -2506,11 +2506,9 @@ static int create_vcpu_fd(struct kvm_vcpu *vcpu)
 
 static int kvm_create_vcpu_debugfs(struct kvm_vcpu *vcpu)
 {
+#ifdef __KVM_HAVE_ARCH_VCPU_DEBUGFS
 	char dir_name[ITOA_MAX_LEN * 2];
 	int ret;
-
-	if (!kvm_arch_has_vcpu_debugfs())
-		return 0;
 
 	if (!debugfs_initialized())
 		return 0;
@@ -2526,6 +2524,7 @@ static int kvm_create_vcpu_debugfs(struct kvm_vcpu *vcpu)
 		debugfs_remove_recursive(vcpu->debugfs_dentry);
 		return ret;
 	}
+#endif
 
 	return 0;
 }
