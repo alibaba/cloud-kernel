@@ -21,6 +21,7 @@
 #include <linux/pm_qos.h>
 #include <linux/sched/isolation.h>
 #include <linux/cpuset.h>
+#include <linux/pid_namespace.h>
 
 #include "base.h"
 
