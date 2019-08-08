@@ -245,6 +245,7 @@ struct bio {
 #define BIO_TRACE_COMPLETION 10	/* bio_endio() should trace the final completion
 				 * of this bio. */
 #define BIO_QUEUE_ENTERED 11	/* can use blk_queue_enter_live() */
+#define BIO_WORKINGSET	12	/* contains userspace workingset pages */
 
 /*
  * Extend bio flags should be added in here
