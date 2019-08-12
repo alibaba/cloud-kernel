@@ -346,7 +346,7 @@ int hinic_update_mac_vlan(void *hwdev, u16 old_vlan, u16 new_vlan, int vf_id)
 	u16 func_id, vlan_id;
 	int err;
 
-	if (!hwdev || !old_vlan || !new_vlan)
+	if (!hwdev || old_vlan >= VLAN_N_VID || new_vlan >= VLAN_N_VID)
 		return -EINVAL;
 
 	vf_info = dev->nic_io->vf_infos + HW_VF_ID_TO_OS(vf_id);

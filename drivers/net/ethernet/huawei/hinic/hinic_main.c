@@ -460,8 +460,6 @@ int hinic_poll(struct napi_struct *napi, int budget)
 					     HINIC_MSIX_ENABLE);
 		else if (!nic_dev->in_vm)
 			enable_irq(irq_cfg->irq_id);
-	} else {
-		hinic_rx_poll(irq_cfg->rxq, HINIC_RX_BUFFER_WRITE);
 	}
 
 	return max(tx_pkts, rx_pkts);
