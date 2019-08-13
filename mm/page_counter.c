@@ -232,6 +232,18 @@ void page_counter_set_low(struct page_counter *counter, unsigned long nr_pages)
 		propagate_protected_usage(c, atomic_long_read(&c->usage));
 }
 
+void page_counter_set_wmark_high(struct page_counter *counter,
+				 unsigned long nr_pages)
+{
+	xchg(&counter->wmark_high, nr_pages);
+}
+
+void page_counter_set_wmark_low(struct page_counter *counter,
+				unsigned long nr_pages)
+{
+	xchg(&counter->wmark_low, nr_pages);
+}
+
 /**
  * page_counter_memparse - memparse() for page counter limits
  * @buf: string to parse
