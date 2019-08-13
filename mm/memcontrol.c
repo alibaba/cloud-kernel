@@ -3388,7 +3388,8 @@ static void setup_memcg_wmark(struct mem_cgroup *memcg)
 {
 	unsigned long high_wmark;
 	unsigned long low_wmark;
-	unsigned long max = memcg->memory.max;
+	unsigned long max = memcg->memory.high > memcg->memory.max ?
+			    memcg->memory.max : memcg->memory.high;
 	unsigned int wmark_ratio = memcg->wmark_ratio;
 
 	if (wmark_ratio) {
@@ -6779,8 +6780,39 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
 			break;
 	}
 
+	setup_memcg_wmark(memcg);
+
+	if (!is_wmark_ok(memcg, true))
+		queue_work(memcg_wmark_wq, &memcg->wmark_work);
+
 	memcg_wb_domain_size_changed(memcg);
 	return nbytes;
+}
+
+static int memory_wmark_low_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	unsigned long wmark_low = READ_ONCE(memcg->memory.wmark_low);
+
+	if (wmark_low == PAGE_COUNTER_MAX)
+		seq_puts(m, "max\n");
+	else
+		seq_printf(m, "%llu\n", (u64)wmark_low * PAGE_SIZE);
+
+	return 0;
+}
+
+static int memory_wmark_high_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	unsigned long wmark_high = READ_ONCE(memcg->memory.wmark_high);
+
+	if (wmark_high == PAGE_COUNTER_MAX)
+		seq_puts(m, "max\n");
+	else
+		seq_printf(m, "%llu\n", (u64)wmark_high * PAGE_SIZE);
+
+	return 0;
 }
 
 static int memory_max_show(struct seq_file *m, void *v)
@@ -6831,6 +6863,11 @@ static ssize_t memory_max_write(struct kernfs_open_file *of,
 		if (!mem_cgroup_out_of_memory(memcg, GFP_KERNEL, 0))
 			break;
 	}
+
+	setup_memcg_wmark(memcg);
+
+	if (!is_wmark_ok(memcg, true))
+		queue_work(memcg_wmark_wq, &memcg->wmark_work);
 
 	memcg_wb_domain_size_changed(memcg);
 	return nbytes;
@@ -6964,6 +7001,22 @@ static struct cftype memory_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = memory_max_show,
 		.write = memory_max_write,
+	},
+	{
+		.name = "wmark_ratio",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_wmark_ratio_show,
+		.write = memory_wmark_ratio_write,
+	},
+	{
+		.name = "wmark_high",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_wmark_high_show,
+	},
+	{
+		.name = "wmark_low",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_wmark_low_show,
 	},
 	{
 		.name = "events",
