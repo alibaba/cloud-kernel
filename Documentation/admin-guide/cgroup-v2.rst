@@ -1181,6 +1181,38 @@ PAGE_SIZE multiple when read back.
 	high limit is used and monitored properly, this limit's
 	utility is limited to providing the final safety net.
 
+  memory.wmark_ratio
+        A read-write single value file which exists on non-root
+        cgroups.  The default is 0.
+
+        Memory usage water mark.  Valid value is from 0 to 100, which
+        represents percentage of max limit or high limit if high is setup.
+        The wmark_low and wmark_high would be calculated by max limit and
+        wmark_ratio.  0 means water mark is disabled, both wmark_low and
+        wmark_high would be max, which is the default value.
+
+        Once water mark is setup correctly, when charging pages to memcg,
+        if the usage exceeds wmark_high, which means available memory is low,
+        a work would be scheduled to reclaim pages in background to try to
+        reduce memory usage to wmark_low if possible.
+
+        If memory.low is greater than memory.wmark_high, back ground reclaim
+        may not take effect at all due to low protection.
+
+ memory.wmark_high
+        A read-only single value file which exists on non-root cgroups.
+        The default is max.
+
+        Memory usage high water mark, which means the available memory is low.
+        For details, please refer to the above wmark_ratio section.
+
+ memory.wmark_low
+        A read-only single value file which exists on non-root cgroups.
+        The default is max.
+
+        Memory usage low water mark, which means the available memory is ok.
+        For details, please refer to the above wmark_ratio section.
+
   memory.oom.group
 	A read-write single value file which exists on non-root
 	cgroups.  The default value is "0".
