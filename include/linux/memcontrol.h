@@ -322,6 +322,9 @@ struct mem_cgroup {
 	bool			tcpmem_active;
 	int			tcpmem_pressure;
 
+	unsigned int		wmark_ratio;
+	struct work_struct	wmark_work;
+
 #ifdef CONFIG_MEMCG_KMEM
         /* Index in the kmem_cache->memcg_params.memcg_caches array */
 	int kmemcg_id;
@@ -977,6 +980,14 @@ static inline void memcg_memory_event_mm(struct mm_struct *mm,
 
 void split_page_memcg(struct page *head, unsigned int nr);
 
+static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
+{
+	if (high)
+		return page_counter_read(&memcg->memory) < memcg->memory.wmark_high;
+
+	return page_counter_read(&memcg->memory) < memcg->memory.wmark_low;
+}
+
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0
@@ -1328,6 +1339,11 @@ static inline void count_memcg_page_event(struct page *page,
 static inline
 void count_memcg_event_mm(struct mm_struct *mm, enum vm_event_item idx)
 {
+}
+
+static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool low)
+{
+	return false;
 }
 #endif /* CONFIG_MEMCG */
 

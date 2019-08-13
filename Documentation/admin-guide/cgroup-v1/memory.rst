@@ -99,6 +99,11 @@ Brief summary of control files.
  memory.kmem.tcp.failcnt             show the number of tcp buf memory usage
 				     hits limits
  memory.kmem.tcp.max_usage_in_bytes  show max tcp buf memory usage recorded
+ memory.wmark_ratio                  set/show water mark ratio
+ memory.wmark_low                    low limit (memory usage low water mark,
+                         read-only)
+ memory.wmark_high                   high limit (memory usge high water mark,
+                         read-only)
 ==================================== ==========================================
 
 1. History
@@ -959,7 +964,21 @@ Test:
    (Expect a bunch of notifications, and eventually, the oom-killer will
    trigger.)
 
-12. TODO
+12. Background reclaim
+======================
+
+The user could setup memory usage water mark by echoing a value to
+memory.wmark_ratio.  Valid value is from 0 to 100, which represents percentage
+of max limit.  The wmark_low and wmark_high would be calculated by max limit
+and wmark_ratio.  0 means water mark is disabled, both wmark_low and wmark_high
+would be max, which is the default value.
+
+Once water mark is setup correctly, when charging pages to memcg, if the usage
+exceeds wmark_high, which means available memory is low, a work would be
+scheduled to reclaim pages in background to try to reduce memory usage to
+wmark_low if possible.
+
+13. TODO
 ========
 
 1. Make per-cgroup scanner reclaim not-shared pages first

@@ -24,6 +24,10 @@ struct page_counter {
 	atomic_long_t low_usage;
 	atomic_long_t children_low_usage;
 
+	/* water mark low and high */
+	unsigned long wmark_low;
+	unsigned long wmark_high;
+
 	/* legacy */
 	unsigned long watermark;
 	unsigned long failcnt;
@@ -56,6 +60,10 @@ bool page_counter_try_charge(struct page_counter *counter,
 void page_counter_uncharge(struct page_counter *counter, unsigned long nr_pages);
 void page_counter_set_min(struct page_counter *counter, unsigned long nr_pages);
 void page_counter_set_low(struct page_counter *counter, unsigned long nr_pages);
+void page_counter_set_wmark_high(struct page_counter *counter,
+				 unsigned long nr_pages);
+void page_counter_set_wmark_low(struct page_counter *counter,
+				unsigned long nr_pages);
 
 static inline void page_counter_set_high(struct page_counter *counter,
 					 unsigned long nr_pages)
