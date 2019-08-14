@@ -228,7 +228,7 @@ int hinic_dbg_get_rq_wqe_info(void *hwdev, u16 q_id, u16 idx, u16 wqebb_cnt,
 
 int hinic_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, u16 *out_size)
 {
-	if (*out_size != sizeof(struct hinic_hw_stats)) {
+	if (!hw_stats || *out_size != sizeof(struct hinic_hw_stats)) {
 		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
 		       *out_size, sizeof(struct hinic_hw_stats));
 		return -EFAULT;
@@ -252,6 +252,12 @@ void hinic_get_chip_fault_stats(const void *hwdev,
 				u8 *chip_fault_stats, int offset)
 {
 	int copy_len = offset + MAX_DRV_BUF_SIZE - HINIC_CHIP_FAULT_SIZE;
+
+	if (offset < 0 || offset > HINIC_CHIP_FAULT_SIZE) {
+		pr_err("offset %d greater than chip fault max size\n",
+		       offset);
+		return;
+	}
 
 	if (offset + MAX_DRV_BUF_SIZE <= HINIC_CHIP_FAULT_SIZE)
 		memcpy(chip_fault_stats,
