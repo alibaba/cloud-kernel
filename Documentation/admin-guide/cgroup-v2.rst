@@ -1213,6 +1213,15 @@ PAGE_SIZE multiple when read back.
         Memory usage low water mark, which means the available memory is ok.
         For details, please refer to the above wmark_ratio section.
 
+  memory.wmark_scale_factor
+        A read-write single value file which exists on non-root cgroups.
+        The default is 50.
+
+        The gap between wmark_low and wmark_high.  The unit is in fractions
+        of 10,000. The default value of 50 means the distance between wmark_high
+        and wmark_low is 0.5% of the max limit of the cgroup.  The maximum value
+        is 1000, or 10% of max limit.
+
   memory.oom.group
 	A read-write single value file which exists on non-root
 	cgroups.  The default value is "0".
