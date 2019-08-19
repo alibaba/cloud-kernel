@@ -19,7 +19,7 @@ Table of Contents
 
 ## 1. Report Bugs
 
-The easiest way to participate in contributing to the project is just use ALK and Alibaba Cloud Linux OS, then report bugs to us. However, there are some ground rules against special types of bugs when filing a bug.
+The easiest way to participate in contributing to the project is just use Cloud Kernel and Alibaba Cloud Linux OS, then report bugs to us. However, there are some ground rules against special types of bugs when filing a bug.
 
 ### 1.1 Report security issues
 
@@ -41,7 +41,7 @@ Feel free to file bug reports in our project [issues](https://github.com/alibaba
 
 ### 1.4 Report Alibaba Cloud Linux OS issues
 
-ALK has tight connections with Alibaba Cloud Linux OS, if you run into any Alibaba Cloud Linux OS problems, feel free to file a bug report in our project [issues](https://github.com/alibaba/cloud-kernel/issues) page as well, or start a thread in [mailing lists](MAILLIST.md) or in [Alibaba Cloud Developer forum](https://bbs.aliyun.com/thread/450.html).
+Cloud Kernel has tight connections with Alibaba Cloud Linux OS, if you run into any Alibaba Cloud Linux OS problems, feel free to file a bug report in our project [issues](https://github.com/alibaba/cloud-kernel/issues) page as well, or start a thread in [mailing lists](MAILLIST.md) or in [Alibaba Cloud Developer forum](https://bbs.aliyun.com/thread/450.html).
 
 ## 2. Help to improve
 
@@ -50,7 +50,7 @@ ALK has tight connections with Alibaba Cloud Linux OS, if you run into any Aliba
 Before you decide to involve in kernel development, you need to get kernel source and build it. You can download a stable release source from [Releases](https://github.com/alibaba/cloud-kernel/releases) page, then extract the source to a directory:
 
 ```shell
-tar xzf alk-release-7.tar.gz
+tar xzf ck-release-7.tar.gz
 ```
 
 Alternatively, you can use Git to clone from our git repo.
@@ -60,7 +60,7 @@ git clone git@github.com:alibaba/cloud-kernel.git
 cd cloud-kernel
 ```
 
-> You may have noticed that `master` is not the default branch, instead, you would get a branch named like `alk-4.19.y`. This is due to our 'rebase' approach, every time we rebase from an LTS version, a new branch will be created and then be used as the default branch.
+> You may have noticed that `master` is not the default branch, instead, you would get a branch named like `ck-4.19.y`. This is due to our 'rebase' approach, every time we rebase from an LTS version, a new branch will be created and then be used as the default branch.
 
 ### 2.2 Build kernel
 
@@ -88,6 +88,6 @@ Next, you can just reboot and run into the new kernel. Please make sure you have
 
 ### 2.3 Propose a patch
 
-During your daily using of ALK, you might have found some bugs and you are managed to find a way to fix it. So you probably want to propose a patch to us.
+During your daily using of Cloud Kernel, you might have found some bugs and you are managed to find a way to fix it. So you probably want to propose a patch to us.
 
 You can follow the [submitting patches guide from kernel.org](https://www.kernel.org/doc/html/latest/process/submitting-patches.html), when your code is ready, you can just subscribe to our [developer's mailing list](MAILLIST.md#alibaba-cloud-linux-os-kernel-developers-group) and send the patch to us.

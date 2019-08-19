@@ -1,11 +1,11 @@
-Alibaba Cloud Linux Kernel
-==========================
+Alibaba Cloud Kernel
+====================
 
 + [中文版](zh/README.md)
 
 Table of Contents
 -----------------
-1. [What is Alibaba Cloud Linux Kernel](#1-what-is-alibaba-cloud-linux-kernel)
+1. [What is Alibaba Cloud Kernel](#1-what-is-alibaba-cloud-kernel)
 2. [Getting Started](#2-getting-started)
    1. [Run with pre-built RPMs (recommended)](#21-run-with-pre-built-rpms-recommended)
    2. [Compile from source](#22-compile-from-source)
@@ -17,17 +17,17 @@ Table of Contents
 ---------------------------------
 
 
-## 1. What is Alibaba Cloud Linux Kernel
+## 1. What is Alibaba Cloud Kernel
 
-Alibaba Cloud Linux Kernel (ALK), a customized and optimized version of Linux kernel, is originated by Alibaba Operating System Team (formerly known as Taobao Kernel Team). ALK is installed as the default kernel in Alibaba Cloud Linux OS version 2 (a.k.a Aliyun Linux 2), which is running on Alibaba Cloud Elastic Compute Service (ECS) product. In ALK, several features and enhancements adapted to specific Alibaba Cloud infrastructre and products have been made to help Alibaba Cloud customers to achieve better user experiences.
+Alibaba Cloud Kernel(a.k.a. the "Cloud Kernel"), a customized and optimized version of Linux kernel, is originated by Alibaba Operating System Team (formerly known as Taobao Kernel Team). Cloud Kernel is installed as the default kernel in Alibaba Cloud Linux OS version 2 (or Aliyun Linux 2), which is running on Alibaba Cloud Elastic Compute Service (ECS) product. In Cloud Kernel, several features and enhancements adapted to specific Alibaba Cloud infrastructre and products have been made to help Alibaba Cloud customers to achieve better user experiences.
 
-Like many other kernels, ALK should work with almost all commonly-used Linux distributions, however, we highly recommend you run it in Alibaba Cloud Linux OS with Alibaba Cloud ECS instances to get best functionality, performance and stability.
+Like many other kernels, Cloud Kernel should work with almost all commonly-used Linux distributions, however, we highly recommend you run it in Alibaba Cloud Linux OS with Alibaba Cloud ECS instances to get best functionality, performance and stability.
 
 To get more information about Alibaba Cloud Linux OS, please refer to [this](os.md) link.
 
 ## 2. Getting Started
 
-To use ALK, you may want either to run a pre-built version or to compile it from source codes. Note that the default kernel configuration file is a customized version for Alibaba Cloud ECS instances, you might need to enable specific drivers and re-compile the kernel if you want to run it on non-ECS platforms.
+To use Cloud Kernel, you may want either to run a pre-built version or to compile it from source codes. Note that the default kernel configuration file is a customized version for Alibaba Cloud ECS instances, you might need to enable specific drivers and re-compile the kernel if you want to run it on non-ECS platforms.
 
 ### 2.1 Run with pre-built RPMs (recommended)
 
@@ -56,7 +56,7 @@ gpgkey=http://mirrors.aliyun.com/alinux/RPM-GPG-KEY-ALIYUN
 sudo yum install -y kernel kernel-devel kernel-headers
 ```
 
-+ Step 4: Reboot system and enjoy ALK.
++ Step 4: Reboot system and enjoy Cloud Kernel.
 
 ### 2.2 Compile from source
 
@@ -76,11 +76,11 @@ sudo make modules_install
 sudo make install
 ```
 
-+ Step 4: Reboot system and enjoy ALK.
++ Step 4: Reboot system and enjoy Cloud Kernel.
 
 ## 3. Contributing
 
-There are different ways to contribute to ALK project, please read [CONTRIBUTING](CONTRIBUTING.md) file to get more details.
+There are different ways to contribute to Cloud Kernel project, please read [CONTRIBUTING](CONTRIBUTING.md) file to get more details.
 
 ## 4. Credits
 

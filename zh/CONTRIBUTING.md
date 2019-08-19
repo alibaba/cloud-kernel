@@ -19,7 +19,7 @@
 
 ## 1. 报告 BUG
 
-参与本项目最直接的方式就是使用 ALK 和 Alibaba Cloud Linux 操作系统并向我们报告使用中遇到的 BUG. 不过在提交 BUG 报告之前，需要先了解一些基本原则：
+参与本项目最直接的方式就是使用 Cloud Kernel 和 Alibaba Cloud Linux 操作系统并向我们报告使用中遇到的 BUG. 不过在提交 BUG 报告之前，需要先了解一些基本原则：
 
 ### 1.1 报告安全漏洞
 
@@ -41,7 +41,7 @@
 
 ### 1.4 报告 Alibaba Cloud Linux 操作系统 BUG
 
-ALK 与 Alibaba Cloud Linux 操作系统关系紧密，如果您遇到任何 Alibaba Cloud Linux 操作系统相关的问题，也请在项目的 [issues](https://github.com/alibaba/cloud-kernel/issues) 页面提交 BUG 报告，或者在[邮件列表](MAILLIST.md)及[阿里云开发者论坛](https://bbs.aliyun.com/thread/450.html)参与讨论。
+Cloud Kernel 与 Alibaba Cloud Linux 操作系统关系紧密，如果您遇到任何 Alibaba Cloud Linux 操作系统相关的问题，也请在项目的 [issues](https://github.com/alibaba/cloud-kernel/issues) 页面提交 BUG 报告，或者在[邮件列表](MAILLIST.md)及[阿里云开发者论坛](https://bbs.aliyun.com/thread/450.html)参与讨论。
 
 ## 2. 帮助改进项目
 
@@ -50,7 +50,7 @@ ALK 与 Alibaba Cloud Linux 操作系统关系紧密，如果您遇到任何 Ali
 在决定参与内核开发之前，建议您先获取内核源码并构建内核。您可以从 [Releases](https://github.com/alibaba/cloud-kernel/releases) 页面下载到稳定版内核的压缩包，然后解压缩到某个目录：
 
 ```shell
-tar xzf alk-release-7.tar.gz
+tar xzf ck-release-7.tar.gz
 ```
 
 或者您也可以从我们的 Git 仓库 Clone 代码：
@@ -60,7 +60,7 @@ git clone git@github.com:alibaba/cloud-kernel.git
 cd cloud-kernel
 ```
 
-> 您或许已经注意到项目的默认分支并非 `master` 分支而是形如 `alk-4.19.y` 格式的分支。这是由于我们采用了 "rebase" 策略来更新我们的代码，每次从 Upstream LTS 版本同步代码后，我们都会 rebase 到新的代码分支，并将此分支作为新的默认分支。
+> 您或许已经注意到项目的默认分支并非 `master` 分支而是形如 `ck-4.19.y` 格式的分支。这是由于我们采用了 "rebase" 策略来更新我们的代码，每次从 Upstream LTS 版本同步代码后，我们都会 rebase 到新的代码分支，并将此分支作为新的默认分支。
 
 
 ### 2.2 构建内核
@@ -89,6 +89,6 @@ sudo make install
 
 ### 2.3 提交补丁
 
-在您日常使用 ALK 过程中，您或许发现了一些内核 BUG，并且找到了修复它的方法。欢迎将修复整理成补丁发送给我们。
+在您日常使用 Cloud Kernel 过程中，您或许发现了一些内核 BUG，并且找到了修复它的方法。欢迎将修复整理成补丁发送给我们。
 
-ALK 的开发和 Linux 内核社区开发模式基本一致，您可以参阅 kernel.org 上的 "[submitting patches guide](https://www.kernel.org/doc/html/latest/process/submitting-patches.html)" 一文，在您制作完补丁之后，您可以将补丁发送到我们的[开发者邮件列表](MAILLIST.md#alibaba-cloud-linux-os-kernel-developers-group)中提交审阅。
+Cloud Kernel 的开发和 Linux 内核社区开发模式基本一致，您可以参阅 kernel.org 上的 "[submitting patches guide](https://www.kernel.org/doc/html/latest/process/submitting-patches.html)" 一文，在您制作完补丁之后，您可以将补丁发送到我们的[开发者邮件列表](MAILLIST.md#alibaba-cloud-linux-os-kernel-developers-group)中提交审阅。

@@ -39,7 +39,7 @@ sudo yum install -y yum-utils
 sudo yumdownloader --source <包名>
 ```
 
-此外，您还可以从 [Alibaba Cloud Linux Kernel](https://github.com/alibaba/cloud-kernel) 的 Github 项目中获取阿里云 Linux 内核(ALK)源码。
+此外，您还可以从 [Alibaba Cloud Linux Kernel](https://github.com/alibaba/cloud-kernel) 的 Github 项目中获取阿里云内核(Cloud Kernel)源码。
 
 ## 4. 获取帮助
 
