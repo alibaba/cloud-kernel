@@ -1,22 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0*/
-/******************************************************************************
-
-  Copyright (C), 2001-2011, Huawei Tech. Co., Ltd.
-
- ******************************************************************************
-  File Name     : hinic_ctx_def.h
-  Version       : Initial Draft
-  Author        : Qu Huichun
-  Created       : 2018/5/31
-  Last Modified :
-  Description   : Commands between NIC and uP
-  Function List :
-  History       :
-  1.Date        : 2018/5/31
-    Author      : Qu Huichun
-    Modification: Created file
-
-******************************************************************************/
+/* Huawei HiNIC PCI Express Linux driver
+ * Copyright(c) 2017 Huawei Technologies Co., Ltd
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for more details.
+ *
+ */
 
 #ifndef __HINIC_CTX_DEF_H__
 #define __HINIC_CTX_DEF_H__
