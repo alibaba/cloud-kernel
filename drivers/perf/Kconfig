@@ -111,4 +111,11 @@ config ARM_SPE_PMU
 	  Extension, which provides periodic sampling of operations in
 	  the CPU pipeline and reports this via the perf AUX interface.
 
+config ARM_DMC620_PMU
+	bool "Enable support for the DMC-620 PMU"
+	depends on ARM64 && ACPI
+	default n
+	help
+	  Enable perf support for the DMC-620 PMU.
+
 endmenu
