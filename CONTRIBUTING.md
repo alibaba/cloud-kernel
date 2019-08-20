@@ -90,4 +90,60 @@ Next, you can just reboot and run into the new kernel. Please make sure you have
 
 During your daily using of Cloud Kernel, you might have found some bugs and you are managed to find a way to fix it. So you probably want to propose a patch to us.
 
-You can follow the [submitting patches guide from kernel.org](https://www.kernel.org/doc/html/latest/process/submitting-patches.html), when your code is ready, you can just subscribe to our [developer's mailing list](MAILLIST.md#alibaba-cloud-linux-os-kernel-developers-group) and send the patch to us.
+It is highly recommeneded to read the [submitting patches guide](https://www.kernel.org/doc/html/latest/process/submitting-patches.html) from kernel.org when proposing your patch. Additionally, we have some special rules in Cloud Kernel development process below:
+
+#### 2.3.1 Rules of Backporting a Upstream Patch
+
+We **never re-invent wheels**. If there is a solution given in upstream kernel, please backport it to Cloud Kernel instead of writing a new one.
+
+Other rules include:
+
+- a) `Keep the original patch format`. If a patch manages to be applied without any modification, you should keep the original author info, one-line subject and codes. You should try to keep original commit log as well, except adding an upstream commit id reference and your own Signed-off-by signature.
+
+- b) `Give the upstream commit id` at the beginning of commit log body. A valid upstream id should be supposed to be permanent, a good example is Linus tree and a bad example would be a maintainer tree, like tip tree. To reference an upstream commit, you could use the following formats:
+
+    ```bash
+    commit <full-sha256-id> upstream. # for mainline commits
+    commit <full-sha256-id> from xxx branch. # for other branches
+    cherry-picked from https://github.com/xxxx/commit/xxxx # a permanent URL
+    ```
+
+- c) `Give your own Signed-off-by` at the bottom of commit log body. This is an efficient way to make us know who is doing the backport.
+
+- d) `Minimal dependencies, minimal modifications`. If a patch fails to apply directly, you might need either to bring back extra depended patches, or to modify the codes. If depenencies are clean enough(_clean_ means they would not modify other unrelated part of codes) and in very small amount (like 1 or 2 patches), feel free to bring extra patches and send them out all together; else you should consider a minimal modification on original patch contents.
+
+- e) `Describe your modification` in commit log. If you make any modifications in the patch, please either add one-line comment or append a paragraph to describe the change. An example of one-line comment is as follows:
+
+    ```bash
+    # use square brackets and put right above your Signed-off-by line.
+    [ Shile: fix following conflicts by adding a dummy argument ]
+    Signed-off-by: Shile Zhang <shile.zhang@linux.alibaba.com>
+    ```
+
+#### 2.3.2 Rules of Writing and Submitting New Patches
+
+- a) `Upstream First`. If there is no upstream solution available and you have to compose a new fix, please try your best to send it to LKML or other upstream communities for review first. When the patch gets approved by upstream maintainers, you can backport it to Cloud Kernel. One exception is that if it is an emergency fix for a production issue, you could send it out for review ASAP without getting any approvals from upstream.
+
+- b) `Add testcases`. If you describe your test steps and test results in commit log, that would be fantastic.
+
+- c) `Do not hack`. Patches should be as general-purpose as possbile, dirty hacks or workarounds are not recommended. If patches are not gerneal-purpose enough, we would suggest adding a kernel `CONFIG_*` option, boot parameter or /proc /sys tunable interfacecs to make it be able to be switched off.
+
+#### 2.3.3 Others Rules
+
+- a) `Use keywords for large patch series`. Sometimes you send a large patch series that includes 20 patches or more. It is recommended to add a keyword in subject line of each patch. For example, a patch series that enables a new hardware in Cloud Kernel, individual patches are like:
+
+    ```bash
+    ACPI/ADXL: Add address translation interface using an ACPI DSM
+    EDAC, skx_edac: Delete duplicated code
+    <snip>
+    intel_rapl: Fix module autoloading issue
+    ```
+
+    You could update the subjects with an `ICX: ` keyword prefix to indicate the whole patch series are used for ICX platform enablement, which is like:
+
+    ```bash
+    ICX: ACPI/ADXL: Add address translation interface using an ACPI DSM
+    ICX: EDAC, skx_edac: Delete duplicated code
+    <snip>
+    ICX: intel_rapl: Fix module autoloading issue
+    ```

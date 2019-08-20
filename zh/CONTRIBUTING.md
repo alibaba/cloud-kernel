@@ -91,4 +91,60 @@ sudo make install
 
 在您日常使用 Cloud Kernel 过程中，您或许发现了一些内核 BUG，并且找到了修复它的方法。欢迎将修复整理成补丁发送给我们。
 
-Cloud Kernel 的开发和 Linux 内核社区开发模式基本一致，您可以参阅 kernel.org 上的 "[submitting patches guide](https://www.kernel.org/doc/html/latest/process/submitting-patches.html)" 一文，在您制作完补丁之后，您可以将补丁发送到我们的[开发者邮件列表](MAILLIST.md#alibaba-cloud-linux-os-kernel-developers-group)中提交审阅。
+Cloud Kernel 的开发和 Linux 内核社区开发模式基本一致，您可以参阅 kernel.org 上的 "[submitting patches guide](https://www.kernel.org/doc/html/latest/process/submitting-patches.html)" 一文。此外，我们还有一些特殊的开发规约如下：
+
+#### 2.3.1 回合(Backport)补丁的规则
+
+我们**拒绝重复发明轮子**，因此如果在社区已有针对某问题的解决方案，请直接回合该解决方案，而非自己再想一个新的解决方案。其他与回合有关的规则有：
+
+- (1) `保持原来的补丁格式`: 如果该补丁可以不经修改直接回合成功，你应该将该补丁的作者信息、补丁标题和代码等保持原样，除去引用的 Upstream 补丁 ID 和你自己的 Signed-off-by 签名信息之外， 补丁日志(commit log)的内容也应该保持原样。
+
+- (2) `引用 Upstream 补丁 ID`: 在 commit log 的开头应该引用一个永久的 Upstream ID, 比如 Linus tree 里的 commit id 就是个有效的 ID，而 tip tree 这种维护者的开发树里的 commit 就不是有效的 ID. 你可以用下列格式来引用：
+
+    ```bash
+    commit <full-sha256-id> upstream. # 主线 Commit
+    commit <full-sha256-id> from xxx branch. # 其他永久分支
+    cherry-picked from https://github.com/xxxx/commit/xxxx # 固定 URL 也可以
+    ```
+
+- (3) 在 Commit log `结尾添加自己的 Signed-off-by 签名`，以便大家方便查询是谁回合了该补丁。
+
+- (4) `引入最小的依赖补丁，做最少的改动`: 如果一个补丁无法直接回合到当前代码，可能存在两种情况，需要引入更多的依赖补丁，或者修改原有代码。如果依赖的补丁很干净(所谓”干净“是指依赖的补丁没有引入其他不相关的改动)，数量又少(大约在一到两个补丁左右)，可以考虑一起回合这些依赖补丁；否则，你应该考虑以最小代价改动补丁代码。
+
+- (5) `描述你的改动`: 如果你改动了原有补丁的代码，你可以考虑在 commit log 中添加一行描述，或者追加一段文字来描述你的改动。常见的一行描述格式如下：
+
+    ```bash
+    # 在你自己的 Signed-off-by 上方添加一对方括号，里面简要描述你的改动
+    [ Shile: fix following conflicts by adding a dummy argument ]
+    Signed-off-by: Shile Zhang <shile.zhang@linux.alibaba.com>
+    ```
+
+#### 2.3.2 新补丁的编写与提交规则
+
+- (1) `Upstream 优先`: 如果 Upstream 没有现成解决方案，你需要写一个新的补丁，然后将这个补丁提交到 LKML 或者其他社区进行 review。当 review 通过后，你可以将补丁回合到 Cloud Kernel 中。有一个例外是，如果问题很紧急，需要尽快出补丁，那么补丁则可以先提给我们 review，而无需走 Upstream review 流程。
+
+- (2) `鼓励写测试用例`: 我们欢迎在 commit log 里描述测试用例和测试数据，如果这么做，我们能更有效地进行 review.
+
+- (3) `不要脏修复`: 补丁在功能上应该尽可能通用，我们不欢迎脏修复(dirty hack)或者临时方案。如果补丁的功能不够通用，我们建议增加一个 `CONFIG_*` 选项，或者使用内核启动参数, /proc /sys 接口等方式使得该功能可随时关闭。
+
+#### 2.3.3 其他规则
+
+- (1) `大补丁系列鼓励使用关键字`: 有时候你会提交一个大补丁系列，包含了20多个甚至更多补丁。这种情况下我们推荐在每个补丁的标题栏中添加一个关键字前缀。例如在一个补丁系列中，我们要引入一个新的硬件平台，单个补丁可能显示如下：
+
+    ```bash
+    ACPI/ADXL: Add address translation interface using an ACPI DSM
+    EDAC, skx_edac: Delete duplicated code
+    <snip>
+    intel_rapl: Fix module autoloading issue
+    ```
+
+    此时，你可以将每个补丁都加上 `ICX: ` 关键字前缀，用来提示整个补丁系列都是围绕 ICX 平台同一个主题的。如下：
+
+    ```bash
+    ICX: ACPI/ADXL: Add address translation interface using an ACPI DSM
+    ICX: EDAC, skx_edac: Delete duplicated code
+    <snip>
+    ICX: intel_rapl: Fix module autoloading issue
+    ```
+
+    此条规则既适用于回合补丁，也适用于自己制作的补丁。
