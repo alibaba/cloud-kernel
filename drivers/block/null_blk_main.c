@@ -1251,12 +1251,8 @@ static blk_status_t null_handle_cmd(struct nullb_cmd *cmd)
 			nr_sectors = blk_rq_sectors(cmd->rq);
 		}
 
-		if (op == REQ_OP_WRITE)
-			null_zone_write(cmd, sector, nr_sectors);
-		else if (op == REQ_OP_ZONE_RESET)
-			null_zone_reset(cmd, sector);
-		else if (op == REQ_OP_ZONE_RESET_ALL)
-			null_zone_reset(cmd, 0);
+		cmd->error = null_handle_zoned(cmd, op, sector, nr_sectors);
+
 	}
 out:
 	/* Complete IO by inline, softirq or timer */
