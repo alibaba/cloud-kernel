@@ -1313,6 +1313,135 @@ static void invalidate_reclaim_iterators(struct mem_cgroup *dead_memcg)
 						dead_memcg);
 }
 
+/* memcg oom priority */
+/*
+ * do_mem_cgroup_account_oom_skip - account the memcg with OOM-unkillable task
+ * @memcg: mem_cgroup struct with OOM-unkillable task
+ * @oc: oom_control struct
+ *
+ * Account OOM-unkillable task to its cgroup and up to the OOMing cgroup's
+ * @num_oom_skip, if all the tasks of one cgroup hierarchy are OOM-unkillable
+ * we skip this cgroup hierarchy when select the victim cgroup.
+ *
+ * The @num_oom_skip must be reset when bad process selection has finished,
+ * since before the next round bad process selection, these OOM-unkillable
+ * tasks might become killable.
+ *
+ */
+static void do_mem_cgroup_account_oom_skip(struct mem_cgroup *memcg,
+					   struct oom_control *oc)
+{
+	struct mem_cgroup *root;
+	struct cgroup_subsys_state *css;
+
+	if (!oc->use_priority_oom)
+		return;
+	if (unlikely(!memcg))
+		return;
+	root = oc->memcg;
+	if (!root)
+		root = root_mem_cgroup;
+
+	css = &memcg->css;
+	while (css) {
+		struct mem_cgroup *tmp;
+
+		tmp = mem_cgroup_from_css(css);
+		tmp->num_oom_skip++;
+		/*
+		 * Put these cgroups into a list to
+		 * reduce the iteration time when reset
+		 * the @num_oom_skip.
+		 */
+		if (!tmp->next_reset) {
+			css_get(&tmp->css);
+			tmp->next_reset = oc->reset_list;
+			oc->reset_list = tmp;
+		}
+
+		if (mem_cgroup_from_css(css) == root)
+			break;
+
+		css = css->parent;
+	}
+}
+
+void mem_cgroup_account_oom_skip(struct task_struct *task,
+		struct oom_control *oc)
+{
+	do_mem_cgroup_account_oom_skip(mem_cgroup_from_task(task), oc);
+}
+
+static struct mem_cgroup *
+mem_cgroup_select_victim_cgroup(struct mem_cgroup *memcg)
+{
+	struct cgroup_subsys_state *chosen, *parent;
+	struct cgroup_subsys_state *victim;
+	int chosen_priority;
+
+	if (!memcg->use_hierarchy) {
+		css_get(&memcg->css);
+		return memcg;
+	}
+again:
+	victim = NULL;
+	parent = &memcg->css;
+	rcu_read_lock();
+	while (parent) {
+		struct cgroup_subsys_state *pos;
+		struct mem_cgroup *parent_mem;
+
+		parent_mem = mem_cgroup_from_css(parent);
+
+		if (parent->nr_procs <= parent_mem->num_oom_skip)
+			break;
+		victim = parent;
+		chosen = NULL;
+		chosen_priority = DEF_PRIORITY + 1;
+		list_for_each_entry_rcu(pos, &parent->children, sibling) {
+			struct mem_cgroup *tmp, *chosen_mem;
+
+			tmp = mem_cgroup_from_css(pos);
+
+			if (pos->nr_procs <= tmp->num_oom_skip)
+				continue;
+			if (tmp->priority > chosen_priority)
+				continue;
+			if (tmp->priority < chosen_priority) {
+				chosen_priority = tmp->priority;
+				chosen = pos;
+				continue;
+			}
+
+			chosen_mem = mem_cgroup_from_css(chosen);
+
+			if (do_memsw_account()) {
+				if (page_counter_read(&tmp->memsw) >
+					page_counter_read(&chosen_mem->memsw))
+					chosen = pos;
+			} else if (page_counter_read(&tmp->memory) >
+				page_counter_read(&chosen_mem->memory)) {
+				chosen = pos;
+			}
+		}
+		parent = chosen;
+	}
+
+	if (likely(victim)) {
+		if (!css_tryget(victim)) {
+			rcu_read_unlock();
+			goto again;
+		}
+	}
+
+	rcu_read_unlock();
+
+	if (likely(victim))
+		return mem_cgroup_from_css(victim);
+
+	return NULL;
+}
+
 /**
  * mem_cgroup_scan_tasks - iterate over tasks of a memory cgroup hierarchy
  * @memcg: hierarchy root
@@ -1324,15 +1453,12 @@ static void invalidate_reclaim_iterators(struct mem_cgroup *dead_memcg)
  * value, the function breaks the iteration loop and returns the value.
  * Otherwise, it will iterate over all tasks and return 0.
  *
- * This function must not be called for the root memory cgroup.
  */
 int mem_cgroup_scan_tasks(struct mem_cgroup *memcg,
 			  int (*fn)(struct task_struct *, void *), void *arg)
 {
 	struct mem_cgroup *iter;
 	int ret = 0;
-
-	BUG_ON(memcg == root_mem_cgroup);
 
 	for_each_mem_cgroup_tree(iter, memcg) {
 		struct css_task_iter it;
@@ -1350,6 +1476,48 @@ int mem_cgroup_scan_tasks(struct mem_cgroup *memcg,
 	return ret;
 }
 
+void mem_cgroup_select_bad_process(struct oom_control *oc)
+{
+	struct mem_cgroup *memcg, *victim, *iter;
+
+	memcg  = oc->memcg;
+
+	if (!memcg)
+		memcg = root_mem_cgroup;
+
+	oc->use_priority_oom = memcg->use_priority_oom;
+	victim = memcg;
+
+retry:
+	if (oc->use_priority_oom) {
+		victim = mem_cgroup_select_victim_cgroup(memcg);
+		if (!victim) {
+			if (mem_cgroup_is_root(memcg) && oc->num_skip)
+				oc->chosen = (void *)-1UL;
+			goto out;
+		}
+	}
+
+	mem_cgroup_scan_tasks(victim, oom_evaluate_task, oc);
+	if (oc->use_priority_oom) {
+		css_put(&victim->css);
+		if (oc->chosen == (void *)-1UL)
+			goto out;
+		if (!oc->chosen && victim != memcg) {
+			do_mem_cgroup_account_oom_skip(victim, oc);
+			goto retry;
+		}
+	}
+out:
+	/* See commets in mem_cgroup_account_oom_skip() */
+	while (oc->reset_list) {
+		iter = oc->reset_list;
+		iter->num_oom_skip = 0;
+		oc->reset_list = iter->next_reset;
+		iter->next_reset = NULL;
+		css_put(&iter->css);
+	}
+}
 /**
  * mem_cgroup_page_lruvec - return lruvec for isolating/putting an LRU page
  * @page: the page
@@ -3711,6 +3879,27 @@ static int mem_cgroup_hierarchy_write(struct cgroup_subsys_state *css,
 	return retval;
 }
 
+static u64 mem_cgroup_priority_oom_read(struct cgroup_subsys_state *css,
+					struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	return memcg->use_priority_oom;
+}
+
+static int mem_cgroup_priority_oom_write(struct cgroup_subsys_state *css,
+				struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	if (val > 1)
+		return -EINVAL;
+
+	memcg->use_priority_oom = val;
+
+	return 0;
+}
+
 static unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 {
 	unsigned long val;
@@ -4352,6 +4541,27 @@ static int mem_cgroup_swappiness_write(struct cgroup_subsys_state *css,
 		memcg->swappiness = val;
 	else
 		vm_swappiness = val;
+
+	return 0;
+}
+
+static u64 mem_cgroup_priority_read(struct cgroup_subsys_state *css,
+				struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	return memcg->priority;
+}
+
+static int mem_cgroup_priority_write(struct cgroup_subsys_state *css,
+				struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	if (val > MEMCG_OOM_PRIORITY)
+		return -EINVAL;
+
+	memcg->priority = val;
 
 	return 0;
 }
@@ -5577,6 +5787,11 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.read_u64 = mem_cgroup_hierarchy_read,
 	},
 	{
+		.name = "use_priority_oom",
+		.write_u64 = mem_cgroup_priority_oom_write,
+		.read_u64 = mem_cgroup_priority_oom_read,
+	},
+	{
 		.name = "cgroup.event_control",		/* XXX: for compat */
 		.write = memcg_write_event_control,
 		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE,
@@ -5585,6 +5800,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.name = "swappiness",
 		.read_u64 = mem_cgroup_swappiness_read,
 		.write_u64 = mem_cgroup_swappiness_write,
+	},
+	{
+		.name = "priority",
+		.read_u64 = mem_cgroup_priority_read,
+		.write_u64 = mem_cgroup_priority_write,
+		.flags = CFTYPE_NOT_ON_ROOT,
 	},
 	{
 		.name = "move_charge_at_immigrate",
@@ -7179,6 +7400,17 @@ static struct cftype memory_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = memory_wmark_scale_factor_show,
 		.write = memory_wmark_scale_factor_write,
+	},
+	{
+		.name = "priority",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = mem_cgroup_priority_read,
+		.write_u64 = mem_cgroup_priority_write,
+	},
+	{
+		.name = "use_priority_oom",
+		.write_u64 = mem_cgroup_priority_oom_write,
+		.read_u64 = mem_cgroup_priority_oom_read,
 	},
 	{
 		.name = "events",
