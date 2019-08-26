@@ -158,6 +158,9 @@ struct cgroup_subsys_state {
 	 */
 	int id;
 
+	/* number of procs under this css and its descendants */
+	int nr_procs;
+
 	unsigned int flags;
 
 	/*
