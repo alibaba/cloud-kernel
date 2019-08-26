@@ -141,6 +141,9 @@ struct cgroup_subsys_state {
 	 */
 	int id;
 
+	/* number of tasks under this css and its descendants */
+	int nr_tasks;
+
 	unsigned int flags;
 
 	/*
