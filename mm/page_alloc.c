@@ -3206,6 +3206,14 @@ bool __zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
 	int o;
 	const bool alloc_harder = (alloc_flags & (ALLOC_HARDER|ALLOC_OOM));
 
+	/* apply negative memory.wmark_min_adj */
+	if ((alloc_flags & ALLOC_WMARK_MASK) == ALLOC_WMARK_MIN) {
+		int min_adj = memcg_get_wmark_min_adj(current);
+
+		if (min_adj < 0)
+			min -= mark * (-min_adj) / 100;
+	}
+
 	/* free_pages may go negative - that's OK */
 	free_pages -= (1 << order) - 1;
 
@@ -3232,6 +3240,12 @@ bool __zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
 			min -= min / 4;
 	}
 
+	/*
+	 * Only happens due to memory.wmark_min_adj.
+	 * Guarantee safe min after memory.wmark_min_adj?
+	 */
+	if (min < mark / 4)
+		min = mark / 4;
 
 #ifdef CONFIG_CMA
 	/* If allocation can't use CMA areas don't use free CMA pages */
@@ -4387,6 +4401,10 @@ fail:
 	warn_alloc(gfp_mask, ac->nodemask,
 			"page allocation failure: order:%u", order);
 got_pg:
+
+	if (ac->migratetype == MIGRATE_MOVABLE)
+		memcg_check_wmark_min_adj(current, ac);
+
 	return page;
 }
 
