@@ -193,6 +193,7 @@ static inline void tracehook_notify_resume(struct pt_regs *regs)
 		task_work_run();
 
 	mem_cgroup_handle_over_high();
+	mem_cgroup_wmark_min_throttle();
 	blkcg_maybe_throttle_current();
 }
 
