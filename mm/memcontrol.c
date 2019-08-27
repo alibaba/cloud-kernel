@@ -25,6 +25,7 @@
 #include <linux/page_counter.h>
 #include <linux/memcontrol.h>
 #include <linux/cgroup.h>
+#include <linux/cpuset.h>
 #include <linux/pagewalk.h>
 #include <linux/sched/mm.h>
 #include <linux/shmem_fs.h>
@@ -5106,6 +5107,168 @@ static ssize_t memory_wmark_scale_factor_write(struct kernfs_open_file *of,
 	return nbytes;
 }
 
+/*
+ * Figure out the maximal(most conservative) @wmark_min_adj along
+ * the hierarchy but excluding intermediate default zero, as the
+ * effective one.  Example:
+ *                      root
+ *                      / \
+ *                     A   D
+ *                    / \
+ *                   B   C
+ *                  / \
+ *                 E   F
+ *
+ * wmark_min_adj:  A -10, B -25, C 0, D 50, E -25, F 50
+ * wmark_min_eadj: A -10, B -10, C 0, D 50, E -10, F 50
+ */
+static void memcg_update_wmark_min_adj(struct mem_cgroup *memcg, int val)
+{
+	struct mem_cgroup *p;
+	struct mem_cgroup *iter;
+
+	mutex_lock(&cgroup_mutex);
+	memcg->wmark_min_adj = val;
+	/* update hierarchical wmark_min_eadj, pre-order iteration */
+	for_each_mem_cgroup_tree(iter, memcg) {
+		if (!mem_cgroup_online(iter))
+			continue;
+		val = iter->wmark_min_adj;
+		p = parent_mem_cgroup(iter);
+		if (p && p->wmark_min_eadj && p->wmark_min_eadj > val)
+			val = p->wmark_min_eadj;
+		iter->wmark_min_eadj = val;
+	}
+	mutex_unlock(&cgroup_mutex);
+}
+
+static int memory_wmark_min_adj_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+
+	/* show the final effective value */
+	seq_printf(m, "%d\n", memcg->wmark_min_eadj);
+
+	return 0;
+}
+
+static ssize_t memory_wmark_min_adj_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	int ret, wmark_min_adj;
+
+	buf = strstrip(buf);
+	ret = kstrtoint(buf, 0, &wmark_min_adj);
+	if (ret)
+		return ret;
+
+	if (wmark_min_adj < -25 || wmark_min_adj > 50)
+		return -EINVAL;
+
+	memcg_update_wmark_min_adj(memcg, wmark_min_adj);
+
+	return nbytes;
+}
+
+int memcg_get_wmark_min_adj(struct task_struct *curr)
+{
+	struct mem_cgroup *memcg;
+	int val;
+
+	if (mem_cgroup_disabled())
+		return 0;
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_css(task_css(curr, memory_cgrp_id));
+	if (mem_cgroup_is_root(memcg))
+		val = 0;
+	else
+		val = memcg->wmark_min_eadj;
+	rcu_read_unlock();
+
+	return val;
+}
+
+/*
+ * Scheduled by global page allocation to be executed from the userland
+ * return path and throttle when free is under memcg's global WMARK_MIN.
+ */
+void mem_cgroup_wmark_min_throttle(void)
+{
+	unsigned int msec = current->wmark_min_throttle_ms;
+	unsigned long pflags;
+
+	if (likely(!msec))
+		return;
+	psi_memstall_enter(&pflags);
+	msleep_interruptible(msec);
+	psi_memstall_leave(&pflags);
+	current->wmark_min_throttle_ms = 0;
+}
+
+#define WMARK_MIN_THROTTLE_MS 100UL
+/*
+ * Tasks in memcg having positive memory.wmark_min_adj has its
+ * own global min watermark higher than the global WMARK_MIN:
+ * "WMARK_MIN + (WMARK_LOW - WMARK_MIN) * memory.wmark_min_adj"
+ *
+ * Positive memory.wmark_min_adj means low QoS requirements. When
+ * allocation broke memcg min watermark, it should trigger direct
+ * reclaim traditionally, here trigger throttle instead to further
+ * prevent them from disturbing others.
+ *
+ * The throttle time is simply linearly proportional to the pages
+ * consumed below memcg's min watermark.
+ *
+ * The base throttle time is WMARK_MIN_THROTTLE_MS, and the maximal
+ * throttle time is ten times WMARK_MIN_THROTTLE_MS.
+ *
+ * The actual throttling will be executed from the userland return
+ * path, see mem_cgroup_wmark_min_throttle().
+ */
+void memcg_check_wmark_min_adj(struct task_struct *curr,
+		struct alloc_context *ac)
+{
+	struct zoneref *z;
+	struct zone *zone;
+	unsigned long wmark_min, wmark, min_low_gap, free_pages;
+	int wmark_min_adj = memcg_get_wmark_min_adj(curr);
+
+	if (wmark_min_adj <= 0)
+		return;
+
+	if (curr->wmark_min_throttle_ms)
+		return;
+
+	z = first_zones_zonelist(ac->zonelist, ac->highest_zoneidx, ac->nodemask);
+	for_next_zone_zonelist_nodemask(zone, z, ac->highest_zoneidx,
+					ac->nodemask) {
+		if (cpusets_enabled() &&
+		    !__cpuset_zone_allowed(zone, __GFP_HARDWALL))
+			continue;
+
+		wmark_min = min_wmark_pages(zone);
+		min_low_gap = low_wmark_pages(zone) - wmark_min;
+		free_pages = zone_page_state(zone, NR_FREE_PAGES);
+		wmark = wmark_min + min_low_gap * wmark_min_adj / 100;
+		if (free_pages < wmark && wmark > wmark_min) {
+			unsigned long msec;
+
+			/*
+			 * The throttle time is simply linearly proportional
+			 * to the pages consumed below memcg's min watermark.
+			 */
+			msec = (wmark - free_pages) * WMARK_MIN_THROTTLE_MS /
+					(wmark - wmark_min);
+			msec = clamp(msec, 1UL, 10 * WMARK_MIN_THROTTLE_MS);
+			curr->wmark_min_throttle_ms = msec;
+			set_notify_resume(curr);
+			break;
+		}
+	}
+}
+
 static void __mem_cgroup_threshold(struct mem_cgroup *memcg, bool swap)
 {
 	struct mem_cgroup_threshold_ary *t;
@@ -6089,6 +6252,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write = memory_wmark_scale_factor_write,
 	},
 	{
+		.name = "wmark_min_adj",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_wmark_min_adj_show,
+		.write = memory_wmark_min_adj_write,
+	},
+	{
 		.name = "force_empty",
 		.write = mem_cgroup_force_empty_write,
 	},
@@ -6505,6 +6674,11 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	}
 
 	setup_memcg_wmark(memcg);
+
+	if (parent) {
+		memcg->wmark_min_adj = parent->wmark_min_adj;
+		memcg->wmark_min_eadj = parent->wmark_min_eadj;
+	}
 
 	/* The following stuff does not apply to the root */
 	if (!parent) {
