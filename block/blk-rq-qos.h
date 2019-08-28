@@ -33,6 +33,7 @@ struct rq_qos_ops {
 	void (*done)(struct rq_qos *, struct request *);
 	void (*done_bio)(struct rq_qos *, struct bio *);
 	void (*cleanup)(struct rq_qos *, struct bio *);
+	void (*queue_depth_changed)(struct rq_qos *);
 	void (*exit)(struct rq_qos *);
 };
 
@@ -104,6 +105,7 @@ void rq_qos_done_bio(struct request_queue *q, struct bio *bio);
 void rq_qos_throttle(struct request_queue *, struct bio *, spinlock_t *);
 void rq_qos_track(struct request_queue *q, struct request *, struct bio *);
 void __rq_qos_merge(struct rq_qos *rqos, struct request *rq, struct bio *bio);
+void __rq_qos_queue_depth_changed(struct rq_qos *rqos);
 void rq_qos_exit(struct request_queue *);
 
 static inline void rq_qos_merge(struct request_queue *q, struct request *rq,
@@ -111,6 +113,12 @@ static inline void rq_qos_merge(struct request_queue *q, struct request *rq,
 {
 	if (q->rq_qos)
 		__rq_qos_merge(q->rq_qos, rq, bio);
+}
+
+static inline void rq_qos_queue_depth_changed(struct request_queue *q)
+{
+	if (q->rq_qos)
+		__rq_qos_queue_depth_changed(q->rq_qos);
 }
 
 #endif
