@@ -275,7 +275,7 @@ bool blk_mq_can_queue(struct blk_mq_hw_ctx *hctx)
 EXPORT_SYMBOL(blk_mq_can_queue);
 
 static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
-		unsigned int tag, unsigned int op)
+		unsigned int tag, unsigned int op, u64 alloc_time_ns)
 {
 	struct blk_mq_tags *tags = blk_mq_tags_from_data(data);
 	struct request *rq = tags->static_rqs[tag];
@@ -309,6 +309,9 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	RB_CLEAR_NODE(&rq->rb_node);
 	rq->rq_disk = NULL;
 	rq->part = NULL;
+#ifdef CONFIG_BLK_RQ_ALLOC_TIME
+	rq->alloc_time_ns = alloc_time_ns;
+#endif
 	rq->start_time_ns = ktime_get_ns();
 	rq->io_start_time_ns = 0;
 	rq->nr_phys_segments = 0;
@@ -344,8 +347,14 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	struct request *rq;
 	unsigned int tag;
 	bool put_ctx_on_error = false;
+	u64 alloc_time_ns = 0;
 
 	blk_queue_enter_live(q);
+
+	/* alloc_time includes depth and tag waits */
+	if (blk_queue_rq_alloc_time(q))
+		alloc_time_ns = ktime_get_ns();
+
 	data->q = q;
 	if (likely(!data->ctx)) {
 		data->ctx = blk_mq_get_ctx(q);
@@ -381,7 +390,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		return NULL;
 	}
 
-	rq = blk_mq_rq_ctx_init(data, tag, op);
+	rq = blk_mq_rq_ctx_init(data, tag, op, alloc_time_ns);
 	if (!op_is_flush(op)) {
 		rq->elv.icq = NULL;
 		if (e && e->type->ops.mq.prepare_request) {
