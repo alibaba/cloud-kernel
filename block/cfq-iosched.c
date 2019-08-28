@@ -1612,11 +1612,13 @@ static void cfq_cpd_bind(struct blkcg_policy_data *cpd)
 	WARN_ON_ONCE(__cfq_set_weight(&blkcg->css, weight, on_dfl, true, true));
 }
 
-static struct blkg_policy_data *cfq_pd_alloc(gfp_t gfp, int node)
+static struct blkg_policy_data *cfq_pd_alloc(gfp_t gfp,
+					     struct request_queue *q,
+					     struct blkcg *blkcg)
 {
 	struct cfq_group *cfqg;
 
-	cfqg = kzalloc_node(sizeof(*cfqg), gfp, node);
+	cfqg = kzalloc_node(sizeof(*cfqg), gfp, q->node);
 	if (!cfqg)
 		return NULL;
 
