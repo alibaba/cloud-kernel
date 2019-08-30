@@ -30,6 +30,7 @@
 #include <linux/vmstat.h>
 #include <linux/writeback.h>
 #include <linux/page-flags.h>
+#include <linux/kidled.h>
 
 struct mem_cgroup;
 struct page;
@@ -316,6 +317,14 @@ struct mem_cgroup {
 	/* List of events which userspace want to receive */
 	struct list_head event_list;
 	spinlock_t event_list_lock;
+
+#ifdef CONFIG_KIDLED
+	struct rw_semaphore idle_stats_rwsem;
+	unsigned long idle_scans;
+	struct kidled_scan_period scan_period;
+	int idle_stable_idx;
+	struct idle_page_stats idle_stats[KIDLED_STATS_NR_TYPE];
+#endif
 
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */
@@ -798,6 +807,28 @@ static inline void memcg_memory_event_mm(struct mm_struct *mm,
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 void mem_cgroup_split_huge_fixup(struct page *head);
 #endif
+
+#ifdef CONFIG_KIDLED
+static inline struct idle_page_stats *
+mem_cgroup_get_stable_idle_stats(struct mem_cgroup *memcg)
+{
+	return &memcg->idle_stats[memcg->idle_stable_idx];
+}
+
+static inline struct idle_page_stats *
+mem_cgroup_get_unstable_idle_stats(struct mem_cgroup *memcg)
+{
+	return &memcg->idle_stats[KIDLED_STATS_NR_TYPE - 1 -
+				  memcg->idle_stable_idx];
+}
+
+static inline void
+mem_cgroup_idle_page_stats_switch(struct mem_cgroup *memcg)
+{
+	memcg->idle_stable_idx = KIDLED_STATS_NR_TYPE - 1 -
+				 memcg->idle_stable_idx;
+}
+#endif /* CONFIG_KIDLED */
 
 static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
 {
