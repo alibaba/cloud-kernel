@@ -38,6 +38,9 @@ static inline void clear_page_idle(struct page *page)
 {
 	ClearPageIdle(page);
 }
+
+void page_idle_clear_pte_refs(struct page *page);
+
 #else /* !CONFIG_64BIT */
 /*
  * If there is not enough space to store Idle and Young bits in page flags, use
@@ -132,6 +135,10 @@ static inline void set_page_idle(struct page *page)
 }
 
 static inline void clear_page_idle(struct page *page)
+{
+}
+
+static inline void page_idle_clear_pte_refs(struct page *page)
 {
 }
 
