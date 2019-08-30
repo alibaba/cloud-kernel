@@ -95,6 +95,20 @@
 #error "Not enough bits in page flags"
 #endif
 
+#ifdef CONFIG_KIDLED
+#define KIDLED_AGE_SHIFT 8
+#define KIDLED_AGE_MASK  ((1UL << KIDLED_AGE_SHIFT)-1)
+#else
+#define KIDLED_AGE_SHIFT 0
+#endif
+
+#if SECTIONS_WIDTH+ZONES_WIDTH+NODES_SHIFT+LAST_CPUPID_SHIFT+KASAN_TAG_WIDTH+KIDLED_AGE_SHIFT \
+	<= BITS_PER_LONG - NR_PAGEFLAGS
+#define KIDLED_AGE_WIDTH KIDLED_AGE_SHIFT
+#else
+#define KIDLED_AGE_WIDTH 0
+#endif
+
 /*
  * We are going to use the flags for the page to node mapping if its in
  * there.  This includes the case where there is no node, so it is implicit.
@@ -107,6 +121,10 @@
 
 #if defined(CONFIG_NUMA_BALANCING) && LAST_CPUPID_WIDTH == 0
 #define LAST_CPUPID_NOT_IN_PAGE_FLAGS
+#endif
+
+#if defined(CONFIG_KIDLED) && KIDLED_AGE_WIDTH == 0
+#define KIDLED_AGE_NOT_IN_PAGE_FLAGS
 #endif
 
 #endif

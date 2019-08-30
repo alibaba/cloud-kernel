@@ -846,6 +846,18 @@ config READ_ONLY_THP_FOR_FS
 config ARCH_HAS_PTE_SPECIAL
 	bool
 
+config KIDLED
+	bool "Enable kernel thread to scan idle pages"
+	depends on IDLE_PAGE_TRACKING
+	help
+	  This introduces kernel thread (kidled) to scan pages in configurable
+	  interval to determine if they are accessed in that interval, to
+	  determine their access frequency. The hot/cold pages are identified
+	  with it and the statistics are exported to user space on basis of
+	  memory cgroup by "memory.idle_page_stats".
+
+	  See Documentation/vm/kidled.rst for more details.
+
 config MEMSLI
 	bool "Support memory latency histogram, a.k.a, memsli"
 	depends on MEMCG

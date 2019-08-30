@@ -1256,6 +1256,17 @@ static __always_inline bool free_pages_prepare(struct page *page,
 				bad++;
 				continue;
 			}
+
+			/*
+			 * The page age information is stored in page flags
+			 * or node's page array. We need to explicitly clear
+			 * it in both cases. Otherwise, the stale age will
+			 * be provided when it's allocated again. Also, we
+			 * maintain age information for each page in the
+			 * compound page, So we have to clear them one by one.
+			 */
+			kidled_set_page_age(page_pgdat(page + i),
+					    page_to_pfn(page + i), 0);
 			(page + i)->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
 		}
 	}
@@ -1269,6 +1280,7 @@ static __always_inline bool free_pages_prepare(struct page *page,
 		return false;
 
 	page_cpupid_reset_last(page);
+	kidled_set_page_age(page_pgdat(page), page_to_pfn(page), 0);
 	page->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
 	reset_page_owner(page, order);
 

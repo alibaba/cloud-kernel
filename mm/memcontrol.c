@@ -4254,6 +4254,254 @@ static ssize_t mem_cgroup_reset(struct kernfs_open_file *of, char *buf,
 	return nbytes;
 }
 
+#ifdef CONFIG_KIDLED
+static int mem_cgroup_idle_page_stats_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *iter, *memcg = mem_cgroup_from_css(seq_css(m));
+	struct kidled_scan_period scan_period, period;
+	struct idle_page_stats *stats, *cache;
+	unsigned long scans;
+	bool has_hierarchy = kidled_use_hierarchy();
+	bool no_buckets = false;
+	int i, j, t;
+
+	stats = kmalloc(sizeof(struct idle_page_stats) * 2, GFP_KERNEL);
+	if (!stats)
+		return -ENOMEM;
+	cache = stats + 1;
+
+	down_read(&memcg->idle_stats_rwsem);
+	*stats = memcg->idle_stats[memcg->idle_stable_idx];
+	scans = memcg->idle_scans;
+	scan_period = memcg->scan_period;
+	up_read(&memcg->idle_stats_rwsem);
+
+	/* Nothing will be outputed with invalid buckets */
+	if (KIDLED_IS_BUCKET_INVALID(stats->buckets)) {
+		no_buckets = true;
+		scans = 0;
+		goto output;
+	}
+
+	/* Zeroes will be output with mismatched scan period */
+	if (!kidled_is_scan_period_equal(&scan_period)) {
+		memset(&stats->count, 0, sizeof(stats->count));
+		scan_period = kidled_get_current_scan_period();
+		scans = 0;
+		goto output;
+	}
+
+	if (mem_cgroup_is_root(memcg) || has_hierarchy) {
+		for_each_mem_cgroup_tree(iter, memcg) {
+			/* The root memcg was just accounted */
+			if (iter == memcg)
+				continue;
+
+			down_read(&iter->idle_stats_rwsem);
+			*cache = iter->idle_stats[iter->idle_stable_idx];
+			period = memcg->scan_period;
+			up_read(&iter->idle_stats_rwsem);
+
+			/*
+			 * Skip to account if the scan period is mismatched
+			 * or buckets are invalid.
+			 */
+			if (!kidled_is_scan_period_equal(&period) ||
+			     KIDLED_IS_BUCKET_INVALID(cache->buckets))
+				continue;
+
+			/*
+			 * The buckets of current memory cgroup might be
+			 * mismatched with that of root memory cgroup. We
+			 * charge the current statistics to the possibly
+			 * largest bucket. The users need to apply the
+			 * consistent buckets into the memory cgroups in
+			 * the hierarchy tree.
+			 */
+			for (i = 0; i < NUM_KIDLED_BUCKETS; i++) {
+				for (j = 0; j < NUM_KIDLED_BUCKETS - 1; j++) {
+					if (cache->buckets[i] <=
+					    stats->buckets[j])
+						break;
+				}
+
+				for (t = 0; t < KIDLE_NR_TYPE; t++)
+					stats->count[t][j] +=
+						cache->count[t][i];
+			}
+		}
+	}
+
+
+output:
+	seq_printf(m, "# version: %s\n", KIDLED_VERSION);
+	seq_printf(m, "# scans: %lu\n", scans);
+	seq_printf(m, "# scan_period_in_seconds: %u\n", scan_period.duration);
+	seq_printf(m, "# use_hierarchy: %u\n", kidled_use_hierarchy());
+	seq_puts(m, "# buckets: ");
+	if (no_buckets) {
+		seq_puts(m, "no valid bucket available\n");
+		goto out;
+	}
+
+	for (i = 0; i < NUM_KIDLED_BUCKETS; i++) {
+		seq_printf(m, "%d", stats->buckets[i]);
+
+		if ((i == NUM_KIDLED_BUCKETS - 1) ||
+		    !stats->buckets[i + 1]) {
+			seq_puts(m, "\n");
+			j = i + 1;
+			break;
+		}
+		seq_puts(m, ",");
+	}
+	seq_puts(m, "#\n");
+
+	seq_puts(m, "#   _-----=> clean/dirty\n");
+	seq_puts(m, "#  / _----=> swap/file\n");
+	seq_puts(m, "# | / _---=> evict/unevict\n");
+	seq_puts(m, "# || / _--=> inactive/active\n");
+	seq_puts(m, "# ||| /\n");
+
+	seq_printf(m, "# %-8s", "||||");
+	for (i = 0; i < j; i++) {
+		char region[20];
+
+		if (i == j - 1) {
+			snprintf(region, sizeof(region), "[%d,+inf)",
+				 stats->buckets[i]);
+		} else {
+			snprintf(region, sizeof(region), "[%d,%d)",
+				 stats->buckets[i],
+				 stats->buckets[i + 1]);
+		}
+
+		seq_printf(m, " %14s", region);
+	}
+	seq_puts(m, "\n");
+
+	for (t = 0; t < KIDLE_NR_TYPE; t++) {
+		char kidled_type_str[5];
+
+		kidled_type_str[0] = t & KIDLE_DIRTY   ? 'd' : 'c';
+		kidled_type_str[1] = t & KIDLE_FILE    ? 'f' : 's';
+		kidled_type_str[2] = t & KIDLE_UNEVICT ? 'u' : 'e';
+		kidled_type_str[3] = t & KIDLE_ACTIVE  ? 'a' : 'i';
+		kidled_type_str[4] = '\0';
+		seq_printf(m, "  %-8s", kidled_type_str);
+
+		for (i = 0; i < j; i++) {
+			seq_printf(m, " %14lu",
+				   stats->count[t][i] << PAGE_SHIFT);
+		}
+
+		seq_puts(m, "\n");
+	}
+
+out:
+	kfree(stats);
+	return 0;
+}
+
+static ssize_t mem_cgroup_idle_page_stats_write(struct kernfs_open_file *of,
+						char *buf, size_t nbytes,
+						loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	struct idle_page_stats *stable_stats, *unstable_stats;
+	int buckets[NUM_KIDLED_BUCKETS] = { 0 }, i = 0, err;
+	unsigned long prev = 0, curr;
+	char *next;
+
+	buf = strstrip(buf);
+	while (*buf) {
+		if (i >= NUM_KIDLED_BUCKETS)
+			return -E2BIG;
+
+		/* Get next entry */
+		next = buf + 1;
+		while (*next && *next >= '0' && *next <= '9')
+			next++;
+		while (*next && (*next == ' ' || *next == ','))
+			*next++ = '\0';
+
+		/* Should be monotonically increasing */
+		err = kstrtoul(buf, 10, &curr);
+		if (err ||  curr > KIDLED_MAX_IDLE_AGE || curr <= prev)
+			return -EINVAL;
+
+		buckets[i++] = curr;
+		prev = curr;
+		buf = next;
+	}
+
+	/* No buckets set, mark it invalid */
+	if (i == 0)
+		KIDLED_MARK_BUCKET_INVALID(buckets);
+	if (down_write_killable(&memcg->idle_stats_rwsem))
+		return -EINTR;
+	stable_stats = mem_cgroup_get_stable_idle_stats(memcg);
+	unstable_stats = mem_cgroup_get_unstable_idle_stats(memcg);
+	memcpy(stable_stats->buckets, buckets, sizeof(buckets));
+
+	/*
+	 * We will clear the stats without check the buckets whether
+	 * has been changed, it works when user only wants to reset
+	 * stats but not to reset the buckets.
+	 */
+	memset(stable_stats->count, 0, sizeof(stable_stats->count));
+
+	/*
+	 * It's safe that the kidled reads the unstable buckets without
+	 * holding any read side locks.
+	 */
+	KIDLED_MARK_BUCKET_INVALID(unstable_stats->buckets);
+	memcg->idle_scans = 0;
+	up_write(&memcg->idle_stats_rwsem);
+
+	return nbytes;
+}
+
+static void kidled_memcg_init(struct mem_cgroup *memcg)
+{
+	int type;
+
+	init_rwsem(&memcg->idle_stats_rwsem);
+	for (type = 0; type < KIDLED_STATS_NR_TYPE; type++) {
+		memcpy(memcg->idle_stats[type].buckets,
+		       kidled_default_buckets,
+		       sizeof(kidled_default_buckets));
+	}
+}
+
+static void kidled_memcg_inherit_parent_buckets(struct mem_cgroup *parent,
+						struct mem_cgroup *memcg)
+{
+	int idle_buckets[NUM_KIDLED_BUCKETS], type;
+
+	down_read(&parent->idle_stats_rwsem);
+	memcpy(idle_buckets,
+	       parent->idle_stats[parent->idle_stable_idx].buckets,
+	       sizeof(idle_buckets));
+	up_read(&parent->idle_stats_rwsem);
+
+	for (type = 0; type < KIDLED_STATS_NR_TYPE; type++) {
+		memcpy(memcg->idle_stats[type].buckets,
+		       idle_buckets,
+		       sizeof(idle_buckets));
+	}
+}
+#else
+static void kidled_memcg_init(struct mem_cgroup *memcg)
+{
+}
+
+static void kidled_memcg_inherit_parent_buckets(struct mem_cgroup *parent,
+						struct mem_cgroup *memcg)
+{
+}
+#endif /* CONFIG_KIDLED */
+
 static u64 mem_cgroup_move_charge_read(struct cgroup_subsys_state *css,
 					struct cftype *cft)
 {
@@ -6155,6 +6403,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	INIT_LIST_HEAD(&memcg->deferred_split_queue.split_queue);
 	memcg->deferred_split_queue.split_queue_len = 0;
 #endif
+	kidled_memcg_init(memcg);
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
 	return memcg;
 fail:
@@ -6187,6 +6436,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		/* Default gap is 0.5% max limit */
 		memcg->wmark_scale_factor = parent->wmark_scale_factor ?
 					    : 50;
+		kidled_memcg_inherit_parent_buckets(parent, memcg);
 	}
 	if (!parent) {
 		page_counter_init(&memcg->memory, NULL);
@@ -6575,6 +6825,8 @@ static int mem_cgroup_move_account(struct page *page,
 	__unlock_page_memcg(from);
 
 	ret = 0;
+
+	kidled_mem_cgroup_move_stats(from, to, page, nr_pages);
 
 	local_irq_disable();
 	mem_cgroup_charge_statistics(to, page, nr_pages);
@@ -7443,6 +7695,13 @@ static struct cftype memory_files[] = {
 		.seq_show = memory_oom_group_show,
 		.write = memory_oom_group_write,
 	},
+#ifdef CONFIG_KIDLED
+	{
+		.name = "idle_page_stats",
+		.seq_show = mem_cgroup_idle_page_stats_show,
+		.write = mem_cgroup_idle_page_stats_write,
+	},
+#endif
 	{ }	/* terminate */
 };
 
@@ -8459,6 +8718,13 @@ static struct cftype memsw_files[] = {
 		.write = mem_cgroup_reset,
 		.read_u64 = mem_cgroup_read_u64,
 	},
+#ifdef CONFIG_KIDLED
+	{
+		.name = "idle_page_stats",
+		.seq_show = mem_cgroup_idle_page_stats_show,
+		.write = mem_cgroup_idle_page_stats_write,
+	},
+#endif
 	{ },	/* terminate */
 };
 

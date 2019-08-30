@@ -678,6 +678,12 @@ static void __meminit resize_pgdat_range(struct pglist_data *pgdat, unsigned lon
 
 	pgdat->node_spanned_pages = max(start_pfn + nr_pages, old_end_pfn) - pgdat->node_start_pfn;
 
+#ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
+	if (pgdat->node_page_age) {
+		vfree(pgdat->node_page_age);
+		pgdat->node_page_age = NULL;
+	}
+#endif
 }
 /*
  * Associate the pfn range with the given zone, initializing the memmaps
@@ -1700,6 +1706,13 @@ void try_offline_node(int nid)
 
 	if (check_cpu_on_node(pgdat))
 		return;
+
+#ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
+	if (pgdat->node_page_age) {
+		vfree(pgdat->node_page_age);
+		pgdat->node_page_age = NULL;
+	}
+#endif
 
 	/*
 	 * all memory/cpu of this node are removed, we can offline this
