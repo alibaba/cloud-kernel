@@ -49,6 +49,16 @@ enum memcg_stat_item {
 	MEMCG_NR_STAT,
 };
 
+enum memcg_exstat_item {
+	MEMCG_WMARK_MIN,
+	MEMCG_NR_EXSTAT,
+};
+
+/* Only care about 64bit using "long" */
+struct mem_cgroup_exstat_cpu {
+	unsigned long item[MEMCG_NR_EXSTAT];
+};
+
 enum memcg_memory_event {
 	MEMCG_LOW,
 	MEMCG_HIGH,
@@ -297,6 +307,9 @@ struct mem_cgroup {
 	/* Legacy tcp memory accounting */
 	bool			tcpmem_active;
 	int			tcpmem_pressure;
+
+	/* memory.exstat */
+	struct mem_cgroup_exstat_cpu __percpu *exstat_cpu;
 
 	int			wmark_min_adj;	/* user-set value */
 	int			wmark_min_eadj;	/* value in effect */
