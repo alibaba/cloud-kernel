@@ -3990,6 +3990,21 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+static int memcg_exstat_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	u64 wmark_min = 0;
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		wmark_min +=
+		per_cpu_ptr(memcg->exstat_cpu, cpu)->item[MEMCG_WMARK_MIN];
+	}
+	seq_printf(m, "wmark_min_throttled_ms %llu\n", wmark_min);
+
+	return 0;
+}
+
 static u64 mem_cgroup_swappiness_read(struct cgroup_subsys_state *css,
 				      struct cftype *cft)
 {
@@ -4178,6 +4193,7 @@ void mem_cgroup_wmark_min_throttle(void)
 {
 	unsigned int msec = current->wmark_min_throttle_ms;
 	unsigned long pflags;
+	struct mem_cgroup *memcg, *iter;
 
 	if (likely(!msec))
 		return;
@@ -4185,6 +4201,12 @@ void mem_cgroup_wmark_min_throttle(void)
 	msleep_interruptible(msec);
 	psi_memstall_leave(&pflags);
 	current->wmark_min_throttle_ms = 0;
+
+	/* Account throttled time hierarchically, ignore premature sleep */
+	memcg = get_mem_cgroup_from_mm(current->mm);
+	for (iter = memcg; iter; iter = parent_mem_cgroup(iter))
+		__this_cpu_add(iter->exstat_cpu->item[MEMCG_WMARK_MIN], msec);
+	css_put(&memcg->css);
 }
 
 #define WMARK_MIN_THROTTLE_MS 100UL
@@ -5085,6 +5107,10 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.seq_show = memcg_stat_show,
 	},
 	{
+		.name = "exstat",
+		.seq_show = memcg_exstat_show,
+	},
+	{
 		.name = "wmark_ratio",
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = memory_wmark_ratio_show,
@@ -5378,6 +5404,7 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 	for_each_node(node)
 		free_mem_cgroup_per_node_info(memcg, node);
 	free_percpu(memcg->stat_cpu);
+	free_percpu(memcg->exstat_cpu);
 	kfree(memcg);
 }
 
@@ -5408,6 +5435,10 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 
 	memcg->stat_cpu = alloc_percpu(struct mem_cgroup_stat_cpu);
 	if (!memcg->stat_cpu)
+		goto fail;
+
+	memcg->exstat_cpu = alloc_percpu(struct mem_cgroup_exstat_cpu);
+	if (!memcg->exstat_cpu)
 		goto fail;
 
 	for_each_node(node)
