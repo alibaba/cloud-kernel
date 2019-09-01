@@ -4768,6 +4768,8 @@ static int memcg_exstat_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
 
+	seq_printf(m, "wmark_min_throttled_ms %llu\n",
+		   memcg_exstat_gather(memcg, MEMCG_WMARK_MIN));
 	seq_printf(m, "wmark_reclaim_work_ms %llu\n",
 		   memcg_exstat_gather(memcg, MEMCG_WMARK_RECLAIM) >> 20);
 
@@ -5198,6 +5200,7 @@ void mem_cgroup_wmark_min_throttle(void)
 {
 	unsigned int msec = current->wmark_min_throttle_ms;
 	unsigned long pflags;
+	struct mem_cgroup *memcg, *iter;
 
 	if (likely(!msec))
 		return;
@@ -5205,6 +5208,12 @@ void mem_cgroup_wmark_min_throttle(void)
 	msleep_interruptible(msec);
 	psi_memstall_leave(&pflags);
 	current->wmark_min_throttle_ms = 0;
+
+	/* Account throttled time hierarchically, ignore premature sleep */
+	memcg = get_mem_cgroup_from_mm(current->mm);
+	for (iter = memcg; iter; iter = parent_mem_cgroup(iter))
+		__this_cpu_add(iter->exstat_cpu->item[MEMCG_WMARK_MIN], msec);
+	css_put(&memcg->css);
 }
 
 #define WMARK_MIN_THROTTLE_MS 100UL
