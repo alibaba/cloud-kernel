@@ -1,0 +1,124 @@
+.. SPDX-License-Identifier: GPL-2.0+
+
+=============================
+AliOS Cloud kernel interfaces
+=============================
+
+This file collects all the interfaces specific to AliOS Cloud kernel.
+
+memory.wmark_min_adj
+====================
+    This file is under memory cgroup v1.
+
+    In co-location environment, there are more or less some memory
+    overcommitment, then BATCH tasks may break the shared global min
+    watermark resulting in all types of applications falling into
+    the direct reclaim slow path hurting the RT of LS tasks.
+    (NOTE: BATCH tasks tolerate big latency spike even in seconds
+    as long as doesn't hurt its overal throughput. While LS tasks
+    are very Latency-Sensitive, they may time out or fail in case
+    of sudden latency spike lasts like hundreds of ms typically.)
+
+    Actually BATCH tasks are not sensitive to memory latency, they
+    can be assigned a strict min watermark which is different from
+    that of LS tasks(which can be aissgned a lenient min watermark
+    accordingly), thus isolating each other in case of global memory
+    allocation.
+
+    memory.wmark_min_adj stands for memcg global WMARK_MIN adjustment,
+    it is used to realize separate min watermarks above-mentioned for
+    memcgs, its valid value is within [-25, 50], specifically:
+    negative value means to be relative to [0, WMARK_MIN],
+    positive value means to be relative to [WMARK_MIN, WMARK_LOW].
+
+    For examples::
+
+     -25 means memcg WMARK_MIN is "WMARK_MIN + (WMARK_MIN - 0) * (-25%)"
+      50 means memcg WMARK_MIN is "WMARK_MIN + (WMARK_LOW - WMARK_MIN) * 50%"
+
+    Negative memory.wmark_min_adj means high QoS requirements, it can
+    allocate below the global WMARK_MIN, which is kind of like the idea
+    behind ALLOC_HARDER, see gfp_to_alloc_flags().
+
+    Positive memory.wmark_min_adj means low QoS requirements, thus when
+    allocation broke memcg min watermark, it should trigger direct reclaim
+    traditionally, and we trigger throttle instead to further prevent them
+    from disturbing others. The throttle time is simply linearly proportional
+    to the pages consumed below memcg's min watermark. The normal throttle
+    time once should be within [1ms, 100ms], and the maximal throttle time
+    is 1000ms. The throttle is only triggered under global memory pressure.
+
+    With this interface, we can assign positive values for BATCH memcgs
+    and negative values for LS memcgs. Note that root memcg doesn't have
+    this file.
+
+    memory.wmark_min_adj default value is 0, and inherit from its parent,
+    Note that the final effective wmark_min_adj will consider all the
+    hierarchical values, its value is the maximal(most conservative)
+    wmark_min_adj along the hierarchy but excluding intermediate default
+    values(zero).
+
+    For example::
+
+     The following hierarchy
+                     root
+                      / \
+                     A   D
+                    / \
+                   B   C
+                  / \
+                 E   F
+
+     wmark_min_adj:  A -10, B -25, C 0, D 50, E -25, F 50
+     wmark_min_eadj: A -10, B -10, C 0, D 50, E -10, F 50
+
+     "echo xxx > memory.wmark_min_adj" set "wmark_min_adj".
+     "cat memory.wmark_min_adj" shows the value of "wmark_min_eadj".
+
+memory.exstat
+=============
+    This file is under memory cgroup v1.
+
+    memory.exstat stands for "extra/extended memory.stat", which is supposed
+    to provide hierarchical statistics.
+
+    "wmark_min_throttled_ms" field is the total throttled time in milliseconds
+    due to positive memory.wmark_min_adj under global memory pressure.
+
+zombie memcgs reaper
+====================
+    After memcg was deleted, page caches still reference to this memcg
+    causing large number of dead(zombie) memcgs in the system. Then it
+    slows down access to "/sys/fs/cgroup/cpu/memory.stat", etc due to
+    tons of iterations, further causing various latencies. "zombie memcgs
+    reaper" is a tool to reclaim these dead memcgs. It has two modes:
+
+    "Background kthread reaper" mode
+    --------------------------------
+    In this mode, a kthread reaper keeps reclaiming at background,
+    some knobs are provided to control the reaper scan behaviour:
+
+    - /sys/kernel/mm/memcg_reaper/scan_interval
+
+      the scan period in second. Default is 5s.
+
+    - /sys/kernel/mm/memcg_reaper/pages_scan
+
+      the scan rate of pages per scan. Default 1310720(5GiB for 4KiB page).
+
+    - /sys/kernel/mm/memcg_reaper/verbose
+
+      output some zombie memcg information for debug purpose. Default off.
+
+    - /sys/kernel/mm/memcg_reaper/reap_background
+
+     on/off switch. Default "0" means off. Write "1" to switch it on.
+
+    "One-shot trigger" mode
+    -----------------------
+    In this mode, there is no guarantee to finish the reclaim, you may need
+    to check and launch multiple rounds as needed.
+
+    - /sys/kernel/mm/memcg_reaper/reap
+
+      users write "1" to trigger one round of zombie memcg reaping.
