@@ -222,7 +222,7 @@ void tcp_enter_quickack_mode(struct sock *sk, unsigned int max_quickacks)
 
 	tcp_incr_quickack(sk, max_quickacks);
 	icsk->icsk_ack.pingpong = 0;
-	icsk->icsk_ack.ato = TCP_ATO_MIN;
+	icsk->icsk_ack.ato = sock_net(sk)->ipv4.sysctl_tcp_ato_min;
 }
 EXPORT_SYMBOL(tcp_enter_quickack_mode);
 
@@ -684,13 +684,14 @@ static void tcp_event_data_recv(struct sock *sk, struct sk_buff *skb)
 		 * delayed ACK engine.
 		 */
 		tcp_incr_quickack(sk, TCP_MAX_QUICKACKS);
-		icsk->icsk_ack.ato = TCP_ATO_MIN;
+		icsk->icsk_ack.ato = sock_net(sk)->ipv4.sysctl_tcp_ato_min;
 	} else {
 		int m = now - icsk->icsk_ack.lrcvtime;
 
-		if (m <= TCP_ATO_MIN / 2) {
+		if (m <= sock_net(sk)->ipv4.sysctl_tcp_ato_min / 2) {
 			/* The fastest case is the first. */
-			icsk->icsk_ack.ato = (icsk->icsk_ack.ato >> 1) + TCP_ATO_MIN / 2;
+			icsk->icsk_ack.ato = (icsk->icsk_ack.ato >> 1) +
+				sock_net(sk)->ipv4.sysctl_tcp_ato_min / 2;
 		} else if (m < icsk->icsk_ack.ato) {
 			icsk->icsk_ack.ato = (icsk->icsk_ack.ato >> 1) + m;
 			if (icsk->icsk_ack.ato > icsk->icsk_rto)

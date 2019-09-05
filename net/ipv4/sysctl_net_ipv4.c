@@ -57,6 +57,9 @@ static int tcp_tw_timeout_max = 600 * HZ;
 static int tcp_rto_min_min = 1; /* one tick */
 static int tcp_rto_min_max = TCP_RTO_MAX;
 
+static int tcp_ato_min1 = 4;
+static int tcp_ato_min2 = 200;
+
 /* obsolete */
 static int sysctl_tcp_low_latency __read_mostly;
 
@@ -1286,6 +1289,15 @@ static struct ctl_table ipv4_net_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &one
+	},
+	{
+		.procname	= "tcp_ato_min",
+		.data		= &init_net.ipv4.sysctl_tcp_ato_min,
+		.maxlen	= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1	= &tcp_ato_min1,
+		.extra2	= &tcp_ato_min2,
 	},
 	{ }
 };

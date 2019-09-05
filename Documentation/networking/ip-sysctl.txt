@@ -230,6 +230,11 @@ tcp_app_win - INTEGER
 	buffer. Value 0 is special, it means that nothing is reserved.
 	Default: 31
 
+tcp_ato_min - INTEGER
+	Control how fast the tcp ack to go out. The maximum is 200ms delay,
+	the minimum is 4ms.
+	Default: 40
+
 tcp_autocorking - BOOLEAN
 	Enable TCP auto corking :
 	When applications do consecutive small write()/sendmsg() system calls,
