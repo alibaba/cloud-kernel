@@ -178,6 +178,8 @@ struct netns_ipv4 {
 	int sysctl_max_syn_backlog;
 	int sysctl_tcp_fastopen;
 	int sysctl_tcp_tw_timeout;
+	int sysctl_tcp_ato_min;
+	int sysctl_tcp_delack_min;
 	const struct tcp_congestion_ops __rcu  *tcp_congestion_control;
 	struct tcp_fastopen_context __rcu *tcp_fastopen_ctx;
 	spinlock_t tcp_fastopen_ctx_lock;

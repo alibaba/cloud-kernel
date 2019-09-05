@@ -312,7 +312,7 @@ void tcp_delack_timer_handler(struct sock *sk)
 			 * deflate ATO.
 			 */
 			inet_csk_exit_pingpong_mode(sk);
-			icsk->icsk_ack.ato      = TCP_ATO_MIN;
+			icsk->icsk_ack.ato      = sock_net(sk)->ipv4.sysctl_tcp_ato_min;
 		}
 		tcp_mstamp_refresh(tcp_sk(sk));
 		tcp_send_ack(sk);
