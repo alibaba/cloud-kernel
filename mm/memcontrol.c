@@ -1999,9 +1999,6 @@ struct mem_cgroup *mem_cgroup_get_oom_group(struct task_struct *victim,
 	struct mem_cgroup *oom_group = NULL;
 	struct mem_cgroup *memcg;
 
-	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
-		return NULL;
-
 	if (!oom_domain)
 		oom_domain = root_mem_cgroup;
 
@@ -4820,6 +4817,36 @@ static int mem_cgroup_oom_control_write(struct cgroup_subsys_state *css,
 	return 0;
 }
 
+static int memory_oom_group_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+
+	seq_printf(m, "%d\n", memcg->oom_group);
+
+	return 0;
+}
+
+static ssize_t memory_oom_group_write(struct kernfs_open_file *of,
+				      char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	int ret, oom_group;
+
+	buf = strstrip(buf);
+	if (!buf)
+		return -EINVAL;
+
+	ret = kstrtoint(buf, 0, &oom_group);
+	if (ret)
+		return ret;
+
+	if (oom_group != 0 && oom_group != 1)
+		return -EINVAL;
+
+	memcg->oom_group = oom_group;
+
+	return nbytes;
+}
 #ifdef CONFIG_CGROUP_WRITEBACK
 
 static int memcg_wb_domain_init(struct mem_cgroup *memcg, gfp_t gfp)
@@ -5381,6 +5408,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.seq_show = mem_cgroup_oom_control_read,
 		.write_u64 = mem_cgroup_oom_control_write,
 		.private = MEMFILE_PRIVATE(_OOM_TYPE, OOM_CONTROL),
+	},
+	{
+		.name = "oom.group",
+		.flags = CFTYPE_NOT_ON_ROOT | CFTYPE_NS_DELEGATABLE,
+		.seq_show = memory_oom_group_show,
+		.write = memory_oom_group_write,
 	},
 	{
 		.name = "pressure_level",
@@ -6766,37 +6799,6 @@ static int memory_stat_show(struct seq_file *m, void *v)
 		   acc.stat[WORKINGSET_NODERECLAIM]);
 
 	return 0;
-}
-
-static int memory_oom_group_show(struct seq_file *m, void *v)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
-
-	seq_printf(m, "%d\n", memcg->oom_group);
-
-	return 0;
-}
-
-static ssize_t memory_oom_group_write(struct kernfs_open_file *of,
-				      char *buf, size_t nbytes, loff_t off)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
-	int ret, oom_group;
-
-	buf = strstrip(buf);
-	if (!buf)
-		return -EINVAL;
-
-	ret = kstrtoint(buf, 0, &oom_group);
-	if (ret)
-		return ret;
-
-	if (oom_group != 0 && oom_group != 1)
-		return -EINVAL;
-
-	memcg->oom_group = oom_group;
-
-	return nbytes;
 }
 
 static struct cftype memory_files[] = {
