@@ -11,6 +11,7 @@
 #include <linux/module.h>
 #include <linux/hrtimer.h>
 #include <linux/dma-mapping.h>
+#include <linux/moduleparam.h>
 #include <xen/xen.h>
 
 static bool vring_force_dma_api;
@@ -202,6 +203,9 @@ struct vring_virtqueue {
 
 #define to_vvq(_vq) container_of(_vq, struct vring_virtqueue, vq)
 
+#ifdef MODULE
+module_param(vring_force_dma_api, bool, 0640);
+#else
 static int __init vring_dma_api_setup(char *str)
 {
 	vring_force_dma_api = true;
@@ -210,6 +214,7 @@ static int __init vring_dma_api_setup(char *str)
 	return 0;
 }
 __setup("vring_force_dma_api", vring_dma_api_setup);
+#endif
 
 static inline bool virtqueue_use_indirect(struct virtqueue *_vq,
 					  unsigned int total_sg)
