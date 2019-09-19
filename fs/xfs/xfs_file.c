@@ -447,6 +447,10 @@ xfs_dio_write_end_io(
 	return error;
 }
 
+static const struct iomap_dio_ops xfs_dio_write_ops = {
+	.end_io		= xfs_dio_write_end_io,
+};
+
 /*
  * xfs_file_dio_aio_write - handle direct IO writes
  *
@@ -547,7 +551,7 @@ xfs_file_dio_aio_write(
 	}
 
 	trace_xfs_file_direct_write(ip, count, iocb->ki_pos);
-	ret = iomap_dio_rw(iocb, from, &xfs_iomap_ops, xfs_dio_write_end_io);
+	ret = iomap_dio_rw(iocb, from, &xfs_iomap_ops, &xfs_dio_write_ops);
 
 	/*
 	 * If unaligned, this is the only IO in-flight. If it has not yet
