@@ -1717,6 +1717,10 @@ static inline bool can_do_mlock(void) { return false; }
 #endif
 extern int user_shm_lock(size_t, struct user_struct *);
 extern void user_shm_unlock(size_t, struct user_struct *);
+extern int mlock_fixup(struct vm_area_struct *vma,
+		struct vm_area_struct **prev,
+		unsigned long start, unsigned long end,
+		vm_flags_t newflags);
 
 /*
  * Parameter block passed down to zap_pte_range in exceptional cases.
