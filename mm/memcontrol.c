@@ -65,6 +65,7 @@
 #include <linux/lockdep.h>
 #include <linux/file.h>
 #include <linux/tracehook.h>
+#include <linux/psi.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -2235,6 +2236,7 @@ static void high_work_func(struct work_struct *work)
 void mem_cgroup_handle_over_high(void)
 {
 	unsigned long usage, high, clamped_high;
+	unsigned long pflags;
 	unsigned long penalty_jiffies, overage;
 	unsigned int nr_pages = current->memcg_nr_pages_over_high;
 	struct mem_cgroup *memcg;
@@ -2307,7 +2309,9 @@ void mem_cgroup_handle_over_high(void)
 	 * schedule_timeout_killable sets TASK_KILLABLE). This means we don't
 	 * need to account for any ill-begotten jiffies to pay them off later.
 	 */
+	psi_memstall_enter(&pflags);
 	schedule_timeout_killable(penalty_jiffies);
+	psi_memstall_leave(&pflags);
 
 out:
 	css_put(&memcg->css);
