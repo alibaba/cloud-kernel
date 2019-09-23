@@ -49,6 +49,7 @@ enum scan_result {
 	SCAN_ALLOC_HUGE_PAGE_FAIL,
 	SCAN_CGROUP_CHARGE_FAIL,
 	SCAN_TRUNCATED,
+	SCAN_PAGE_HAS_PRIVATE,
 };
 
 #define CREATE_TRACE_POINTS
@@ -435,7 +436,11 @@ static bool hugepage_vma_check(struct vm_area_struct *vma,
 	    (vm_flags & VM_NOHUGEPAGE) ||
 	    test_bit(MMF_DISABLE_THP, &vma->vm_mm->flags))
 		return false;
-	if (shmem_file(vma->vm_file)) {
+
+	if (shmem_file(vma->vm_file) ||
+	    (IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS) &&
+	     vma->vm_file &&
+	     (vm_flags & VM_DENYWRITE))) {
 		if (!IS_ENABLED(CONFIG_TRANSPARENT_HUGE_PAGECACHE))
 			return false;
 		return IS_ALIGNED((vma->vm_start >> PAGE_SHIFT) - vma->vm_pgoff,
@@ -487,8 +492,9 @@ int khugepaged_enter_vma_merge(struct vm_area_struct *vma,
 	unsigned long hstart, hend;
 
 	/*
-	 * khugepaged does not yet work on non-shmem files or special
-	 * mappings. And file-private shmem THP is not supported.
+	 * khugepaged only supports read-only files for non-shmem files.
+	 * khugepaged does not yet work on special mappings. And
+	 * file-private shmem THP is not supported.
 	 */
 	if (!hugepage_vma_check(vma, vm_flags))
 		return 0;
@@ -1386,12 +1392,12 @@ static void retract_page_tables(struct address_space *mapping, pgoff_t pgoff)
 }
 
 /**
- * collapse_file - collapse small tmpfs/shmem pages into huge one.
+ * collapse_file - collapse filemap/tmpfs/shmem pages into huge one.
  *
  * Basic scheme is simple, details are more complex:
  *  - allocate and lock a new huge page;
  *  - scan over radix tree replacing old pages the new one
- *    + swap in pages if necessary;
+ *    + swap/gup in pages if necessary;
  *    + fill in gaps;
  *    + keep old pages around in case if rollback is required;
  *  - if replacing succeed:
@@ -1415,7 +1421,9 @@ static void collapse_file(struct mm_struct *mm,
 	struct radix_tree_iter iter;
 	void **slot;
 	int nr_none = 0, result = SCAN_SUCCEED;
+	bool is_shmem = shmem_file(file);
 
+	VM_BUG_ON(!IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS) && !is_shmem);
 	VM_BUG_ON(start & (HPAGE_PMD_NR - 1));
 
 	/* Only allocate from the target node */
@@ -1433,7 +1441,8 @@ static void collapse_file(struct mm_struct *mm,
 	}
 
 	__SetPageLocked(new_page);
-	__SetPageSwapBacked(new_page);
+	if (is_shmem)
+		__SetPageSwapBacked(new_page);
 	new_page->index = start;
 	new_page->mapping = mapping;
 
@@ -1443,55 +1452,98 @@ static void collapse_file(struct mm_struct *mm,
 	 * be able to map it or use it in another way until we unlock it.
 	 */
 
-	index = start;
 	xa_lock_irq(&mapping->i_pages);
-	radix_tree_for_each_slot(slot, &mapping->i_pages, &iter, start) {
-		int n = min(iter.index, end) - index;
+	for (index = start; index < end; index++) {
+		slot = radix_tree_lookup_slot(&mapping->i_pages, index);
+		if (!slot) {
+			int error;
 
-		/*
-		 * Stop if extent has been hole-punched, and is now completely
-		 * empty (the more obvious i_size_read() check would take an
-		 * irq-unsafe seqlock on 32-bit).
-		 */
-		if (n >= HPAGE_PMD_NR) {
-			result = SCAN_TRUNCATED;
-			goto tree_locked;
-		}
-
-		/*
-		 * Handle holes in the radix tree: charge it from shmem and
-		 * insert relevant subpage of new_page into the radix-tree.
-		 */
-		if (n && !shmem_charge(mapping->host, n)) {
-			result = SCAN_FAIL;
-			goto tree_locked;
-		}
-		for (; index < min(iter.index, end); index++) {
-			radix_tree_insert(&mapping->i_pages, index,
-					new_page + (index % HPAGE_PMD_NR));
-		}
-		nr_none += n;
-
-		/* We are done. */
-		if (index >= end)
-			break;
-
-		page = radix_tree_deref_slot_protected(slot,
-				&mapping->i_pages.xa_lock);
-		if (radix_tree_exceptional_entry(page) || !PageUptodate(page)) {
-			xa_unlock_irq(&mapping->i_pages);
-			/* swap in or instantiate fallocated page */
-			if (shmem_getpage(mapping->host, index, &page,
-						SGP_NOHUGE)) {
+			error = __radix_tree_create(&mapping->i_pages, index,
+						    0, NULL, &slot);
+			if (error) {
 				result = SCAN_FAIL;
-				goto tree_unlocked;
+				goto tree_locked;
 			}
-		} else if (trylock_page(page)) {
-			get_page(page);
-			xa_unlock_irq(&mapping->i_pages);
-		} else {
-			result = SCAN_PAGE_LOCK;
-			goto tree_locked;
+
+			page = NULL;
+		} else
+			page = radix_tree_deref_slot_protected(slot,
+						&mapping->i_pages.xa_lock);
+
+		if (is_shmem) {
+			if (!page) {
+				/*
+				 * Stop if extent has been truncated or
+				 * hole-punched, and is now completely
+				 * empty.
+				 */
+				if (index == start) {
+					void **s;
+
+					s = radix_tree_iter_find(&mapping->i_pages, &iter, index);
+					if (!s || (min(iter.index, end) - index >= HPAGE_PMD_NR)) {
+						result = SCAN_TRUNCATED;
+						goto tree_locked;
+					}
+				}
+				if (!shmem_charge(mapping->host, 1)) {
+					result = SCAN_FAIL;
+					goto tree_locked;
+				}
+				radix_tree_replace_slot(&mapping->i_pages, slot,
+					new_page + (index % HPAGE_PMD_NR));
+				nr_none++;
+				continue;
+			}
+
+			if (radix_tree_exceptional_entry(page) ||
+			    !PageUptodate(page)) {
+				xa_unlock_irq(&mapping->i_pages);
+				/* swap in or instantiate fallocated page */
+				if (shmem_getpage(mapping->host, index, &page,
+							SGP_NOHUGE)) {
+					result = SCAN_FAIL;
+					goto tree_unlocked;
+				}
+			} else if (trylock_page(page)) {
+				get_page(page);
+				xa_unlock_irq(&mapping->i_pages);
+			} else {
+				result = SCAN_PAGE_LOCK;
+				goto tree_locked;
+			}
+		} else {	/* !is_shmem */
+			if (!page || radix_tree_exceptional_entry(page)) {
+				xa_unlock_irq(&mapping->i_pages);
+				/* page charge is handled by the way */
+				page_cache_sync_readahead(mapping, &file->f_ra,
+							file, index, PAGE_SIZE);
+
+				/* drain pagevecs to help isolate_lru_page() */
+				lru_add_drain();
+				page = find_lock_page(mapping, index);
+				if (unlikely(page == NULL)) {
+					result = SCAN_FAIL;
+					goto tree_unlocked;
+				}
+			} else if (!PageUptodate(page)) {
+				xa_unlock_irq(&mapping->i_pages);
+				wait_on_page_locked(page);
+				if (!trylock_page(page)) {
+					result = SCAN_PAGE_LOCK;
+					goto tree_unlocked;
+				}
+				get_page(page);
+			} else if (PageDirty(page)) {
+				result = SCAN_FAIL;
+				goto tree_locked;
+			} else if (trylock_page(page)) {
+				get_page(page);
+				xa_unlock_irq(&mapping->i_pages);
+			} else {
+				result = SCAN_PAGE_LOCK;
+				goto tree_locked;
+			}
 		}
 
 		/*
@@ -1517,6 +1569,12 @@ static void collapse_file(struct mm_struct *mm,
 
 		if (isolate_lru_page(page)) {
 			result = SCAN_DEL_PAGE_LRU;
+			goto out_unlock;
+		}
+
+		if (page_has_private(page) &&
+		    !try_to_release_page(page, GFP_KERNEL)) {
+			result = SCAN_PAGE_HAS_PRIVATE;
 			goto out_unlock;
 		}
 
@@ -1552,9 +1610,6 @@ static void collapse_file(struct mm_struct *mm,
 		/* Finally, replace with the new page. */
 		radix_tree_replace_slot(&mapping->i_pages, slot,
 				new_page + (index % HPAGE_PMD_NR));
-
-		slot = radix_tree_iter_resume(slot, &iter);
-		index++;
 		continue;
 out_unlock:
 		unlock_page(page);
@@ -1562,34 +1617,15 @@ out_unlock:
 		goto tree_unlocked;
 	}
 
-	/*
-	 * Handle hole in radix tree at the end of the range.
-	 * This code only triggers if there's nothing in radix tree
-	 * beyond 'end'.
-	 */
-	if (index < end) {
-		int n = end - index;
+	if (is_shmem)
+		__inc_node_page_state(new_page, NR_SHMEM_THPS);
+	else
+		__inc_node_page_state(new_page, NR_FILE_THPS);
 
-		/* Stop if extent has been truncated, and is now empty */
-		if (n >= HPAGE_PMD_NR) {
-			result = SCAN_TRUNCATED;
-			goto tree_locked;
-		}
-		if (!shmem_charge(mapping->host, n)) {
-			result = SCAN_FAIL;
-			goto tree_locked;
-		}
-		for (; index < end; index++) {
-			radix_tree_insert(&mapping->i_pages, index,
-					new_page + (index % HPAGE_PMD_NR));
-		}
-		nr_none += n;
-	}
-
-	__inc_node_page_state(new_page, NR_SHMEM_THPS);
 	if (nr_none) {
 		__mod_lruvec_page_state(new_page, NR_FILE_PAGES, nr_none);
-		__mod_lruvec_page_state(new_page, NR_SHMEM, nr_none);
+		if (is_shmem)
+			__mod_lruvec_page_state(new_page, NR_SHMEM, nr_none);
 	}
 
 tree_locked:
@@ -1625,7 +1661,8 @@ tree_unlocked:
 
 		SetPageUptodate(new_page);
 		page_ref_add(new_page, HPAGE_PMD_NR - 1);
-		set_page_dirty(new_page);
+		if (is_shmem)
+			set_page_dirty(new_page);
 		lru_cache_add(new_page);
 
 		/*
@@ -1639,7 +1676,9 @@ tree_unlocked:
 		/* Something went wrong: rollback changes to the radix-tree */
 		xa_lock_irq(&mapping->i_pages);
 		mapping->nrpages -= nr_none;
-		shmem_uncharge(mapping->host, nr_none);
+
+		if (is_shmem)
+			shmem_uncharge(mapping->host, nr_none);
 
 		radix_tree_for_each_slot(slot, &mapping->i_pages, &iter, start) {
 			if (iter.index >= end)
@@ -1731,7 +1770,8 @@ static void khugepaged_scan_file(struct mm_struct *mm,
 			break;
 		}
 
-		if (page_count(page) != 1 + page_mapcount(page)) {
+		if (page_count(page) !=
+		    1 + page_mapcount(page) + page_has_private(page)) {
 			result = SCAN_PAGE_COUNT;
 			break;
 		}
@@ -1837,11 +1877,13 @@ skip:
 			VM_BUG_ON(khugepaged_scan.address < hstart ||
 				  khugepaged_scan.address + HPAGE_PMD_SIZE >
 				  hend);
-			if (shmem_file(vma->vm_file)) {
+			if (IS_ENABLED(CONFIG_SHMEM) && vma->vm_file) {
 				struct file *file;
 				pgoff_t pgoff = linear_page_index(vma,
 						khugepaged_scan.address);
-				if (!shmem_huge_enabled(vma))
+
+				if (shmem_file(vma->vm_file)
+				    && !shmem_huge_enabled(vma))
 					goto skip;
 				file = get_file(vma->vm_file);
 				up_read(&mm->mmap_sem);
