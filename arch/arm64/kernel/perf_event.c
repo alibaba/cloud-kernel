@@ -528,6 +528,7 @@ static inline bool armv8pmu_event_is_chained(struct perf_event *event)
 		PMEVN_CASE(17, case_macro);			\
 		PMEVN_CASE(18, case_macro);			\
 		PMEVN_CASE(19, case_macro);			\
+		PMEVN_CASE(20, case_macro);			\
 		PMEVN_CASE(21, case_macro);			\
 		PMEVN_CASE(22, case_macro);			\
 		PMEVN_CASE(23, case_macro);			\
