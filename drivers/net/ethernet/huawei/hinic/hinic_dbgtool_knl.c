@@ -180,8 +180,8 @@ long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 
 	/* alloc cmd and ack memory*/
 	size = para->param.api_rd.size;
-	if (para->param.api_rd.size == 0) {
-		pr_err("Read cmd size invalid\n");
+	if (para->param.api_rd.size == 0 || size > DBGTOOL_MSG_MAX_SIZE) {
+		pr_err("Read cmd size invalid or more than 2M\n");
 		return -EINVAL;
 	}
 	cmd = kzalloc((unsigned long long)size, GFP_KERNEL);
@@ -260,8 +260,8 @@ long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
 
 	/* alloc cmd memory*/
 	size = para->param.api_wr.size;
-	if (para->param.api_wr.size == 0) {
-		pr_err("Write cmd size invalid\n");
+	if (para->param.api_wr.size == 0 || size > DBGTOOL_MSG_MAX_SIZE) {
+		pr_err("Write cmd size invalid or more than 2M\n");
 		return -EINVAL;
 	}
 	cmd = kzalloc((unsigned long long)size, GFP_KERNEL);

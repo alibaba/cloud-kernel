@@ -1337,8 +1337,8 @@ static int get_pf_dev_info(char *dev_name, struct msg_module *nt_msg)
 	int i;
 	int err;
 
-	if (nt_msg->lenInfo.outBuffLen != (sizeof(dev_info) * 16) ||
-	    nt_msg->lenInfo.inBuffLen != (sizeof(dev_info) * 16)) {
+	if (nt_msg->lenInfo.outBuffLen != sizeof(dev_info) ||
+	    nt_msg->lenInfo.inBuffLen != sizeof(dev_info)) {
 		pr_err("Invalid out_buf_size %d or Invalid in_buf_size %d, expect %lu\n",
 		       nt_msg->lenInfo.outBuffLen, nt_msg->lenInfo.inBuffLen,
 		       (sizeof(dev_info) * 16));
