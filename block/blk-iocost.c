@@ -3405,8 +3405,31 @@ static struct cftype ioc_files[] = {
 	{}
 };
 
+static struct cftype ioc_legacy_files[] = {
+	{
+		.name = "cost.weight",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = ioc_weight_show,
+		.write = ioc_weight_write,
+	},
+	{
+		.name = "cost.qos",
+		.flags = CFTYPE_ONLY_ON_ROOT,
+		.seq_show = ioc_qos_show,
+		.write = ioc_qos_write,
+	},
+	{
+		.name = "cost.model",
+		.flags = CFTYPE_ONLY_ON_ROOT,
+		.seq_show = ioc_cost_model_show,
+		.write = ioc_cost_model_write,
+	},
+	{}
+};
+
 static struct blkcg_policy blkcg_policy_iocost = {
 	.dfl_cftypes	= ioc_files,
+	.legacy_cftypes = ioc_legacy_files,
 	.cpd_alloc_fn	= ioc_cpd_alloc,
 	.cpd_free_fn	= ioc_cpd_free,
 	.pd_alloc_fn	= ioc_pd_alloc,
