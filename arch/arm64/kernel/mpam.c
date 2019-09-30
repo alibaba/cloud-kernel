@@ -247,14 +247,14 @@ static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable)
 {
 	u32 mon, pmg, partid, flt, ctl = 0;
 
+	mon = g->mon.mon;
+	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
 	if (enable) {
-		mon = g->mon.mon;
 		pmg = g->mon.rmid;
 		partid = g->closid;
 		flt = MSMON_CFG_FLT_SET(pmg, partid);
 		ctl = MSMON_CFG_MBWU_CTL_SET(MSMON_MATCH_PMG|MSMON_MATCH_PARTID);
 
-		mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
 		mpam_writel(flt, d->base + MSMON_CFG_MBWU_FLT);
 	}
 
@@ -267,14 +267,14 @@ static int csu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable)
 {
 	u32 mon, pmg, partid, flt, ctl = 0;
 
+	mon = g->mon.mon;
+	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
 	if (enable) {
-		mon = g->mon.mon;
 		pmg = g->mon.rmid;
 		partid = g->closid;
 		flt = MSMON_CFG_FLT_SET(pmg, partid);
 		ctl = MSMON_CFG_CSU_CTL_SET(MSMON_MATCH_PMG|MSMON_MATCH_PARTID);
 
-		mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
 		mpam_writel(flt, d->base + MSMON_CFG_CSU_FLT);
 	}
 
