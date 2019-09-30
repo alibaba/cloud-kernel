@@ -1665,14 +1665,38 @@ static u64 calc_vtime_cost(struct bio *bio, struct ioc_gq *iocg, bool is_merge)
 
 static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *lock)
 {
-	struct blkcg_gq *blkg = bio->bi_blkg;
 	struct ioc *ioc = rqos_to_ioc(rqos);
-	struct ioc_gq *iocg = blkg_to_iocg(blkg);
+	struct request_queue *q = rqos->q;
+	struct blkcg_gq *blkg;
+	struct blkcg *blkcg;
+	struct ioc_gq *iocg;
 	struct ioc_now now;
 	struct iocg_wait wait;
 	u32 hw_active, hw_inuse;
 	u64 abs_cost, cost, vtime;
 
+	rcu_read_lock();
+	blkcg = bio_blkcg(bio);
+	bio_associate_blkcg(bio, &blkcg->css);
+	blkg = blkg_lookup(blkcg, q);
+	if (unlikely(!blkg)) {
+		if (!lock)
+			spin_lock_irq(q->queue_lock);
+		blkg = blkg_lookup_create(blkcg, q);
+		if (IS_ERR(blkg))
+			blkg = NULL;
+		if (!lock)
+			spin_unlock_irq(q->queue_lock);
+	}
+	if (!blkg) {
+		rcu_read_unlock();
+		return;
+	}
+
+	bio_associate_blkg(bio, blkg);
+	rcu_read_unlock();
+
+	iocg = blkg_to_iocg(blkg);
 	/* bypass IOs if disabled or for root cgroup */
 	if (!ioc->enabled || !iocg->level)
 		return;
@@ -1783,13 +1807,28 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 static void ioc_rqos_merge(struct rq_qos *rqos, struct request *rq,
 			   struct bio *bio)
 {
-	struct ioc_gq *iocg = blkg_to_iocg(bio->bi_blkg);
-	struct ioc *ioc = iocg->ioc;
+	struct ioc_gq *iocg;
+	struct blkcg *blkcg;
+	struct blkcg_gq *blkg;
+	struct request_queue *q = rqos->q;
+	struct ioc *ioc = rqos_to_ioc(rqos);
 	sector_t bio_end = bio_end_sector(bio);
 	struct ioc_now now;
 	u32 hw_inuse;
 	u64 abs_cost, cost;
 
+	rcu_read_lock();
+	blkcg = bio_blkcg(bio);
+	bio_associate_blkcg(bio, &blkcg->css);
+	blkg = blkg_lookup(blkcg, q);
+	if (unlikely(!blkg)) {
+		rcu_read_unlock();
+		return;
+	}
+	bio_associate_blkg(bio, blkg);
+	rcu_read_unlock();
+
+	iocg = blkg_to_iocg(blkg);
 	/* bypass if disabled or for root cgroup */
 	if (!ioc->enabled || !iocg->level)
 		return;
