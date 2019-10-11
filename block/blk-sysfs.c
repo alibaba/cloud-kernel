@@ -516,6 +516,27 @@ static ssize_t queue_dax_show(struct request_queue *q, char *page)
 	return queue_var_show(blk_queue_dax(q), page);
 }
 
+static ssize_t queue_hang_threshold_show(struct request_queue *q, char *page)
+{
+	return sprintf(page, "%u\n", q->rq_hang_threshold);
+}
+
+static ssize_t queue_hang_threshold_store(struct request_queue *q,
+				const char *page, size_t count)
+{
+	unsigned int hang_threshold;
+	int err;
+
+	err = kstrtou32(page, 10, &hang_threshold);
+	if (err || hang_threshold == 0)
+		return -EINVAL;
+
+	blk_queue_rq_hang_threshold(q, hang_threshold);
+
+	return count;
+}
+
+
 static struct queue_sysfs_entry queue_requests_entry = {
 	.attr = {.name = "nr_requests", .mode = 0644 },
 	.show = queue_requests_show,
@@ -695,6 +716,12 @@ static struct queue_sysfs_entry queue_wb_lat_entry = {
 	.store = queue_wb_lat_store,
 };
 
+static struct queue_sysfs_entry queue_hang_entry = {
+	.attr = {.name = "hang_threshold", .mode = 0644 },
+	.show = queue_hang_threshold_show,
+	.store = queue_hang_threshold_store,
+};
+
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 static struct queue_sysfs_entry throtl_sample_time_entry = {
 	.attr = {.name = "throttle_sample_time", .mode = 0644 },
@@ -737,6 +764,7 @@ static struct attribute *default_attrs[] = {
 	&queue_dax_entry.attr,
 	&queue_wb_lat_entry.attr,
 	&queue_poll_delay_entry.attr,
+	&queue_hang_entry.attr,
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 	&throtl_sample_time_entry.attr,
 #endif

@@ -94,6 +94,39 @@ void part_in_flight_rw(struct request_queue *q, struct hd_struct *part,
 	inflight[1] = atomic_read(&part->in_flight[1]);
 }
 
+static void blk_in_hang_rw(struct request_queue *q, struct hd_struct *part,
+			   unsigned int hang[2])
+{
+	u64 now, duration;
+	unsigned long flags;
+	struct request *rq, *tmp;
+
+	now = ktime_get_ns();
+	spin_lock_irqsave(q->queue_lock, flags);
+
+	list_for_each_entry_safe(rq, tmp, &q->timeout_list, timeout_list) {
+		duration = div_u64(now - rq->start_time_ns, NSEC_PER_MSEC);
+		if (duration < rq->q->rq_hang_threshold)
+			continue;
+
+		if (!part->partno || rq->part == part)
+			hang[rq_data_dir(rq)]++;
+	}
+
+	spin_unlock_irqrestore(q->queue_lock, flags);
+}
+
+void part_in_hang_rw(struct request_queue *q, struct hd_struct *part,
+		     unsigned int hang[2])
+{
+	if (q->mq_ops) {
+		blk_mq_in_hang_rw(q, part, hang);
+		return;
+	}
+
+	blk_in_hang_rw(q, part, hang);
+}
+
 struct hd_struct *__disk_get_part(struct gendisk *disk, int partno)
 {
 	struct disk_part_tbl *ptbl = rcu_dereference(disk->part_tbl);
@@ -1157,6 +1190,7 @@ static DEVICE_ATTR(discard_alignment, 0444, disk_discard_alignment_show, NULL);
 static DEVICE_ATTR(capability, 0444, disk_capability_show, NULL);
 static DEVICE_ATTR(stat, 0444, part_stat_show, NULL);
 static DEVICE_ATTR(inflight, 0444, part_inflight_show, NULL);
+static DEVICE_ATTR(hang, 0444, part_hang_show, NULL);
 static DEVICE_ATTR(badblocks, 0644, disk_badblocks_show, disk_badblocks_store);
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 static struct device_attribute dev_attr_fail =
@@ -1179,6 +1213,7 @@ static struct attribute *disk_attrs[] = {
 	&dev_attr_capability.attr,
 	&dev_attr_stat.attr,
 	&dev_attr_inflight.attr,
+	&dev_attr_hang.attr,
 	&dev_attr_badblocks.attr,
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 	&dev_attr_fail.attr,

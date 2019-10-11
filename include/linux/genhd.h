@@ -398,6 +398,8 @@ void part_dec_in_flight(struct request_queue *q, struct hd_struct *part,
 			int rw);
 void part_inc_in_flight(struct request_queue *q, struct hd_struct *part,
 			int rw);
+void part_in_hang_rw(struct request_queue *q, struct hd_struct *part,
+		     unsigned int hang[2]);
 
 static inline struct partition_meta_info *alloc_part_info(struct gendisk *disk)
 {
@@ -642,6 +644,8 @@ extern ssize_t part_size_show(struct device *dev,
 extern ssize_t part_stat_show(struct device *dev,
 			      struct device_attribute *attr, char *buf);
 extern ssize_t part_inflight_show(struct device *dev,
+			      struct device_attribute *attr, char *buf);
+extern ssize_t part_hang_show(struct device *dev,
 			      struct device_attribute *attr, char *buf);
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 extern ssize_t part_fail_show(struct device *dev,
