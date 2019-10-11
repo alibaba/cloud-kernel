@@ -66,6 +66,13 @@ void blk_queue_rq_timeout(struct request_queue *q, unsigned int timeout)
 }
 EXPORT_SYMBOL_GPL(blk_queue_rq_timeout);
 
+void blk_queue_rq_hang_threshold(struct request_queue *q,
+		unsigned int hang_threshold)
+{
+	q->rq_hang_threshold = hang_threshold;
+}
+EXPORT_SYMBOL_GPL(blk_queue_rq_hang_threshold);
+
 void blk_queue_rq_timed_out(struct request_queue *q, rq_timed_out_fn *fn)
 {
 	WARN_ON_ONCE(q->mq_ops);

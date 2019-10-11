@@ -213,6 +213,39 @@ static ssize_t queue_write_hint_store(void *data, const char __user *buf,
 	return count;
 }
 
+static void blk_mq_debugfs_rq_hang_show(struct seq_file *m, struct request *rq);
+
+static void blk_mq_check_rq_hang(struct blk_mq_hw_ctx *hctx,
+		struct request *rq, void *priv, bool reserved)
+{
+	struct seq_file *m = priv;
+	u64 now = ktime_get_ns();
+	u64 duration;
+
+	duration = div_u64(now - rq->start_time_ns, NSEC_PER_MSEC);
+	if (duration < rq->q->rq_hang_threshold)
+		return;
+
+	/* See comments in blk_mq_check_expired() */
+	if (!refcount_inc_not_zero(&rq->ref))
+		return;
+
+	duration = div_u64(now - rq->start_time_ns, NSEC_PER_MSEC);
+	if (duration >= rq->q->rq_hang_threshold)
+		blk_mq_debugfs_rq_hang_show(m, rq);
+
+	if (refcount_dec_and_test(&rq->ref))
+		__blk_mq_free_request(rq);
+}
+
+static int queue_rq_hang_show(void *data, struct seq_file *m)
+{
+	struct request_queue *q = data;
+
+	blk_mq_queue_tag_busy_iter(q, blk_mq_check_rq_hang, m);
+	return 0;
+}
+
 static const struct blk_mq_debugfs_attr blk_mq_debugfs_queue_attrs[] = {
 	{ "poll_stat", 0400, queue_poll_stat_show },
 	{ "requeue_list", 0400, .seq_ops = &queue_requeue_list_seq_ops },
@@ -220,6 +253,7 @@ static const struct blk_mq_debugfs_attr blk_mq_debugfs_queue_attrs[] = {
 	{ "state", 0600, queue_state_show, queue_state_write },
 	{ "write_hints", 0600, queue_write_hint_show, queue_write_hint_store },
 	{ "zone_wlock", 0400, queue_zone_wlock_show, NULL },
+	{ "rq_hang", 0400, queue_rq_hang_show, NULL },
 	{ },
 };
 
@@ -380,6 +414,56 @@ int __blk_mq_debugfs_rq_show(struct seq_file *m, struct request *rq)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(__blk_mq_debugfs_rq_show);
+
+static void blk_mq_debugfs_rq_hang_show(struct seq_file *m, struct request *rq)
+{
+	const struct blk_mq_ops *const mq_ops = rq->q->mq_ops;
+	const unsigned int op = rq->cmd_flags & REQ_OP_MASK;
+	struct bio *bio;
+	struct bio_vec *bvec;
+	int i;
+
+	seq_printf(m, "%px {.op=", rq);
+	if (op < ARRAY_SIZE(op_name) && op_name[op])
+		seq_printf(m, "%s", op_name[op]);
+	else
+		seq_printf(m, "%d", op);
+	seq_puts(m, ", .cmd_flags=");
+	blk_flags_show(m, rq->cmd_flags & ~REQ_OP_MASK, cmd_flag_name,
+		       ARRAY_SIZE(cmd_flag_name));
+	seq_puts(m, ", .rq_flags=");
+	blk_flags_show(m, (__force unsigned int)rq->rq_flags, rqf_name,
+		       ARRAY_SIZE(rqf_name));
+	seq_printf(m, ", .state=%s", blk_mq_rq_state_name(blk_mq_rq_state(rq)));
+	seq_printf(m, ", .tag=%d, .internal_tag=%d", rq->tag,
+		   rq->internal_tag);
+	seq_printf(m, ", .start_time_ns=%llu", rq->start_time_ns);
+	seq_printf(m, ", .io_start_time_ns=%llu", rq->io_start_time_ns);
+	seq_printf(m, ", .current_time=%llu", ktime_get_ns());
+
+	bio = rq->bio;
+	if (bio) {
+		while (1) {
+			seq_printf(m, ", .bio = %px", bio);
+			seq_puts(m, ", .bio_pages = { ");
+			bio_for_each_segment_all(bvec, bio, i) {
+				struct page *page = bvec->bv_page;
+
+				if (!page)
+					continue;
+				seq_printf(m, "%px ", page);
+			}
+			seq_puts(m, "}");
+			bio = bio->bi_next;
+			if (bio == NULL)
+				break;
+		}
+	}
+	if (mq_ops->show_rq)
+		mq_ops->show_rq(m, rq);
+	seq_puts(m, "}\n");
+	return;
+}
 
 int blk_mq_debugfs_rq_show(struct seq_file *m, void *v)
 {

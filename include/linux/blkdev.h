@@ -436,6 +436,12 @@ static inline int blkdev_reset_zones_ioctl(struct block_device *bdev,
 
 #endif /* CONFIG_BLK_DEV_ZONED */
 
+/*
+ * default request hang threshold, unit is millisecond. If one request does
+ * not complete in this threashold time, consider this request as hang.
+ */
+#define BLK_REQ_HANG_THRESHOLD  5000
+
 struct request_queue {
 	/*
 	 * Together with queue_head for cacheline sharing
@@ -581,6 +587,7 @@ struct request_queue {
 	unsigned int		request_fn_active;
 
 	unsigned int		rq_timeout;
+	unsigned int		rq_hang_threshold;
 	int			poll_nsec;
 
 	struct blk_stat_callback	*poll_cb;
@@ -1264,6 +1271,8 @@ extern void blk_queue_rq_timed_out(struct request_queue *, rq_timed_out_fn *);
 extern void blk_queue_rq_timeout(struct request_queue *, unsigned int);
 extern void blk_queue_flush_queueable(struct request_queue *q, bool queueable);
 extern void blk_queue_write_cache(struct request_queue *q, bool enabled, bool fua);
+extern void blk_queue_rq_hang_threshold(struct request_queue *q,
+					unsigned int threshold);
 
 /*
  * Number of physical segments as sent to the device.

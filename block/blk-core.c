@@ -1017,6 +1017,7 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id,
 	q->last_merge = NULL;
 	q->end_sector = 0;
 	q->boundary_rq = NULL;
+	q->rq_hang_threshold = BLK_REQ_HANG_THRESHOLD;
 
 	q->id = ida_simple_get(&blk_queue_ida, 0, 0, gfp_mask);
 	if (q->id < 0)
