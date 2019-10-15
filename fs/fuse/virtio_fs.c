@@ -66,6 +66,19 @@ static inline struct fuse_pqueue *vq_to_fpq(struct virtqueue *vq)
 	return &vq_to_fsvq(vq)->fud->pq;
 }
 
+/* Should be called with fsvq->lock held. */
+static inline void inc_in_flight_req(struct virtio_fs_vq *fsvq)
+{
+	fsvq->in_flight++;
+}
+
+/* Should be called with fsvq->lock held. */
+static inline void dec_in_flight_req(struct virtio_fs_vq *fsvq)
+{
+	WARN_ON(fsvq->in_flight <= 0);
+	fsvq->in_flight--;
+}
+
 static void release_virtio_fs_obj(struct kref *ref)
 {
 	struct virtio_fs *vfs = container_of(ref, struct virtio_fs, refcount);
@@ -109,22 +122,6 @@ static void virtio_fs_drain_queue(struct virtio_fs_vq *fsvq)
 	flush_delayed_work(&fsvq->dispatch_work);
 }
 
-static inline void drain_hiprio_queued_reqs(struct virtio_fs_vq *fsvq)
-{
-	struct virtio_fs_forget *forget;
-
-	spin_lock(&fsvq->lock);
-	while (1) {
-		forget = list_first_entry_or_null(&fsvq->queued_reqs,
-						struct virtio_fs_forget, list);
-		if (!forget)
-			break;
-		list_del(&forget->list);
-		kfree(forget);
-	}
-	spin_unlock(&fsvq->lock);
-}
-
 static void virtio_fs_drain_all_queues(struct virtio_fs *fs)
 {
 	struct virtio_fs_vq *fsvq;
@@ -132,9 +129,6 @@ static void virtio_fs_drain_all_queues(struct virtio_fs *fs)
 
 	for (i = 0; i < fs->nvqs; i++) {
 		fsvq = &fs->vqs[i];
-		if (i == VQ_HIPRIO)
-			drain_hiprio_queued_reqs(fsvq);
-
 		virtio_fs_drain_queue(fsvq);
 	}
 }
@@ -249,7 +243,7 @@ static void virtio_fs_hiprio_done_work(struct work_struct *work)
 
 		while ((req = virtqueue_get_buf(vq, &len)) != NULL) {
 			kfree(req);
-			fsvq->in_flight--;
+			dec_in_flight_req(fsvq);
 		}
 	} while (!virtqueue_enable_cb(vq) && likely(!virtqueue_is_broken(vq)));
 	spin_unlock(&fsvq->lock);
@@ -301,6 +295,7 @@ static void virtio_fs_hiprio_dispatch_work(struct work_struct *work)
 
 		list_del(&forget->list);
 		if (!fsvq->connected) {
+			dec_in_flight_req(fsvq);
 			spin_unlock(&fsvq->lock);
 			kfree(forget);
 			continue;
@@ -322,13 +317,13 @@ static void virtio_fs_hiprio_dispatch_work(struct work_struct *work)
 			} else {
 				pr_debug("virtio-fs: Could not queue FORGET: err=%d. Dropping it.\n",
 					 ret);
+				dec_in_flight_req(fsvq);
 				kfree(forget);
 			}
 			spin_unlock(&fsvq->lock);
 			return;
 		}
 
-		fsvq->in_flight++;
 		notify = virtqueue_kick_prepare(vq);
 		spin_unlock(&fsvq->lock);
 
@@ -462,7 +457,7 @@ static void virtio_fs_requests_done_work(struct work_struct *work)
 
 		fuse_request_end(fc, req);
 		spin_lock(&fsvq->lock);
-		fsvq->in_flight--;
+		dec_in_flight_req(fsvq);
 		spin_unlock(&fsvq->lock);
 	}
 }
@@ -720,6 +715,7 @@ __releases(fiq->lock)
 			list_add_tail(&forget->list, &fsvq->queued_reqs);
 			schedule_delayed_work(&fsvq->dispatch_work,
 					msecs_to_jiffies(1));
+			inc_in_flight_req(fsvq);
 		} else {
 			pr_debug("virtio-fs: Could not queue FORGET: err=%d. Dropping it.\n",
 				 ret);
@@ -729,7 +725,7 @@ __releases(fiq->lock)
 		goto out;
 	}
 
-	fsvq->in_flight++;
+	inc_in_flight_req(fsvq);
 	notify = virtqueue_kick_prepare(vq);
 
 	spin_unlock(&fsvq->lock);
@@ -908,7 +904,7 @@ static int virtio_fs_enqueue_req(struct virtio_fs_vq *fsvq,
 	/* matches barrier in request_wait_answer() */
 	smp_mb__after_atomic();
 
-	fsvq->in_flight++;
+	inc_in_flight_req(fsvq);
 	notify = virtqueue_kick_prepare(vq);
 
 	spin_unlock(&fsvq->lock);
