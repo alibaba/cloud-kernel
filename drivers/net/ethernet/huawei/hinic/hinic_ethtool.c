@@ -991,7 +991,7 @@ static int hinic_set_ringparam(struct net_device *netdev,
 
 	if (new_sq_depth == nic_dev->sq_depth &&
 	    new_rq_depth == nic_dev->rq_depth)
-		return 0;	/* nothing to do */
+		return 0;	/* nothing will do */
 
 	if (test_bit(HINIC_BP_ENABLE, &nic_dev->flags) &&
 	    new_rq_depth <= nic_dev->bp_upper_thd) {
@@ -1012,7 +1012,6 @@ static int hinic_set_ringparam(struct net_device *netdev,
 		nicif_info(nic_dev, drv, netdev, "Restarting netdev\n");
 		err = hinic_close(netdev);
 		if (err) {
-			/* TODO: how to restore?? */
 			nicif_err(nic_dev, drv, netdev,
 				  "Failed to close netdev\n");
 			return -EFAULT;
@@ -1739,7 +1738,6 @@ static int hinic_set_phys_id(struct net_device *netdev,
 		return 0;
 }
 #else
-/* TODO: implement */
 static int hinic_phys_id(struct net_device *netdev, u32 data)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);

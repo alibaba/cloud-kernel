@@ -1260,10 +1260,6 @@ static int hinic_set_mac_addr(struct net_device *netdev, void *addr)
 	nicif_info(nic_dev, drv, netdev, "Set new mac address %pM\n",
 		   saddr->sa_data);
 
-	/* TODO: vlan mac address of the device must be modified of kernel
-	 * larger than 4.7 (not modified mac address of vlan)
-	 */
-
 	return 0;
 }
 

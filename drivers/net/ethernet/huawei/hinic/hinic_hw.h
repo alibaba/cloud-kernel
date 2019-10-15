@@ -365,15 +365,6 @@ enum hinic_func_cap {
 	(!(hinic_get_func_feature_cap(hwdev) &  \
 	   HINIC_FUNC_OFFLOAD_OVS_UNSUPP))
 
-/* chip interface initialization(including allocating system initialization
- * interface control structure, obtained from the space bar or FW interface
- * capabilities, msix initialization, aeqs initialization, pf/up
- * communication module initialization)
- * adapter_hdl: record hinic_pcidev or NDIS_Adapter pointer address
- * pcidev_hdl: record the pcidev or Handler pointer address
- * dev_hdl: record pcidev->dev or Handler pointer which is used to dma address
- *	    allocation or dev_err print the parameter
- */
 int hinic_init_hwdev(struct hinic_init_para *para);
 int hinic_set_vf_dev_cap(void *hwdev);
 void hinic_free_hwdev(void *hwdev);

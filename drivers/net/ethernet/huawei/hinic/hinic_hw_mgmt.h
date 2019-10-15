@@ -223,11 +223,9 @@ struct rdma_service_cap {
 				 * (1 << (32-ilog2(num_mpt)))-1;
 				 */
 
-	/* todo: need to check whether related to max_mtt_seg */
 	u32 num_mtts;		/* Number of MTT table (4M),
 				 * is actually MTT seg number
 				 */
-	/* todo: max value needs to be confirmed */
 	/* MTT table number of Each MTT seg(3)*/
 	u32 log_mtt_seg;
 	u32 mtt_entry_sz;      /* MTT table size 8B, including 1 PA(64bits)*/

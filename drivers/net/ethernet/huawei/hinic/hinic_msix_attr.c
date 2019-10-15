@@ -31,9 +31,9 @@
  * @msix_index: msix_index
  * @pending_limit: the maximum pending interrupt events (unit 8)
  * @coalesc_timer: coalesc period for interrupt (unit 8 us)
- * @lli_timer: replenishing period for low latency credit (unit 8 us)
+ * @lli_timer_cfg: replenishing period for low latency credit (unit 8 us)
  * @lli_credit_limit: maximum credits for low latency msix messages (unit 8)
- * @resend_timer_cfg: maximum wait for resending msix message
+ * @resend_timer: maximum wait for resending msix message
  *                    (unit coalesc period)
  * Return: 0 - success, negative - failure
  **/
@@ -65,8 +65,8 @@ int hinic_msix_attr_set(struct hinic_hwif *hwif, u16 msix_index,
  * @hwif: the hardware interface of a pci function device
  * @msix_index: msix_index
  * @pending_limit: the maximum pending interrupt events (unit 8)
- * @coalesc_timer: coalesc period for interrupt (unit 8 us)
- * @lli_timer: replenishing period for low latency credit (unit 8 us)
+ * @coalesc_timer_cfg: coalesc period for interrupt (unit 8 us)
+ * @lli_timer_cfg: replenishing period for low latency credit (unit 8 us)
  * @lli_credit_limit: maximum credits for low latency msix messages (unit 8)
  * @resend_timer_cfg: maximum wait for resending msix message
  *                    (unit coalesc period)
@@ -98,11 +98,11 @@ int hinic_msix_attr_get(struct hinic_hwif *hwif, u16 msix_index,
  * hinic_msix_attr_cnt_set - set message attribute counters of msix entry
  * @hwif: the hardware interface of a pci function device
  * @msix_index: msix_index
- * @pending_limit: the maximum pending interrupt events (unit 8)
- * @coalesc_timer: coalesc period for interrupt (unit 8 us)
- * @lli_timer: replenishing period for low latency interrupt (unit 8 us)
- * @lli_credit_limit: maximum credits for low latency msix messages (unit 8)
- * @resend_timer_cfg: maximum wait for resending msix message
+ * @lli_timer_cnt: replenishing period for low latency interrupt (unit 8 us)
+ * @lli_credit_cnt: maximum credits for low latency msix messages (unit 8)
+ * @coalesc_timer_cnt: coalesc period for interrupt (unit 8 us)
+ * @pending_cnt: the maximum pending interrupt events (unit 8)
+ * @resend_timer_cnt: maximum wait for resending msix message
  *                    (unit coalesc period)
  * Return: 0 - success, negative - failure
  **/

@@ -559,7 +559,6 @@ int hinic_ppf_process_mbox_msg(struct hinic_hwdev *hwdev, u16 pf_idx, u16 vf_id,
 	bool same_host = false;
 	int err = -EFAULT;
 
-	/* TODO: receive message from other host? get host id from pf_id */
 	/* modify same_host according to hinic_get_hw_pf_infos */
 
 	switch (hwdev->func_mode) {
@@ -880,7 +879,6 @@ int hinic_multi_host_mgmt_init(struct hinic_hwdev *hwdev)
 	hwdev->mhost_mgmt->mhost_ppf_idx = 0;
 	if (IS_BMGW_MASTER_HOST(hwdev) || IS_BMGW_SLAVE_HOST(hwdev)) {
 		/* fix slave host ppf 6 and host 2 in bmwg mode
-		 * TODO: get ppf_idx and host_idx according to pf_infos
 		 */
 		hwdev->mhost_mgmt->shost_ppf_idx = 6;
 		hwdev->mhost_mgmt->shost_host_idx = 2;

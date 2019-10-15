@@ -102,7 +102,7 @@ int hinic_pci_sriov_disable(struct pci_dev *dev)
 	u16 tmp_vfs;
 
 	sriov_info = hinic_get_sriov_info_by_pcidev(dev);
-	/* if SR-IOV is already disabled then there is nothing to do */
+	/* if SR-IOV is already disabled then nothing will be done */
 	if (!sriov_info->sriov_enabled)
 		return 0;
 
@@ -376,7 +376,7 @@ int hinic_ndo_get_vf_config(struct net_device *netdev,
  * @netdev: network interface device structure
  * @vf_id: VF identifier
  * @link: required link state
- *
+ * Return: 0 - success, negative - failure
  * Set the link state of a specified VF, regardless of physical link state
  **/
 int hinic_ndo_set_vf_link_state(struct net_device *netdev, int vf_id, int link)

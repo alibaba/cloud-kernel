@@ -966,7 +966,6 @@ static void hinic_maybe_reconfig_rss_indir(struct net_device *netdev)
 	if (!nic_dev->rss_indir_user)
 		return;
 
-	/* TODO: if dcb is enabled, user can not config rss indir table */
 	if (test_bit(HINIC_DCB_ENABLE, &nic_dev->flags))
 		goto discard_user_rss_indir;
 

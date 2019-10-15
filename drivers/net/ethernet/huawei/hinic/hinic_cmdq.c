@@ -488,7 +488,6 @@ static void cmdq_set_inline_wqe(struct hinic_cmdq_wqe *wqe,
 		complete_format = COMPLETE_DIRECT;
 		wqe_scmd->completion.direct_resp = 0;
 		break;
-	/* TODO: ASYNC CMD */
 	default:
 		break;
 	}

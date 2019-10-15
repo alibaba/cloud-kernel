@@ -262,7 +262,6 @@ static int get_tx_wqe_info(struct hinic_nic_dev *nic_dev,
 	if (!info || !buf_out || in_size != sizeof(*info))
 		return -EFAULT;
 
-	/* TODO: change the type of info->q_id */
 	q_id = (u16)info->q_id;
 	idx = (u16)info->wqe_id;
 

@@ -47,7 +47,7 @@ void hinic_hwif_write_reg(struct hinic_hwif *hwif, u32 reg, u32 val)
 
 /**
  * hwif_ready - test if the HW initialization passed
- * @hwif: the hardware interface of a pci function device
+ * @hwdev: the pointer to hw device
  * Return: 0 - success, negative - failure
  **/
 static int hwif_ready(struct hinic_hwdev *hwdev)
@@ -534,8 +534,8 @@ static void __print_selftest_reg(struct hinic_hwdev *hwdev)
 
 /**
  * hinic_init_hwif - initialize the hw interface
- * @hwif: the hardware interface of a pci function device
- * @pdev: the pci device that will be part of the hwif struct
+ * @hwdev: the pointer to hw device
+ * @cfg_reg_base: configuration base address
  * Return: 0 - success, negative - failure
  **/
 int hinic_init_hwif(struct hinic_hwdev *hwdev, void *cfg_reg_base,
@@ -604,8 +604,7 @@ hwif_ready_err:
 
 /**
  * hinic_free_hwif - free the hw interface
- * @hwif: the hardware interface of a pci function device
- * @pdev: the pci device that will be part of the hwif struct
+ * @hwdev: the pointer to hw device
  **/
 void hinic_free_hwif(struct hinic_hwdev *hwdev)
 {
@@ -673,7 +672,10 @@ u16 hinic_global_func_id(void *hwdev)
 }
 EXPORT_SYMBOL(hinic_global_func_id);
 
-/*get function id from register,used by sriov hot migration process*/
+/**
+ * get function id from register,used by sriov hot migration process
+ * @hwdev: the pointer to hw device
+ **/
 u16 hinic_global_func_id_hw(void *hwdev)
 {
 	u32 addr, attr0;
@@ -755,7 +757,11 @@ void hinic_func_own_free(void *hwdev)
 	up(&dev->func_sem);
 }
 
-/*get function id, used by sriov hot migratition process.*/
+/**
+ * get function id, used by sriov hot migratition process.
+ * @hwdev: the pointer to hw device
+ * @func_id: function id
+ **/
 int hinic_global_func_id_get(void *hwdev, u16 *func_id)
 {
 	struct hinic_hwdev *dev = (struct hinic_hwdev *)hwdev;

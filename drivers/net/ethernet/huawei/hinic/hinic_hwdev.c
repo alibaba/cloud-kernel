@@ -1463,7 +1463,7 @@ static int hinic_pf_rx_tx_flush(struct hinic_hwdev *hwdev)
 	int err;
 	int ret = 0;
 
-	/*  wait ucode stop I/O */
+	/* wait ucode stop I/O */
 	msleep(100);
 
 	err = wait_cmdq_stop(hwdev);
@@ -1706,7 +1706,7 @@ static int init_ceqs_msix_attr(struct hinic_hwdev *hwdev)
 
 /**
  * set_pf_dma_attr_entry - set the dma attributes for entry
- * @hwif: the hardware interface of a pci function device
+ * @hwdev: the pointer to hw device
  * @entry_idx: the entry index in the dma table
  * @st: PCIE TLP steering tag
  * @at:	PCIE TLP AT field
@@ -1776,13 +1776,13 @@ static int set_vf_dma_attr_entry(struct hinic_hwdev *hwdev, u8 entry_idx,
 
 /**
  * dma_attr_table_init - initialize the the default dma attributes
- * @hwif: the hardware interface of a pci function device
+ * @hwdev: the pointer to hw device
+ * Return: 0 - success, negative - failure
  **/
 static int dma_attr_table_init(struct hinic_hwdev *hwdev)
 {
 	int err = 0;
 
-	/* TODO: check if set pf dma attr through uP, the same as vf */
 	if (HINIC_IS_VF(hwdev))
 		err = set_vf_dma_attr_entry(hwdev, PCIE_MSIX_ATTR_ENTRY,
 					    HINIC_PCIE_ST_DISABLE,
@@ -4429,7 +4429,7 @@ static u8 hinic_get_heartbeat_status(struct hinic_hwdev *hwdev)
 		sdk_err(hwdev->dev_hdl, "Detect pcie is link down\n");
 		hinic_set_chip_absent(hwdev);
 		hinic_force_complete_all(hwdev);
-	/* :should notify chiperr to pangea
+	/* should notify chiperr to pangea
 	 * when detecting pcie link down
 	 */
 		return 1;

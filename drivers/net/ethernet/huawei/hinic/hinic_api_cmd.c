@@ -145,6 +145,7 @@ static void dump_api_chain_reg(struct hinic_api_cmd_chain *chain)
 /**
  * chain_busy - check if the chain is still processing last requests
  * @chain: chain to check
+ * Return: 0 - success, negative - failure
  **/
 static int chain_busy(struct hinic_api_cmd_chain *chain)
 {
@@ -192,6 +193,8 @@ static int chain_busy(struct hinic_api_cmd_chain *chain)
 /**
  * get_cell_data_size - get the data size of specific cell type
  * @type: chain type
+ * @cmd_size: the command size
+ * Return: cell_data_size
  **/
 static u16 get_cell_data_size(enum hinic_api_cmd_chain_type type, u16 cmd_size)
 {
@@ -310,7 +313,6 @@ static void prepare_api_cmd(struct hinic_api_cmd_chain *chain,
  * @dest: destination node on the card that will receive the command
  * @cmd: command data
  * @cmd_size: the command size
- * Return: 0 - success, negative - failure
  **/
 static void prepare_cell(struct hinic_api_cmd_chain *chain,
 			 enum  hinic_node_id dest,
@@ -1123,7 +1125,7 @@ static void api_cmd_destroy_chain(struct hinic_api_cmd_chain *chain)
 
 /**
  * hinic_api_cmd_init - Initialize all the API CMD chains
- * @hwif: the hardware interface of a pci function device
+ * @hwdev: the pointer to hw device
  * @chain: the API CMD chains that will be initialized
  * Return: 0 - success, negative - failure
  **/

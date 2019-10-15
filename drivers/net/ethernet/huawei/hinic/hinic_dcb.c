@@ -297,7 +297,6 @@ int hinic_setup_tc(struct net_device *netdev, u8 tc)
 	}
 
 	if (tc) {
-		/* TODO: verify if num_tc should be power of 2 */
 		if (tc & (tc - 1)) {
 			nicif_err(nic_dev, drv, netdev,
 				  "Invalid num_tc: %d, must be power of 2\n",

@@ -303,10 +303,10 @@ static u8 eq_cons_idx_checksum_set(u32 val)
 
 /**
  * hinic_aeq_register_hw_cb - register aeq callback for specific event
- * @eqs: pointer to eqs part of the chip
+ * @hwdev: pointer to hw device
  * @event: event for the handler
- * @handle: private data will be used by the callback
  * @hw_cb: callback function
+ * Return: 0 - success, negative - failure
  **/
 int hinic_aeq_register_hw_cb(void *hwdev, enum hinic_aeq_type event,
 			     hinic_aeq_hwe_cb hwe_cb)
@@ -328,7 +328,7 @@ EXPORT_SYMBOL(hinic_aeq_register_hw_cb);
 
 /**
  * hinic_aeq_unregister_hw_cb - unregister the aeq callback for specific event
- * @eqs: pointer to eqs part of the chip
+ * @hwdev: pointer to hw device
  * @event: event for the handler
  **/
 void hinic_aeq_unregister_hw_cb(void *hwdev, enum hinic_aeq_type event)
@@ -351,10 +351,10 @@ EXPORT_SYMBOL(hinic_aeq_unregister_hw_cb);
 
 /**
  * hinic_aeq_register_sw_cb - register aeq callback for sw event
- * @eqs: pointer to eqs part of the chip
- * @handle: private data will be used by the callback
+ * @hwdev: pointer to hw device
  * @event: soft event for the handler
  * @sw_cb: callback function
+ * Return: 0 - success, negative - failure
  **/
 int hinic_aeq_register_swe_cb(void *hwdev, enum hinic_aeq_sw_type event,
 			      hinic_aeq_swe_cb aeq_swe_cb)
@@ -376,7 +376,7 @@ EXPORT_SYMBOL(hinic_aeq_register_swe_cb);
 
 /**
  * hinic_aeq_unregister_sw_cb - unregister the aeq callback for sw event
- * @eqs: pointer to eqs part of the chip
+ * @hwdev: pointer to hw device
  * @event: soft event for the handler
  **/
 void hinic_aeq_unregister_swe_cb(void *hwdev, enum hinic_aeq_sw_type event)
@@ -399,10 +399,10 @@ EXPORT_SYMBOL(hinic_aeq_unregister_swe_cb);
 
 /**
  * hinic_ceq_register_sw_cb - register ceq callback for specific event
- * @ceqs: pointer to eqs part of the chip
+ * @hwdev: pointer to hw device
  * @event: event for the handler
- * @handle: private data will be used by the callback
- * @ceq_cb: callback function
+ * @callback: callback function
+ * Return: 0 - success, negative - failure
  **/
 int hinic_ceq_register_cb(void *hwdev, enum hinic_ceq_event event,
 			  hinic_ceq_event_cb callback)
@@ -424,7 +424,7 @@ EXPORT_SYMBOL(hinic_ceq_register_cb);
 
 /**
  * hinic_ceq_unregister_cb - unregister ceq callback for specific event
- * @ceqs: pointer to eqs part of the chip
+ * @hwdev: pointer to hw device
  * @event: event for the handler
  **/
 void hinic_ceq_unregister_cb(void *hwdev, enum hinic_ceq_event event)
@@ -448,7 +448,7 @@ EXPORT_SYMBOL(hinic_ceq_unregister_cb);
 /**
  * set_eq_cons_idx - write the cons idx to the hw
  * @eq: The event queue to update the cons idx for
- * @cons idx: consumer index value
+ * @arm_state: arm state value
  **/
 static void set_eq_cons_idx(struct hinic_eq *eq, u32 arm_state)
 {
@@ -584,6 +584,7 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
 /**
  * ceq_irq_handler - handler for the ceq event
  * @eq: the completion event queue of the event
+ * Return: true - success, false - failure
  **/
 static bool ceq_irq_handler(struct hinic_eq *eq)
 {
@@ -633,6 +634,7 @@ static void reschedule_eq_handler(struct hinic_eq *eq)
 /**
  * eq_irq_handler - handler for the eq event
  * @data: the event queue of the event
+ * Return: true - success, false - failure
  **/
 static bool eq_irq_handler(void *data)
 {
@@ -808,6 +810,7 @@ static int set_ceq_ctrl_reg(struct hinic_hwdev *hwdev, u16 q_id,
 /**
  * set_eq_ctrls - setting eq's ctrls registers
  * @eq: the event queue for setting
+ * Return: 0 - success, negative - failure
  **/
 static int set_eq_ctrls(struct hinic_eq *eq)
 {
@@ -1064,11 +1067,10 @@ static inline u32 get_page_size(struct hinic_eq *eq)
 /**
  * init_eq - initialize eq
  * @eq:	the event queue
- * @hwif: the hardware interface of a pci function device
+ * @hwdev: the pointer to hw device
  * @q_id: Queue id number
  * @q_len: the number of EQ elements
  * @type: the type of the event queue, ceq or aeq
- * @page_size: the page size of the event queue
  * @entry: msix entry associated with the event queue
  * Return: 0 - Success, Negative - failure
  **/
@@ -1199,11 +1201,8 @@ static void remove_eq(struct hinic_eq *eq)
 
 /**
  * hinic_aeqs_init - init all the aeqs
- * @aeqs: aeqs part of the chip
- * @hwif: the hardware interface of a pci function device
+ * @hwdev: the pointer to hw device
  * @num_ceqs: number of AEQs
- * @q_len: number of EQ elements
- * @page_size: the page size of the event queue
  * @msix_entries: msix entries associated with the event queues
  * Return: 0 - Success, Negative - failure
  **/
@@ -1261,7 +1260,7 @@ create_work_err:
 
 /**
  * hinic_aeqs_free - free all the aeqs
- * @aeqs: aeqs part of the chip
+ * @hwdev: the pointer to hw device
  **/
 void hinic_aeqs_free(struct hinic_hwdev *hwdev)
 {
@@ -1344,7 +1343,7 @@ init_ceq_err:
 
 /**
  * hinic_ceqs_free - free all the ceqs
- * @ceqs: ceqs part of the chip
+ * @hwdev: the pointer to hw device
  **/
 void hinic_ceqs_free(struct hinic_hwdev *hwdev)
 {

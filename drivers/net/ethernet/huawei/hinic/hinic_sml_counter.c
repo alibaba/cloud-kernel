@@ -77,8 +77,9 @@ static void hinic_sml_ctr_write_build_req(chipif_sml_ctr_wr_req_s *msg,
 
 /**
  * hinic_sm_ctr_rd32 - small single 32 counter read
- * @hwdev: the hardware device
+ * @hwdev: the pointer to hw device
  * @node: the node id
+ * @instance: instance value
  * @ctr_id: counter id
  * @value: read counter value ptr
  * Return: 0 - success, negative - failure
@@ -112,8 +113,9 @@ EXPORT_SYMBOL(hinic_sm_ctr_rd32);
 
 /**
  * hinic_sm_ctr_rd32_clear - small single 32 counter read and clear to zero
- * @hwdev: the hardware device
+ * @hwdev: the pointer to hw device
  * @node: the node id
+ * @instance: instance value
  * @ctr_id: counter id
  * @value: read counter value ptr
  * Return: 0 - success, negative - failure
@@ -151,8 +153,9 @@ EXPORT_SYMBOL(hinic_sm_ctr_rd32_clear);
 
 /**
  * hinic_sm_ctr_wr32 - small single 32 counter write
- * @hwdev: the hardware device
+ * @hwdev: the pointer to hw device
  * @node: the node id
+ * @instance: instance value
  * @ctr_id: counter id
  * @value: write counter value
  * Return: 0 - success, negative - failure
@@ -175,8 +178,9 @@ int hinic_sm_ctr_wr32(void *hwdev, u8 node, u8 instance, u32 ctr_id, u32 value)
 
 /**
  * hinic_sm_ctr_rd64 - big counter 64 read
- * @hwdev: the hardware device
+ * @hwdev: the pointer to hw device
  * @node: the node id
+ * @instance: instance value
  * @ctr_id: counter id
  * @value: read counter value ptr
  * Return: 0 - success, negative - failure
@@ -209,8 +213,9 @@ int hinic_sm_ctr_rd64(void *hwdev, u8 node, u8 instance, u32 ctr_id, u64 *value)
 
 /**
  * hinic_sm_ctr_wr64 - big single 64 counter write
- * @hwdev: the hardware device
+ * @hwdev: the pointer to hw device
  * @node: the node id
+ * @instance: instance value
  * @ctr_id: counter id
  * @value: write counter value
  * Return: 0 - success, negative - failure
@@ -233,8 +238,9 @@ int hinic_sm_ctr_wr64(void *hwdev, u8 node, u8 instance, u32 ctr_id, u64 value)
 
 /**
  * hinic_sm_ctr_rd64_pair - big pair 128 counter read
- * @hwdev: the hardware device
+ * @hwdev: the pointer to hw device
  * @node: the node id
+ * @instance: instance value
  * @ctr_id: counter id
  * @value1: read counter value ptr
  * @value2: read counter value ptr
@@ -273,9 +279,10 @@ int hinic_sm_ctr_rd64_pair(void *hwdev, u8 node, u8 instance,
 
 /**
  * hinic_sm_ctr_wr64_pair - big pair 128 counter write
- * @hwdev: the hardware device
+ * @hwdev: the pointer to hw device
  * @node: the node id
  * @ctr_id: counter id
+ * @instance: instance value
  * @value1: write counter value
  * @value2: write counter value
  * Return: 0 - success, negative - failure

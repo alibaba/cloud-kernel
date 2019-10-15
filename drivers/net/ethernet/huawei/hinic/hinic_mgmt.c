@@ -83,9 +83,11 @@ static void pf_to_mgmt_send_event_set(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 
 /**
  * hinic_register_mgmt_msg_cb - register sync msg handler for a module
- * @pf_to_mgmt: PF to MGMT channel
+ * @hwdev:	the pointer to hw device
  * @mod: module in the chip that this handler will handle its sync messages
+ * @pri_handle: pri handle function
  * @callback: the handler for a sync message that will handle messages
+ * Return: 0 - success, negative - failure
  **/
 int hinic_register_mgmt_msg_cb(void *hwdev, enum hinic_mod_type mod,
 			       void *pri_handle, hinic_mgmt_msg_cb callback)
@@ -110,7 +112,7 @@ EXPORT_SYMBOL(hinic_register_mgmt_msg_cb);
 
 /**
  * hinic_unregister_mgmt_msg_cb - unregister sync msg handler for a module
- * @pf_to_mgmt: PF to MGMT channel
+ * @hwdev: the pointer to hw device
  * @mod: module in the chip that this handler will handle its sync messages
  **/
 void hinic_unregister_mgmt_msg_cb(void *hwdev, enum hinic_mod_type mod)
@@ -217,7 +219,9 @@ static u16 mgmt_msg_len(u16 msg_data_len)
  * @header: pointer of the header to prepare
  * @msg_len: the length of the message
  * @mod: module in the chip that will get the message
+ * @ack_type: message ack type
  * @direction: the direction of the original message
+ * @cmd: vmd type
  * @msg_id: message id
  **/
 static void prepare_header(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
@@ -291,6 +295,7 @@ static void prepare_mgmt_cmd(u8 *mgmt_cmd, u64 *header, const void *msg,
  * @msg: the data of the message
  * @msg_len: the length of the message
  * @direction: the direction of the original message
+ * @resp_msg_id: msg id to response for
  * Return: 0 - success, negative - failure
  **/
 static int send_msg_to_mgmt_async(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
@@ -1192,7 +1197,7 @@ static void recv_mgmt_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 
 /**
  * hinic_mgmt_msg_aeqe_handler - handler for a mgmt message event
- * @handle: PF to MGMT channel
+ * @hwdev: the pointer to hw device
  * @header: the header of the message
  * @size: unused
  **/
@@ -1298,7 +1303,6 @@ alloc_msg_for_resp_err:
 /**
  * free_msg_buf - free all the message buffers of PF to MGMT channel
  * @pf_to_mgmt: PF to MGMT channel
- * Return: 0 - success, negative - failure
  **/
 static void free_msg_buf(struct hinic_msg_pf_to_mgmt *pf_to_mgmt)
 {
@@ -1312,8 +1316,7 @@ static void free_msg_buf(struct hinic_msg_pf_to_mgmt *pf_to_mgmt)
 
 /**
  * hinic_pf_to_mgmt_init - initialize PF to MGMT channel
- * @pf_to_mgmt: PF to MGMT channel
- * @hwif: HW interface the PF to MGMT will use for accessing HW
+ * @hwdev: the pointer to hw device
  * Return: 0 - success, negative - failure
  **/
 int hinic_pf_to_mgmt_init(struct hinic_hwdev *hwdev)
@@ -1369,7 +1372,7 @@ create_mgmt_workq_err:
 
 /**
  * hinic_pf_to_mgmt_free - free PF to MGMT channel
- * @pf_to_mgmt: PF to MGMT channel
+ * @hwdev: the pointer to hw device
  **/
 void hinic_pf_to_mgmt_free(struct hinic_hwdev *hwdev)
 {

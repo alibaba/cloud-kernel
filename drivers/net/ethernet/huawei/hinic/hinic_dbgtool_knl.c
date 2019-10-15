@@ -153,6 +153,7 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
  * dbgtool_knl_api_cmd_read - used for read operations
  * @para: the dbgtool parameter
  * @g_func_handle_array: global function handle
+ * Return: 0 - success, negative - failure
  **/
 long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 			      void **g_func_handle_array)
@@ -235,6 +236,7 @@ alloc_ack_mem_fail:
  * dbgtool_knl_api_cmd_write - used for write operations
  * @para: the dbgtool parameter
  * @g_func_handle_array: global function handle
+ * Return: 0 - success, negative - failure
  **/
 long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
 			       void **g_func_handle_array)
@@ -331,6 +333,7 @@ void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
  * dbgtool_knl_pf_dev_info_get - Obtain the pf sdk_info
  * @para: the dbgtool parameter
  * @g_func_handle_array: global function handle
+ * Return: 0 - success, negative - failure
  **/
 long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
 				 void **g_func_handle_array)
@@ -388,6 +391,7 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
  * dbgtool_knl_ffm_info_rd - Read ffm information
  * @para: the dbgtool parameter
  * @dbgtool_info: the dbgtool info
+ * Return: 0 - success, negative - failure
  **/
 long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
 			     struct dbgtool_k_glb_info *dbgtool_info)
@@ -404,7 +408,7 @@ long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
 
 /**
  * dbgtool_knl_ffm_info_clr - Clear FFM information
- * @para: the dbgtool parameter
+ * @para: unused
  * @dbgtool_info: the dbgtool info
  **/
 long dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
@@ -421,6 +425,7 @@ long dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
  * dbgtool_knl_msg_to_up - After receiving dbgtool command sends a message to uP
  * @para: the dbgtool parameter
  * @g_func_handle_array: global function handle
+ * Return: 0 - success, negative - failure
  **/
 long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 			   void **g_func_handle_array)
@@ -621,7 +626,9 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
  * ffm_intr_msg_record - FFM interruption records sent up
  * @handle: the function handle
  * @buf_in: the pointer to input buffer
- * @buf_out: the pointer to outputput buffer
+ * @in_size: the input buffer size
+ * @buf_out: the pointer to output buffer
+ * @out_size: the output buffer size
  **/
 void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 			 void *buf_out, u16 *out_size)
@@ -717,6 +724,7 @@ static const struct file_operations dbgtool_file_operations = {
  * dbgtool_knl_init - dbgtool character device init
  * @hwdev: the pointer to hardware device
  * @chip_node: the pointer to card node
+ * Return: 0 - success, negative - failure
  **/
 int dbgtool_knl_init(void *vhwdev, void *chip_node)
 {

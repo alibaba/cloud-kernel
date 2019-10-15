@@ -253,11 +253,10 @@ static int send_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 
 /**
  * hinic_register_ppf_mbox_cb - register mbox callback for ppf
- * @func_to_func: pointer to func_to_func part of the chip
+ * @hwdev: the pointer to hw device
  * @mod:	specific mod that the callback will handle
- * @handle	specific mod's private data that will be used in callback
  * @callback:	callback function
- * Return:
+ * Return: 0 - success, negative - failure
  */
 int hinic_register_ppf_mbox_cb(struct hinic_hwdev *hwdev,
 			       enum hinic_mod_type mod,
@@ -277,11 +276,10 @@ int hinic_register_ppf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_register_pf_mbox_cb - register mbox callback for pf
- * @func_to_func: pointer to func_to_func part of the chip
+ * @hwdev: the pointer to hw device
  * @mod:	specific mod that the callback will handle
- * @handle	specific mod's private data that will be used in callback
  * @callback:	callback function
- * Return:
+ * Return: 0 - success, negative - failure
  */
 int hinic_register_pf_mbox_cb(struct hinic_hwdev *hwdev,
 			      enum hinic_mod_type mod,
@@ -301,11 +299,10 @@ int hinic_register_pf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_register_vf_mbox_cb - register mbox callback for vf
- * @func_to_func: pointer to func_to_func part of the chip
+ * @hwdev: the pointer to hw device
  * @mod:	specific mod that the callback will handle
- * @handle	specific mod's private data that will be used in callback
  * @callback:	callback function
- * Return:
+ * Return: 0 - success, negative - failure
  */
 int hinic_register_vf_mbox_cb(struct hinic_hwdev *hwdev,
 			      enum hinic_mod_type mod,
@@ -325,11 +322,10 @@ int hinic_register_vf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_register_ppf_to_pf_mbox_cb - register mbox callback for pf from ppf
- * @func_to_func: pointer to func_to_func part of the chip
- * @mod:	specific mod that the callback will handle
- * @handle	specific mod's private data that will be used in callback
- * @callback:	callback function
- * Return:
+ * @hwdev: the pointer to hw device
+ * @mod: specific mod that the callback will handle
+ * @callback: callback function
+ * Return: 0 - success, negative - failure
  */
 int hinic_register_ppf_to_pf_mbox_cb(struct hinic_hwdev *hwdev,
 				     enum hinic_mod_type mod,
@@ -350,9 +346,8 @@ int hinic_register_ppf_to_pf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_unregister_ppf_mbox_cb - unregister the mbox callback for ppf
- * @func_to_func:	pointer to func_to_func part of the chip
- * @mod:		specific mod that the callback will handle
- * Return:
+ * @hwdev:	the pointer to hw device
+ * @mod:	specific mod that the callback will handle
  */
 void hinic_unregister_ppf_mbox_cb(struct hinic_hwdev *hwdev,
 				  enum hinic_mod_type mod)
@@ -370,9 +365,8 @@ void hinic_unregister_ppf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_unregister_ppf_mbox_cb - unregister the mbox callback for pf
- * @func_to_func:	pointer to func_to_func part of the chip
- * @mod:		specific mod that the callback will handle
- * Return:
+ * @hwdev:	the pointer to hw device
+ * @mod:	specific mod that the callback will handle
  */
 void hinic_unregister_pf_mbox_cb(struct hinic_hwdev *hwdev,
 				 enum hinic_mod_type mod)
@@ -390,9 +384,8 @@ void hinic_unregister_pf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_unregister_vf_mbox_cb - unregister the mbox callback for vf
- * @func_to_func:	pointer to func_to_func part of the chip
- * @mod:		specific mod that the callback will handle
- * Return:
+ * @hwdev:	the pointer to hw device
+ * @mod:	specific mod that the callback will handle
  */
 void hinic_unregister_vf_mbox_cb(struct hinic_hwdev *hwdev,
 				 enum hinic_mod_type mod)
@@ -410,9 +403,8 @@ void hinic_unregister_vf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_unregister_ppf_mbox_cb - unregister the mbox callback for pf from ppf
- * @func_to_func:	pointer to func_to_func part of the chip
- * @mod:		specific mod that the callback will handle
- * Return:
+ * @hwdev:	the pointer to hw device
+ * @mod:	specific mod that the callback will handle
  */
 void hinic_unregister_ppf_to_pf_mbox_cb(struct hinic_hwdev *hwdev,
 					enum hinic_mod_type mod)

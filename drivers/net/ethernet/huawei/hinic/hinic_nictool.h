@@ -173,7 +173,7 @@ struct hinic_dbg_sq_info {
 	u16	fi;/* hw_ci */
 
 	u32	q_depth;
-	u16	pi_reverse;/* TODO: what is this? */
+	u16	pi_reverse;
 	u16	weqbb_size;
 
 	u8	priority;
@@ -182,7 +182,6 @@ struct hinic_dbg_sq_info {
 
 	void	*slq_handle;
 
-	/* TODO: NIC don't use direct wqe */
 	struct hinic_tx_hw_page	direct_wqe;
 	struct hinic_tx_hw_page	db_addr;
 	u32	pg_idx;
