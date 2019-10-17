@@ -1109,9 +1109,6 @@ static int hinic_set_channels(struct net_device *netdev,
 		   nic_dev->rss_limit, count);
 	nic_dev->rss_limit = (u16)count;
 
-	/* Discard user configured rss */
-	hinic_set_default_rss_indir(netdev);
-
 	if (netif_running(netdev)) {
 		nicif_info(nic_dev, drv, netdev, "Restarting netdev\n");
 		err = hinic_close(netdev);
@@ -1120,6 +1117,8 @@ static int hinic_set_channels(struct net_device *netdev,
 				  "Failed to close netdev\n");
 			return -EFAULT;
 		}
+		/* Discard user configured rss */
+		hinic_set_default_rss_indir(netdev);
 
 		err = hinic_open(netdev);
 		if (err) {
@@ -1128,6 +1127,9 @@ static int hinic_set_channels(struct net_device *netdev,
 			return -EFAULT;
 		}
 	} else {
+		/* Discard user configured rss */
+		hinic_set_default_rss_indir(netdev);
+
 		hinic_update_num_qps(netdev);
 	}
 

@@ -60,6 +60,8 @@
 
 #define MAX_MSG_SZ			2016
 
+#define MAX_CMD_BUF_SIZE    2048ULL
+
 #define MSG_SZ_IS_VALID(in_size)	((in_size) <= MAX_MSG_SZ)
 
 #define SYNC_MSG_ID(pf_to_mgmt)	((pf_to_mgmt)->sync_msg_id)
@@ -312,6 +314,9 @@ static int send_msg_to_mgmt_async(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 	if (!hinic_get_chip_present_flag(pf_to_mgmt->hwdev))
 		return -EFAULT;
 
+	if (cmd_size > MAX_MSG_SZ)
+		return -EFAULT;
+
 	if (direction == HINIC_MSG_RESPONSE)
 		prepare_header(pf_to_mgmt, &header, msg_len, mod, HINIC_MSG_ACK,
 			       direction, cmd, resp_msg_id);
@@ -376,6 +381,9 @@ static int send_msg_to_mgmt_sync(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 	u16 cmd_size = mgmt_msg_len(msg_len);
 
 	if (!hinic_get_chip_present_flag(pf_to_mgmt->hwdev))
+		return -EFAULT;
+
+	if (cmd_size > MAX_CMD_BUF_SIZE)
 		return -EFAULT;
 
 	if (direction == HINIC_MSG_RESPONSE)
@@ -935,6 +943,9 @@ int hinic_api_cmd_write_nack(void *hwdev, u8 dest, void *cmd, u16 size)
 	if (!hwdev || !size || !cmd)
 		return -EINVAL;
 
+	if (size > MAX_CMD_BUF_SIZE)
+		return -EINVAL;
+
 	if (!hinic_is_hwdev_mod_inited(hwdev, HINIC_HWDEV_MGMT_INITED) ||
 	    hinic_get_mgmt_channel_status(hwdev))
 		return -EPERM;
@@ -956,6 +967,9 @@ int hinic_api_cmd_read_ack(void *hwdev, u8 dest, void *cmd, u16 size, void *ack,
 	struct hinic_api_cmd_chain *chain;
 
 	if (!hwdev || !cmd || (ack_size && !ack))
+		return -EINVAL;
+
+	if (size > MAX_CMD_BUF_SIZE)
 		return -EINVAL;
 
 	if (!hinic_is_hwdev_mod_inited(hwdev, HINIC_HWDEV_MGMT_INITED) ||

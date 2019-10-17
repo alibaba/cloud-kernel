@@ -471,6 +471,9 @@ static void hinic_dcbnl_set_pg_tc_cfg_tx(struct net_device *netdev, int tc,
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
+	if (tc > HINIC_DCB_TC_MAX - 1)
+		return;
+
 	if (prio != DCB_ATTR_VALUE_UNDEFINED)
 		nic_dev->tmp_dcb_cfg.tc_cfg[tc].path[0].prio_type = prio;
 	if (pg_id != DCB_ATTR_VALUE_UNDEFINED)
@@ -488,6 +491,9 @@ static void hinic_dcbnl_set_pg_bwg_cfg_tx(struct net_device *netdev, int bwg_id,
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
+	if (bwg_id > HINIC_DCB_PG_MAX - 1)
+		return;
+
 	nic_dev->tmp_dcb_cfg.bw_pct[0][bwg_id] = bw_pct;
 }
 
@@ -496,6 +502,9 @@ static void hinic_dcbnl_set_pg_tc_cfg_rx(struct net_device *netdev, int tc,
 					 u8 up_map)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	if (tc > HINIC_DCB_TC_MAX - 1)
+		return;
 
 	if (prio != DCB_ATTR_VALUE_UNDEFINED)
 		nic_dev->tmp_dcb_cfg.tc_cfg[tc].path[1].prio_type = prio;
@@ -512,6 +521,9 @@ static void hinic_dcbnl_set_pg_bwg_cfg_rx(struct net_device *netdev, int bwg_id,
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
+	if (bwg_id > HINIC_DCB_PG_MAX - 1)
+		return;
+
 	nic_dev->tmp_dcb_cfg.bw_pct[1][bwg_id] = bw_pct;
 }
 
@@ -520,6 +532,9 @@ static void hinic_dcbnl_get_pg_tc_cfg_tx(struct net_device *netdev, int tc,
 					 u8 *up_map)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	if (tc > HINIC_DCB_TC_MAX - 1)
+		return;
 
 	*prio = nic_dev->dcb_cfg.tc_cfg[tc].path[0].prio_type;
 	*pg_id = nic_dev->dcb_cfg.tc_cfg[tc].path[0].pg_id;
@@ -532,6 +547,9 @@ static void hinic_dcbnl_get_pg_bwg_cfg_tx(struct net_device *netdev, int bwg_id,
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
+	if (bwg_id > HINIC_DCB_PG_MAX - 1)
+		return;
+
 	*bw_pct = nic_dev->dcb_cfg.bw_pct[0][bwg_id];
 }
 
@@ -540,6 +558,9 @@ static void hinic_dcbnl_get_pg_tc_cfg_rx(struct net_device *netdev, int tc,
 					 u8 *up_map)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	if (tc > HINIC_DCB_TC_MAX - 1)
+		return;
 
 	*prio = nic_dev->dcb_cfg.tc_cfg[tc].path[1].prio_type;
 	*pg_id = nic_dev->dcb_cfg.tc_cfg[tc].path[1].pg_id;
@@ -551,6 +572,9 @@ static void hinic_dcbnl_get_pg_bwg_cfg_rx(struct net_device *netdev, int bwg_id,
 					  u8 *bw_pct)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	if (bwg_id > HINIC_DCB_PG_MAX - 1)
+		return;
 
 	*bw_pct = nic_dev->dcb_cfg.bw_pct[1][bwg_id];
 }
@@ -651,6 +675,9 @@ static void hinic_dcbnl_get_pfc_cfg(struct net_device *netdev, int prio,
 				    u8 *setting)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	if (prio > HINIC_DCB_TC_MAX - 1)
+		return;
 
 	*setting = nic_dev->dcb_cfg.tc_cfg[prio].pfc_en;
 }
