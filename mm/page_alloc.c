@@ -3931,12 +3931,14 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 	int progress;
 	unsigned int noreclaim_flag;
 	unsigned long pflags;
+	u64 start;
 
 	cond_resched();
 
 	/* We now go into synchronous reclaim */
 	cpuset_memory_pressure_bump();
 	psi_memstall_enter(&pflags);
+	start = ktime_get_ns();
 	fs_reclaim_acquire(gfp_mask);
 	noreclaim_flag = memalloc_noreclaim_save();
 	reclaim_state.reclaimed_slab = 0;
@@ -3948,6 +3950,7 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 	current->reclaim_state = NULL;
 	memalloc_noreclaim_restore(noreclaim_flag);
 	fs_reclaim_release(gfp_mask);
+	memcg_lat_stat_update(GLOBAL_DIRECT_RECLAIM, (ktime_get_ns() - start));
 	psi_memstall_leave(&pflags);
 
 	cond_resched();

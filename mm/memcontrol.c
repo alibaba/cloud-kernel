@@ -4511,6 +4511,152 @@ void memcg_check_wmark_min_adj(struct task_struct *curr,
 	}
 }
 
+static void smp_global_direct_reclaim_write(void *info)
+{
+	struct mem_cgroup *memcg = (struct mem_cgroup *)info;
+	int idx = GLOBAL_DIRECT_RECLAIM;
+	int i;
+
+	for (i = MEM_LAT_0_1; i < MEM_LAT_NR_COUNT; i++)
+		this_cpu_write(memcg->lat_stat_cpu->item[idx][i], 0);
+}
+
+static void smp_memcg_direct_reclaim_write(void *info)
+{
+	struct mem_cgroup *memcg = (struct mem_cgroup *)info;
+	int idx = MEMCG_DIRECT_RECLAIM;
+	int i;
+
+	for (i = MEM_LAT_0_1; i < MEM_LAT_NR_COUNT; i++)
+		this_cpu_write(memcg->lat_stat_cpu->item[idx][i], 0);
+}
+
+smp_call_func_t smp_memcg_lat_write_funcs[] = {
+	smp_global_direct_reclaim_write,
+	smp_memcg_direct_reclaim_write,
+};
+
+static int memcg_lat_stat_write(struct cgroup_subsys_state *css,
+			       enum mem_lat_stat_item idx)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	smp_call_func_t func = smp_memcg_lat_write_funcs[idx];
+
+	func((void *)memcg);
+	smp_call_function(func, (void *)memcg, 1);
+
+	return 0;
+}
+
+static int global_direct_reclaim_latency_write(struct cgroup_subsys_state *css,
+			struct cftype *cft, u64 val)
+{
+	if (val != 0)
+		return -EINVAL;
+
+	return memcg_lat_stat_write(css, GLOBAL_DIRECT_RECLAIM);
+}
+
+static int memcg_direct_reclaim_latency_write(struct cgroup_subsys_state *css,
+			struct cftype *cft, u64 val)
+{
+	if (val != 0)
+		return -EINVAL;
+
+	return memcg_lat_stat_write(css, MEMCG_DIRECT_RECLAIM);
+}
+
+static u64 memcg_lat_stat_gather(struct mem_cgroup *memcg,
+				 enum mem_lat_stat_item sidx,
+				 enum mem_lat_count_t cidx)
+{
+	u64 sum = 0;
+	int cpu;
+
+	for_each_online_cpu(cpu)
+		sum += per_cpu_ptr(memcg->lat_stat_cpu, cpu)->item[sidx][cidx];
+
+	return sum;
+}
+
+static void memcg_lat_stat_show(struct seq_file *m, enum mem_lat_stat_item idx)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+
+	seq_printf(m, "0-1ms: \t%llu\n",
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_0_1));
+	seq_printf(m, "1-5ms: \t%llu\n",
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_1_5));
+	seq_printf(m, "5-10ms: \t%llu\n",
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_5_10));
+	seq_printf(m, "10-100ms: \t%llu\n",
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_10_100));
+	seq_printf(m, "100-500ms: \t%llu\n",
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_100_500));
+	seq_printf(m, "500-1000ms: \t%llu\n",
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_500_1000));
+	seq_printf(m, ">=1000ms: \t%llu\n",
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_1000_INF));
+	seq_printf(m, "total(ms): \t%llu\n",
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_TOTAL) / 1000000);
+}
+
+static int global_direct_reclaim_latency_show(struct seq_file *m, void *v)
+{
+	memcg_lat_stat_show(m, GLOBAL_DIRECT_RECLAIM);
+
+	return 0;
+}
+
+static int memcg_direct_reclaim_latency_show(struct seq_file *m, void *v)
+{
+	memcg_lat_stat_show(m, MEMCG_DIRECT_RECLAIM);
+
+	return 0;
+}
+
+enum mem_lat_count_t get_mem_lat_count_idx(u64 duration)
+{
+	enum mem_lat_count_t idx;
+
+	duration = duration / 1000000;
+	if (duration < 1)
+		idx = MEM_LAT_0_1;
+	else if (duration < 5)
+		idx = MEM_LAT_1_5;
+	else if (duration < 10)
+		idx = MEM_LAT_5_10;
+	else if (duration < 100)
+		idx = MEM_LAT_10_100;
+	else if (duration < 500)
+		idx = MEM_LAT_100_500;
+	else if (duration < 1000)
+		idx = MEM_LAT_500_1000;
+	else
+		idx = MEM_LAT_1000_INF;
+
+	return idx;
+}
+
+void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration)
+{
+	struct mem_cgroup *memcg, *iter;
+	enum mem_lat_count_t cidx;
+
+	if (mem_cgroup_disabled())
+		return;
+
+	cidx = get_mem_lat_count_idx(duration);
+
+	memcg = get_mem_cgroup_from_mm(current->mm);
+	for (iter = memcg; iter; iter = parent_mem_cgroup(iter)) {
+		this_cpu_inc(iter->lat_stat_cpu->item[sidx][cidx]);
+		this_cpu_add(iter->lat_stat_cpu->item[sidx][MEM_LAT_TOTAL],
+			       duration);
+	}
+	css_put(&memcg->css);
+}
+
 static void __mem_cgroup_threshold(struct mem_cgroup *memcg, bool swap)
 {
 	struct mem_cgroup_threshold_ary *t;
@@ -5411,6 +5557,16 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write = memory_wmark_min_adj_write,
 	},
 	{
+		.name = "direct_reclaim_global_latency",
+		.write_u64 = global_direct_reclaim_latency_write,
+		.seq_show =  global_direct_reclaim_latency_show,
+	},
+	{
+		.name = "direct_reclaim_memcg_latency",
+		.write_u64 = memcg_direct_reclaim_latency_write,
+		.seq_show =  memcg_direct_reclaim_latency_show,
+	},
+	{
 		.name = "force_empty",
 		.write = mem_cgroup_force_empty_write,
 	},
@@ -5692,6 +5848,7 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 		free_mem_cgroup_per_node_info(memcg, node);
 	free_percpu(memcg->stat_cpu);
 	free_percpu(memcg->exstat_cpu);
+	free_percpu(memcg->lat_stat_cpu);
 	kfree(memcg);
 }
 
@@ -5726,6 +5883,10 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 
 	memcg->exstat_cpu = alloc_percpu(struct mem_cgroup_exstat_cpu);
 	if (!memcg->exstat_cpu)
+		goto fail;
+
+	memcg->lat_stat_cpu = alloc_percpu(struct mem_cgroup_lat_stat_cpu);
+	if (!memcg->lat_stat_cpu)
 		goto fail;
 
 	for_each_node(node)

@@ -88,6 +88,29 @@ struct mem_cgroup_reclaim_cookie {
 
 struct alloc_context;
 
+enum mem_lat_stat_item {
+	GLOBAL_DIRECT_RECLAIM,      /* global direct reclaim latency */
+	MEMCG_DIRECT_RECLAIM,       /* memcg direct reclaim latency */
+	MEM_LAT_NR_STAT,
+};
+
+/* Memory latency histogram distribution, in milliseconds */
+enum mem_lat_count_t {
+	MEM_LAT_0_1,
+	MEM_LAT_1_5,
+	MEM_LAT_5_10,
+	MEM_LAT_10_100,
+	MEM_LAT_100_500,
+	MEM_LAT_500_1000,
+	MEM_LAT_1000_INF,
+	MEM_LAT_TOTAL,
+	MEM_LAT_NR_COUNT,
+};
+
+struct mem_cgroup_lat_stat_cpu {
+	unsigned long item[MEM_LAT_NR_STAT][MEM_LAT_NR_COUNT];
+};
+
 #ifdef CONFIG_MEMCG
 
 #define MEM_CGROUP_ID_SHIFT	16
@@ -360,6 +383,9 @@ struct mem_cgroup {
 #endif
 
 	unsigned long offline_jiffies;
+
+	/* memory latency stat */
+	struct mem_cgroup_lat_stat_cpu __percpu *lat_stat_cpu;
 
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
@@ -905,6 +931,8 @@ static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
 int memcg_get_wmark_min_adj(struct task_struct *curr);
 void memcg_check_wmark_min_adj(struct task_struct *curr,
 		struct alloc_context *ac);
+
+extern void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration);
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0
@@ -1253,6 +1281,11 @@ static inline int memcg_get_wmark_min_adj(struct task_struct *curr)
 
 static inline void memcg_check_wmark_min_adj(struct task_struct *curr,
 		struct alloc_context *ac)
+{
+}
+
+static inline void memcg_lat_stat_update(enum mem_lat_stat_item sidx,
+					 u64 duration)
 {
 }
 #endif /* CONFIG_MEMCG */
