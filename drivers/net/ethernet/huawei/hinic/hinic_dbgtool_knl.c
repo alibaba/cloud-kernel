@@ -411,14 +411,10 @@ long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
  * @para: unused
  * @dbgtool_info: the dbgtool info
  **/
-long dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
+void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
 			      struct dbgtool_k_glb_info *dbgtool_info)
 {
-	long ret = 0;
-
 	dbgtool_info->ffm->ffm_num = 0;
-
-	return ret;
 }
 
 /**
@@ -600,7 +596,7 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 		ret = dbgtool_knl_ffm_info_rd(&param, dbgtool_info);
 		break;
 	case DBGTOOL_CMD_FFM_CLR:
-		ret = dbgtool_knl_ffm_info_clr(&param, dbgtool_info);
+		dbgtool_knl_ffm_info_clr(&param, dbgtool_info);
 		break;
 	case DBGTOOL_CMD_PF_DEV_INFO_GET:
 		ret = dbgtool_knl_pf_dev_info_get(&param,

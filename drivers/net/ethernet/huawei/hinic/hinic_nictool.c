@@ -661,7 +661,7 @@ static int set_link_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 }
 
 static int set_dcb_cfg(struct hinic_nic_dev *nic_dev, void *buf_in,
-			   u32 in_size, void *buf_out, u32 *out_size)
+			u32 in_size, void *buf_out, u32 *out_size)
 {
 	union _dcb_ctl dcb_ctl = {.data = 0};
 	int err;
@@ -990,7 +990,7 @@ static int set_poll_weight(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (!buf_in || in_size != sizeof(*weight_info)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect in buf size from user :%d, expect: %lu\n",
+			  "Unexpect in buf size from user :%u, expect: %lu\n",
 			  *out_size, sizeof(*weight_info));
 		return -EFAULT;
 	}
@@ -1399,8 +1399,9 @@ static int knl_free_mem(char *dev_name, struct msg_module *nt_msg)
 	return 0;
 }
 
-extern int hinic_get_card_func_info_by_card_name(const char *chip_name,
-				struct hinic_card_func_info *card_func);
+extern void hinic_get_card_func_info_by_card_name(const char *chip_name,
+						  struct hinic_card_func_info
+						  *card_func);
 
 static int get_card_func_info(char *dev_name, struct msg_module *nt_msg)
 {
@@ -1432,9 +1433,7 @@ static int get_card_func_info(char *dev_name, struct msg_module *nt_msg)
 		return -EINVAL;
 	}
 
-	err = hinic_get_card_func_info_by_card_name(dev_name, &card_func_info);
-	if (err)
-		return err;
+	hinic_get_card_func_info_by_card_name(dev_name, &card_func_info);
 
 	if (!card_func_info.num_pf) {
 		pr_err("None function found for %s\n", dev_name);

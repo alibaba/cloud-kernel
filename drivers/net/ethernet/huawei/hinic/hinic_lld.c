@@ -1270,9 +1270,9 @@ void hinic_get_card_info(void *hwdev, void *bufin)
 	lld_dev_put();
 }
 
-int hinic_get_card_func_info_by_card_name(const char *chip_name,
-					  struct hinic_card_func_info
-					  *card_func)
+void hinic_get_card_func_info_by_card_name(const char *chip_name,
+					   struct hinic_card_func_info
+					   *card_func)
 {
 	struct card_node *chip_node = NULL;
 	struct hinic_pcidev *dev;
@@ -1305,7 +1305,7 @@ int hinic_get_card_func_info_by_card_name(const char *chip_name,
 
 	lld_dev_put();
 
-	return 0;
+	return;
 }
 
 int hinic_get_device_id(void *hwdev, u16 *dev_id)
@@ -2148,6 +2148,7 @@ static int hinic_pci_init(struct pci_dev *pdev)
 dma_consistnet_mask_err:
 dma_mask_err:
 	pci_clear_master(pdev);
+	pci_disable_pcie_error_reporting(pdev);
 	pci_release_regions(pdev);
 
 pci_regions_err:
@@ -2681,7 +2682,7 @@ static void hinic_shutdown(struct pci_dev *pdev)
 {
 	struct hinic_pcidev *pci_adapter = pci_get_drvdata(pdev);
 
-	sdk_err(&pdev->dev, "Shutdown device\n");
+	sdk_info(&pdev->dev, "Shutdown device\n");
 
 	if (pci_adapter)
 		hinic_shutdown_hwdev(pci_adapter->hwdev);

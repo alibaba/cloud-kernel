@@ -31,6 +31,8 @@
 #include "hinic_nic.h"
 #include "hinic_dbg.h"
 
+#define INVALID_PI (65535)
+
 u16 hinic_dbg_get_qp_num(void *hwdev)
 {
 	struct hinic_nic_io *nic_io;
@@ -101,7 +103,7 @@ u16 hinic_dbg_get_rq_hw_pi(void *hwdev, u16 q_id)
 
 	nic_err(((struct hinic_hwdev *)hwdev)->dev_hdl, "Get rq hw pi failed!\n");
 
-	return 65535;
+	return INVALID_PI;
 }
 
 u16 hinic_dbg_get_rq_sw_pi(void *hwdev, u16 q_id)
@@ -254,7 +256,7 @@ void hinic_get_chip_fault_stats(const void *hwdev,
 	int copy_len = offset + MAX_DRV_BUF_SIZE - HINIC_CHIP_FAULT_SIZE;
 
 	if (offset < 0 || offset > HINIC_CHIP_FAULT_SIZE) {
-		pr_err("offset %d greater than chip fault max size\n",
+		pr_err("Invalid chip offset value: %d\n",
 		       offset);
 		return;
 	}

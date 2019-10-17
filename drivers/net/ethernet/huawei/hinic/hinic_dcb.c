@@ -600,7 +600,7 @@ void hinic_dcbnl_set_pfc_en_tool(struct net_device *netdev,
 	if (flag)
 		nic_dev->tmp_dcb_cfg.pfc_state = !!(*value);
 	else
-		*value = !!nic_dev->tmp_dcb_cfg.pfc_state;
+		*value = nic_dev->tmp_dcb_cfg.pfc_state;
 }
 
 void hinic_dcbnl_set_ets_en_tool(struct net_device *netdev,
