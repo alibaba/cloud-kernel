@@ -89,7 +89,8 @@ struct iomap_ops {
 	 * The actual length is returned in iomap->length.
 	 */
 	int (*iomap_begin)(struct inode *inode, loff_t pos, loff_t length,
-			unsigned flags, struct iomap *iomap);
+			unsigned flags, struct iomap *iomap,
+			struct iomap *srcmap);
 
 	/*
 	 * Commit and/or unreserve space previous allocated using iomap_begin.
