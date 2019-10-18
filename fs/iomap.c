@@ -49,8 +49,10 @@ loff_t
 iomap_apply(struct inode *inode, loff_t pos, loff_t length, unsigned flags,
 		const struct iomap_ops *ops, void *data, iomap_actor_t actor)
 {
-	struct iomap iomap = { 0 };
+	struct iomap iomap = { .type = IOMAP_HOLE };
+	struct iomap srcmap = { .type = IOMAP_HOLE };
 	loff_t written = 0, ret;
+	u64 end;
 
 	/*
 	 * Need to map a range from start position for length bytes. This can
@@ -64,7 +66,7 @@ iomap_apply(struct inode *inode, loff_t pos, loff_t length, unsigned flags,
 	 * expose transient stale data. If the reserve fails, we can safely
 	 * back out at this point as there is nothing to undo.
 	 */
-	ret = ops->iomap_begin(inode, pos, length, flags, &iomap);
+	ret = ops->iomap_begin(inode, pos, length, flags, &iomap, &srcmap);
 	if (ret)
 		return ret;
 	if (WARN_ON(iomap.offset > pos))
@@ -76,15 +78,26 @@ iomap_apply(struct inode *inode, loff_t pos, loff_t length, unsigned flags,
 	 * Cut down the length to the one actually provided by the filesystem,
 	 * as it might not be able to give us the whole size that we requested.
 	 */
-	if (iomap.offset + iomap.length < pos + length)
-		length = iomap.offset + iomap.length - pos;
+	end = iomap.offset + iomap.length;
+	if (srcmap.type != IOMAP_HOLE)
+		end = min(end, srcmap.offset + srcmap.length);
+	if (pos + length > end)
+		length = end - pos;
 
 	/*
-	 * Now that we have guaranteed that the space allocation will succeed.
+	 * Now that we have guaranteed that the space allocation will succeed,
 	 * we can do the copy-in page by page without having to worry about
 	 * failures exposing transient data.
+	 *
+	 * To support COW operations, we read in data for partially blocks from
+	 * the srcmap if the file system filled it in.  In that case we the
+	 * length needs to be limited to the earlier of the ends of the iomaps.
+	 * If the file system did not provide a srcmap we pass in the normal
+	 * iomap into the actors so that they don't need to have special
+	 * handling for the two cases.
 	 */
-	written = actor(inode, pos, length, data, &iomap);
+	written = actor(inode, pos, length, data, &iomap,
+			srcmap.type != IOMAP_HOLE ? &srcmap : &iomap);
 
 	/*
 	 * Now the data has been copied, commit the range we've copied.  This
@@ -291,7 +304,7 @@ struct iomap_readpage_ctx {
 
 static loff_t
 iomap_readpage_actor(struct inode *inode, loff_t pos, loff_t length, void *data,
-		struct iomap *iomap)
+		struct iomap *iomap, struct iomap *srcmap)
 {
 	struct iomap_readpage_ctx *ctx = data;
 	struct page *page = ctx->cur_page;
@@ -433,7 +446,7 @@ iomap_next_page(struct inode *inode, struct list_head *pages, loff_t pos,
 
 static loff_t
 iomap_readpages_actor(struct inode *inode, loff_t pos, loff_t length,
-		void *data, struct iomap *iomap)
+		void *data, struct iomap *iomap, struct iomap *srcmap)
 {
 	struct iomap_readpage_ctx *ctx = data;
 	loff_t done, ret;
@@ -453,7 +466,7 @@ iomap_readpages_actor(struct inode *inode, loff_t pos, loff_t length,
 			ctx->cur_page_in_bio = false;
 		}
 		ret = iomap_readpage_actor(inode, pos + done, length - done,
-				ctx, iomap);
+				ctx, iomap, srcmap);
 	}
 
 	return done;
@@ -630,7 +643,7 @@ iomap_read_page_sync(struct inode *inode, loff_t block_start, struct page *page,
 
 static int
 __iomap_write_begin(struct inode *inode, loff_t pos, unsigned len,
-		struct page *page, struct iomap *iomap)
+		struct page *page, struct iomap *srcmap)
 {
 	struct iomap_page *iop = iomap_page_create(inode, page);
 	loff_t block_size = i_blocksize(inode);
@@ -651,7 +664,7 @@ __iomap_write_begin(struct inode *inode, loff_t pos, unsigned len,
 		if ((from > poff && from < poff + plen) ||
 		    (to > poff && to < poff + plen)) {
 			status = iomap_read_page_sync(inode, block_start, page,
-					poff, plen, from, to, iomap);
+					poff, plen, from, to, srcmap);
 			if (status)
 				break;
 		}
@@ -663,13 +676,15 @@ __iomap_write_begin(struct inode *inode, loff_t pos, unsigned len,
 
 static int
 iomap_write_begin(struct inode *inode, loff_t pos, unsigned len, unsigned flags,
-		struct page **pagep, struct iomap *iomap)
+		struct page **pagep, struct iomap *iomap, struct iomap *srcmap)
 {
 	pgoff_t index = pos >> PAGE_SHIFT;
 	struct page *page;
 	int status = 0;
 
 	BUG_ON(pos + len > iomap->offset + iomap->length);
+	if (srcmap != iomap)
+		BUG_ON(pos + len > srcmap->offset + srcmap->length);
 
 	if (fatal_signal_pending(current))
 		return -EINTR;
@@ -678,12 +693,12 @@ iomap_write_begin(struct inode *inode, loff_t pos, unsigned len, unsigned flags,
 	if (!page)
 		return -ENOMEM;
 
-	if (iomap->type == IOMAP_INLINE)
-		iomap_read_inline_data(inode, page, iomap);
+	if (srcmap->type == IOMAP_INLINE)
+		iomap_read_inline_data(inode, page, srcmap);
 	else if (iomap->flags & IOMAP_F_BUFFER_HEAD)
-		status = __block_write_begin_int(page, pos, len, NULL, iomap);
+		status = __block_write_begin_int(page, pos, len, NULL, srcmap);
 	else
-		status = __iomap_write_begin(inode, pos, len, page, iomap);
+		status = __iomap_write_begin(inode, pos, len, page, srcmap);
 	if (unlikely(status)) {
 		unlock_page(page);
 		put_page(page);
@@ -767,14 +782,14 @@ iomap_write_end_inline(struct inode *inode, struct page *page,
 }
 
 static int
-iomap_write_end(struct inode *inode, loff_t pos, unsigned len,
-		unsigned copied, struct page *page, struct iomap *iomap)
+iomap_write_end(struct inode *inode, loff_t pos, unsigned len, unsigned copied,
+		struct page *page, struct iomap *iomap, struct iomap *srcmap)
 {
 	int ret;
 
-	if (iomap->type == IOMAP_INLINE) {
+	if (srcmap->type == IOMAP_INLINE) {
 		ret = iomap_write_end_inline(inode, page, iomap, pos, copied);
-	} else if (iomap->flags & IOMAP_F_BUFFER_HEAD) {
+	} else if (srcmap->flags & IOMAP_F_BUFFER_HEAD) {
 		ret = generic_write_end(NULL, inode->i_mapping, pos, len,
 				copied, page, NULL);
 	} else {
@@ -792,7 +807,7 @@ iomap_write_end(struct inode *inode, loff_t pos, unsigned len,
 
 static loff_t
 iomap_write_actor(struct inode *inode, loff_t pos, loff_t length, void *data,
-		struct iomap *iomap)
+		struct iomap *iomap, struct iomap *srcmap)
 {
 	struct iov_iter *i = data;
 	long status = 0;
@@ -828,7 +843,7 @@ again:
 		}
 
 		status = iomap_write_begin(inode, pos, bytes, flags, &page,
-				iomap);
+				iomap, srcmap);
 		if (unlikely(status))
 			break;
 
@@ -840,7 +855,7 @@ again:
 		flush_dcache_page(page);
 
 		status = iomap_write_end(inode, pos, bytes, copied, page,
-				iomap);
+				iomap, srcmap);
 		if (unlikely(status < 0))
 			break;
 		copied = status;
@@ -909,7 +924,7 @@ __iomap_read_page(struct inode *inode, loff_t offset)
 
 static loff_t
 iomap_dirty_actor(struct inode *inode, loff_t pos, loff_t length, void *data,
-		struct iomap *iomap)
+		struct iomap *iomap, struct iomap *srcmap)
 {
 	long status = 0;
 	ssize_t written = 0;
@@ -927,14 +942,16 @@ iomap_dirty_actor(struct inode *inode, loff_t pos, loff_t length, void *data,
 			return PTR_ERR(rpage);
 
 		status = iomap_write_begin(inode, pos, bytes,
-					   AOP_FLAG_NOFS, &page, iomap);
+					   AOP_FLAG_NOFS, &page, iomap,
+					   srcmap);
 		put_page(rpage);
 		if (unlikely(status))
 			return status;
 
 		WARN_ON_ONCE(!PageUptodate(page));
 
-		status = iomap_write_end(inode, pos, bytes, bytes, page, iomap);
+		status = iomap_write_end(inode, pos, bytes, bytes, page, iomap,
+					 srcmap);
 		if (unlikely(status <= 0)) {
 			if (WARN_ON_ONCE(status == 0))
 				return -EIO;
@@ -973,20 +990,20 @@ iomap_file_dirty(struct inode *inode, loff_t pos, loff_t len,
 EXPORT_SYMBOL_GPL(iomap_file_dirty);
 
 static int iomap_zero(struct inode *inode, loff_t pos, unsigned offset,
-		unsigned bytes, struct iomap *iomap)
+		unsigned bytes, struct iomap *iomap, struct iomap *srcmap)
 {
 	struct page *page;
 	int status;
 
 	status = iomap_write_begin(inode, pos, bytes, AOP_FLAG_NOFS, &page,
-				   iomap);
+				   iomap, srcmap);
 	if (status)
 		return status;
 
 	zero_user(page, offset, bytes);
 	mark_page_accessed(page);
 
-	return iomap_write_end(inode, pos, bytes, bytes, page, iomap);
+	return iomap_write_end(inode, pos, bytes, bytes, page, iomap, srcmap);
 }
 
 static int iomap_dax_zero(loff_t pos, unsigned offset, unsigned bytes,
@@ -998,14 +1015,14 @@ static int iomap_dax_zero(loff_t pos, unsigned offset, unsigned bytes,
 
 static loff_t
 iomap_zero_range_actor(struct inode *inode, loff_t pos, loff_t count,
-		void *data, struct iomap *iomap)
+		void *data, struct iomap *iomap, struct iomap *srcmap)
 {
 	bool *did_zero = data;
 	loff_t written = 0;
 	int status;
 
 	/* already zeroed?  we're done. */
-	if (iomap->type == IOMAP_HOLE || iomap->type == IOMAP_UNWRITTEN)
+	if (srcmap->type == IOMAP_HOLE || srcmap->type == IOMAP_UNWRITTEN)
 	    	return count;
 
 	do {
@@ -1017,7 +1034,8 @@ iomap_zero_range_actor(struct inode *inode, loff_t pos, loff_t count,
 		if (IS_DAX(inode))
 			status = iomap_dax_zero(pos, offset, bytes, iomap);
 		else
-			status = iomap_zero(inode, pos, offset, bytes, iomap);
+			status = iomap_zero(inode, pos, offset, bytes, iomap,
+					srcmap);
 		if (status < 0)
 			return status;
 
@@ -1067,7 +1085,7 @@ EXPORT_SYMBOL_GPL(iomap_truncate_page);
 
 static loff_t
 iomap_page_mkwrite_actor(struct inode *inode, loff_t pos, loff_t length,
-		void *data, struct iomap *iomap)
+		void *data, struct iomap *iomap, struct iomap *srcmap)
 {
 	struct page *page = data;
 	int ret;
@@ -1165,7 +1183,7 @@ static int iomap_to_fiemap(struct fiemap_extent_info *fi,
 
 static loff_t
 iomap_fiemap_actor(struct inode *inode, loff_t pos, loff_t length, void *data,
-		struct iomap *iomap)
+		struct iomap *iomap, struct iomap *srcmap)
 {
 	struct fiemap_ctx *ctx = data;
 	loff_t ret = length;
@@ -1339,7 +1357,7 @@ out:
 
 static loff_t
 iomap_seek_hole_actor(struct inode *inode, loff_t offset, loff_t length,
-		      void *data, struct iomap *iomap)
+		      void *data, struct iomap *iomap, struct iomap *srcmap)
 {
 	switch (iomap->type) {
 	case IOMAP_UNWRITTEN:
@@ -1385,7 +1403,7 @@ EXPORT_SYMBOL_GPL(iomap_seek_hole);
 
 static loff_t
 iomap_seek_data_actor(struct inode *inode, loff_t offset, loff_t length,
-		      void *data, struct iomap *iomap)
+		      void *data, struct iomap *iomap, struct iomap *srcmap)
 {
 	switch (iomap->type) {
 	case IOMAP_HOLE:
@@ -1786,7 +1804,7 @@ iomap_dio_inline_actor(struct inode *inode, loff_t pos, loff_t length,
 
 static loff_t
 iomap_dio_actor(struct inode *inode, loff_t pos, loff_t length,
-		void *data, struct iomap *iomap)
+		void *data, struct iomap *iomap, struct iomap *srcmap)
 {
 	struct iomap_dio *dio = data;
 
@@ -2060,7 +2078,7 @@ static int iomap_swapfile_add_extent(struct iomap_swapfile_info *isi)
  * distinction between written and unwritten extents.
  */
 static loff_t iomap_swapfile_activate_actor(struct inode *inode, loff_t pos,
-		loff_t count, void *data, struct iomap *iomap)
+		loff_t count, void *data, struct iomap *iomap, struct iomap *srcmap)
 {
 	struct iomap_swapfile_info *isi = data;
 	int error;
@@ -2164,7 +2182,7 @@ EXPORT_SYMBOL_GPL(iomap_swapfile_activate);
 
 static loff_t
 iomap_bmap_actor(struct inode *inode, loff_t pos, loff_t length,
-		void *data, struct iomap *iomap)
+		void *data, struct iomap *iomap, struct iomap *srcmap)
 {
 	sector_t *bno = data, addr;
 
