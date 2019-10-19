@@ -890,7 +890,7 @@ static int __remove_mapping(struct address_space *mapping, struct page *page,
 	 * Note that if SetPageDirty is always performed via set_page_dirty,
 	 * and thus under the i_pages lock, then this ordering is not required.
 	 */
-	if (unlikely(PageTransHuge(page)) && PageSwapCache(page))
+	if (unlikely(PageTransHuge(page)))
 		refcount = 1 + HPAGE_PMD_NR;
 	else
 		refcount = 2;
