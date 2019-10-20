@@ -610,7 +610,7 @@ static int get_cap_from_pf(struct hinic_hwdev *dev, enum func_type type)
 	if (err || dev_cap.status || !out_len) {
 		sdk_err(dev->dev_hdl, "Failed to get capability from PF,  err: %d, status: 0x%x, out size: 0x%x\n",
 			err, dev_cap.status, out_len);
-		return err;
+		return -EFAULT;
 	}
 
 	parse_dev_cap(dev, &dev_cap, type);

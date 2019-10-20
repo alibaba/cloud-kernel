@@ -119,6 +119,6 @@ int hinic_tx_poll(struct hinic_txq *txq, int budget);
 
 u8 hinic_get_vlan_pri(struct sk_buff *skb);
 
-int hinic_flush_txqs(struct net_device *netdev);
+void hinic_flush_txqs(struct net_device *netdev);
 
 #endif

@@ -1744,7 +1744,7 @@ int hinic_set_cos_up_map(struct hinic_nic_dev *nic_dev, u8 *cos_up)
 	struct hinic_nic_dev *tmp_dev;
 	u8 num_cos, old_cos_up[HINIC_DCB_COS_MAX] = {0};
 	u32 i, idx, num_dev = 0;
-	int err;
+	int err, rollback_err;
 
 	/* Save old map, in case of set failed */
 	err = hinic_get_cos_up_map(nic_dev, &num_cos, old_cos_up);
@@ -1792,8 +1792,8 @@ set_err:
 	/* undo all settings */
 	for (i = 0; i < idx; i++) {
 		tmp_dev = (struct hinic_nic_dev *)uld_array[i];
-		err = __set_cos_up_map(tmp_dev, old_cos_up);
-		if (err)
+		rollback_err = __set_cos_up_map(tmp_dev, old_cos_up);
+		if (rollback_err)
 			nicif_err(tmp_dev, drv, tmp_dev->netdev,
 				  "Undo cos_up map to hw failed\n");
 	}

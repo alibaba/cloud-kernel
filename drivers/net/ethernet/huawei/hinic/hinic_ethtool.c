@@ -745,12 +745,12 @@ static int hinic_set_settings_to_hw(struct hinic_nic_dev *nic_dev,
 	char set_link_str[128] = {0};
 	int err = 0;
 
-	snprintf(set_link_str, sizeof(set_link_str) - 1, "%s",
+	snprintf(set_link_str, sizeof(set_link_str), "%s",
 		 (set_settings & HILINK_LINK_SET_AUTONEG) ?
 		 (autoneg ? "autong enable " : "autong disable ") : "");
 	if (set_settings & HILINK_LINK_SET_SPEED) {
 		speed_level = hinic_ethtool_to_hw_speed_level(speed);
-		snprintf(set_link_str, sizeof(set_link_str) - 1,
+		snprintf(set_link_str, sizeof(set_link_str),
 			 "%sspeed %d ", set_link_str, speed);
 	}
 

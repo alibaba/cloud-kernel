@@ -383,7 +383,7 @@ static int send_msg_to_mgmt_sync(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 	if (!hinic_get_chip_present_flag(pf_to_mgmt->hwdev))
 		return -EFAULT;
 
-	if (cmd_size > MAX_CMD_BUF_SIZE)
+	if (cmd_size > MAX_MSG_SZ)
 		return -EFAULT;
 
 	if (direction == HINIC_MSG_RESPONSE)

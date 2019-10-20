@@ -586,10 +586,7 @@ static int get_loopback_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 	}
 	err = hinic_get_loopback_mode_ex(nic_dev->hwdev, &mode->loop_mode,
 					 &mode->loop_ctrl);
-	if (err)
-		return err;
-
-	return 0;
+	return err;
 }
 
 static int set_loopback_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
@@ -1548,9 +1545,10 @@ static int send_to_nic_driver(struct hinic_nic_dev *nic_dev,
 	}
 	mutex_unlock(&nic_dev->nic_mutex);
 
-	if (index == num_cmds)
+	if (index == num_cmds) {
 		pr_err("Can't find callback for %d\n", cmd_type);
-
+		return -EINVAL;
+	}
 	return err;
 }
 
@@ -1899,7 +1897,7 @@ static bool is_hwdev_cmd_support(unsigned int mod,
 		break;
 
 	default:
-		break;
+		return false;
 	}
 
 	return true;
@@ -2377,6 +2375,7 @@ int nictool_k_init(void)
 				g_dev_id, NULL, HIADM_DEV_NAME);
 	if (IS_ERR(pdevice)) {
 		pr_err("Export nictool device information to user space fail\n");
+		ret = -EFAULT;
 		goto device_create_err;
 	}
 

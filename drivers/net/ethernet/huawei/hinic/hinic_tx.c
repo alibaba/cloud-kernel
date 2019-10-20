@@ -1275,7 +1275,7 @@ int hinic_stop_sq(struct hinic_txq *txq)
 	return -EFAULT;
 }
 
-int hinic_flush_txqs(struct net_device *netdev)
+void hinic_flush_txqs(struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	u16 qid;
@@ -1288,5 +1288,5 @@ int hinic_flush_txqs(struct net_device *netdev)
 				  "Failed to stop sq%d\n", qid);
 	}
 
-	return 0;
+	return;
 } /*lint -e766*/

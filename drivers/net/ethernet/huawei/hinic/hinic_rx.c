@@ -672,7 +672,7 @@ int hinic_rx_poll(struct hinic_rxq *rxq, int budget)
 	bool bp_en = false;
 	u16 num_wqe = 0;
 
-	while (unlikely(pkts < budget)) {
+	while (likely(pkts < budget)) {
 		sw_ci = ((u32)rxq->cons_idx) & rxq->q_mask;
 		rx_cqe = rxq->rx_info[sw_ci].cqe;
 		status = be32_to_cpu(rx_cqe->status);
