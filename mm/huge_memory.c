@@ -496,10 +496,11 @@ pmd_t maybe_pmd_mkwrite(pmd_t pmd, struct vm_area_struct *vma)
 static inline struct deferred_split *get_deferred_split_queue(struct page *page)
 {
 	struct mem_cgroup *memcg = compound_head(page)->mem_cgroup;
-	struct pglist_data *pgdat = NODE_DATA(page_to_nid(page));
+	int nid = page_to_nid(page);
+	struct pglist_data *pgdat = NODE_DATA(nid);
 
 	if (memcg)
-		return &memcg->deferred_split_queue;
+		return &memcg->nodeinfo[nid]->deferred_split_queue;
 	else
 		return &pgdat->deferred_split_queue;
 }
@@ -2850,12 +2851,13 @@ void deferred_split_huge_page(struct page *page)
 static unsigned long deferred_split_count(struct shrinker *shrink,
 		struct shrink_control *sc)
 {
-	struct pglist_data *pgdata = NODE_DATA(sc->nid);
+	int nid = sc->nid;
+	struct pglist_data *pgdata = NODE_DATA(nid);
 	struct deferred_split *ds_queue = &pgdata->deferred_split_queue;
 
 #ifdef CONFIG_MEMCG
 	if (sc->memcg)
-		ds_queue = &sc->memcg->deferred_split_queue;
+		ds_queue = &sc->memcg->nodeinfo[nid]->deferred_split_queue;
 #endif
 	return READ_ONCE(ds_queue->split_queue_len);
 }
@@ -2863,7 +2865,8 @@ static unsigned long deferred_split_count(struct shrinker *shrink,
 static unsigned long deferred_split_scan(struct shrinker *shrink,
 		struct shrink_control *sc)
 {
-	struct pglist_data *pgdata = NODE_DATA(sc->nid);
+	int nid = sc->nid;
+	struct pglist_data *pgdata = NODE_DATA(nid);
 	struct deferred_split *ds_queue = &pgdata->deferred_split_queue;
 	unsigned long flags;
 	LIST_HEAD(list), *pos, *next;
@@ -2872,7 +2875,7 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
 
 #ifdef CONFIG_MEMCG
 	if (sc->memcg)
-		ds_queue = &sc->memcg->deferred_split_queue;
+		ds_queue = &sc->memcg->nodeinfo[nid]->deferred_split_queue;
 #endif
 
 	spin_lock_irqsave(&ds_queue->split_queue_lock, flags);

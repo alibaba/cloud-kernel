@@ -145,6 +145,10 @@ struct mem_cgroup_per_node {
 	bool			dirty;		/* mecg has too many dirty pages */
 	bool			writeback;	/* memcg has too many writeback */
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	struct deferred_split deferred_split_queue;
+#endif
+
 	struct mem_cgroup	*memcg;		/* Back pointer, we cannot */
 						/* use container_of	   */
 };
@@ -323,10 +327,6 @@ struct mem_cgroup {
 	struct kidled_scan_period scan_period;
 	int idle_stable_idx;
 	struct idle_page_stats idle_stats[KIDLED_STATS_NR_TYPE];
-#endif
-
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	struct deferred_split deferred_split_queue;
 #endif
 
 	struct mem_cgroup_per_node *nodeinfo[0];
