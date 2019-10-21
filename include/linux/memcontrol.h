@@ -145,6 +145,10 @@ struct mem_cgroup_per_node {
 	bool			dirty;		/* mecg has too many dirty pages */
 	bool			writeback;	/* memcg has too many writeback */
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	struct deferred_split deferred_split_queue;
+#endif
+
 	struct mem_cgroup	*memcg;		/* Back pointer, we cannot */
 						/* use container_of	   */
 };
