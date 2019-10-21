@@ -5015,6 +5015,12 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 	pn->on_tree = false;
 	pn->memcg = memcg;
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	spin_lock_init(&pn->deferred_split_queue.split_queue_lock);
+	INIT_LIST_HEAD(&pn->deferred_split_queue.split_queue);
+	pn->deferred_split_queue.split_queue_len = 0;
+#endif
+
 	memcg->nodeinfo[node] = pn;
 	return 0;
 }
@@ -5093,11 +5099,6 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	INIT_LIST_HEAD(&memcg->cgwb_list);
 #endif
 	kidled_memcg_init(memcg);
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	spin_lock_init(&memcg->deferred_split_queue.split_queue_lock);
-	INIT_LIST_HEAD(&memcg->deferred_split_queue.split_queue);
-	memcg->deferred_split_queue.split_queue_len = 0;
-#endif
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
 	return memcg;
 fail:
@@ -5434,6 +5435,8 @@ static int mem_cgroup_move_account(struct page *page,
 	unsigned int nr_pages = compound ? hpage_nr_pages(page) : 1;
 	int ret;
 	bool anon;
+	struct deferred_split *ds_queue;
+	int nid = page_to_nid(page);
 
 	VM_BUG_ON(from == to);
 	VM_BUG_ON_PAGE(PageLRU(page), page);
@@ -5481,10 +5484,11 @@ static int mem_cgroup_move_account(struct page *page,
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	if (compound && !list_empty(page_deferred_list(page))) {
-		spin_lock(&from->deferred_split_queue.split_queue_lock);
+		ds_queue = &from->nodeinfo[nid]->deferred_split_queue;
+		spin_lock(&ds_queue->split_queue_lock);
 		list_del_init(page_deferred_list(page));
-		from->deferred_split_queue.split_queue_len--;
-		spin_unlock(&from->deferred_split_queue.split_queue_lock);
+		ds_queue->split_queue_len--;
+		spin_unlock(&ds_queue->split_queue_lock);
 	}
 #endif
 	/*
@@ -5498,11 +5502,12 @@ static int mem_cgroup_move_account(struct page *page,
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	if (compound && list_empty(page_deferred_list(page))) {
-		spin_lock(&to->deferred_split_queue.split_queue_lock);
+		ds_queue = &to->nodeinfo[nid]->deferred_split_queue;
+		spin_lock(&ds_queue->split_queue_lock);
 		list_add_tail(page_deferred_list(page),
-			      &to->deferred_split_queue.split_queue);
-		to->deferred_split_queue.split_queue_len++;
-		spin_unlock(&to->deferred_split_queue.split_queue_lock);
+			      &ds_queue->split_queue);
+		ds_queue->split_queue_len++;
+		spin_unlock(&ds_queue->split_queue_lock);
 	}
 #endif
 
