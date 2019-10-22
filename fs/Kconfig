@@ -314,4 +314,7 @@ endif # NETWORK_FILESYSTEMS
 source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
 
+config IO_WQ
+	bool
+
 endmenu
