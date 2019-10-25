@@ -31,7 +31,7 @@
 #include "hinic_nic.h"
 #include "hinic_dbg.h"
 
-#define INVALID_PI (65535)
+#define INVALID_PI (0xFFFF)
 
 u16 hinic_dbg_get_qp_num(void *hwdev)
 {
@@ -256,8 +256,7 @@ void hinic_get_chip_fault_stats(const void *hwdev,
 	int copy_len = offset + MAX_DRV_BUF_SIZE - HINIC_CHIP_FAULT_SIZE;
 
 	if (offset < 0 || offset > HINIC_CHIP_FAULT_SIZE) {
-		pr_err("Invalid chip offset value: %d\n",
-		       offset);
+		pr_err("Invalid chip offset value: %d\n", offset);
 		return;
 	}
 

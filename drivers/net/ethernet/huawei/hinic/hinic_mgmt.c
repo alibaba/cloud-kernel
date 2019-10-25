@@ -315,7 +315,7 @@ static int send_msg_to_mgmt_async(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 		return -EFAULT;
 
 	if (cmd_size > MAX_MSG_SZ)
-		return -EFAULT;
+		return -EINVAL;
 
 	if (direction == HINIC_MSG_RESPONSE)
 		prepare_header(pf_to_mgmt, &header, msg_len, mod, HINIC_MSG_ACK,
@@ -384,7 +384,7 @@ static int send_msg_to_mgmt_sync(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 		return -EFAULT;
 
 	if (cmd_size > MAX_MSG_SZ)
-		return -EFAULT;
+		return -EINVAL;
 
 	if (direction == HINIC_MSG_RESPONSE)
 		prepare_header(pf_to_mgmt, &header, msg_len, mod, ack_type,
