@@ -782,7 +782,6 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 	u16 pi = 0;
 	int err, wqebb_cnt;
 	u16 num_sge = 0;
-	u16 skb_nr_frags = skb_shinfo(skb)->nr_frags;
 
 	/* skb->dev will not initialized when calling netdev_alloc_skb_ip_align
 	 * and parameter of length is largger then PAGE_SIZE(under redhat7.3),
@@ -800,7 +799,7 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 		skb->len = MIN_SKB_LEN;
 	}
 
-	num_sge = skb_nr_frags + 1;
+	num_sge = skb_shinfo(skb)->nr_frags + 1;
 
 	/* if skb->len is more than 65536B but num_sge is 1,
 	 * driver will drop it
