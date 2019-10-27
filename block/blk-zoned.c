@@ -249,7 +249,6 @@ int blkdev_reset_zones(struct block_device *bdev,
 	sector_t zone_sectors;
 	sector_t end_sector = sector + nr_sectors;
 	struct bio *bio = NULL;
-	struct blk_plug plug;
 	int ret;
 
 	if (!blk_queue_is_zoned(q))
@@ -274,7 +273,6 @@ int blkdev_reset_zones(struct block_device *bdev,
 	    end_sector != bdev->bd_part->nr_sects)
 		return -EINVAL;
 
-	blk_start_plug(&plug);
 	while (sector < end_sector) {
 
 		bio = blk_next_bio(bio, 0, gfp_mask);
@@ -291,8 +289,6 @@ int blkdev_reset_zones(struct block_device *bdev,
 
 	ret = submit_bio_wait(bio);
 	bio_put(bio);
-
-	blk_finish_plug(&plug);
 
 	return ret;
 }
