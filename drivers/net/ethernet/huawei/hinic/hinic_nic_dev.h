@@ -30,7 +30,7 @@
 #define HINIC_DRV_NAME		"hinic"
 #define HINIC_CHIP_NAME		"hinic"
 
-#define HINIC_DRV_VERSION	"2.3.2.1"
+#define HINIC_DRV_VERSION	"2.3.2.11"
 struct vf_data_storage;
 
 #define HINIC_FUNC_IS_VF(hwdev)	(hinic_func_type(hwdev) == TYPE_VF)
