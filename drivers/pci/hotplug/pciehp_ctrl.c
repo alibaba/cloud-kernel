@@ -230,7 +230,7 @@ void pciehp_handle_disable_request(struct slot *slot)
 void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 {
 	struct controller *ctrl = slot->ctrl;
-	bool present, link_active;
+	int present, link_active;
 
 	/*
 	 * If the slot is on and presence or link has changed, turn it off.
@@ -261,7 +261,7 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 	mutex_lock(&slot->lock);
 	present = pciehp_card_present(ctrl);
 	link_active = pciehp_check_link_active(ctrl);
-	if (!present && !link_active) {
+	if (present <= 0 && link_active <= 0) {
 		mutex_unlock(&slot->lock);
 		return;
 	}

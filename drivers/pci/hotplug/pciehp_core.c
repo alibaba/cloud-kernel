@@ -186,10 +186,15 @@ static int get_adapter_status(struct hotplug_slot *hotplug_slot, u8 *value)
 {
 	struct slot *slot = hotplug_slot->private;
 	struct pci_dev *pdev = slot->ctrl->pcie->port;
+	int ret;
 
 	pci_config_pm_runtime_get(pdev);
-	*value = pciehp_card_present_or_link_active(slot->ctrl);
+	ret = pciehp_card_present_or_link_active(slot->ctrl);
 	pci_config_pm_runtime_put(pdev);
+	if (ret < 0)
+		return ret;
+
+	*value = ret;
 	return 0;
 }
 
@@ -213,13 +218,13 @@ static int reset_slot(struct hotplug_slot *hotplug_slot, int probe)
 static void pciehp_check_presence(struct controller *ctrl)
 {
 	struct slot *slot = ctrl->slot;
-	bool occupied;
+	int occupied;
 
 	down_read(&ctrl->reset_lock);
 	mutex_lock(&slot->lock);
 
 	occupied = pciehp_card_present_or_link_active(ctrl);
-	if ((occupied && (slot->state == OFF_STATE ||
+	if ((occupied > 0 && (slot->state == OFF_STATE ||
 			  slot->state == BLINKINGON_STATE)) ||
 	    (!occupied && (slot->state == ON_STATE ||
 			   slot->state == BLINKINGOFF_STATE)))
