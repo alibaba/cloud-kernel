@@ -3720,17 +3720,20 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	struct page *page;
 	unsigned long pflags;
 	unsigned int noreclaim_flag;
+	u64 start;
 
 	if (!order)
 		return NULL;
 
 	psi_memstall_enter(&pflags);
+	start = ktime_get_ns();
 	noreclaim_flag = memalloc_noreclaim_save();
 
 	*compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
 									prio);
 
 	memalloc_noreclaim_restore(noreclaim_flag);
+	memcg_lat_stat_update(DIRECT_COMPACT, (ktime_get_ns() - start));
 	psi_memstall_leave(&pflags);
 
 	if (*compact_result <= COMPACT_INACTIVE)

@@ -91,6 +91,7 @@ struct alloc_context;
 enum mem_lat_stat_item {
 	GLOBAL_DIRECT_RECLAIM,      /* global direct reclaim latency */
 	MEMCG_DIRECT_RECLAIM,       /* memcg direct reclaim latency */
+	DIRECT_COMPACT,             /* direct compact latency */
 	MEM_LAT_NR_STAT,
 };
 

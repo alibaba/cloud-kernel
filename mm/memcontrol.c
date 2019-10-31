@@ -4531,9 +4531,20 @@ static void smp_memcg_direct_reclaim_write(void *info)
 		this_cpu_write(memcg->lat_stat_cpu->item[idx][i], 0);
 }
 
+static void smp_direct_compact_write(void *info)
+{
+	struct mem_cgroup *memcg = (struct mem_cgroup *)info;
+	int idx = DIRECT_COMPACT;
+	int i;
+
+	for (i = MEM_LAT_0_1; i < MEM_LAT_NR_COUNT; i++)
+		this_cpu_write(memcg->lat_stat_cpu->item[idx][i], 0);
+}
+
 smp_call_func_t smp_memcg_lat_write_funcs[] = {
 	smp_global_direct_reclaim_write,
 	smp_memcg_direct_reclaim_write,
+	smp_direct_compact_write,
 };
 
 static int memcg_lat_stat_write(struct cgroup_subsys_state *css,
@@ -4564,6 +4575,16 @@ static int memcg_direct_reclaim_latency_write(struct cgroup_subsys_state *css,
 		return -EINVAL;
 
 	return memcg_lat_stat_write(css, MEMCG_DIRECT_RECLAIM);
+}
+
+static int memcg_direct_compact_latency_write(
+			struct cgroup_subsys_state *css,
+			struct cftype *cft, u64 val)
+{
+	if (val != 0)
+		return -EINVAL;
+
+	return memcg_lat_stat_write(css, DIRECT_COMPACT);
 }
 
 static u64 memcg_lat_stat_gather(struct mem_cgroup *memcg,
@@ -4611,6 +4632,13 @@ static int global_direct_reclaim_latency_show(struct seq_file *m, void *v)
 static int memcg_direct_reclaim_latency_show(struct seq_file *m, void *v)
 {
 	memcg_lat_stat_show(m, MEMCG_DIRECT_RECLAIM);
+
+	return 0;
+}
+
+static int memcg_direct_compact_latency_show(struct seq_file *m, void *v)
+{
+	memcg_lat_stat_show(m, DIRECT_COMPACT);
 
 	return 0;
 }
@@ -5565,6 +5593,11 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.name = "direct_reclaim_memcg_latency",
 		.write_u64 = memcg_direct_reclaim_latency_write,
 		.seq_show =  memcg_direct_reclaim_latency_show,
+	},
+	{
+		.name = "direct_compact_latency",
+		.write_u64 = memcg_direct_compact_latency_write,
+		.seq_show =  memcg_direct_compact_latency_show,
 	},
 	{
 		.name = "force_empty",
