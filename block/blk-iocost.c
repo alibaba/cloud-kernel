@@ -1692,6 +1692,8 @@ static u64 calc_vtime_cost(struct bio *bio, struct ioc_gq *iocg, bool is_merge)
 }
 
 static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *lock)
+	__releases(lock)
+	__acquires(lock)
 {
 	struct ioc *ioc = rqos_to_ioc(rqos);
 	struct request_queue *q = rqos->q;
@@ -1825,7 +1827,14 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 		set_current_state(TASK_UNINTERRUPTIBLE);
 		if (wait.committed)
 			break;
-		io_schedule();
+
+		if (lock) {
+                        spin_unlock_irq(lock);
+                        io_schedule();
+                        spin_lock_irq(lock);
+                } else {
+                        io_schedule();
+                }
 	}
 
 	/* waker already committed us, proceed */
