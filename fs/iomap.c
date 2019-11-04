@@ -783,6 +783,7 @@ iomap_write_end(struct inode *inode, loff_t pos, unsigned len,
 
 	if (iomap->page_done)
 		iomap->page_done(inode, pos, copied, page, iomap);
+	put_page(page);
 
 	if (ret < len)
 		iomap_write_failed(inode, pos, len);
