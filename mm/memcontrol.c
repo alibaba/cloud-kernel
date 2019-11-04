@@ -4511,80 +4511,40 @@ void memcg_check_wmark_min_adj(struct task_struct *curr,
 	}
 }
 
-static void smp_global_direct_reclaim_write(void *info)
-{
-	struct mem_cgroup *memcg = (struct mem_cgroup *)info;
-	int idx = GLOBAL_DIRECT_RECLAIM;
-	int i;
+#define MEMCG_LAT_STAT_SMP_WRITE(name, sidx)				\
+static void smp_write_##name(void *info)				\
+{									\
+	struct mem_cgroup *memcg = (struct mem_cgroup *)info;		\
+	int i;								\
+									\
+	for (i = MEM_LAT_0_1; i < MEM_LAT_NR_COUNT; i++)		\
+		this_cpu_write(memcg->lat_stat_cpu->item[sidx][i], 0);	\
+}									\
 
-	for (i = MEM_LAT_0_1; i < MEM_LAT_NR_COUNT; i++)
-		this_cpu_write(memcg->lat_stat_cpu->item[idx][i], 0);
-}
-
-static void smp_memcg_direct_reclaim_write(void *info)
-{
-	struct mem_cgroup *memcg = (struct mem_cgroup *)info;
-	int idx = MEMCG_DIRECT_RECLAIM;
-	int i;
-
-	for (i = MEM_LAT_0_1; i < MEM_LAT_NR_COUNT; i++)
-		this_cpu_write(memcg->lat_stat_cpu->item[idx][i], 0);
-}
-
-static void smp_direct_compact_write(void *info)
-{
-	struct mem_cgroup *memcg = (struct mem_cgroup *)info;
-	int idx = DIRECT_COMPACT;
-	int i;
-
-	for (i = MEM_LAT_0_1; i < MEM_LAT_NR_COUNT; i++)
-		this_cpu_write(memcg->lat_stat_cpu->item[idx][i], 0);
-}
+MEMCG_LAT_STAT_SMP_WRITE(global_direct_reclaim, MEM_LAT_GLOBAL_DIRECT_RECLAIM);
+MEMCG_LAT_STAT_SMP_WRITE(memcg_direct_reclaim, MEM_LAT_MEMCG_DIRECT_RECLAIM);
+MEMCG_LAT_STAT_SMP_WRITE(direct_compact, MEM_LAT_DIRECT_COMPACT);
 
 smp_call_func_t smp_memcg_lat_write_funcs[] = {
-	smp_global_direct_reclaim_write,
-	smp_memcg_direct_reclaim_write,
-	smp_direct_compact_write,
+	smp_write_global_direct_reclaim,
+	smp_write_memcg_direct_reclaim,
+	smp_write_direct_compact,
 };
 
 static int memcg_lat_stat_write(struct cgroup_subsys_state *css,
-			       enum mem_lat_stat_item idx)
+				struct cftype *cft, u64 val)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	enum mem_lat_stat_item idx = cft->private;
 	smp_call_func_t func = smp_memcg_lat_write_funcs[idx];
+
+	if (val != 0)
+		return -EINVAL;
 
 	func((void *)memcg);
 	smp_call_function(func, (void *)memcg, 1);
 
 	return 0;
-}
-
-static int global_direct_reclaim_latency_write(struct cgroup_subsys_state *css,
-			struct cftype *cft, u64 val)
-{
-	if (val != 0)
-		return -EINVAL;
-
-	return memcg_lat_stat_write(css, GLOBAL_DIRECT_RECLAIM);
-}
-
-static int memcg_direct_reclaim_latency_write(struct cgroup_subsys_state *css,
-			struct cftype *cft, u64 val)
-{
-	if (val != 0)
-		return -EINVAL;
-
-	return memcg_lat_stat_write(css, MEMCG_DIRECT_RECLAIM);
-}
-
-static int memcg_direct_compact_latency_write(
-			struct cgroup_subsys_state *css,
-			struct cftype *cft, u64 val)
-{
-	if (val != 0)
-		return -EINVAL;
-
-	return memcg_lat_stat_write(css, DIRECT_COMPACT);
 }
 
 static u64 memcg_lat_stat_gather(struct mem_cgroup *memcg,
@@ -4600,9 +4560,10 @@ static u64 memcg_lat_stat_gather(struct mem_cgroup *memcg,
 	return sum;
 }
 
-static void memcg_lat_stat_show(struct seq_file *m, enum mem_lat_stat_item idx)
+static int memcg_lat_stat_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	enum mem_lat_stat_item idx = seq_cft(m)->private;
 
 	seq_printf(m, "0-1ms: \t%llu\n",
 		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_0_1));
@@ -4620,25 +4581,6 @@ static void memcg_lat_stat_show(struct seq_file *m, enum mem_lat_stat_item idx)
 		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_1000_INF));
 	seq_printf(m, "total(ms): \t%llu\n",
 		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_TOTAL) / 1000000);
-}
-
-static int global_direct_reclaim_latency_show(struct seq_file *m, void *v)
-{
-	memcg_lat_stat_show(m, GLOBAL_DIRECT_RECLAIM);
-
-	return 0;
-}
-
-static int memcg_direct_reclaim_latency_show(struct seq_file *m, void *v)
-{
-	memcg_lat_stat_show(m, MEMCG_DIRECT_RECLAIM);
-
-	return 0;
-}
-
-static int memcg_direct_compact_latency_show(struct seq_file *m, void *v)
-{
-	memcg_lat_stat_show(m, DIRECT_COMPACT);
 
 	return 0;
 }
@@ -5586,18 +5528,21 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	},
 	{
 		.name = "direct_reclaim_global_latency",
-		.write_u64 = global_direct_reclaim_latency_write,
-		.seq_show =  global_direct_reclaim_latency_show,
+		.private = MEM_LAT_GLOBAL_DIRECT_RECLAIM,
+		.write_u64 = memcg_lat_stat_write,
+		.seq_show =  memcg_lat_stat_show,
 	},
 	{
 		.name = "direct_reclaim_memcg_latency",
-		.write_u64 = memcg_direct_reclaim_latency_write,
-		.seq_show =  memcg_direct_reclaim_latency_show,
+		.private = MEM_LAT_MEMCG_DIRECT_RECLAIM,
+		.write_u64 = memcg_lat_stat_write,
+		.seq_show =  memcg_lat_stat_show,
 	},
 	{
 		.name = "direct_compact_latency",
-		.write_u64 = memcg_direct_compact_latency_write,
-		.seq_show =  memcg_direct_compact_latency_show,
+		.private = MEM_LAT_DIRECT_COMPACT,
+		.write_u64 = memcg_lat_stat_write,
+		.seq_show =  memcg_lat_stat_show,
 	},
 	{
 		.name = "force_empty",

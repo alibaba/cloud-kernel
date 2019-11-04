@@ -3488,7 +3488,8 @@ unsigned long try_to_free_mem_cgroup_pages(struct mem_cgroup *memcg,
 	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
 
 	memalloc_noreclaim_restore(noreclaim_flag);
-	memcg_lat_stat_update(MEMCG_DIRECT_RECLAIM, (ktime_get_ns() - start));
+	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
+			      (ktime_get_ns() - start));
 	psi_memstall_leave(&pflags);
 
 	trace_mm_vmscan_memcg_reclaim_end(nr_reclaimed);

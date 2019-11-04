@@ -89,9 +89,9 @@ struct mem_cgroup_reclaim_cookie {
 struct alloc_context;
 
 enum mem_lat_stat_item {
-	GLOBAL_DIRECT_RECLAIM,      /* global direct reclaim latency */
-	MEMCG_DIRECT_RECLAIM,       /* memcg direct reclaim latency */
-	DIRECT_COMPACT,             /* direct compact latency */
+	MEM_LAT_GLOBAL_DIRECT_RECLAIM,	/* global direct reclaim latency */
+	MEM_LAT_MEMCG_DIRECT_RECLAIM,	/* memcg direct reclaim latency */
+	MEM_LAT_DIRECT_COMPACT,		/* direct compact latency */
 	MEM_LAT_NR_STAT,
 };
 
