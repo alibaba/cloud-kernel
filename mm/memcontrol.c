@@ -2544,6 +2544,7 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	bool drained = false;
 	bool oomed = false;
 	enum oom_status oom_status;
+	u64 start;
 
 	if (mem_cgroup_is_root(memcg))
 		return 0;
@@ -2603,8 +2604,11 @@ retry:
 
 	memcg_memory_event(mem_over_limit, MEMCG_MAX);
 
+	start = ktime_get_ns();
 	nr_reclaimed = try_to_free_mem_cgroup_pages(mem_over_limit, nr_pages,
 						    gfp_mask, may_swap);
+	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
+			      (ktime_get_ns() - start));
 
 	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
 		goto retry;
