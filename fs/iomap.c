@@ -744,7 +744,8 @@ __iomap_write_end(struct inode *inode, loff_t pos, unsigned len,
 		iomap_set_range_uptodate(page, offset_in_page(pos), len);
 		iomap_set_page_dirty(page);
 	}
-	return __generic_write_end(inode, pos, copied, page);
+	__generic_write_end(inode, pos, copied, page);
+	return copied;
 }
 
 static int
