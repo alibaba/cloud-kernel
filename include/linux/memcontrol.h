@@ -92,6 +92,9 @@ enum mem_lat_stat_item {
 	MEM_LAT_GLOBAL_DIRECT_RECLAIM,	/* global direct reclaim latency */
 	MEM_LAT_MEMCG_DIRECT_RECLAIM,	/* memcg direct reclaim latency */
 	MEM_LAT_DIRECT_COMPACT,		/* direct compact latency */
+	MEM_LAT_GLOBAL_DIRECT_SWAPOUT,	/* global direct swapout latency */
+	MEM_LAT_MEMCG_DIRECT_SWAPOUT,	/* memcg direct swapout latency */
+	MEM_LAT_DIRECT_SWAPIN,		/* direct swapin latency */
 	MEM_LAT_NR_STAT,
 };
 

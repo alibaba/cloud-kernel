@@ -1641,6 +1641,7 @@ static int shmem_getpage_gfp(struct inode *inode, pgoff_t index,
 	int error;
 	int once = 0;
 	int alloced = 0;
+	u64 start;
 
 	if (index > (MAX_LFS_FILESIZE >> PAGE_SHIFT))
 		return -EFBIG;
@@ -1694,7 +1695,10 @@ repeat:
 				count_memcg_event_mm(charge_mm, PGMAJFAULT);
 			}
 			/* Here we actually start the io */
+			start = ktime_get_ns();
 			page = shmem_swapin(swap, gfp, info, index);
+			memcg_lat_stat_update(MEM_LAT_DIRECT_SWAPIN,
+					      (ktime_get_ns() - start));
 			if (!page) {
 				error = -ENOMEM;
 				goto failed;

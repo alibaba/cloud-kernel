@@ -4041,8 +4041,14 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 			return do_fault(vmf);
 	}
 
-	if (!pte_present(vmf->orig_pte))
-		return do_swap_page(vmf);
+	if (!pte_present(vmf->orig_pte)) {
+		u64 start = ktime_get_ns();
+		vm_fault_t retval = do_swap_page(vmf);
+
+		memcg_lat_stat_update(MEM_LAT_DIRECT_SWAPIN,
+				      (ktime_get_ns() - start));
+		return retval;
+	}
 
 	if (pte_protnone(vmf->orig_pte) && vma_is_accessible(vmf->vma))
 		return do_numa_page(vmf);

@@ -4532,11 +4532,17 @@ static void smp_write_##name(void *info)				\
 MEMCG_LAT_STAT_SMP_WRITE(global_direct_reclaim, MEM_LAT_GLOBAL_DIRECT_RECLAIM);
 MEMCG_LAT_STAT_SMP_WRITE(memcg_direct_reclaim, MEM_LAT_MEMCG_DIRECT_RECLAIM);
 MEMCG_LAT_STAT_SMP_WRITE(direct_compact, MEM_LAT_DIRECT_COMPACT);
+MEMCG_LAT_STAT_SMP_WRITE(global_direct_swapout, MEM_LAT_GLOBAL_DIRECT_SWAPOUT);
+MEMCG_LAT_STAT_SMP_WRITE(memcg_direct_swapout, MEM_LAT_MEMCG_DIRECT_SWAPOUT);
+MEMCG_LAT_STAT_SMP_WRITE(direct_swapin, MEM_LAT_DIRECT_SWAPIN);
 
 smp_call_func_t smp_memcg_lat_write_funcs[] = {
 	smp_write_global_direct_reclaim,
 	smp_write_memcg_direct_reclaim,
 	smp_write_direct_compact,
+	smp_write_global_direct_swapout,
+	smp_write_memcg_direct_swapout,
+	smp_write_direct_swapin,
 };
 
 static int memcg_lat_stat_write(struct cgroup_subsys_state *css,
@@ -5549,6 +5555,24 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "direct_compact_latency",
 		.private = MEM_LAT_DIRECT_COMPACT,
+		.write_u64 = memcg_lat_stat_write,
+		.seq_show =  memcg_lat_stat_show,
+	},
+	{
+		.name = "direct_swapout_global_latency",
+		.private = MEM_LAT_GLOBAL_DIRECT_SWAPOUT,
+		.write_u64 = memcg_lat_stat_write,
+		.seq_show =  memcg_lat_stat_show,
+	},
+	{
+		.name = "direct_swapout_memcg_latency",
+		.private = MEM_LAT_MEMCG_DIRECT_SWAPOUT,
+		.write_u64 = memcg_lat_stat_write,
+		.seq_show =  memcg_lat_stat_show,
+	},
+	{
+		.name = "direct_swapin_latency",
+		.private = MEM_LAT_DIRECT_SWAPIN,
 		.write_u64 = memcg_lat_stat_write,
 		.seq_show =  memcg_lat_stat_show,
 	},

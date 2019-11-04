@@ -905,6 +905,7 @@ static pageout_t pageout(struct page *page, struct address_space *mapping,
 
 	if (clear_page_dirty_for_io(page)) {
 		int res;
+		u64 start = 0;
 		struct writeback_control wbc = {
 			.sync_mode = WB_SYNC_NONE,
 			.nr_to_write = SWAP_CLUSTER_MAX,
@@ -914,7 +915,14 @@ static pageout_t pageout(struct page *page, struct address_space *mapping,
 		};
 
 		SetPageReclaim(page);
+		if (!current_is_kswapd())
+			start = ktime_get_ns();
 		res = mapping->a_ops->writepage(page, &wbc);
+		if (!current_is_kswapd())
+			memcg_lat_stat_update(global_reclaim(sc) ?
+					      MEM_LAT_GLOBAL_DIRECT_SWAPOUT :
+					      MEM_LAT_MEMCG_DIRECT_SWAPOUT,
+					      (ktime_get_ns() - start));
 		if (res < 0)
 			handle_write_error(mapping, page, res);
 		if (res == AOP_WRITEPAGE_ACTIVATE) {
