@@ -643,19 +643,20 @@ static bool io_work_cancel(struct io_worker *worker, void *cancel_data)
 {
 	struct io_cb_cancel_data *data = cancel_data;
 	struct io_wqe *wqe = data->wqe;
+	unsigned long flags;
 	bool ret = false;
 
 	/*
 	 * Hold the lock to avoid ->cur_work going out of scope, caller
 	 * may deference the passed in work.
 	 */
-	spin_lock_irq(&wqe->lock);
+	spin_lock_irqsave(&wqe->lock, flags);
 	if (worker->cur_work &&
 	    data->cancel(worker->cur_work, data->caller_data)) {
 		send_sig(SIGINT, worker->task, 1);
 		ret = true;
 	}
-	spin_unlock_irq(&wqe->lock);
+	spin_unlock_irqrestore(&wqe->lock, flags);
 
 	return ret;
 }
@@ -670,9 +671,10 @@ static enum io_wq_cancel io_wqe_cancel_cb_work(struct io_wqe *wqe,
 		.caller_data = cancel_data,
 	};
 	struct io_wq_work *work;
+	unsigned long flags;
 	bool found = false;
 
-	spin_lock_irq(&wqe->lock);
+	spin_lock_irqsave(&wqe->lock, flags);
 	list_for_each_entry(work, &wqe->work_list, list) {
 		if (cancel(work, cancel_data)) {
 			list_del(&work->list);
@@ -680,7 +682,7 @@ static enum io_wq_cancel io_wqe_cancel_cb_work(struct io_wqe *wqe,
 			break;
 		}
 	}
-	spin_unlock_irq(&wqe->lock);
+	spin_unlock_irqrestore(&wqe->lock, flags);
 
 	if (found) {
 		work->flags |= IO_WQ_WORK_CANCEL;
@@ -734,6 +736,7 @@ static enum io_wq_cancel io_wqe_cancel_work(struct io_wqe *wqe,
 					    struct io_wq_work *cwork)
 {
 	struct io_wq_work *work;
+	unsigned long flags;
 	bool found = false;
 
 	cwork->flags |= IO_WQ_WORK_CANCEL;
@@ -743,7 +746,7 @@ static enum io_wq_cancel io_wqe_cancel_work(struct io_wqe *wqe,
 	 * from there. CANCEL_OK means that the work is returned as-new,
 	 * no completion will be posted for it.
 	 */
-	spin_lock_irq(&wqe->lock);
+	spin_lock_irqsave(&wqe->lock, flags);
 	list_for_each_entry(work, &wqe->work_list, list) {
 		if (work == cwork) {
 			list_del(&work->list);
@@ -751,7 +754,7 @@ static enum io_wq_cancel io_wqe_cancel_work(struct io_wqe *wqe,
 			break;
 		}
 	}
-	spin_unlock_irq(&wqe->lock);
+	spin_unlock_irqrestore(&wqe->lock, flags);
 
 	if (found) {
 		work->flags |= IO_WQ_WORK_CANCEL;
