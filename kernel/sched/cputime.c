@@ -137,8 +137,6 @@ void account_user_time(struct task_struct *p, u64 cputime)
  */
 void account_guest_time(struct task_struct *p, u64 cputime)
 {
-	u64 *cpustat = kcpustat_this_cpu->cpustat;
-
 	/* Add guest time to process. */
 	p->utime += cputime;
 	account_group_user_time(p, cputime);
@@ -146,11 +144,11 @@ void account_guest_time(struct task_struct *p, u64 cputime)
 
 	/* Add guest time to cpustat. */
 	if (task_nice(p) > 0) {
-		cpustat[CPUTIME_NICE] += cputime;
-		cpustat[CPUTIME_GUEST_NICE] += cputime;
+		task_group_account_field(p, CPUTIME_NICE, cputime);
+		task_group_account_field(p, CPUTIME_GUEST_NICE, cputime);
 	} else {
-		cpustat[CPUTIME_USER] += cputime;
-		cpustat[CPUTIME_GUEST] += cputime;
+		task_group_account_field(p, CPUTIME_USER, cputime);
+		task_group_account_field(p, CPUTIME_GUEST, cputime);
 	}
 }
 
