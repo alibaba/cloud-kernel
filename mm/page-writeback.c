@@ -2828,7 +2828,9 @@ void wait_on_page_writeback(struct page *page)
 {
 	while (PageWriteback(page)) {
 		trace_wait_on_page_writeback(page, page_mapping(page));
+		task_set_wait_res(TASK_WAIT_PAGE, page);
 		wait_on_page_bit(page, PG_writeback);
+		task_clear_wait_res();
 	}
 }
 EXPORT_SYMBOL_GPL(wait_on_page_writeback);
