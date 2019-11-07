@@ -479,8 +479,11 @@ static inline int trylock_page(struct page *page)
 static inline void lock_page(struct page *page)
 {
 	might_sleep();
-	if (!trylock_page(page))
+	if (!trylock_page(page)) {
+		task_set_wait_res(TASK_WAIT_PAGE, page);
 		__lock_page(page);
+		task_clear_wait_res();
+	}
 }
 
 /*
@@ -542,8 +545,11 @@ static inline int wait_on_page_locked_killable(struct page *page)
  */
 static inline void wait_on_page_writeback(struct page *page)
 {
-	if (PageWriteback(page))
+	if (PageWriteback(page)) {
+		task_set_wait_res(TASK_WAIT_PAGE, page);
 		wait_on_page_bit(page, PG_writeback);
+		task_clear_wait_res();
+	}
 }
 
 extern void end_page_writeback(struct page *page);

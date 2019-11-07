@@ -977,7 +977,10 @@ int submit_bio_wait(struct bio *bio)
 	bio->bi_end_io = submit_bio_wait_endio;
 	bio->bi_opf |= REQ_SYNC;
 	submit_bio(bio);
+
+	task_set_wait_res(TASK_WAIT_BIO, bio);
 	wait_for_completion_io(&done);
+	task_clear_wait_res();
 
 	return blk_status_to_errno(bio->bi_status);
 }

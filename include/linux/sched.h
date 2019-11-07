@@ -1217,6 +1217,14 @@ struct task_struct {
 	void				*security;
 #endif
 
+
+	int wait_res_type;
+	union {
+		struct page	*wait_page;
+		struct bio	*wait_bio;
+	};
+	unsigned long wait_moment;
+
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
 	ALI_HOTFIX_RESERVE(3)
@@ -1242,6 +1250,28 @@ struct task_struct {
 	 * Do not put anything below here!
 	 */
 };
+
+enum {
+	TASK_WAIT_PAGE = 1,
+	TASK_WAIT_BIO,
+};
+
+static inline void task_set_wait_res(int type, void *res)
+{
+	if (type == TASK_WAIT_PAGE)
+		current->wait_page = (struct page *)res;
+	else if (type == TASK_WAIT_BIO)
+		current->wait_bio = (struct bio *)res;
+
+	current->wait_res_type = type;
+	current->wait_moment = jiffies;
+}
+
+static inline void task_clear_wait_res(void)
+{
+	current->wait_page = NULL;
+	current->wait_res_type = 0;
+}
 
 static inline struct pid *task_pid(struct task_struct *task)
 {
