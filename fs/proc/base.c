@@ -567,6 +567,15 @@ static int proc_oom_score(struct seq_file *m, struct pid_namespace *ns,
 	return 0;
 }
 
+static int proc_wait_res(struct seq_file *m, struct pid_namespace *ns,
+			  struct pid *pid, struct task_struct *task)
+{
+	seq_printf(m, "%d %px %lu %lu\n", task->wait_res_type, task->wait_page,
+		   task->wait_moment, jiffies);
+
+	return 0;
+}
+
 struct limit_names {
 	const char *name;
 	const char *unit;
@@ -3276,6 +3285,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_PROC_PID_ARCH_STATUS
 	ONE("arch_status", S_IRUGO, proc_pid_arch_status),
 #endif
+	ONE("wait_res", 0444, proc_wait_res),
 };
 
 static int proc_tgid_base_readdir(struct file *file, struct dir_context *ctx)
@@ -3605,6 +3615,7 @@ static const struct pid_entry tid_base_stuff[] = {
 #ifdef CONFIG_PROC_PID_ARCH_STATUS
 	ONE("arch_status", S_IRUGO, proc_pid_arch_status),
 #endif
+	ONE("wait_res", 0444, proc_wait_res),
 };
 
 static int proc_tid_base_readdir(struct file *file, struct dir_context *ctx)

@@ -1083,7 +1083,9 @@ repeat:
 	if (buffer_shadow(bh)) {
 		JBUFFER_TRACE(jh, "on shadow: sleep");
 		spin_unlock(&jh->b_state_lock);
+		task_set_wait_res(TASK_WAIT_PAGE, bh->b_page);
 		wait_on_bit_io(&bh->b_state, BH_Shadow, TASK_UNINTERRUPTIBLE);
+		task_clear_wait_res();
 		goto repeat;
 	}
 

@@ -1166,12 +1166,15 @@ int submit_bio_wait(struct bio *bio)
 
 	/* Prevent hang_check timer from firing at us during very long I/O */
 	hang_check = sysctl_hung_task_timeout_secs;
+
+	task_set_wait_res(TASK_WAIT_BIO, bio);
 	if (hang_check)
 		while (!wait_for_completion_io_timeout(&done,
 					hang_check * (HZ/2)))
 			;
 	else
 		wait_for_completion_io(&done);
+	task_clear_wait_res();
 
 	return blk_status_to_errno(bio->bi_status);
 }
