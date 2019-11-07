@@ -214,6 +214,7 @@ int kvm_vgic_vcpu_init(struct kvm_vcpu *vcpu)
 
 	INIT_LIST_HEAD(&vgic_cpu->ap_list_head);
 	spin_lock_init(&vgic_cpu->ap_list_lock);
+	atomic_set(&vgic_cpu->vgic_v3.its_vpe.vlpi_count, 0);
 
 	/*
 	 * Enable and configure all SGIs to be edge-triggered and
