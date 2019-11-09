@@ -882,7 +882,7 @@ static void io_fail_links(struct io_kiocb *req)
 	io_cqring_ev_posted(ctx);
 }
 
-static void io_free_req(struct io_kiocb *req, struct io_kiocb **nxt)
+static void io_free_req_find_next(struct io_kiocb *req, struct io_kiocb **nxt)
 {
 	if (likely(!(req->flags & REQ_F_LINK))) {
 		__io_free_req(req);
@@ -916,6 +916,11 @@ static void io_free_req(struct io_kiocb *req, struct io_kiocb **nxt)
 	__io_free_req(req);
 }
 
+static void io_free_req(struct io_kiocb *req)
+{
+	io_free_req_find_next(req, NULL);
+}
+
 /*
  * Drop reference to request, return next in chain (if there is one) if this
  * was the last reference to this request.
@@ -925,7 +930,7 @@ static void io_put_req_find_next(struct io_kiocb *req, struct io_kiocb **nxtptr)
 	struct io_kiocb *nxt = NULL;
 
 	if (refcount_dec_and_test(&req->refs))
-		io_free_req(req, &nxt);
+		io_free_req_find_next(req, &nxt);
 
 	if (nxt) {
 		if (nxtptr)
@@ -938,7 +943,7 @@ static void io_put_req_find_next(struct io_kiocb *req, struct io_kiocb **nxtptr)
 static void io_put_req(struct io_kiocb *req)
 {
 	if (refcount_dec_and_test(&req->refs))
-		io_free_req(req, NULL);
+		io_free_req(req);
 }
 
 static void io_double_put_req(struct io_kiocb *req)
@@ -1005,7 +1010,7 @@ static void io_iopoll_complete(struct io_ring_ctx *ctx, unsigned int *nr_events,
 				if (to_free == ARRAY_SIZE(reqs))
 					io_free_req_many(ctx, reqs, &to_free);
 			} else {
-				io_free_req(req, NULL);
+				io_free_req(req);
 			}
 		}
 	}
