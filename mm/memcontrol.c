@@ -179,6 +179,16 @@ struct mem_cgroup_event {
 static void mem_cgroup_threshold(struct mem_cgroup *memcg);
 static void mem_cgroup_oom_notify(struct mem_cgroup *memcg);
 
+static int seq_puts_memcg_tunable(struct seq_file *m, unsigned long value);
+static int memory_min_show(struct seq_file *m, void *v);
+static ssize_t memory_min_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off);
+static int memory_low_show(struct seq_file *m, void *v);
+static ssize_t memory_low_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off);
+static int memory_high_show(struct seq_file *m, void *v);
+static ssize_t memory_high_write(struct kernfs_open_file *of,
+				 char *buf, size_t nbytes, loff_t off);
 /* Stuffs for move charges at task migration. */
 /*
  * Types of charges to be moved.
@@ -6391,6 +6401,24 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.name = "reap_background",
 		.read_u64 = memcg_reap_background_read,
 		.write_u64 = memcg_reap_background_write,
+	},
+	{
+		.name = "min",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_min_show,
+		.write = memory_min_write,
+	},
+	{
+		.name = "low",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_low_show,
+		.write = memory_low_write,
+	},
+	{
+		.name = "high",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_high_show,
+		.write = memory_high_write,
 	},
 	{ },	/* terminate */
 };
