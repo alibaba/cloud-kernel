@@ -2463,8 +2463,6 @@ void mem_cgroup_handle_over_high(void)
 	memcg = get_mem_cgroup_from_mm(current->mm);
 	start = ktime_get_ns();
 	reclaim_high(memcg, nr_pages, GFP_KERNEL);
-	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
-			      (ktime_get_ns() - start));
 	current->memcg_nr_pages_over_high = 0;
 
 	/*
@@ -2533,6 +2531,8 @@ void mem_cgroup_handle_over_high(void)
 	psi_memstall_leave(&pflags);
 
 out:
+	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
+			      (ktime_get_ns() - start));
 	css_put(&memcg->css);
 }
 
