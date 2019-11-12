@@ -783,7 +783,7 @@ static int arm_cmn_init_pmu(struct arm_cmn *cmn, void __iomem *base, int id)
 	}
 
 	err = devm_request_irq(cmn->dev, irq, arm_cmn_irq_handler,
-			       IRQF_NOBALANCING | IRQF_NO_THREAD,
+			       IRQF_NOBALANCING | IRQF_NO_THREAD| IRQF_SHARED,
 			       dev_name(cmn->dev), dtc);
 	if (err)
 		return err;
