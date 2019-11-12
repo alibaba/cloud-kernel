@@ -2455,12 +2455,16 @@ void mem_cgroup_handle_over_high(void)
 	unsigned long penalty_jiffies, overage;
 	unsigned int nr_pages = current->memcg_nr_pages_over_high;
 	struct mem_cgroup *memcg;
+	u64 start;
 
 	if (likely(!nr_pages))
 		return;
 
 	memcg = get_mem_cgroup_from_mm(current->mm);
+	start = ktime_get_ns();
 	reclaim_high(memcg, nr_pages, GFP_KERNEL);
+	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
+			      (ktime_get_ns() - start));
 	current->memcg_nr_pages_over_high = 0;
 
 	/*
