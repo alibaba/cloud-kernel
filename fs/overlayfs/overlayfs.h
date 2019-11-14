@@ -409,6 +409,8 @@ struct dentry *ovl_create_temp(struct dentry *workdir, struct ovl_cattr *attr);
 
 /* file.c */
 extern const struct file_operations ovl_file_operations;
+int __init ovl_init_aio_request_cache(void);
+void ovl_exit_aio_request_cache(void);
 
 /* copy_up.c */
 int ovl_copy_up(struct dentry *dentry);
