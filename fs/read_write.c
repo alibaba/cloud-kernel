@@ -974,6 +974,64 @@ ssize_t vfs_iter_write(struct file *file, struct iov_iter *iter, loff_t *ppos,
 }
 EXPORT_SYMBOL(vfs_iter_write);
 
+ssize_t vfs_iocb_iter_read(struct file *file, struct kiocb *iocb,
+			   struct iov_iter *iter)
+{
+	ssize_t ret = 0;
+	ssize_t tot_len;
+
+	if (!file->f_op->read_iter)
+		return -EINVAL;
+	if (!(file->f_mode & FMODE_READ))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_READ))
+		return -EINVAL;
+
+	tot_len = iov_iter_count(iter);
+	if (!tot_len)
+		return 0;
+
+	ret = rw_verify_area(READ, file, &iocb->ki_pos, tot_len);
+	if (ret < 0)
+		return ret;
+
+	ret = call_read_iter(file, iocb, iter);
+	if (ret >= 0)
+		fsnotify_access(file);
+
+	return ret;
+}
+EXPORT_SYMBOL(vfs_iocb_iter_read);
+
+ssize_t vfs_iocb_iter_write(struct file *file, struct kiocb *iocb,
+			    struct iov_iter *iter)
+{
+	ssize_t ret = 0;
+	ssize_t tot_len;
+
+	if (!file->f_op->write_iter)
+		return -EINVAL;
+	if (!(file->f_mode & FMODE_WRITE))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_WRITE))
+		return -EINVAL;
+
+	tot_len = iov_iter_count(iter);
+	if (!tot_len)
+		return 0;
+
+	ret = rw_verify_area(WRITE, file, &iocb->ki_pos, tot_len);
+	if (ret < 0)
+		return ret;
+
+	ret = call_write_iter(file, iocb, iter);
+	if (ret >= 0)
+		fsnotify_modify(file);
+
+	return ret;
+}
+EXPORT_SYMBOL(vfs_iocb_iter_write);
+
 ssize_t vfs_readv(struct file *file, const struct iovec __user *vec,
 		  unsigned long vlen, loff_t *pos, rwf_t flags)
 {
