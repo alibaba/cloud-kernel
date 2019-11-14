@@ -62,11 +62,6 @@ struct io_worker {
 	struct files_struct *restore_files;
 };
 
-struct io_wq_nulls_list {
-	struct hlist_nulls_head head;
-	unsigned long nulls;
-};
-
 #if BITS_PER_LONG == 64
 #define IO_WQ_HASH_ORDER	6
 #else
@@ -98,8 +93,8 @@ struct io_wqe {
 	int node;
 	struct io_wqe_acct acct[2];
 
-	struct io_wq_nulls_list free_list;
-	struct io_wq_nulls_list busy_list;
+	struct hlist_nulls_head free_list;
+	struct hlist_nulls_head busy_list;
 	struct list_head all_list;
 
 	struct io_wq *wq;
@@ -258,7 +253,7 @@ static bool io_wqe_activate_free_worker(struct io_wqe *wqe)
 	struct hlist_nulls_node *n;
 	struct io_worker *worker;
 
-	n = rcu_dereference(hlist_nulls_first_rcu(&wqe->free_list.head));
+	n = rcu_dereference(hlist_nulls_first_rcu(&wqe->free_list));
 	if (is_a_nulls(n))
 		return false;
 
@@ -334,8 +329,7 @@ static void __io_worker_busy(struct io_wqe *wqe, struct io_worker *worker,
 	if (worker->flags & IO_WORKER_F_FREE) {
 		worker->flags &= ~IO_WORKER_F_FREE;
 		hlist_nulls_del_init_rcu(&worker->nulls_node);
-		hlist_nulls_add_head_rcu(&worker->nulls_node,
-						&wqe->busy_list.head);
+		hlist_nulls_add_head_rcu(&worker->nulls_node, &wqe->busy_list);
 	}
 
 	/*
@@ -374,8 +368,7 @@ static bool __io_worker_idle(struct io_wqe *wqe, struct io_worker *worker)
 	if (!(worker->flags & IO_WORKER_F_FREE)) {
 		worker->flags |= IO_WORKER_F_FREE;
 		hlist_nulls_del_init_rcu(&worker->nulls_node);
-		hlist_nulls_add_head_rcu(&worker->nulls_node,
-						&wqe->free_list.head);
+		hlist_nulls_add_head_rcu(&worker->nulls_node, &wqe->free_list);
 	}
 
 	return __io_worker_unuse(wqe, worker);
@@ -603,7 +596,7 @@ static bool create_io_worker(struct io_wq *wq, struct io_wqe *wqe, int index)
 	}
 
 	spin_lock_irq(&wqe->lock);
-	hlist_nulls_add_head_rcu(&worker->nulls_node, &wqe->free_list.head);
+	hlist_nulls_add_head_rcu(&worker->nulls_node, &wqe->free_list);
 	list_add_tail_rcu(&worker->all_list, &wqe->all_list);
 	worker->flags |= IO_WORKER_F_FREE;
 	if (index == IO_WQ_ACCT_BOUND)
@@ -626,7 +619,7 @@ static inline bool io_wqe_need_worker(struct io_wqe *wqe, int index)
 	struct io_wqe_acct *acct = &wqe->acct[index];
 
 	/* if we have available workers or no work, no need */
-	if (!hlist_nulls_empty(&wqe->free_list.head) || !io_wqe_run_queue(wqe))
+	if (!hlist_nulls_empty(&wqe->free_list) || !io_wqe_run_queue(wqe))
 		return false;
 	return acct->nr_workers < acct->max_workers;
 }
@@ -689,7 +682,7 @@ static bool io_wq_can_queue(struct io_wqe *wqe, struct io_wqe_acct *acct,
 		return true;
 
 	rcu_read_lock();
-	free_worker = !hlist_nulls_empty(&wqe->free_list.head);
+	free_worker = !hlist_nulls_empty(&wqe->free_list);
 	rcu_read_unlock();
 	if (free_worker)
 		return true;
@@ -1031,10 +1024,8 @@ struct io_wq *io_wq_create(unsigned bounded, struct io_wq_data *data)
 		wqe->wq = wq;
 		spin_lock_init(&wqe->lock);
 		INIT_LIST_HEAD(&wqe->work_list);
-		INIT_HLIST_NULLS_HEAD(&wqe->free_list.head, 0);
-		wqe->free_list.nulls = 0;
-		INIT_HLIST_NULLS_HEAD(&wqe->busy_list.head, 1);
-		wqe->busy_list.nulls = 1;
+		INIT_HLIST_NULLS_HEAD(&wqe->free_list, 0);
+		INIT_HLIST_NULLS_HEAD(&wqe->busy_list, 1);
 		INIT_LIST_HEAD(&wqe->all_list);
 
 		i++;
