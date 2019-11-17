@@ -22,7 +22,7 @@
 #include "map_in_map.h"
 
 #define ARRAY_CREATE_FLAG_MASK \
-	(BPF_F_NUMA_NODE | BPF_F_RDONLY | BPF_F_WRONLY)
+	(BPF_F_NUMA_NODE | BPF_F_RDONLY | BPF_F_WRONLY | BPF_F_MMAPABLE)
 
 static void bpf_array_free_percpu(struct bpf_array *array)
 {
@@ -64,6 +64,10 @@ int array_map_alloc_check(union bpf_attr *attr)
 	    attr->value_size == 0 ||
 	    attr->map_flags & ~ARRAY_CREATE_FLAG_MASK ||
 	    (percpu && numa_node != NUMA_NO_NODE))
+		return -EINVAL;
+
+	if (attr->map_type != BPF_MAP_TYPE_ARRAY &&
+	    attr->map_flags & BPF_F_MMAPABLE)
 		return -EINVAL;
 
 	if (attr->value_size > KMALLOC_MAX_SIZE)
@@ -109,10 +113,19 @@ static struct bpf_map *array_map_alloc(union bpf_attr *attr)
 	}
 
 	array_size = sizeof(*array);
-	if (percpu)
+	if (percpu) {
 		array_size += (u64) max_entries * sizeof(void *);
-	else
-		array_size += (u64) max_entries * elem_size;
+	} else {
+		/* rely on vmalloc() to return page-aligned memory and
+		 * ensure array->value is exactly page-aligned
+		 */
+		if (attr->map_flags & BPF_F_MMAPABLE) {
+			array_size = PAGE_ALIGN(array_size);
+			array_size += PAGE_ALIGN((u64) max_entries * elem_size);
+		} else {
+			array_size += (u64) max_entries * elem_size;
+		}
+	}
 
 	/* make sure there is no u32 overflow later in round_up() */
 	cost = array_size;
@@ -124,7 +137,20 @@ static struct bpf_map *array_map_alloc(union bpf_attr *attr)
 		return ERR_PTR(ret);
 
 	/* allocate all map elements and zero-initialize them */
-	array = bpf_map_area_alloc(array_size, numa_node);
+	if (attr->map_flags & BPF_F_MMAPABLE) {
+		void *data;
+
+		/* kmalloc'ed memory can't be mmap'ed, use explicit vmalloc */
+		data = bpf_map_area_mmapable_alloc(array_size, numa_node);
+		if (!data) {
+			bpf_map_charge_finish(&mem);
+			return ERR_PTR(-ENOMEM);
+		}
+		array = data + PAGE_ALIGN(sizeof(struct bpf_array))
+			- offsetof(struct bpf_array, value);
+	} else {
+		array = bpf_map_area_alloc(array_size, numa_node);
+	}
 	if (!array) {
 		bpf_map_charge_finish(&mem);
 		return ERR_PTR(-ENOMEM);
@@ -318,6 +344,11 @@ static int array_map_delete_elem(struct bpf_map *map, void *key)
 	return -EINVAL;
 }
 
+static void *array_map_vmalloc_addr(struct bpf_array *array)
+{
+	return (void *)round_down((unsigned long)array, PAGE_SIZE);
+}
+
 /* Called when map->refcnt goes to zero, either from workqueue or from syscall */
 static void array_map_free(struct bpf_map *map)
 {
@@ -333,7 +364,10 @@ static void array_map_free(struct bpf_map *map)
 	if (array->map.map_type == BPF_MAP_TYPE_PERCPU_ARRAY)
 		bpf_array_free_percpu(array);
 
-	bpf_map_area_free(array);
+	if (array->map.map_flags & BPF_F_MMAPABLE)
+		bpf_map_area_free(array_map_vmalloc_addr(array));
+	else
+		bpf_map_area_free(array);
 }
 
 static void array_map_seq_show_elem(struct bpf_map *map, void *key,
@@ -375,6 +409,17 @@ static int array_map_check_btf(const struct bpf_map *map,
 	return 0;
 }
 
+int array_map_mmap(struct bpf_map *map, struct vm_area_struct *vma)
+{
+	struct bpf_array *array = container_of(map, struct bpf_array, map);
+	pgoff_t pgoff = PAGE_ALIGN(sizeof(*array)) >> PAGE_SHIFT;
+
+	if (!(map->map_flags & BPF_F_MMAPABLE))
+		return -EINVAL;
+
+	return remap_vmalloc_range(vma, array_map_vmalloc_addr(array), pgoff);
+}
+
 const struct bpf_map_ops array_map_ops = {
 	.map_alloc_check = array_map_alloc_check,
 	.map_alloc = array_map_alloc,
@@ -384,6 +429,7 @@ const struct bpf_map_ops array_map_ops = {
 	.map_update_elem = array_map_update_elem,
 	.map_delete_elem = array_map_delete_elem,
 	.map_gen_lookup = array_map_gen_lookup,
+	.map_mmap = array_map_mmap,
 	.map_seq_show_elem = array_map_seq_show_elem,
 	.map_check_btf = array_map_check_btf,
 };
