@@ -2120,6 +2120,8 @@ static void io_poll_complete_work(struct io_wq_work **workptr)
 
 	io_cqring_ev_posted(ctx);
 
+	if (ret < 0 && req->flags & REQ_F_LINK)
+		req->flags |= REQ_F_FAIL_LINK;
 	io_put_req_find_next(req, &nxt);
 	if (nxt)
 		*workptr = &nxt->work;
@@ -2333,6 +2335,8 @@ static int io_timeout_cancel(struct io_ring_ctx *ctx, __u64 user_data)
 	if (ret == -1)
 		return -EALREADY;
 
+	if (req->flags & REQ_F_LINK)
+		req->flags |= REQ_F_FAIL_LINK;
 	io_cqring_fill_event(req, -ECANCELED);
 	io_put_req(req);
 	return 0;
@@ -2843,6 +2847,8 @@ static enum hrtimer_restart io_link_timeout_fn(struct hrtimer *timer)
 	spin_unlock_irqrestore(&ctx->completion_lock, flags);
 
 	if (prev) {
+		if (prev->flags & REQ_F_LINK)
+			prev->flags |= REQ_F_FAIL_LINK;
 		io_async_find_and_cancel(ctx, req, prev->user_data, NULL,
 						-ETIME);
 		io_put_req(prev);
