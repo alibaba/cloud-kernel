@@ -45,6 +45,7 @@
 #define MCI_STATUS_SYNDV	(1ULL<<53)  /* synd reg. valid */
 #define MCI_STATUS_DEFERRED	(1ULL<<44)  /* uncorrected error, deferred exception */
 #define MCI_STATUS_POISON	(1ULL<<43)  /* access poisonous data */
+#define MCI_STATUS_SCRUB	(1ULL<<40)  /* Error detected during scrub operation */
 
 /*
  * McaX field if set indicates a given bank supports MCA extensions:
