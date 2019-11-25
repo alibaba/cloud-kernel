@@ -30,6 +30,7 @@
 #include <linux/of.h>
 #include <linux/perf/arm_pmu.h>
 #include <linux/platform_device.h>
+#include <linux/sched/clock.h>
 
 /*
  * ARMv8 PMUv3 Performance Events handling code.
@@ -1469,11 +1470,22 @@ static int __init armv8_pmu_driver_init(void)
 }
 device_initcall(armv8_pmu_driver_init)
 
+static u64 cyc_to_ns(u64 cyc, u16 time_shift, u32 time_mult)
+{
+	u64 quot, rem;
+
+	quot = cyc >> time_shift;
+	rem  = cyc & (((u64)1 << time_shift) - 1);
+	return quot * time_mult +
+	       ((rem * time_mult) >> time_shift);
+}
+
 void arch_perf_update_userpage(struct perf_event *event,
 			       struct perf_event_mmap_page *userpg, u64 now)
 {
 	u32 freq;
 	u32 shift;
+	u64 offset;
 
 	/*
 	 * Internal timekeeping for enabled/running/stopped times
@@ -1496,4 +1508,16 @@ void arch_perf_update_userpage(struct perf_event *event,
 	}
 	userpg->time_shift = (u16)shift;
 	userpg->time_offset = -now;
+
+	offset = local_clock() - cyc_to_ns(arch_timer_read_counter(),
+			userpg->time_shift, userpg->time_mult);
+
+	/*
+	 * cap_user_time_zero doesn't make sense when we're using a different
+	 * time base for the records.
+	 */
+	if (!event->attr.use_clockid) {
+		userpg->cap_user_time_zero = 1;
+		userpg->time_zero = offset;
+	}
 }
