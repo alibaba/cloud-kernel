@@ -54,6 +54,7 @@ struct io_worker {
 
 	struct rcu_head rcu;
 	struct mm_struct *mm;
+	const struct cred *creds;
 	struct files_struct *restore_files;
 };
 
@@ -112,6 +113,7 @@ struct io_wq {
 
 	struct task_struct *manager;
 	struct user_struct *user;
+	struct cred *creds;
 	struct mm_struct *mm;
 	refcount_t refs;
 	struct completion done;
@@ -136,6 +138,11 @@ static void io_worker_release(struct io_worker *worker)
 static bool __io_worker_unuse(struct io_wqe *wqe, struct io_worker *worker)
 {
 	bool dropped_lock = false;
+
+	if (worker->creds) {
+		revert_creds(worker->creds);
+		worker->creds = NULL;
+	}
 
 	if (current->files != worker->restore_files) {
 		__acquire(&wqe->lock);
@@ -445,6 +452,8 @@ next:
 			set_fs(USER_DS);
 			worker->mm = wq->mm;
 		}
+		if (!worker->creds)
+			worker->creds = override_creds(wq->creds);
 		if (test_bit(IO_WQ_BIT_CANCEL, &wq->state))
 			work->flags |= IO_WQ_WORK_CANCEL;
 		if (worker->mm)
@@ -994,6 +1003,7 @@ struct io_wq *io_wq_create(unsigned bounded, struct io_wq_data *data)
 
 	/* caller must already hold a reference to this */
 	wq->user = data->user;
+	wq->creds = data->creds;
 
 	i = 0;
 	refcount_set(&wq->refs, wq->nr_wqes);
