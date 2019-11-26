@@ -3383,6 +3383,36 @@ err:
 	return ret;
 }
 
+static u64 ioc_stat_prfill(struct seq_file *sf, struct blkg_policy_data *pd,
+			  int off)
+{
+	struct blkcg_gq *blkg = pd->blkg;
+	const char *dname = blkg_dev_name(blkg);
+	struct ioc_gq *iocg = blkg_to_iocg(blkg);
+	struct ioc *ioc = iocg->ioc;
+
+	if (!dname)
+		return 0;
+
+	seq_printf(sf, "%s is_active=%d active=%u inuse=%u "
+		   "hweight_active=%u hweight_inuse=%u vrate=%llu\n",
+		   dname, !list_empty(&iocg->active_list),
+		   iocg->active, iocg->inuse,
+		   iocg->hweight_active, iocg->hweight_inuse,
+		   (unsigned long long)atomic64_read(&ioc->vtime_rate));
+
+	return 0;
+}
+
+static int ioc_cost_print_stat(struct seq_file *sf, void *v)
+{
+	struct blkcg *blkcg = css_to_blkcg(seq_css(sf));
+
+	blkcg_print_blkgs(sf, blkcg, ioc_stat_prfill,
+			  &blkcg_policy_iocost, seq_cft(sf)->private, false);
+	return 0;
+}
+
 static struct cftype ioc_files[] = {
 	{
 		.name = "weight",
@@ -3423,6 +3453,11 @@ static struct cftype ioc_legacy_files[] = {
 		.flags = CFTYPE_ONLY_ON_ROOT,
 		.seq_show = ioc_cost_model_show,
 		.write = ioc_cost_model_write,
+	},
+	{
+		.name = "cost.stat",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = ioc_cost_print_stat,
 	},
 	{}
 };
