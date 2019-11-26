@@ -2445,6 +2445,12 @@ retry:
 	case OOM_SUCCESS:
 		nr_retries = MEM_CGROUP_RECLAIM_RETRIES;
 		oomed = true;
+		/*
+		 * With !PREEMPT kernel if the memcg doesn't have reclaimable
+		 * memory, the reclaim retry and oom logic may block scheduling
+		 * indefinitely.
+		 */
+		cond_resched();
 		goto retry;
 	case OOM_FAILED:
 		goto force;
