@@ -223,13 +223,13 @@ static void unregister_memcg_shrinker(struct shrinker *shrinker)
 	up_write(&shrinker_rwsem);
 }
 
-static bool global_reclaim(struct scan_control *sc)
+static bool cgroup_reclaim(struct scan_control *sc)
 {
-	return !sc->target_mem_cgroup;
+	return sc->target_mem_cgroup;
 }
 
 /**
- * sane_reclaim - is the usual dirty throttling mechanism operational?
+ * writeback_throttling_sane - is the usual dirty throttling mechanism available?
  * @sc: scan_control in question
  *
  * The normal page dirty throttling mechanism in balance_dirty_pages() is
@@ -241,11 +241,9 @@ static bool global_reclaim(struct scan_control *sc)
  * This function tests whether the vmscan currently in progress can assume
  * that the normal dirty throttling mechanism is operational.
  */
-static bool sane_reclaim(struct scan_control *sc)
+static bool writeback_throttling_sane(struct scan_control *sc)
 {
-	struct mem_cgroup *memcg = sc->target_mem_cgroup;
-
-	if (!memcg)
+	if (!cgroup_reclaim(sc))
 		return true;
 #ifdef CONFIG_CGROUP_WRITEBACK
 	/* Cloud Kernel has cgroup writeback support for v1 */
@@ -331,12 +329,12 @@ static void unregister_memcg_shrinker(struct shrinker *shrinker)
 {
 }
 
-static bool global_reclaim(struct scan_control *sc)
+static bool cgroup_reclaim(struct scan_control *sc)
 {
-	return true;
+	return false;
 }
 
-static bool sane_reclaim(struct scan_control *sc)
+static bool writeback_throttling_sane(struct scan_control *sc)
 {
 	return true;
 }
@@ -909,7 +907,7 @@ static pageout_t pageout(struct page *page, struct address_space *mapping,
 			memcg_lat_stat_start(&start);
 		res = mapping->a_ops->writepage(page, &wbc);
 		if (!current_is_kswapd())
-			memcg_lat_stat_end(global_reclaim(sc) ?
+			memcg_lat_stat_end(!cgroup_reclaim(sc) ?
 					      MEM_LAT_GLOBAL_DIRECT_SWAPOUT :
 					      MEM_LAT_MEMCG_DIRECT_SWAPOUT,
 					      start);
@@ -1305,7 +1303,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				goto activate_locked;
 
 			/* Case 2 above */
-			} else if (sane_reclaim(sc) ||
+			} else if (writeback_throttling_sane(sc) ||
 			    !PageReclaim(page) || !may_enter_fs) {
 				/*
 				 * This is slightly racy - end_page_writeback()
@@ -1880,7 +1878,7 @@ static int too_many_isolated(struct pglist_data *pgdat, int file,
 	if (current_is_kswapd())
 		return 0;
 
-	if (!sane_reclaim(sc))
+	if (!writeback_throttling_sane(sc))
 		return 0;
 
 	if (file) {
@@ -2015,12 +2013,12 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	reclaim_stat->recent_scanned[file] += nr_taken;
 
 	if (current_is_kswapd()) {
-		if (global_reclaim(sc))
+		if (!cgroup_reclaim(sc))
 			__count_vm_events(PGSCAN_KSWAPD, nr_scanned);
 		count_memcg_events(lruvec_memcg(lruvec), PGSCAN_KSWAPD,
 				   nr_scanned);
 	} else {
-		if (global_reclaim(sc))
+		if (!cgroup_reclaim(sc))
 			__count_vm_events(PGSCAN_DIRECT, nr_scanned);
 		count_memcg_events(lruvec_memcg(lruvec), PGSCAN_DIRECT,
 				   nr_scanned);
@@ -2036,12 +2034,12 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	spin_lock_irq(&pgdat->lru_lock);
 
 	if (current_is_kswapd()) {
-		if (global_reclaim(sc))
+		if (!cgroup_reclaim(sc))
 			__count_vm_events(PGSTEAL_KSWAPD, nr_reclaimed);
 		count_memcg_events(lruvec_memcg(lruvec), PGSTEAL_KSWAPD,
 				   nr_reclaimed);
 	} else {
-		if (global_reclaim(sc))
+		if (!cgroup_reclaim(sc))
 			__count_vm_events(PGSTEAL_DIRECT, nr_reclaimed);
 		count_memcg_events(lruvec_memcg(lruvec), PGSTEAL_DIRECT,
 				   nr_reclaimed);
@@ -2429,7 +2427,7 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 	 * using the memory controller's swap limit feature would be
 	 * too expensive.
 	 */
-	if (!global_reclaim(sc) && !swappiness) {
+	if (cgroup_reclaim(sc) && !swappiness) {
 		scan_balance = SCAN_FILE;
 		goto out;
 	}
@@ -2453,7 +2451,7 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 	 * thrashing file LRU becomes infinitely more attractive than
 	 * anon pages.  Try to detect this based on file LRU size.
 	 */
-	if (global_reclaim(sc) && vm_swappiness != -1) {
+	if (!cgroup_reclaim(sc) && vm_swappiness != -1) {
 		unsigned long pgdatfile;
 		unsigned long pgdatfree;
 		int z;
@@ -2631,7 +2629,7 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 	 * abort proportional reclaim if either the file or anon lru has already
 	 * dropped to zero at the first pass.
 	 */
-	scan_adjusted = (global_reclaim(sc) && !current_is_kswapd() &&
+	scan_adjusted = (!cgroup_reclaim(sc) && !current_is_kswapd() &&
 			 sc->priority == DEF_PRIORITY);
 
 	blk_start_plug(&plug);
@@ -2862,7 +2860,7 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 			 * Memcg background reclaim would break iter once water
 			 * mark is satisfied.
 			 */
-			if (current_is_kswapd() && !global_reclaim(sc) &&
+			if (current_is_kswapd() && cgroup_reclaim(sc) &&
 					is_wmark_ok(root, false)) {
 				mem_cgroup_iter_break(root, memcg);
 				break;
@@ -2901,7 +2899,7 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 			 * in the nr_immediate check below.
 			 */
 			if (sc->nr.writeback && sc->nr.writeback == sc->nr.taken) {
-				if (global_reclaim(sc))
+				if (!cgroup_reclaim(sc))
 					set_bit(PGDAT_WRITEBACK, &pgdat->flags);
 				else
 					set_memcg_writeback(pgdat, root, true);
@@ -2913,12 +2911,12 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 			 * wait_iff_congested will stall.
 			 */
 			if (sc->nr.dirty && sc->nr.dirty == sc->nr.congested &&
-			    global_reclaim(sc))
+			    !cgroup_reclaim(sc))
 				set_bit(PGDAT_CONGESTED, &pgdat->flags);
 
 			/* Allow kswapd to start writing pages during reclaim.*/
 			if (sc->nr.unqueued_dirty == sc->nr.file_taken) {
-				if (global_reclaim(sc))
+				if (!cgroup_reclaim(sc))
 					set_bit(PGDAT_DIRTY, &pgdat->flags);
 				else
 					set_memcg_dirty(pgdat, root, true);
@@ -2938,7 +2936,7 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 		 * Legacy memcg will stall in page writeback so avoid forcibly
 		 * stalling in wait_iff_congested().
 		 */
-		if (!global_reclaim(sc) && sane_reclaim(sc) &&
+		if (cgroup_reclaim(sc) && writeback_throttling_sane(sc) &&
 		    sc->nr.dirty && sc->nr.dirty == sc->nr.congested)
 			set_memcg_congestion(pgdat, root, true);
 
@@ -3033,7 +3031,7 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 		 * Take care memory controller reclaiming has small influence
 		 * to global LRU.
 		 */
-		if (global_reclaim(sc)) {
+		if (!cgroup_reclaim(sc)) {
 			if (!cpuset_zone_allowed(zone,
 						 GFP_KERNEL | __GFP_HARDWALL))
 				continue;
@@ -3133,11 +3131,11 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 retry:
 	delayacct_freepages_start();
 
-	if (global_reclaim(sc))
+	if (!cgroup_reclaim(sc))
 		__count_zid_vm_events(ALLOCSTALL, sc->reclaim_idx, 1);
 
 	do {
-		if (current_is_kswapd() && !global_reclaim(sc) &&
+		if (current_is_kswapd() && cgroup_reclaim(sc) &&
 		    is_wmark_ok(sc->target_mem_cgroup, false))
 			break;
 
@@ -3168,7 +3166,7 @@ retry:
 		last_pgdat = zone->zone_pgdat;
 		snapshot_refaults(sc->target_mem_cgroup, zone->zone_pgdat);
 		set_memcg_congestion(last_pgdat, sc->target_mem_cgroup, false);
-		if (current_is_kswapd() && !global_reclaim(sc)) {
+		if (current_is_kswapd() && cgroup_reclaim(sc)) {
 			set_memcg_dirty(last_pgdat, sc->target_mem_cgroup, false);
 			set_memcg_writeback(last_pgdat, sc->target_mem_cgroup,
 					    false);
