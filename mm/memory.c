@@ -80,6 +80,7 @@
 #include <asm/pgtable.h>
 
 #include "internal.h"
+#include <linux/file.h>
 
 #if defined(LAST_CPUPID_NOT_IN_PAGE_FLAGS) && !defined(CONFIG_COMPILE_TEST)
 #warning Unfortunate NUMA and NUMA Balancing config, growing page-frame for last_cpupid.
@@ -2429,10 +2430,11 @@ static vm_fault_t do_page_mkwrite(struct vm_fault *vmf)
  *
  * The function expects the page to be locked and unlocks it.
  */
-static void fault_dirty_shared_page(struct vm_area_struct *vma,
-				    struct page *page)
+static vm_fault_t fault_dirty_shared_page(struct vm_fault *vmf)
 {
+	struct vm_area_struct *vma = vmf->vma;
 	struct address_space *mapping;
+	struct page *page = vmf->page;
 	bool dirtied;
 	bool page_mkwrite = vma->vm_ops && vma->vm_ops->page_mkwrite;
 
@@ -2447,16 +2449,30 @@ static void fault_dirty_shared_page(struct vm_area_struct *vma,
 	mapping = page_rmapping(page);
 	unlock_page(page);
 
-	if ((dirtied || page_mkwrite) && mapping) {
-		/*
-		 * Some device drivers do not set page.mapping
-		 * but still dirty their pages
-		 */
-		balance_dirty_pages_ratelimited(mapping);
-	}
-
 	if (!page_mkwrite)
 		file_update_time(vma->vm_file);
+
+	/*
+	 * Throttle page dirtying rate down to writeback speed.
+	 *
+	 * mapping may be NULL here because some device drivers do not
+	 * set page.mapping but still dirty their pages
+	 *
+	 * Drop the mmap_sem before waiting on IO, if we can. The file
+	 * is pinning the mapping, as per above.
+	 */
+	if ((dirtied || page_mkwrite) && mapping) {
+		struct file *fpin;
+
+		fpin = maybe_unlock_mmap_for_io(vmf, NULL);
+		balance_dirty_pages_ratelimited(mapping);
+		if (fpin) {
+			fput(fpin);
+			return VM_FAULT_RETRY;
+		}
+	}
+
+	return 0;
 }
 
 /*
@@ -2693,6 +2709,7 @@ static vm_fault_t wp_page_shared(struct vm_fault *vmf)
 	__releases(vmf->ptl)
 {
 	struct vm_area_struct *vma = vmf->vma;
+	vm_fault_t ret = VM_FAULT_WRITE;
 
 	get_page(vmf->page);
 
@@ -2716,10 +2733,10 @@ static vm_fault_t wp_page_shared(struct vm_fault *vmf)
 		wp_page_reuse(vmf);
 		lock_page(vmf->page);
 	}
-	fault_dirty_shared_page(vma, vmf->page);
+	ret |= fault_dirty_shared_page(vmf);
 	put_page(vmf->page);
 
-	return VM_FAULT_WRITE;
+	return ret;
 }
 
 /*
@@ -3768,7 +3785,7 @@ static vm_fault_t do_shared_fault(struct vm_fault *vmf)
 		return ret;
 	}
 
-	fault_dirty_shared_page(vma, vmf->page);
+	ret |= fault_dirty_shared_page(vmf);
 	return ret;
 }
 
