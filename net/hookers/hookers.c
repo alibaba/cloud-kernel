@@ -16,6 +16,9 @@
 #include <net/inet_common.h>
 #include <net/ipv6.h>
 #include <linux/inet.h>
+#include <linux/kallsyms.h>
+#include <linux/hugetlb.h>
+#include <asm/tlbflush.h>
 
 #include <linux/hookers.h>
 
@@ -27,6 +30,10 @@ struct hooked_place {
 	int nr_hookers;		/* how many hookers are linked at below chain */
 	struct list_head chain;	/* hookers chain */
 };
+
+#ifdef CONFIG_ARM64
+static struct mm_struct *orig_init_mm;
+#endif
 
 static spinlock_t hookers_lock;
 
@@ -253,6 +260,7 @@ void hooker_uninstall(struct hooker *h)
 }
 EXPORT_SYMBOL_GPL(hooker_uninstall);
 
+#ifdef CONFIG_X86
 static inline unsigned int hookers_clear_cr0(void)
 {
 	unsigned int cr0 = read_cr0();
@@ -265,6 +273,60 @@ static inline void hookers_restore_cr0(unsigned int val)
 {
 	write_cr0(val);
 }
+#else
+
+static void remove_memprotect(unsigned long addr)
+{
+	pgd_t *pgd, pgdd;
+	p4d_t *p4d, p4dd;
+	pud_t *pud, pudd;
+	pmd_t *pmd, pmdd;
+	u64 addr_aligned;
+
+	addr_aligned = addr & PAGE_MASK;
+
+	pgd = pgd_offset(orig_init_mm, (unsigned long)addr_aligned);
+	pgdd = READ_ONCE(*pgd);
+
+	p4d = p4d_offset(pgd, (unsigned long)addr_aligned);
+	p4dd = READ_ONCE(*p4d);
+
+	pud = pud_offset(p4d, (unsigned long)addr_aligned);
+	pudd = READ_ONCE(*pud);
+
+	pmd = pmd_offset(pud, (unsigned long)addr_aligned);
+	pmdd = READ_ONCE(*pmd);
+
+	set_pmd(pmd, __pmd(pmd_val(pmdd) & ~PMD_SECT_RDONLY));
+	flush_tlb_kernel_range(addr_aligned, addr_aligned + PAGE_SIZE);
+}
+
+static void set_memprotect(unsigned long addr)
+{
+	pgd_t *pgd, pgdd;
+	p4d_t *p4d, p4dd;
+	pud_t *pud, pudd;
+	pmd_t *pmd, pmdd;
+	u64 addr_aligned;
+
+	addr_aligned = addr & PAGE_MASK;
+
+	pgd = pgd_offset(orig_init_mm, (unsigned long)addr_aligned);
+	pgdd = READ_ONCE(*pgd);
+
+	p4d = p4d_offset(pgd, (unsigned long)addr_aligned);
+	p4dd = READ_ONCE(*p4d);
+
+	pud = pud_offset(p4d, (unsigned long)addr_aligned);
+	pudd = READ_ONCE(*pud);
+
+	pmd = pmd_offset(pud, (unsigned long)addr_aligned);
+	pmdd = READ_ONCE(*pmd);
+
+	set_pmd(pmd, __pmd(pmd_val(pmdd) | PMD_SECT_RDONLY));
+	flush_tlb_kernel_range(addr_aligned, addr_aligned + PAGE_SIZE);
+}
+#endif
 
 static void *hookers_seq_start(struct seq_file *seq, loff_t *pos)
 {
@@ -320,20 +382,36 @@ static int hookers_init(void)
 	if (!proc_create("hookers", 0444, NULL, &hookers_seq_fops))
 		return -ENODEV;
 
+#ifdef CONFIG_ARM64
+	orig_init_mm = (struct mm_struct *)kallsyms_lookup_name("init_mm");
+	if (!orig_init_mm)
+		return -ENODEV;
+#endif
+
 	spin_lock_init(&hookers_lock);
 	for (i = 0; i < PLACE_TABLE_SZ; i++) {
+#ifdef CONFIG_X86
 		unsigned int cr0;
+#endif
 		void **place = place_table[i].place;
 
 		place_table[i].orig = *place;
 		if (!place_table[i].stub)
 			break;
 		INIT_LIST_HEAD(&place_table[i].chain);
+#ifdef CONFIG_X86
 		get_online_cpus();
 		cr0 = hookers_clear_cr0();
 		*place = place_table[i].stub;
 		hookers_restore_cr0(cr0);
 		put_online_cpus();
+#else
+		get_online_cpus();
+		remove_memprotect((unsigned long)place);
+		*place = place_table[i].stub;
+		set_memprotect((unsigned long)place);
+		put_online_cpus();
+#endif
 	}
 
 	return 0;
@@ -346,14 +424,22 @@ static void hookers_exit(void)
 	remove_proc_entry("hookers", NULL);
 
 	for (i = 0; i < PLACE_TABLE_SZ; i++) {
-		unsigned int cr0;
 		void **place = place_table[i].place;
 
+#ifdef CONFIG_X86
+		unsigned int cr0;
 		get_online_cpus();
 		cr0 = hookers_clear_cr0();
 		*place = place_table[i].orig;
 		hookers_restore_cr0(cr0);
 		put_online_cpus();
+#else
+		get_online_cpus();
+		remove_memprotect((unsigned long)place);
+		*place = place_table[i].orig;
+		set_memprotect((unsigned long)place);
+		put_online_cpus();
+#endif
 	}
 	synchronize_rcu();
 }
