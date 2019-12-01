@@ -1405,7 +1405,7 @@ struct lruvec *mem_cgroup_page_lruvec(struct page *page, struct pglist_data *pgd
 	struct lruvec *lruvec;
 
 	if (mem_cgroup_disabled()) {
-		lruvec = &pgdat->lruvec;
+		lruvec = &pgdat->__lruvec;
 		goto out;
 	}
 
@@ -1718,7 +1718,7 @@ static bool mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 static bool test_mem_cgroup_node_reclaimable(struct mem_cgroup *memcg,
 		int nid, bool noswap)
 {
-	struct lruvec *lruvec = mem_cgroup_lruvec(NODE_DATA(nid), memcg);
+	struct lruvec *lruvec = mem_cgroup_lruvec(memcg, NODE_DATA(nid));
 
 	if (lruvec_page_state(lruvec, NR_INACTIVE_FILE) ||
 	    lruvec_page_state(lruvec, NR_ACTIVE_FILE))
@@ -4301,7 +4301,7 @@ static int mem_cgroup_move_charge_write(struct cgroup_subsys_state *css,
 static unsigned long mem_cgroup_node_nr_lru_pages(struct mem_cgroup *memcg,
 					   int nid, unsigned int lru_mask)
 {
-	struct lruvec *lruvec = mem_cgroup_lruvec(NODE_DATA(nid), memcg);
+	struct lruvec *lruvec = mem_cgroup_lruvec(memcg, NODE_DATA(nid));
 	unsigned long nr = 0;
 	enum lru_list lru;
 
@@ -6613,8 +6613,8 @@ static int mem_cgroup_move_account(struct page *page,
 	anon = PageAnon(page);
 
 	pgdat = page_pgdat(page);
-	from_vec = mem_cgroup_lruvec(pgdat, from);
-	to_vec = mem_cgroup_lruvec(pgdat, to);
+	from_vec = mem_cgroup_lruvec(from, pgdat);
+	to_vec = mem_cgroup_lruvec(to, pgdat);
 
 	spin_lock_irqsave(&from->move_lock, flags);
 
