@@ -253,72 +253,6 @@ static bool writeback_throttling_sane(struct scan_control *sc)
 #endif
 	return false;
 }
-
-static void set_memcg_congestion(pg_data_t *pgdat,
-				struct mem_cgroup *memcg,
-				bool congested)
-{
-	struct mem_cgroup_per_node *mn;
-
-	if (!memcg)
-		return;
-
-	mn = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
-	WRITE_ONCE(mn->congested, congested);
-}
-
-static bool memcg_congested(pg_data_t *pgdat,
-			struct mem_cgroup *memcg)
-{
-	struct mem_cgroup_per_node *mn;
-
-	mn = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
-	return READ_ONCE(mn->congested);
-}
-
-static void set_memcg_dirty(pg_data_t *pgdat,
-				struct mem_cgroup *memcg,
-				bool dirty)
-{
-	struct mem_cgroup_per_node *mn;
-
-	if (!memcg)
-		return;
-
-	mn = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
-	WRITE_ONCE(mn->dirty, dirty);
-}
-
-static bool memcg_dirty(pg_data_t *pgdat,
-			struct mem_cgroup *memcg)
-{
-	struct mem_cgroup_per_node *mn;
-
-	mn = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
-	return READ_ONCE(mn->dirty);
-}
-
-static void set_memcg_writeback(pg_data_t *pgdat,
-				struct mem_cgroup *memcg,
-				bool writeback)
-{
-	struct mem_cgroup_per_node *mn;
-
-	if (!memcg)
-		return;
-
-	mn = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
-	WRITE_ONCE(mn->writeback, writeback);
-}
-
-static bool memcg_writeback(pg_data_t *pgdat,
-				struct mem_cgroup *memcg)
-{
-	struct mem_cgroup_per_node *mn;
-
-	mn = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
-	return READ_ONCE(mn->writeback);
-}
 #else
 static int prealloc_memcg_shrinker(struct shrinker *shrinker)
 {
@@ -337,39 +271,6 @@ static bool cgroup_reclaim(struct scan_control *sc)
 static bool writeback_throttling_sane(struct scan_control *sc)
 {
 	return true;
-}
-
-static inline void set_memcg_congestion(struct pglist_data *pgdat,
-				struct mem_cgroup *memcg, bool congested)
-{
-}
-
-static inline bool memcg_congested(struct pglist_data *pgdat,
-			struct mem_cgroup *memcg)
-{
-	return false;
-}
-
-static inline void set_memcg_dirty(struct pglist_data *pgdat,
-				struct mem_cgroup *memcg, bool dirty)
-{
-}
-
-static inline bool memcg_dirty(struct pglist_data *pgdat,
-			struct mem_cgroup *memcg)
-{
-	return false;
-}
-
-static inline void set_memcg_writeback(struct pglist_data *pgdat,
-				struct mem_cgroup *memcg, bool writeback)
-{
-}
-
-static inline bool memcg_writeback(struct pglist_data *pgdat,
-			struct mem_cgroup *memcg)
-{
-	return false;
 }
 #endif
 
@@ -1152,24 +1053,6 @@ static void page_check_dirty_writeback(struct page *page,
 		mapping->a_ops->is_dirty_writeback(page, dirty, writeback);
 }
 
-static bool pgdat_memcg_congested(pg_data_t *pgdat, struct mem_cgroup *memcg)
-{
-	return test_bit(PGDAT_CONGESTED, &pgdat->flags) ||
-		(memcg && memcg_congested(pgdat, memcg));
-}
-
-static bool pgdat_memcg_dirty(pg_data_t *pgdat, struct mem_cgroup *memcg)
-{
-	return test_bit(PGDAT_DIRTY, &pgdat->flags) ||
-		(memcg && memcg_dirty(pgdat, memcg));
-}
-
-static bool pgdat_memcg_writeback(pg_data_t *pgdat, struct mem_cgroup *memcg)
-{
-	return test_bit(PGDAT_WRITEBACK, &pgdat->flags) ||
-		(memcg && memcg_writeback(pgdat, memcg));
-}
-
 /*
  * shrink_page_list() returns the number of reclaimed pages
  */
@@ -1191,6 +1074,9 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 	unsigned nr_immediate = 0;
 	unsigned nr_ref_keep = 0;
 	unsigned nr_unmap_fail = 0;
+	struct lruvec *target_lruvec;
+
+	target_lruvec = mem_cgroup_lruvec(sc->target_mem_cgroup, pgdat);
 
 	cond_resched();
 
@@ -1298,7 +1184,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			/* Case 1 above */
 			if (current_is_kswapd() &&
 			    PageReclaim(page) &&
-			    pgdat_memcg_writeback(pgdat, sc->target_mem_cgroup)) {
+			    test_bit(LRUVEC_WRITEBACK, &target_lruvec->flags)) {
 				nr_immediate++;
 				goto activate_locked;
 
@@ -1420,7 +1306,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			 */
 			if (page_is_file_cache(page) &&
 			    (!current_is_kswapd() || !PageReclaim(page) ||
-			     !pgdat_memcg_dirty(pgdat, sc->target_mem_cgroup))) {
+			     !test_bit(LRUVEC_DIRTY, &target_lruvec->flags))) {
 				/*
 				 * Immediately reclaim when written back.
 				 * Similar in principal to deactivate_page()
@@ -2859,9 +2745,11 @@ static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
 static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 {
 	struct reclaim_state *reclaim_state = current->reclaim_state;
-	struct mem_cgroup *target_memcg = sc->target_mem_cgroup;
 	unsigned long nr_reclaimed, nr_scanned;
+	struct lruvec *target_lruvec;
 	bool reclaimable = false;
+
+	target_lruvec = mem_cgroup_lruvec(sc->target_mem_cgroup, pgdat);
 
 again:
 	memset(&sc->nr, 0, sizeof(sc->nr));
@@ -2877,7 +2765,7 @@ again:
 	}
 
 	/* Record the subtree's reclaim efficiency */
-	vmpressure(sc->gfp_mask, target_memcg, true,
+	vmpressure(sc->gfp_mask, sc->target_mem_cgroup, true,
 			sc->nr_scanned - nr_scanned,
 			sc->nr_reclaimed - nr_reclaimed);
 
@@ -2902,29 +2790,12 @@ again:
 		 * immediate reclaim and stall if any are encountered
 		 * in the nr_immediate check below.
 		 */
-		if (sc->nr.writeback && sc->nr.writeback == sc->nr.taken) {
-			if (!cgroup_reclaim(sc))
-				set_bit(PGDAT_WRITEBACK, &pgdat->flags);
-			else
-				set_memcg_writeback(pgdat, target_memcg, true);
-		}
-
-		/*
-		 * Tag a node as congested if all the dirty pages
-		 * scanned were backed by a congested BDI and
-		 * wait_iff_congested will stall.
-		 */
-		if (sc->nr.dirty && sc->nr.dirty == sc->nr.congested &&
-		    !cgroup_reclaim(sc))
-			set_bit(PGDAT_CONGESTED, &pgdat->flags);
+		if (sc->nr.writeback && sc->nr.writeback == sc->nr.taken)
+			set_bit(LRUVEC_WRITEBACK, &target_lruvec->flags);
 
 		/* Allow kswapd to start writing pages during reclaim.*/
-		if (sc->nr.unqueued_dirty == sc->nr.file_taken) {
-			if (!cgroup_reclaim(sc))
-				set_bit(PGDAT_DIRTY, &pgdat->flags);
-			else
-				set_memcg_dirty(pgdat, target_memcg, true);
-		}
+		if (sc->nr.unqueued_dirty == sc->nr.file_taken)
+			set_bit(LRUVEC_DIRTY, &target_lruvec->flags);
 
 		/*
 		 * If kswapd scans pages marked marked for immediate
@@ -2937,12 +2808,17 @@ again:
 	}
 
 	/*
+	 * Tag a node/memcg as congested if all the dirty pages
+	 * scanned were backed by a congested BDI and
+	 * wait_iff_congested will stall.
+	 *
 	 * Legacy memcg will stall in page writeback so avoid forcibly
 	 * stalling in wait_iff_congested().
 	 */
-	if (cgroup_reclaim(sc) && writeback_throttling_sane(sc) &&
+	if (((current_is_kswapd() && !cgroup_reclaim(sc)) ||
+		(cgroup_reclaim(sc) && writeback_throttling_sane(sc))) &&
 	    sc->nr.dirty && sc->nr.dirty == sc->nr.congested)
-		set_memcg_congestion(pgdat, target_memcg, true);
+		set_bit(LRUVEC_CONGESTED, &target_lruvec->flags);
 
 	/*
 	 * Stall direct reclaim for IO completions if underlying BDIs
@@ -2950,9 +2826,9 @@ again:
 	 * starts encountering unqueued dirty pages or cycling through
 	 * the LRU too quickly.
 	 */
-	if (!sc->hibernation_mode && !current_is_kswapd() &&
-		current_may_throttle() &&
-		pgdat_memcg_congested(pgdat, target_memcg))
+	if (!current_is_kswapd() && current_may_throttle() &&
+		!sc->hibernation_mode &&
+		test_bit(LRUVEC_CONGESTED, &target_lruvec->flags))
 		wait_iff_congested(BLK_RW_ASYNC, HZ/10);
 
 	if (should_continue_reclaim(pgdat, sc->nr_reclaimed - nr_reclaimed,
@@ -3170,12 +3046,18 @@ retry:
 		if (zone->zone_pgdat == last_pgdat)
 			continue;
 		last_pgdat = zone->zone_pgdat;
+
 		snapshot_refaults(sc->target_mem_cgroup, zone->zone_pgdat);
-		set_memcg_congestion(last_pgdat, sc->target_mem_cgroup, false);
-		if (current_is_kswapd() && cgroup_reclaim(sc)) {
-			set_memcg_dirty(last_pgdat, sc->target_mem_cgroup, false);
-			set_memcg_writeback(last_pgdat, sc->target_mem_cgroup,
-					    false);
+		if (cgroup_reclaim(sc)) {
+			struct lruvec *lruvec;
+
+			lruvec = mem_cgroup_lruvec(sc->target_mem_cgroup,
+						   zone->zone_pgdat);
+			clear_bit(LRUVEC_CONGESTED, &lruvec->flags);
+			if (current_is_kswapd()) {
+				clear_bit(LRUVEC_DIRTY, &lruvec->flags);
+				clear_bit(LRUVEC_WRITEBACK, &lruvec->flags);
+			}
 		}
 	}
 
@@ -3552,9 +3434,11 @@ static bool pgdat_balanced(pg_data_t *pgdat, int order, int classzone_idx)
 /* Clear pgdat state for congested, dirty or under writeback. */
 static void clear_pgdat_congested(pg_data_t *pgdat)
 {
-	clear_bit(PGDAT_CONGESTED, &pgdat->flags);
-	clear_bit(PGDAT_DIRTY, &pgdat->flags);
-	clear_bit(PGDAT_WRITEBACK, &pgdat->flags);
+	struct lruvec *lruvec = mem_cgroup_lruvec(NULL, pgdat);
+
+	clear_bit(LRUVEC_CONGESTED, &lruvec->flags);
+	clear_bit(LRUVEC_DIRTY, &lruvec->flags);
+	clear_bit(LRUVEC_WRITEBACK, &lruvec->flags);
 }
 
 /*

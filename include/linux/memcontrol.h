@@ -188,10 +188,6 @@ struct mem_cgroup_per_node {
 	unsigned long		usage_in_excess;/* Set to the value by which */
 						/* the soft limit is exceeded*/
 	bool			on_tree;
-	bool			congested;	/* memcg has many dirty pages */
-						/* backed by a congested BDI */
-	bool			dirty;		/* mecg has too many dirty pages */
-	bool			writeback;	/* memcg has too many writeback */
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	struct deferred_split deferred_split_queue;
@@ -468,6 +464,9 @@ static inline struct lruvec *mem_cgroup_lruvec(struct mem_cgroup *memcg,
 		lruvec = &pgdat->__lruvec;
 		goto out;
 	}
+
+	if (!memcg)
+		memcg = root_mem_cgroup;
 
 	mz = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
 	lruvec = &mz->lruvec;
