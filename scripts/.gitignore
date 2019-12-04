@@ -9,7 +9,7 @@ unifdef
 ihex2fw
 recordmcount
 check-lc_ctype
-sortextable
+sorttable
 asn1_compiler
 extract-cert
 sign-file
