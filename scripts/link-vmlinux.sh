@@ -283,7 +283,10 @@ vmlinux_link "${kallsymso}" vmlinux
 
 if [ -n "${CONFIG_BUILDTIME_TABLE_SORT}" ]; then
 	info SORTTAB vmlinux
-	sorttable vmlinux
+	if ! sorttable vmlinux; then
+		echo >&2 Failed to sort kernel tables
+		exit 1
+	fi
 fi
 
 info SYSMAP System.map
