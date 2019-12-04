@@ -89,7 +89,7 @@ static int compare_extable(const void *a, const void *b)
 	return 0;
 }
 
-static void
+static int
 do_func(Elf_Ehdr *ehdr, char const *const fname, table_sort_t custom_sort)
 {
 	Elf_Shdr *shdr;
@@ -148,17 +148,17 @@ do_func(Elf_Ehdr *ehdr, char const *const fname, table_sort_t custom_sort)
 	}
 	if (strtab_sec == NULL) {
 		fprintf(stderr,	"no .strtab in  file: %s\n", fname);
-		fail_file();
+		return -1;
 	}
 	if (symtab_sec == NULL) {
 		fprintf(stderr,	"no .symtab in  file: %s\n", fname);
-		fail_file();
+		return -1;
 	}
 	symtab = (const Elf_Sym *)((const char *)ehdr +
 				   _r(&symtab_sec->sh_offset));
 	if (extab_sec == NULL) {
 		fprintf(stderr,	"no __ex_table in  file: %s\n", fname);
-		fail_file();
+		return -1;
 	}
 	strtab = (const char *)ehdr + _r(&strtab_sec->sh_offset);
 
@@ -192,7 +192,7 @@ do_func(Elf_Ehdr *ehdr, char const *const fname, table_sort_t custom_sort)
 		fprintf(stderr,
 			"no main_extable_sort_needed symbol in  file: %s\n",
 			fname);
-		fail_file();
+		return -1;
 	}
 	sort_needed_sec = &shdr[get_secindex(r2(&sym->st_shndx),
 					     sort_needed_sym - symtab,
@@ -208,4 +208,5 @@ do_func(Elf_Ehdr *ehdr, char const *const fname, table_sort_t custom_sort)
 #endif
 	/* We sorted it, clear the flag. */
 	w(0, sort_done_location);
+	return 0;
 }
