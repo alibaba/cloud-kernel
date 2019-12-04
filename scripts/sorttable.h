@@ -1,5 +1,5 @@
 /*
- * sortextable.h
+ * sorttable.h
  *
  * Copyright 2011 - 2012 Cavium, Inc.
  *
@@ -33,7 +33,7 @@
 #undef _r
 #undef _w
 
-#ifdef SORTEXTABLE_64
+#ifdef SORTTABLE_64
 # define extable_ent_size	16
 # define compare_extable	compare_extable_64
 # define do_sort		do_sort_64
