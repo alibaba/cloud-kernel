@@ -2524,7 +2524,7 @@ static int ioc_cost_print_stat(struct seq_file *sf, void *v)
 
 static struct cftype ioc_files[] = {
 	{
-		.name = "weight",
+		.name = "cost.weight",
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = ioc_weight_show,
 		.write = ioc_weight_write,
