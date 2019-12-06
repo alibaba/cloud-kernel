@@ -51,7 +51,7 @@ static void nsfs_evict(struct inode *inode)
 	ns->ops->put(ns);
 }
 
-static void *__ns_get_path(struct path *path, struct ns_common *ns)
+static int __ns_get_path(struct path *path, struct ns_common *ns)
 {
 	struct vfsmount *mnt = nsfs_mnt;
 	struct dentry *dentry;
@@ -70,13 +70,13 @@ static void *__ns_get_path(struct path *path, struct ns_common *ns)
 got_it:
 	path->mnt = mntget(mnt);
 	path->dentry = dentry;
-	return NULL;
+	return 0;
 slow:
 	rcu_read_unlock();
 	inode = new_inode_pseudo(mnt->mnt_sb);
 	if (!inode) {
 		ns->ops->put(ns);
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 	}
 	inode->i_ino = ns->inum;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = current_time(inode);
@@ -88,7 +88,7 @@ slow:
 	dentry = d_alloc_anon(mnt->mnt_sb);
 	if (!dentry) {
 		iput(inode);
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 	}
 	d_instantiate(dentry, inode);
 	dentry->d_fsdata = (void *)ns->ops;
@@ -97,24 +97,24 @@ slow:
 		d_delete(dentry);	/* make sure ->d_prune() does nothing */
 		dput(dentry);
 		cpu_relax();
-		return ERR_PTR(-EAGAIN);
+		return -EAGAIN;
 	}
 	goto got_it;
 }
 
-void *ns_get_path_cb(struct path *path, ns_get_path_helper_t *ns_get_cb,
+int ns_get_path_cb(struct path *path, ns_get_path_helper_t *ns_get_cb,
 		     void *private_data)
 {
 	struct ns_common *ns;
-	void *ret;
+	int ret;
 
 again:
 	ns = ns_get_cb(private_data);
 	if (!ns)
-		return ERR_PTR(-ENOENT);
+		return -ENOENT;
 
 	ret = __ns_get_path(path, ns);
-	if (IS_ERR(ret) && PTR_ERR(ret) == -EAGAIN)
+	if (ret == -EAGAIN)
 		goto again;
 	return ret;
 }
@@ -131,7 +131,7 @@ static struct ns_common *ns_get_path_task(void *private_data)
 	return args->ns_ops->get(args->task);
 }
 
-void *ns_get_path(struct path *path, struct task_struct *task,
+int ns_get_path(struct path *path, struct task_struct *task,
 		  const struct proc_ns_operations *ns_ops)
 {
 	struct ns_get_path_task_args args = {
@@ -147,7 +147,7 @@ int open_related_ns(struct ns_common *ns,
 {
 	struct path path = {};
 	struct file *f;
-	void *err;
+	int err;
 	int fd;
 
 	fd = get_unused_fd_flags(O_CLOEXEC);
@@ -164,13 +164,13 @@ int open_related_ns(struct ns_common *ns,
 		}
 
 		err = __ns_get_path(&path, relative);
-		if (IS_ERR(err) && PTR_ERR(err) == -EAGAIN)
+		if (err == -EAGAIN)
 			continue;
 		break;
 	}
-	if (IS_ERR(err)) {
+	if (err) {
 		put_unused_fd(fd);
-		return PTR_ERR(err);
+		return err;
 	}
 
 	f = dentry_open(&path, O_RDONLY, current_cred());
