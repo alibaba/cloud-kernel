@@ -1118,7 +1118,11 @@ struct journal_s
 	void			(*j_commit_callback)(journal_t *,
 						     transaction_t *);
 
-	/* Pointer to the current checkpoint thread for this journal */
+	/**
+	 * @j_checkpoint_task:
+	 *
+	 * Pointer to the current checkpoint thread for this journal.
+	 */
 	struct task_struct	*j_checkpoint_task;
 
 	/*
