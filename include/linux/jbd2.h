@@ -1201,7 +1201,11 @@ struct journal_s
 	int			(*j_finish_inode_data_buffers)
 					(struct jbd2_inode *);
 
-	/* Pointer to the current checkpoint thread for this journal */
+	/**
+	 * @j_checkpoint_task:
+	 *
+	 * Pointer to the current checkpoint thread for this journal.
+	 */
 	struct task_struct	*j_checkpoint_task;
 
 	/*
