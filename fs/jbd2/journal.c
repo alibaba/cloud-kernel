@@ -1131,7 +1131,7 @@ static int jbd2_seq_stats_show(struct seq_file *seq, void *v)
 		s->stats->run.rs_request_delay, s->stats->run.rs_running,
 		s->stats->run.rs_locked, s->stats->run.rs_flushing,
 		s->stats->run.rs_logging,
-		s->journal->j_average_commit_time / NSEC_PER_MSEC,
+		div_u64(s->journal->j_average_commit_time, NSEC_PER_MSEC),
 		s->stats->run.rs_handle_count, s->stats->run.rs_blocks,
 		s->stats->run.rs_blocks_logged, HZ, jiffies_to_msecs(HZ));
 	return 0;
