@@ -1545,10 +1545,8 @@ static int send_to_nic_driver(struct hinic_nic_dev *nic_dev,
 	}
 	mutex_unlock(&nic_dev->nic_mutex);
 
-	if (index == num_cmds) {
-		pr_err("Can't find callback for %d\n", cmd_type);
+	if (index == num_cmds)
 		return -EINVAL;
-	}
 	return err;
 }
 
@@ -1571,7 +1569,8 @@ static int send_to_hw_driver(void *hwdev, struct msg_module *nt_msg,
 			break;
 		}
 	}
-
+	if (index == num_cmds)
+		return -EINVAL;
 	return err;
 }
 

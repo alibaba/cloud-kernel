@@ -104,6 +104,7 @@ int hinic_sync_time(void *hwdev, u64 time)
 		sdk_err(((struct hinic_hwdev *)hwdev)->dev_hdl,
 			"Failed to sync time to mgmt, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, time_info.status, out_size);
+		return -EFAULT;
 	}
 
 	return err;
