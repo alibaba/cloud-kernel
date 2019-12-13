@@ -1,8 +1,7 @@
 config HOOKERS
        tristate "Hooker service"
        default m
-	depends on X86
+       depends on X86 || ARM64
        help
        Allow replacing and restore the function pointer in any order.
        See include/linux/hookers.h for details.
-
