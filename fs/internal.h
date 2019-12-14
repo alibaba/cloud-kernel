@@ -47,6 +47,12 @@ void __generic_write_end(struct inode *inode, loff_t pos, unsigned copied,
 		struct page *page);
 
 /*
+ * namei.c
+ */
+extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
+			   struct path *path, struct path *root);
+
+/*
  * char_dev.c
  */
 extern void __init chrdev_init(void);
