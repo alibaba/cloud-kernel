@@ -124,7 +124,7 @@ struct hinic_mbox_func_to_func {
 
 	u8 send_msg_id;
 	enum mbox_event_state event_flag;
-	/*lock for mbox event flag*/
+	/* lock for mbox event flag */
 	spinlock_t mbox_lock;
 
 	u32 *vf_mbx_old_rand_id;

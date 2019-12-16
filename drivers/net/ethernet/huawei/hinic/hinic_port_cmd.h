@@ -84,7 +84,7 @@ enum hinic_port_cmd {
 	HINIC_PORT_CMD_SET_RSS_CTX_TBL,
 	HINIC_PORT_CMD_RSS_TEMP_MGR,
 
-	/* 0x36 ~ 0x40 have defined in base line*/
+	/* 0x36 ~ 0x40 have defined in base line */
 
 	HINIC_PORT_CMD_RSS_CFG			= 0x42,
 
@@ -98,7 +98,7 @@ enum hinic_port_cmd {
 	HINIC_PORT_CMD_GET_JUMBO_FRAME_SIZE	= 0x4a,
 	HINIC_PORT_CMD_SET_JUMBO_FRAME_SIZE,
 
-	/* 0x4c ~ 0x57 have defined in base line*/
+	/* 0x4c ~ 0x57 have defined in base line */
 	HINIC_PORT_CMD_DISABLE_PROMISIC		= 0x4c,
 	HINIC_PORT_CMD_ENABLE_SPOOFCHK		= 0x4e,
 	HINIC_PORT_CMD_GET_MGMT_VERSION		= 0x58,
@@ -133,7 +133,7 @@ enum hinic_port_cmd {
 	HINIC_PORT_CMD_SET_VF_VLAN,
 	HINIC_PORT_CMD_CLR_VF_VLAN,
 
-	/* 0x6c,0x6e have defined in base line*/
+	/* 0x6c,0x6e have defined in base line */
 	HINIC_PORT_CMD_SET_UCAPTURE_OPT		= 0x6F,
 
 	HINIC_PORT_CMD_SET_TSO			= 0x70,
@@ -171,7 +171,7 @@ enum hinic_port_cmd {
 	HINIC_PORT_CMD_SET_IPSU_MAC		= 0xcb,
 	HINIC_PORT_CMD_GET_IPSU_MAC		= 0xcc,
 
-	HINIC_PORT_CMD_SET_XSFP_STATUS	= 0xD4,
+	HINIC_PORT_CMD_SET_XSFP_STATUS		= 0xD4,
 
 	HINIC_PORT_CMD_SET_IQ_ENABLE		= 0xd6,
 
@@ -525,7 +525,7 @@ enum hinic_pf_status {
 	HINIC_PF_STATUS_FLR_FINISH_FLAG = 0x13,
 };
 
-/* total doorbell or direct wqe size is 512kB, db num: 128, dwqe: 128*/
+/* total doorbell or direct wqe size is 512kB, db num: 128, dwqe: 128 */
 #define HINIC_DB_DWQE_SIZE       0x00080000
 
 /* db/dwqe page size: 4K */

@@ -12,6 +12,7 @@
  * for more details.
  *
  */
+
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
 
 #include <linux/types.h>
@@ -49,7 +50,7 @@ void hinic_hwif_write_reg(struct hinic_hwif *hwif, u32 reg, u32 val)
  * hwif_ready - test if the HW initialization passed
  * @hwdev: the pointer to hw device
  * Return: 0 - success, negative - failure
- **/
+ */
 static int hwif_ready(struct hinic_hwdev *hwdev)
 {
 	u32 addr, attr1;
@@ -93,7 +94,7 @@ static int wait_hwif_ready(struct hinic_hwdev *hwdev)
  * @attr0: the first attribute that was read from the hw
  * @attr1: the second attribute that was read from the hw
  * @attr2: the third attribute that was read from the hw
- **/
+ */
 static void set_hwif_attr(struct hinic_hwif *hwif, u32 attr0, u32 attr1,
 			  u32 attr2)
 {
@@ -117,7 +118,7 @@ static void set_hwif_attr(struct hinic_hwif *hwif, u32 attr0, u32 attr1,
 /**
  * get_hwif_attr - read and set the attributes as members in hwif
  * @hwif: the hardware interface of a pci function device
- **/
+ */
 static void get_hwif_attr(struct hinic_hwif *hwif)
 {
 	u32 addr, attr0, attr1, attr2;
@@ -221,7 +222,7 @@ void hinic_disable_outbound(struct hinic_hwif *hwif)
 /**
  * set_ppf - try to set hwif as ppf and set the type of hwif in this case
  * @hwif: the hardware interface of a pci function device
- **/
+ */
 static void set_ppf(struct hinic_hwif *hwif)
 {
 	struct hinic_func_attr *attr = &hwif->attr;
@@ -249,7 +250,7 @@ static void set_ppf(struct hinic_hwif *hwif)
 /**
  * get_mpf - get the mpf index into the hwif
  * @hwif: the hardware interface of a pci function device
- **/
+ */
 static void get_mpf(struct hinic_hwif *hwif)
 {
 	struct hinic_func_attr *attr = &hwif->attr;
@@ -264,7 +265,7 @@ static void get_mpf(struct hinic_hwif *hwif)
 /**
  * set_mpf - try to set hwif as mpf and set the mpf idx in hwif
  * @hwif: the hardware interface of a pci function device
- **/
+ */
 static void set_mpf(struct hinic_hwif *hwif)
 {
 	struct hinic_func_attr *attr = &hwif->attr;
@@ -537,7 +538,7 @@ static void __print_selftest_reg(struct hinic_hwdev *hwdev)
  * @hwdev: the pointer to hw device
  * @cfg_reg_base: configuration base address
  * Return: 0 - success, negative - failure
- **/
+ */
 int hinic_init_hwif(struct hinic_hwdev *hwdev, void *cfg_reg_base,
 		    void *intr_reg_base, u64 db_base_phy,
 		    void *db_base, void *dwqe_mapping)
@@ -605,7 +606,7 @@ hwif_ready_err:
 /**
  * hinic_free_hwif - free the hw interface
  * @hwdev: the pointer to hw device
- **/
+ */
 void hinic_free_hwif(struct hinic_hwdev *hwdev)
 {
 	spin_lock_deinit(&hwdev->hwif->free_db_area.idx_lock);
@@ -675,7 +676,7 @@ EXPORT_SYMBOL(hinic_global_func_id);
 /**
  * get function id from register,used by sriov hot migration process
  * @hwdev: the pointer to hw device
- **/
+ */
 u16 hinic_global_func_id_hw(void *hwdev)
 {
 	u32 addr, attr0;
@@ -693,7 +694,7 @@ static int func_busy_state_check(struct hinic_hwdev *hwdev)
 	u32 func_state;
 	int cycle;
 
-	/*set BUSY before src vm suspend and clear it before dst vm resume*/
+	/* set BUSY before src vm suspend and clear it before dst vm resume */
 	cycle = PIPE_CYCLE_MAX;
 	func_state = hinic_func_busy_state_get(hwdev);
 	while (func_state && cycle) {
@@ -755,19 +756,20 @@ void hinic_func_own_free(void *hwdev)
 		hinic_func_own_bit_set(dev, 0);
 
 	up(&dev->func_sem);
+	return;
 }
 
 /**
  * get function id, used by sriov hot migratition process.
  * @hwdev: the pointer to hw device
  * @func_id: function id
- **/
+ */
 int hinic_global_func_id_get(void *hwdev, u16 *func_id)
 {
 	struct hinic_hwdev *dev = (struct hinic_hwdev *)hwdev;
 	int err;
 
-	/*only vf get func_id from chip reg for sriov migrate*/
+	/* only vf get func_id from chip reg for sriov migrate */
 	if (!HINIC_IS_VF(dev)) {
 		*func_id = hinic_global_func_id(hwdev);
 		return 0;

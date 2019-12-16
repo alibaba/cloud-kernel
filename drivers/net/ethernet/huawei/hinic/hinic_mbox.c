@@ -37,7 +37,7 @@
 #define HINIC_MBOX_INT_STAT_DMA_SHIFT				14
 /* The size of data to be send (unit of 4 bytes) */
 #define HINIC_MBOX_INT_TX_SIZE_SHIFT				20
-/* SO_RO(strong order, relax order)  */
+/* SO_RO(strong order, relax order) */
 #define HINIC_MBOX_INT_STAT_DMA_SO_RO_SHIFT			25
 #define HINIC_MBOX_INT_WB_EN_SHIFT				28
 
@@ -346,8 +346,8 @@ int hinic_register_ppf_to_pf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_unregister_ppf_mbox_cb - unregister the mbox callback for ppf
- * @hwdev:	the pointer to hw device
- * @mod:	specific mod that the callback will handle
+ * @hwdev: the pointer to hw device
+ * @mod: specific mod that the callback will handle
  */
 void hinic_unregister_ppf_mbox_cb(struct hinic_hwdev *hwdev,
 				  enum hinic_mod_type mod)
@@ -365,8 +365,8 @@ void hinic_unregister_ppf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_unregister_ppf_mbox_cb - unregister the mbox callback for pf
- * @hwdev:	the pointer to hw device
- * @mod:	specific mod that the callback will handle
+ * @hwdev: the pointer to hw device
+ * @mod: specific mod that the callback will handle
  */
 void hinic_unregister_pf_mbox_cb(struct hinic_hwdev *hwdev,
 				 enum hinic_mod_type mod)
@@ -384,8 +384,8 @@ void hinic_unregister_pf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_unregister_vf_mbox_cb - unregister the mbox callback for vf
- * @hwdev:	the pointer to hw device
- * @mod:	specific mod that the callback will handle
+ * @hwdev:the pointer to hw device
+ * @mod:specific mod that the callback will handle
  */
 void hinic_unregister_vf_mbox_cb(struct hinic_hwdev *hwdev,
 				 enum hinic_mod_type mod)
@@ -403,8 +403,8 @@ void hinic_unregister_vf_mbox_cb(struct hinic_hwdev *hwdev,
 
 /**
  * hinic_unregister_ppf_mbox_cb - unregister the mbox callback for pf from ppf
- * @hwdev:	the pointer to hw device
- * @mod:	specific mod that the callback will handle
+ * @hwdev: the pointer to hw device
+ * @mod: specific mod that the callback will handle
  */
 void hinic_unregister_ppf_to_pf_mbox_cb(struct hinic_hwdev *hwdev,
 					enum hinic_mod_type mod)

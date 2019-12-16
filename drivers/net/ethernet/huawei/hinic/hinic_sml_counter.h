@@ -89,8 +89,8 @@ typedef union {
 /* resopnse head */
 typedef union {
 	struct {
-		u32 pad:30; /*reserve*/
-		u32 code:2;  /*error code*/
+		u32 pad:30; /* reserve */
+		u32 code:2;  /* error code */
 	} bs;
 
 	u32 value;

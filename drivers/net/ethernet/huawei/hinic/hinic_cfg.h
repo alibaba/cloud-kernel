@@ -290,9 +290,6 @@ struct cfg_eq_info {
 	struct cfg_eq *eq;
 
 	u8 num_ceq;
-	//u8 num_aeq;
-	//u8 num_eq; /* num_eq = num_ceq + num_aeq */
-
 	u8 num_ceq_remain;
 
 	/* mutex used for allocate EQs */

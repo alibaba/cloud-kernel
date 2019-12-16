@@ -36,7 +36,7 @@
  * @resend_timer: maximum wait for resending msix message
  *                    (unit coalesc period)
  * Return: 0 - success, negative - failure
- **/
+ */
 int hinic_msix_attr_set(struct hinic_hwif *hwif, u16 msix_index,
 			u8 pending_limit, u8 coalesc_timer,
 			u8 lli_timer_cfg, u8 lli_credit_limit,
@@ -71,7 +71,7 @@ int hinic_msix_attr_set(struct hinic_hwif *hwif, u16 msix_index,
  * @resend_timer_cfg: maximum wait for resending msix message
  *                    (unit coalesc period)
  * Return: 0 - success, negative - failure
- **/
+ */
 int hinic_msix_attr_get(struct hinic_hwif *hwif, u16 msix_index,
 			u8 *pending_limit, u8 *coalesc_timer_cfg,
 			 u8 *lli_timer_cfg, u8 *lli_credit_limit,
@@ -105,7 +105,7 @@ int hinic_msix_attr_get(struct hinic_hwif *hwif, u16 msix_index,
  * @resend_timer_cnt: maximum wait for resending msix message
  *                    (unit coalesc period)
  * Return: 0 - success, negative - failure
- **/
+ */
 int hinic_msix_attr_cnt_set(struct hinic_hwif *hwif, u16 msix_index,
 			    u8 lli_timer_cnt, u8 lli_credit_cnt,
 			     u8 coalesc_timer_cnt, u8 pending_cnt,

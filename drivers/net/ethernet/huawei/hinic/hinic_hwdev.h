@@ -46,7 +46,7 @@
 #define HINIC_MGMT_STATUS_ERR_NXIO        19  /* No such device or address */
 #define HINIC_MGMT_STATUS_ERR_ROLLBACK    20  /* Chip rollback fail */
 #define HINIC_MGMT_STATUS_ERR_LEN         32  /* Length too short or too long */
-#define HINIC_MGMT_STATUS_ERR_UNSUPPORT   0xFF/* Feature not supported*/
+#define HINIC_MGMT_STATUS_ERR_UNSUPPORT   0xFF /* Feature not supported */
 
 struct cfg_mgmt_info;
 struct rdma_comp_resource;
@@ -107,7 +107,7 @@ struct mqm_addr_trans_tbl_info {
 
 enum hinic_node_id {
 	HINIC_NODE_ID_IPSU = 4,
-	HINIC_NODE_ID_MGMT_HOST = 21, /*Host CPU send API to uP */
+	HINIC_NODE_ID_MGMT_HOST = 21, /* Host CPU send API to uP */
 	HINIC_NODE_ID_MAX = 22
 };
 

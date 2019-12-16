@@ -391,7 +391,7 @@ void hinic_sq_prepare_ctxt(struct hinic_sq *sq, u16 global_qpn,
 	ci_start = (u16)wq->cons_idx;
 	pi_start = (u16)wq->prod_idx;
 
-	/* read the first page from the HW table*/
+	/* read the first page from the HW table */
 	wq_page_addr = be64_to_cpu(*wq->block_vaddr);
 
 	wq_page_pfn = WQ_PAGE_PFN(wq_page_addr);
@@ -453,7 +453,7 @@ void hinic_rq_prepare_ctxt(struct hinic_rq *rq, struct hinic_rq_ctxt *rq_ctxt)
 	pi_start = (u16)wq->prod_idx;
 	pi_start = pi_start & wq->mask;
 
-	/* read the first page from the HW table*/
+	/* read the first page from the HW table */
 	wq_page_addr = be64_to_cpu(*wq->block_vaddr);
 
 	wq_page_pfn = WQ_PAGE_PFN(wq_page_addr);
@@ -695,7 +695,7 @@ static int clean_qp_offload_ctxt(struct hinic_nic_io *nic_io)
 		clean_queue_offload_ctxt(nic_io, HINIC_QP_CTXT_TYPE_RQ));
 }
 
-/* init qps ctxt and set sq ci attr and arm all sq*/
+/* init qps ctxt and set sq ci attr and arm all sq */
 int hinic_init_qp_ctxts(void *dev)
 {
 	struct hinic_hwdev *hwdev = dev;

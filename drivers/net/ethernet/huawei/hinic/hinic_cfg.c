@@ -1826,7 +1826,7 @@ int cfg_set_func_sf_en(void *hwdev, u32 enbits, u32 enmask)
 			"Failed to set stateful enable, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, func_sf_enbits->status, out_size);
 		kfree(func_sf_enbits);
-		return -EINVAL;
+		return -EFAULT;
 	}
 
 	kfree(func_sf_enbits);
@@ -1866,7 +1866,7 @@ int cfg_get_func_sf_en(void *hwdev, u32 *enbits)
 		sdk_err(dev->dev_hdl, "Failed to get stateful enable, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, func_sf_enbits->status, out_size);
 		kfree(func_sf_enbits);
-		return -EINVAL;
+		return -EFAULT;
 	}
 
 	*enbits = func_sf_enbits->stateful_enbits;
@@ -2325,7 +2325,7 @@ alloc_chip_fault_stats_err:
 /**
  * hinic_set_vf_dev_cap - Set max queue num for VF
  * @hwdev: the HW device for VF
- **/
+ */
 int hinic_set_vf_dev_cap(void *hwdev)
 {
 	int err;

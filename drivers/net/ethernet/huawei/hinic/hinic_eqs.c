@@ -307,7 +307,7 @@ static u8 eq_cons_idx_checksum_set(u32 val)
  * @event: event for the handler
  * @hw_cb: callback function
  * Return: 0 - success, negative - failure
- **/
+ */
 int hinic_aeq_register_hw_cb(void *hwdev, enum hinic_aeq_type event,
 			     hinic_aeq_hwe_cb hwe_cb)
 {
@@ -330,7 +330,7 @@ EXPORT_SYMBOL(hinic_aeq_register_hw_cb);
  * hinic_aeq_unregister_hw_cb - unregister the aeq callback for specific event
  * @hwdev: pointer to hw device
  * @event: event for the handler
- **/
+ */
 void hinic_aeq_unregister_hw_cb(void *hwdev, enum hinic_aeq_type event)
 {
 	struct hinic_aeqs *aeqs;
@@ -355,7 +355,7 @@ EXPORT_SYMBOL(hinic_aeq_unregister_hw_cb);
  * @event: soft event for the handler
  * @sw_cb: callback function
  * Return: 0 - success, negative - failure
- **/
+ */
 int hinic_aeq_register_swe_cb(void *hwdev, enum hinic_aeq_sw_type event,
 			      hinic_aeq_swe_cb aeq_swe_cb)
 {
@@ -378,7 +378,7 @@ EXPORT_SYMBOL(hinic_aeq_register_swe_cb);
  * hinic_aeq_unregister_sw_cb - unregister the aeq callback for sw event
  * @hwdev: pointer to hw device
  * @event: soft event for the handler
- **/
+ */
 void hinic_aeq_unregister_swe_cb(void *hwdev, enum hinic_aeq_sw_type event)
 {
 	struct hinic_aeqs *aeqs;
@@ -403,7 +403,7 @@ EXPORT_SYMBOL(hinic_aeq_unregister_swe_cb);
  * @event: event for the handler
  * @callback: callback function
  * Return: 0 - success, negative - failure
- **/
+ */
 int hinic_ceq_register_cb(void *hwdev, enum hinic_ceq_event event,
 			  hinic_ceq_event_cb callback)
 {
@@ -426,7 +426,7 @@ EXPORT_SYMBOL(hinic_ceq_register_cb);
  * hinic_ceq_unregister_cb - unregister ceq callback for specific event
  * @hwdev: pointer to hw device
  * @event: event for the handler
- **/
+ */
 void hinic_ceq_unregister_cb(void *hwdev, enum hinic_ceq_event event)
 {
 	struct hinic_ceqs *ceqs;
@@ -449,7 +449,7 @@ EXPORT_SYMBOL(hinic_ceq_unregister_cb);
  * set_eq_cons_idx - write the cons idx to the hw
  * @eq: The event queue to update the cons idx for
  * @arm_state: arm state value
- **/
+ */
 static void set_eq_cons_idx(struct hinic_eq *eq, u32 arm_state)
 {
 	u32 eq_wrap_ci, val;
@@ -468,9 +468,9 @@ static void set_eq_cons_idx(struct hinic_eq *eq, u32 arm_state)
 
 /**
  * ceq_event_handler - handle for the ceq events
- * @eqs: eqs part of the chip
+ * @ceqs: eqs part of the chip
  * @ceqe: ceq element of the event
- **/
+ */
 static void ceq_event_handler(struct hinic_ceqs *ceqs, u32 ceqe)
 {
 	struct hinic_hwdev *hwdev = ceqs->hwdev;
@@ -495,7 +495,7 @@ static void ceq_event_handler(struct hinic_ceqs *ceqs, u32 ceqe)
 /**
  * aeq_irq_handler - handler for the aeq event
  * @eq: the async event queue of the event
- **/
+ */
 static bool aeq_irq_handler(struct hinic_eq *eq)
 {
 	struct hinic_aeqs *aeqs = aeq_to_aeqs(eq);
@@ -585,7 +585,7 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
  * ceq_irq_handler - handler for the ceq event
  * @eq: the completion event queue of the event
  * Return: true - success, false - failure
- **/
+ */
 static bool ceq_irq_handler(struct hinic_eq *eq)
 {
 	struct hinic_ceqs *ceqs = ceq_to_ceqs(eq);
@@ -635,7 +635,7 @@ static void reschedule_eq_handler(struct hinic_eq *eq)
  * eq_irq_handler - handler for the eq event
  * @data: the event queue of the event
  * Return: true - success, false - failure
- **/
+ */
 static bool eq_irq_handler(void *data)
 {
 	struct hinic_eq *eq = (struct hinic_eq *)data;
@@ -691,7 +691,7 @@ bool hinic_eq_intr_handler(void *hwdev, int msix_entry_idx)
 /**
  * eq_irq_work - eq work for the event
  * @work: the work that is associated with the eq
- **/
+ */
 static void eq_irq_work(struct work_struct *work)
 {
 	struct hinic_eq_work *aeq_work =
@@ -705,7 +705,7 @@ static void eq_irq_work(struct work_struct *work)
  * aeq_interrupt - aeq interrupt handler
  * @irq: irq number
  * @data: the async event queue of the event
- **/
+ */
 static irqreturn_t aeq_interrupt(int irq, void *data)
 {
 	struct hinic_eq *aeq = (struct hinic_eq *)data;
@@ -730,8 +730,7 @@ static irqreturn_t aeq_interrupt(int irq, void *data)
 /**
  * ceq_tasklet - ceq tasklet for the event
  * @ceq_data: data that will be used by the tasklet(ceq)
- **/
-
+ */
 static void ceq_tasklet(ulong ceq_data)
 {
 	struct hinic_ceq_tasklet_data	*ceq_tasklet_data =
@@ -748,7 +747,7 @@ static void ceq_tasklet(ulong ceq_data)
  * ceq_interrupt - ceq interrupt handler
  * @irq: irq number
  * @data: the completion event queue of the event
- **/
+ */
 static irqreturn_t ceq_interrupt(int irq, void *data)
 {
 	struct hinic_eq *ceq = (struct hinic_eq *)data;
@@ -811,7 +810,7 @@ static int set_ceq_ctrl_reg(struct hinic_hwdev *hwdev, u16 q_id,
  * set_eq_ctrls - setting eq's ctrls registers
  * @eq: the event queue for setting
  * Return: 0 - success, negative - failure
- **/
+ */
 static int set_eq_ctrls(struct hinic_eq *eq)
 {
 	enum hinic_eq_type type = eq->type;
@@ -882,7 +881,7 @@ static int set_eq_ctrls(struct hinic_eq *eq)
  * ceq_elements_init - Initialize all the elements in the ceq
  * @eq: the event queue
  * @init_val: value to init with it the elements
- **/
+ */
 static void ceq_elements_init(struct hinic_eq *eq, u32 init_val)
 {
 	u32 i;
@@ -900,7 +899,7 @@ static void ceq_elements_init(struct hinic_eq *eq, u32 init_val)
  * aeq_elements_init - initialize all the elements in the aeq
  * @eq: the event queue
  * @init_val: value to init with it the elements
- **/
+ */
 static void aeq_elements_init(struct hinic_eq *eq, u32 init_val)
 {
 	struct hinic_aeq_elem *aeqe;
@@ -917,7 +916,7 @@ static void aeq_elements_init(struct hinic_eq *eq, u32 init_val)
 /**
  * alloc_eq_pages - allocate the pages for the queue
  * @eq: the event queue
- **/
+ */
 static int alloc_eq_pages(struct hinic_eq *eq)
 {
 	struct hinic_hwif *hwif = eq->hwdev->hwif;
@@ -1025,7 +1024,7 @@ virt_addr_alloc_err:
 /**
  * free_eq_pages - free the pages of the queue
  * @eq: the event queue
- **/
+ */
 static void free_eq_pages(struct hinic_eq *eq)
 {
 	struct hinic_hwdev *hwdev = eq->hwdev;
@@ -1066,14 +1065,14 @@ static inline u32 get_page_size(struct hinic_eq *eq)
 }
 /**
  * init_eq - initialize eq
- * @eq:	the event queue
+ * @eq: the event queue
  * @hwdev: the pointer to hw device
  * @q_id: Queue id number
  * @q_len: the number of EQ elements
  * @type: the type of the event queue, ceq or aeq
  * @entry: msix entry associated with the event queue
  * Return: 0 - Success, Negative - failure
- **/
+ */
 static int init_eq(struct hinic_eq *eq, struct hinic_hwdev *hwdev, u16 q_id,
 		   u32 q_len, enum hinic_eq_type type, struct irq_info *entry)
 {
@@ -1165,8 +1164,8 @@ req_irq_err:
 
 /**
  * remove_eq - remove eq
- * @eq:	the event queue
- **/
+ * @eq: the event queue
+ */
 static void remove_eq(struct hinic_eq *eq)
 {
 	struct irq_info *entry = &eq->eq_irq;
@@ -1202,10 +1201,10 @@ static void remove_eq(struct hinic_eq *eq)
 /**
  * hinic_aeqs_init - init all the aeqs
  * @hwdev: the pointer to hw device
- * @num_ceqs: number of AEQs
+ * @num_aeqs: number of AEQs
  * @msix_entries: msix entries associated with the event queues
  * Return: 0 - Success, Negative - failure
- **/
+ */
 int hinic_aeqs_init(struct hinic_hwdev *hwdev, u16 num_aeqs,
 		    struct irq_info *msix_entries)
 {
@@ -1261,7 +1260,7 @@ create_work_err:
 /**
  * hinic_aeqs_free - free all the aeqs
  * @hwdev: the pointer to hw device
- **/
+ */
 void hinic_aeqs_free(struct hinic_hwdev *hwdev)
 {
 	struct hinic_aeqs *aeqs = hwdev->aeqs;
@@ -1285,14 +1284,11 @@ void hinic_aeqs_free(struct hinic_hwdev *hwdev)
 
 /**
  * hinic_ceqs_init - init all the ceqs
- * @ceqs: ceqs part of the chip
- * @hwif: the hardware interface of a pci function device
+ * @hwdev: the pointer to hw device
  * @num_ceqs: number of CEQs
- * @q_len: number of EQ elements
- * @page_size: the page size of the event queue
  * @msix_entries: msix entries associated with the event queues
  * Return: 0 - Success, Negative - failure
- **/
+ */
 int hinic_ceqs_init(struct hinic_hwdev *hwdev, u16 num_ceqs,
 		    struct irq_info *msix_entries)
 {
@@ -1344,7 +1340,7 @@ init_ceq_err:
 /**
  * hinic_ceqs_free - free all the ceqs
  * @hwdev: the pointer to hw device
- **/
+ */
 void hinic_ceqs_free(struct hinic_hwdev *hwdev)
 {
 	struct hinic_ceqs *ceqs = hwdev->ceqs;

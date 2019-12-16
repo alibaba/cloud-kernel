@@ -831,7 +831,7 @@ static int cmdq_async_cmd(struct hinic_cmdq *cmdq, enum hinic_ack_type ack_type,
 
 	spin_lock_bh(&cmdq->cmdq_lock);
 
-	/* WQE_SIZE = WQEBB_SIZE, we will get the wq element and not shadow*/
+	/* WQE_SIZE = WQEBB_SIZE, we will get the wq element and not shadow */
 	curr_wqe = hinic_get_wqe(cmdq->wq, num_wqebbs, &curr_prod_idx);
 	if (!curr_wqe) {
 		spin_unlock_bh(&cmdq->cmdq_lock);
@@ -876,7 +876,7 @@ static int cmdq_set_arm_bit(struct hinic_cmdq *cmdq, void *buf_in, u16 in_size)
 	/* Keep wrapped and doorbell index correct. bh - for tasklet(ceq) */
 	spin_lock_bh(&cmdq->cmdq_lock);
 
-	/* WQE_SIZE = WQEBB_SIZE, we will get the wq element and not shadow*/
+	/* WQE_SIZE = WQEBB_SIZE, we will get the wq element and not shadow */
 	curr_wqe = hinic_get_wqe(cmdq->wq, num_wqebbs, &curr_prod_idx);
 	if (!curr_wqe) {
 		spin_unlock_bh(&cmdq->cmdq_lock);

@@ -52,7 +52,6 @@
 
 #define HINIC_MGMT_WQ_NAME "hinic_mgmt"
 
-/*CLP*/
 enum clp_data_type {
 	HINIC_CLP_REQ_HOST = 0,
 	HINIC_CLP_RSP_HOST = 1

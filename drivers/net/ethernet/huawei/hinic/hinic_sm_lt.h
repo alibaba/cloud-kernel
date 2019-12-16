@@ -49,7 +49,7 @@ enum {
 	SM_LT_NUM_3                 /* lt num = 3, load 64B */
 };
 
-/* lt load request*/
+/* lt load request */
 typedef union {
 	struct {
 		u32 offset:8;

@@ -1071,7 +1071,7 @@ int hinic_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
  * hinic_cpu_to_be32 - convert data to big endian 32 bit format
  * @data: the data to convert
  * @len: length of data to convert, must be Multiple of 4B
- **/
+ */
 void hinic_cpu_to_be32(void *data, int len)
 {
 	int i, chunk_sz = sizeof(u32);
@@ -1090,10 +1090,10 @@ void hinic_cpu_to_be32(void *data, int len)
 EXPORT_SYMBOL(hinic_cpu_to_be32);
 
 /**
- * hinic_cpu_to_be32 - convert data from big endian 32 bit format
+ * hinic_be32_to_cpu - convert data from big endian 32 bit format
  * @data: the data to convert
  * @len: length of data to convert
- **/
+ */
 void hinic_be32_to_cpu(void *data, int len)
 {
 	int i, chunk_sz = sizeof(u32);
@@ -1116,7 +1116,7 @@ EXPORT_SYMBOL(hinic_be32_to_cpu);
  * @sge: scatter gather entry
  * @addr: dma address
  * @len: length of relevant data in the dma address
- **/
+ */
 void hinic_set_sge(struct hinic_sge *sge, dma_addr_t addr, u32 len)
 {
 	sge->hi_addr = upper_32_bits(addr);
@@ -1129,7 +1129,7 @@ void hinic_set_sge(struct hinic_sge *sge, dma_addr_t addr, u32 len)
  * @sge: scatter gather entry
  *
  * Return dma address of sg entry
- **/
+ */
 dma_addr_t hinic_sge_to_dma(struct hinic_sge *sge)
 {
 	return (dma_addr_t)((((u64)sge->hi_addr) << 32) | sge->lo_addr);
@@ -1443,10 +1443,7 @@ static int hinic_vf_rx_tx_flush_in_pf(struct hinic_hwdev *hwdev, u16 vf_id)
 	if (err || !out_size || clr_res.status) {
 		sdk_warn(hwdev->dev_hdl, "Failed to flush doorbell, err: %d, status: 0x%x, out_size: 0x%x\n",
 			 err, clr_res.status, out_size);
-		if (err)
-			ret = err;
-		else
-			ret = -EFAULT;
+		ret = err ? err : (-EFAULT);
 	}
 	/* enable vf doorbell flush csr */
 	hinic_pf_set_vf_db_flush(hwdev, vf_id, ENABLE_DOORBELL);
@@ -1485,10 +1482,7 @@ static int hinic_pf_rx_tx_flush(struct hinic_hwdev *hwdev)
 	if (err || !out_size || clear_db.status) {
 		sdk_warn(hwdev->dev_hdl, "Failed to flush doorbell, err: %d, status: 0x%x, out_size: 0x%x\n",
 			 err, clear_db.status, out_size);
-		if (err)
-			ret = err;
-		else
-			ret = -EFAULT;
+		ret = err ? err : (-EFAULT);
 	}
 
 	hinic_set_pf_status(hwif, HINIC_PF_STATUS_FLR_START_FLAG);
@@ -1709,11 +1703,11 @@ static int init_ceqs_msix_attr(struct hinic_hwdev *hwdev)
  * @hwdev: the pointer to hw device
  * @entry_idx: the entry index in the dma table
  * @st: PCIE TLP steering tag
- * @at:	PCIE TLP AT field
+ * @at: PCIE TLP AT field
  * @ph: PCIE TLP Processing Hint field
  * @no_snooping: PCIE TLP No snooping
  * @tph_en: PCIE TLP Processing Hint Enable
- **/
+ */
 static void set_pf_dma_attr_entry(struct hinic_hwdev *hwdev, u32 entry_idx,
 				  u8 st, u8 at, u8 ph,
 				enum hinic_pcie_nosnoop no_snooping,
@@ -1778,7 +1772,7 @@ static int set_vf_dma_attr_entry(struct hinic_hwdev *hwdev, u8 entry_idx,
  * dma_attr_table_init - initialize the the default dma attributes
  * @hwdev: the pointer to hw device
  * Return: 0 - success, negative - failure
- **/
+ */
 static int dma_attr_table_init(struct hinic_hwdev *hwdev)
 {
 	int err = 0;
@@ -2300,7 +2294,7 @@ static int __get_func_misc_info(struct hinic_hwdev *hwdev)
 
 	err = hinic_get_board_info(hwdev, &hwdev->board_info);
 	if (err) {
-		/*For the pf/vf of slave host, return error */
+		/* For the pf/vf of slave host, return error */
 		if (hinic_pcie_itf_id(hwdev))
 			return err;
 
@@ -4429,9 +4423,7 @@ static u8 hinic_get_heartbeat_status(struct hinic_hwdev *hwdev)
 		sdk_err(hwdev->dev_hdl, "Detect pcie is link down\n");
 		hinic_set_chip_absent(hwdev);
 		hinic_force_complete_all(hwdev);
-	/* should notify chiperr to pangea
-	 * when detecting pcie link down
-	 */
+	/* should notify chiperr to pangea when detecting pcie link down */
 		return 1;
 	}
 
