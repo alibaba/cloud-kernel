@@ -937,7 +937,7 @@ port_enable_err:
 
 vport_enable_err:
 	hinic_flush_sq_res(nic_dev->hwdev);
-	/* After set vport disable 100ms, no packets will be send to host*/
+	/* After set vport disable 100ms, no packets will be send to host */
 	msleep(100);
 	hinic_qps_irq_deinit(nic_dev);
 

@@ -32,7 +32,7 @@
 
 enum hinic_mod_type {
 	HINIC_MOD_COMM = 0,	/* HW communication module */
-	HINIC_MOD_L2NIC = 1,	/* L2NIC module*/
+	HINIC_MOD_L2NIC = 1,	/* L2NIC module */
 	HINIC_MOD_ROCE = 2,
 	HINIC_MOD_IWARP = 3,
 	HINIC_MOD_TOE = 4,
@@ -111,8 +111,7 @@ int hinic_cmdq_detail_resp(void *hwdev, enum hinic_ack_type ack_type,
 			   struct hinic_cmd_buf *buf_in,
 			   struct hinic_cmd_buf *buf_out, u32 timeout);
 
-/* PF/VF send cmd to ucode by cmdq, and return immediately
- */
+/* PF/VF send cmd to ucode by cmdq, and return immediately */
 int hinic_cmdq_async(void *hwdev, enum hinic_ack_type ack_type,
 		     enum hinic_mod_type mod, u8 cmd,
 		     struct hinic_cmd_buf *buf_in);
@@ -120,7 +119,7 @@ int hinic_cmdq_async(void *hwdev, enum hinic_ack_type ack_type,
 int hinic_ppf_tmr_start(void *hwdev);
 int hinic_ppf_tmr_stop(void *hwdev);
 
-/*CLP*/
+/* CLP */
 int hinic_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 		      void *buf_in, u16 in_size,
 		      void *buf_out, u16 *out_size);
@@ -204,7 +203,7 @@ int hinic_get_interrupt_cfg(void *hwdev,
 int hinic_set_interrupt_cfg(void *hwdev,
 			    struct nic_interrupt_info interrupt_info);
 
-/* The driver code implementation interface*/
+/* The driver code implementation interface */
 void hinic_misx_intr_clear_resend_bit(void *hwdev,
 				      u16 msix_idx, u8 clear_resend_en);
 
@@ -229,7 +228,7 @@ int hinic_func_rx_tx_flush(void *hwdev);
 int hinic_func_tmr_bitmap_set(void *hwdev, bool enable);
 
 struct hinic_init_para {
-	/* Record hinic_pcidev or NDIS_Adapter pointer address*/
+	/* Record hinic_pcidev or NDIS_Adapter pointer address */
 	void *adapter_hdl;
 	/* Record pcidev or Handler pointer address
 	 * for example: ioremap interface input parameter
@@ -240,12 +239,12 @@ struct hinic_init_para {
 	 */
 	void *dev_hdl;
 
-	void *cfg_reg_base;	/* Configure virtual address, bar0/1*/
+	void *cfg_reg_base;	/* Configure virtual address, bar0/1 */
 	/* interrupt configuration register address, bar2/3 */
 	void *intr_reg_base;
 	u64 db_base_phy;
-	void *db_base;	/* the doorbell address, bar4/5 higher 4M space*/
-	void *dwqe_mapping;/* direct wqe 4M, follow the doorbell address space*/
+	void *db_base;	/* the doorbell address, bar4/5 higher 4M space */
+	void *dwqe_mapping; /* direct wqe 4M, follow the doorbell address */
 	void **hwdev;
 	void *chip_node;
 	/* In bmgw x86 host, driver can't send message to mgmt cpu directly,
@@ -468,8 +467,7 @@ union hinic_fault_hw_mgmt {
 		u16 err_type;
 		u32 err_csr_addr;
 		u32 err_csr_value;
-		/* func_id valid only err_level==FAULT_LEVEL_SERIOUS_FLR
-		 */
+		/* func_id valid only err_level==FAULT_LEVEL_SERIOUS_FLR */
 		u16 func_id;
 		u16 rsvd2;
 	} chip;

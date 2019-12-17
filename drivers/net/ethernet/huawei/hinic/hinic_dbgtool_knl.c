@@ -47,7 +47,6 @@ struct ffm_intr_info {
 };
 
 #define DBGTOOL_MSG_MAX_SIZE	2048ULL
-
 #define HINIC_SELF_CMD_UP2PF_FFM		0x26
 
 void *g_card_node_array[MAX_CARD_NUM] = {0};
@@ -57,7 +56,7 @@ u64 g_card_phy_addr[MAX_CARD_NUM] = {0};
 struct mutex	g_addr_lock;
 int card_id;
 
-/* dbgtool character device name, class name, dev path*/
+/* dbgtool character device name, class name, dev path */
 #define CHR_DEV_DBGTOOL "dbgtool_chr_dev"
 #define CLASS_DBGTOOL "dbgtool_class"
 #define DBGTOOL_DEV_PATH "/dev/dbgtool_chr_dev"
@@ -154,7 +153,7 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
  * @para: the dbgtool parameter
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
- **/
+ */
 long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 			      void **g_func_handle_array)
 {
@@ -172,14 +171,14 @@ long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 		return -EFAULT;
 	}
 
-	/* obtaining pf_id chipif pointer*/
+	/* obtaining pf_id chipif pointer */
 	hwdev = g_func_handle_array[pf_id];
 	if (!hwdev) {
 		pr_err("PF id(0x%x) handle null in api cmd read\n", pf_id);
 		return -EFAULT;
 	}
 
-	/* alloc cmd and ack memory*/
+	/* alloc cmd and ack memory */
 	size = para->param.api_rd.size;
 	if (para->param.api_rd.size == 0 || size > DBGTOOL_MSG_MAX_SIZE) {
 		pr_err("Read cmd size invalid or more than 2M\n");
@@ -219,7 +218,7 @@ long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 		goto api_rd_fail;
 	}
 
-	/* Copy the contents of the ack to the user state*/
+	/* Copy the contents of the ack to the user state */
 	if (copy_to_user(para->param.api_rd.ack, ack, ack_size)) {
 		pr_err("Copy ack to user fail\n");
 		ret = -EFAULT;
@@ -237,7 +236,7 @@ alloc_ack_mem_fail:
  * @para: the dbgtool parameter
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
- **/
+ */
 long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
 			       void **g_func_handle_array)
 {
@@ -260,7 +259,7 @@ long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
 		return -EFAULT;
 	}
 
-	/* alloc cmd memory*/
+	/* alloc cmd memory */
 	size = para->param.api_wr.size;
 	if (para->param.api_wr.size == 0 || size > DBGTOOL_MSG_MAX_SIZE) {
 		pr_err("Write cmd size invalid or more than 2M\n");
@@ -272,14 +271,14 @@ long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
 		return -ENOMEM;
 	}
 
-	/* cmd content copied from user-mode*/
+	/* cmd content copied from user-mode */
 	if (copy_from_user(cmd, para->param.api_wr.cmd, (unsigned long)size)) {
 		pr_err("Copy cmd from user fail\n");
 		ret = -EFAULT;
 		goto copy_user_cmd_fail;
 	}
 
-	/* api cmd interface is invoked to write the content*/
+	/* api cmd interface is invoked to write the content */
 	ret = hinic_api_cmd_write_nack(hwdev, para->param.api_wr.dest,
 				       cmd, size);
 	if (ret)
@@ -301,7 +300,7 @@ void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
 		return;
 	}
 
-	/* pf at most 16*/
+	/* pf at most 16 */
 	for (func_idx = 0; func_idx < 16; func_idx++) {
 		hwdev = (struct hinic_hwdev *)g_func_handle_array[func_idx];
 
@@ -334,7 +333,7 @@ void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
  * @para: the dbgtool parameter
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
- **/
+ */
 long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
 				 void **g_func_handle_array)
 {
@@ -377,7 +376,7 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
 
 	chipif_get_all_pf_dev_info(dev_info, card_id, g_func_handle_array);
 
-	/* Copy the dev_info to user mode*/
+	/* Copy the dev_info to user mode */
 	if (copy_to_user(para->param.dev_info, dev_info,
 			 (unsigned int)sizeof(dev_info))) {
 		pr_err("Copy dev_info to user fail\n");
@@ -392,11 +391,11 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
  * @para: the dbgtool parameter
  * @dbgtool_info: the dbgtool info
  * Return: 0 - success, negative - failure
- **/
+ */
 long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
 			     struct dbgtool_k_glb_info *dbgtool_info)
 {
-	/* Copy the ffm_info to user mode*/
+	/* Copy the ffm_info to user mode */
 	if (copy_to_user(para->param.ffm_rd, dbgtool_info->ffm,
 			 (unsigned int)sizeof(struct ffm_record_info))) {
 		pr_err("Copy ffm_info to user fail\n");
@@ -410,7 +409,7 @@ long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
  * dbgtool_knl_ffm_info_clr - Clear FFM information
  * @para: unused
  * @dbgtool_info: the dbgtool info
- **/
+ */
 void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
 			      struct dbgtool_k_glb_info *dbgtool_info)
 {
@@ -422,7 +421,7 @@ void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
  * @para: the dbgtool parameter
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
- **/
+ */
 long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 			   void **g_func_handle_array)
 {
@@ -439,7 +438,7 @@ long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 	}
 
 	pf_id = para->param.msg2up.pf_id;
-	/* pf at most 16*/
+	/* pf at most 16 */
 	if (pf_id >= 16) {
 		pr_err("PF id(0x%x) too big in message to mgmt\n", pf_id);
 		return -EFAULT;
@@ -450,7 +449,7 @@ long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 		return -EFAULT;
 	}
 
-	/* alloc buf_in and buf_out memory, apply for 2K*/
+	/* alloc buf_in and buf_out memory, apply for 2K */
 	buf_in = kzalloc(DBGTOOL_MSG_MAX_SIZE, GFP_KERNEL);
 	if (!buf_in) {
 		pr_err("Alloc buf_in mem fail\n");
@@ -464,7 +463,7 @@ long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 		goto alloc_buf_out_mem_fail;
 	}
 
-	/* copy buf_in from the user state*/
+	/* copy buf_in from the user state */
 	if (copy_from_user(buf_in, para->param.msg2up.buf_in,
 			   (unsigned long)para->param.msg2up.in_size)) {
 		pr_err("Copy buf_in from user fail\n");
@@ -473,7 +472,7 @@ long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 	}
 
 	out_size = DBGTOOL_MSG_MAX_SIZE;
-	/* Invoke the pf2up communication interface*/
+	/* Invoke the pf2up communication interface */
 	ret = hinic_msg_to_mgmt_sync(g_func_handle_array[pf_id],
 				     para->param.msg2up.mod,
 				     para->param.msg2up.cmd,
@@ -482,12 +481,10 @@ long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 				     buf_out,
 				     &out_size,
 				     0);
-	/* 50s timeout time is sufficient*/
-
 	if (ret)
 		goto msg_2_up_fail;
 
-	/* Copy the out_size and buf_out content to user mode*/
+	/* Copy the out_size and buf_out content to user mode */
 	if (copy_to_user(para->param.msg2up.out_size, &out_size,
 			 (unsigned int)sizeof(out_size))) {
 		pr_err("Copy out_size to user fail\n");
@@ -542,7 +539,7 @@ long dbgtool_knl_free_mem(int id)
  * dbgtool_knl_unlocked_ioctl - dbgtool ioctl entry
  * @pfile: the pointer to file
  * @cmd: the command type
- **/
+ */
 long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 				unsigned int cmd,
 				unsigned long arg)
@@ -622,10 +619,8 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
  * ffm_intr_msg_record - FFM interruption records sent up
  * @handle: the function handle
  * @buf_in: the pointer to input buffer
- * @in_size: the input buffer size
- * @buf_out: the pointer to output buffer
- * @out_size: the output buffer size
- **/
+ * @buf_out: the pointer to outputput buffer
+ */
 void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 			 void *buf_out, u16 *out_size)
 {
@@ -682,10 +677,10 @@ void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 		dbgtool_info->ffm->ffm[ffm_idx].err_csr_value =
 						intr->err_csr_value;
 
-		/* Obtain the current UTC time*/
+		/* Obtain the current UTC time */
 		 do_gettimeofday(&txc.time);
 
-		/* Calculate the time in date value to tm*/
+		/* Calculate the time in date value to tm */
 		 rtc_time_to_tm((unsigned long)txc.time.tv_sec +
 				60 * 60 * 8, &rctm);
 
@@ -721,7 +716,7 @@ static const struct file_operations dbgtool_file_operations = {
  * @hwdev: the pointer to hardware device
  * @chip_node: the pointer to card node
  * Return: 0 - success, negative - failure
- **/
+ */
 int dbgtool_knl_init(void *vhwdev, void *chip_node)
 {
 	int ret = 0;
@@ -760,7 +755,7 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 	}
 	chip_info->dbgtool_info = dbgtool_info;
 
-	/*FFM init*/
+	/* FFM init */
 	dbgtool_info->ffm = (struct ffm_record_info *)
 				kzalloc(sizeof(struct ffm_record_info),
 					GFP_KERNEL);
@@ -855,7 +850,7 @@ dbgtool_info_fail:
  * dbgtool_knl_deinit - dbgtool character device deinit
  * @hwdev: the pointer to hardware device
  * @chip_node: the pointer to card node
- **/
+ */
 void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 {
 	struct dbgtool_k_glb_info *dbgtool_info;
@@ -885,7 +880,7 @@ void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 	g_card_node_array[id] = NULL;
 
 	dbgtool_info = chip_info->dbgtool_info;
-	/*FFM deinit*/
+	/* FFM deinit */
 	kfree(dbgtool_info->ffm);
 	dbgtool_info->ffm = NULL;
 

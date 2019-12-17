@@ -468,7 +468,7 @@ int hinic_set_rx_lro_state(void *hwdev, u8 lro_en, u32 lro_timer, u32 wqe_num);
 /* Win NIC used */
 int hinic_set_rx_lro(void *hwdev, u8 ipv4_en, u8 ipv6_en, u8 max_wqe_num);
 
-/* Related command dcbtool*/
+/* Related command dcbtool */
 int hinic_dcb_set_pfc(void *hwdev, u8 pfc_en, u8 pfc_bitmap);
 
 int hinic_dcb_get_pfc(void *hwdev, u8 *pfc_en_bitmap);

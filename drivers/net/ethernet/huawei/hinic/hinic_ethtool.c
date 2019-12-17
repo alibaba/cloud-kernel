@@ -991,7 +991,7 @@ static int hinic_set_ringparam(struct net_device *netdev,
 
 	if (new_sq_depth == nic_dev->sq_depth &&
 	    new_rq_depth == nic_dev->rq_depth)
-		return 0;	/* nothing will do */
+		return 0;
 
 	if (test_bit(HINIC_BP_ENABLE, &nic_dev->flags) &&
 	    new_rq_depth <= nic_dev->bp_upper_thd) {
@@ -2230,7 +2230,7 @@ static int __set_rss_rxfh(struct net_device *netdev,
 			/* We request double spaces for the hash key,
 			 * the second one holds the key of Big Edian
 			 * format.
-			*/
+			 */
 			nic_dev->rss_hkey_user =
 				kzalloc(HINIC_RSS_KEY_SIZE * 2, GFP_KERNEL);
 

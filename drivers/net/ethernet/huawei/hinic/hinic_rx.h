@@ -16,7 +16,7 @@
 #ifndef HINIC_RX_H
 #define HINIC_RX_H
 
-/*rx cqe checksum err*/
+/* rx cqe checksum err */
 #define HINIC_RX_CSUM_IP_CSUM_ERR	BIT(0)
 #define HINIC_RX_CSUM_TCP_CSUM_ERR	BIT(1)
 #define HINIC_RX_CSUM_UDP_CSUM_ERR	BIT(2)

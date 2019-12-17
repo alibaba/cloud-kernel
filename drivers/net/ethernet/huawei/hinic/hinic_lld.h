@@ -68,9 +68,9 @@ void hinic_unregister_uld(enum hinic_service_type uld_type);
 void *hinic_get_ppf_uld_by_pdev(struct pci_dev *pdev,
 				enum hinic_service_type type);
 
-/* used for TOE/IWARP*/
+/* used for TOE/IWARP */
 struct net_device *hinic_get_netdev_by_lld(struct hinic_lld_dev *lld_dev);
-/* used for TOE/IWARP*/
+/* used for TOE/IWARP */
 void *hinic_get_hwdev_by_netdev(struct net_device *netdev);
 
 struct net_device *hinic_get_netdev_by_pcidev(struct pci_dev *pdev);

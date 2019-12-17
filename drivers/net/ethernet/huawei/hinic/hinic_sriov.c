@@ -378,7 +378,7 @@ int hinic_ndo_get_vf_config(struct net_device *netdev,
  * @link: required link state
  * Return: 0 - success, negative - failure
  * Set the link state of a specified VF, regardless of physical link state
- **/
+ */
 int hinic_ndo_set_vf_link_state(struct net_device *netdev, int vf_id, int link)
 {
 	struct hinic_nic_dev *adapter = netdev_priv(netdev);

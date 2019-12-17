@@ -59,7 +59,7 @@ enum hinic_service_type {
  *	 enable the VMDq: Each PF/VF at most 1K SQ
  */
 struct nic_service_cap {
-	/* PF resources*/
+	/* PF resources */
 	u16 max_sqs;
 	u16 max_rqs;
 
@@ -113,7 +113,7 @@ struct dev_roce_svc_own_cap {
 	u32 max_srq_sge;
 	u32 srqc_entry_sz;
 
-	u32 max_msg_sz;/* Message size 2GB*/
+	u32 max_msg_sz; /* Message size 2GB */
 
 	u8 num_cos;
 };
@@ -152,7 +152,7 @@ struct dev_iwarp_svc_own_cap {
 	u32 max_ackq_depth;
 	u32 ackq_entry_size;   /* 16B */
 
-	u32 max_msg_sz;        /* Message size 1GB*/
+	u32 max_msg_sz;        /* Message size 1GB */
 
 	u32 max_wqes;           /* 8K */
 	u32 qpc_entry_sz;       /* 1K */
@@ -166,7 +166,7 @@ struct dev_iwarp_svc_own_cap {
 	u8 num_cos;
 };
 
-/* RDMA service capability structure*/
+/* RDMA service capability structure */
 struct dev_rdma_svc_cap {
 	/* ROCE service unique parameter structure */
 	struct dev_roce_svc_own_cap  roce_own_cap;
@@ -189,7 +189,7 @@ enum {
 	RDMA_DEV_CAP_FLAG_APM           = (1 << 9),
 };
 
-/* RDMA services*/
+/* RDMA services */
 struct rdma_service_cap {
 	struct dev_rdma_svc_cap     dev_rdma_cap;
 
@@ -202,8 +202,8 @@ struct rdma_service_cap {
 			 * contain 1, 2, 4, 8, and 16 PA)
 			 */
 
-	u32 reserved_qps;	/* Number of reserved QP*/
-	u32 max_sq_sg;		/* Maximum SGE number of SQ (8)*/
+	u32 reserved_qps;	/* Number of reserved QP */
+	u32 max_sq_sg;		/* Maximum SGE number of SQ (8) */
 	u32 max_sq_desc_sz;	/* WQE maximum size of SQ(1024B), inline maximum
 				 * size if 960B(944B aligned to the 960B),
 				 * 960B=>wqebb alignment=>1024B
@@ -212,13 +212,13 @@ struct rdma_service_cap {
 				 * defined as 64Bytes
 				 */
 
-	u32 max_cqes;		/* Size of the depth of the CQ (64K-1)*/
-	u32 reserved_cqs;	/* Number of reserved CQ*/
-	u32 cqc_entry_sz;	/* Size of the CQC (64B/128B)*/
-	u32 cqe_size;		/* Size of CQE (32B)*/
+	u32 max_cqes;		/* Size of the depth of the CQ (64K-1) */
+	u32 reserved_cqs;	/* Number of reserved CQ */
+	u32 cqc_entry_sz;	/* Size of the CQC (64B/128B) */
+	u32 cqe_size;		/* Size of CQE (32B) */
 
-	u32 reserved_mrws;	/* Number of reserved MR/MR Window*/
-	u32 mpt_entry_sz;	/* MPT table size (64B)*/
+	u32 reserved_mrws;	/* Number of reserved MR/MR Window */
+	u32 mpt_entry_sz;	/* MPT table size (64B) */
 	u32 max_fmr_maps;	/* max MAP of FMR,
 				 * (1 << (32-ilog2(num_mpt)))-1;
 				 */
@@ -226,40 +226,40 @@ struct rdma_service_cap {
 	u32 num_mtts;		/* Number of MTT table (4M),
 				 * is actually MTT seg number
 				 */
-	/* MTT table number of Each MTT seg(3)*/
+	/* MTT table number of Each MTT seg(3) */
 	u32 log_mtt_seg;
-	u32 mtt_entry_sz;      /* MTT table size 8B, including 1 PA(64bits)*/
-	u32 log_rdmarc_seg;    /* table number of each RDMArc seg(3)*/
+	u32 mtt_entry_sz;      /* MTT table size 8B, including 1 PA(64bits) */
+	u32 log_rdmarc_seg;    /* table number of each RDMArc seg(3) */
 
-	/* Timeout time. Formula:Tr=4.096us*2(local_ca_ack_delay), [Tr,4Tr]*/
+	/* Timeout time. Formula:Tr=4.096us*2(local_ca_ack_delay), [Tr,4Tr] */
 	u32 local_ca_ack_delay;
-	u32 num_ports;		/* Physical port number*/
+	u32 num_ports;		/* Physical port number */
 
-	u32 db_page_size;	/* Size of the DB (4KB)*/
-	u32 direct_wqe_size;	/* Size of the DWQE (256B)*/
+	u32 db_page_size;	/* Size of the DB (4KB) */
+	u32 direct_wqe_size;	/* Size of the DWQE (256B) */
 
-	u32 num_pds;		/* Maximum number of PD (128K)*/
+	u32 num_pds;		/* Maximum number of PD (128K) */
 	u32 reserved_pds;	/* Number of reserved PD*/
-	u32 max_xrcds;		/* Maximum number of xrcd (64K)*/
-	u32 reserved_xrcds;	/* Number of reserved xrcd*/
+	u32 max_xrcds;		/* Maximum number of xrcd (64K) */
+	u32 reserved_xrcds;	/* Number of reserved xrcd */
 
-	u32 max_gid_per_port;	/* gid number (16) of each port*/
+	u32 max_gid_per_port;	/* gid number (16) of each port */
 	u32 gid_entry_sz;	/* RoCE v2 GID table is 32B,
 				 * compatible RoCE v1 expansion
 				 */
 
 	u32 reserved_lkey;	/* local_dma_lkey */
-	u32 num_comp_vectors;	/* Number of complete vector (32)*/
-	u32 page_size_cap;	/* Supports 4K,8K,64K,256K,1M and 4M page_size*/
+	u32 num_comp_vectors;	/* Number of complete vector (32) */
+	u32 page_size_cap;	/* Supports 4K,8K,64K,256K,1M,4M page_size */
 
-	u32 flags;		/* RDMA some identity*/
-	u32 max_frpl_len;	/* Maximum number of pages frmr registration*/
-	u32 max_pkeys;		/* Number of supported pkey group*/
+	u32 flags;		/* RDMA some identity */
+	u32 max_frpl_len;	/* Maximum number of pages frmr registration */
+	u32 max_pkeys;		/* Number of supported pkey group */
 };
 
-/* PF/VF FCoE service resource structure defined*/
+/* PF/VF FCoE service resource structure defined */
 struct dev_fcoe_svc_cap {
-	/* PF resources*/
+	/* PF resources */
 	u32 max_qps;
 	u32 max_cqs;
 	u32 max_srqs;
@@ -274,7 +274,7 @@ struct dev_fcoe_svc_cap {
 	u8 vp_id_end;
 };
 
-/* FCoE services*/
+/* FCoE services */
 struct fcoe_service_cap {
 	struct dev_fcoe_svc_cap     dev_fcoe_cap;
 
@@ -295,7 +295,7 @@ struct fcoe_service_cap {
 /* PF/VF ToE service resource structure */
 struct dev_toe_svc_cap {
 	/* PF resources*/
-	u32 max_pctxs; /* Parent Context: max specifications 1M*/
+	u32 max_pctxs; /* Parent Context: max specifications 1M */
 	u32 max_cqs;
 	u32 max_srqs;
 	u32 srq_id_start;
@@ -303,7 +303,7 @@ struct dev_toe_svc_cap {
 	u8 num_cos;
 };
 
-/* ToE services*/
+/* ToE services */
 struct toe_service_cap {
 	struct dev_toe_svc_cap      dev_toe_cap;
 
@@ -312,20 +312,20 @@ struct toe_service_cap {
 	u32 scqc_sz;/* 64B */
 };
 
-/* PF FC service resource structure defined*/
+/* PF FC service resource structure defined */
 struct dev_fc_svc_cap {
 	/* PF Parent QPC */
-	u32 max_parent_qpc_num; /* max number is 2048*/
+	u32 max_parent_qpc_num; /* max number is 2048 */
 
 	/* PF Child QPC */
-	u32 max_child_qpc_num;  /* max number is 2048*/
+	u32 max_child_qpc_num;  /* max number is 2048 */
 	u32 child_qpc_id_start;
 
 	/* PF SCQ */
 	u32 scq_num;            /* 16 */
 
 	/* PF supports SRQ*/
-	u32 srq_num;            /* Number of SRQ is 2*/
+	u32 srq_num;            /* Number of SRQ is 2 */
 
 	u8 vp_id_start;
 	u8 vp_id_end;
@@ -342,29 +342,29 @@ struct fc_service_cap {
 	u32 child_qpc_size;     /* 256B */
 
 	/* SQ */
-	u32 sqe_size;           /* 128B(in linked list mode)*/
+	u32 sqe_size;           /* 128B(in linked list mode) */
 
 	/* SCQ */
-	u32 scqc_size;          /* Size of the Context 32B*/
+	u32 scqc_size;          /* Size of the Context 32B */
 	u32 scqe_size;          /* 64B */
 
 	/* SRQ */
-	u32 srqc_size;         /* Size of SRQ Context (64B)*/
+	u32 srqc_size;         /* Size of SRQ Context (64B) */
 	u32 srqe_size;         /* 32B */
 };
 
-/* PF OVS service resource structure defined*/
+/* PF OVS service resource structure defined */
 struct dev_ovs_svc_cap {
-	/* PF resources*/
-	u32 max_pctxs; /* Parent Context: max specifications 1M*/
+	/* PF resources */
+	u32 max_pctxs; /* Parent Context: max specifications 1M */
 	u32 max_cqs;
 
-	/* VF resources*/
-	u32 vf_max_pctxs; /* Parent Context: max specifications 1M*/
+	/* VF resources */
+	u32 vf_max_pctxs; /* Parent Context: max specifications 1M */
 	u32 vf_max_cqs;
 };
 
-/* OVS services*/
+/* OVS services */
 struct ovs_service_cap {
 	struct dev_ovs_svc_cap dev_ovs_cap;
 
@@ -375,16 +375,16 @@ struct ovs_service_cap {
 
 /* PF ACL service resource structure */
 struct dev_acl_svc_cap {
-	/* PF resources*/
-	u32 max_pctxs; /* Parent Context: max specifications 1M*/
+	/* PF resources */
+	u32 max_pctxs; /* Parent Context: max specifications 1M */
 	u32 max_cqs;
 
-	/* VF resources*/
-	u32 vf_max_pctxs; /* Parent Context: max specifications 1M*/
+	/* VF resources */
+	u32 vf_max_pctxs; /* Parent Context: max specifications 1M */
 	u32 vf_max_cqs;
 };
 
-/* ACL services*/
+/* ACL services */
 struct acl_service_cap {
 	struct dev_acl_svc_cap    dev_acl_cap;
 
@@ -396,7 +396,7 @@ struct acl_service_cap {
 bool hinic_support_nic(void *hwdev, struct nic_service_cap *cap);
 bool hinic_support_roce(void *hwdev, struct rdma_service_cap *cap);
 bool hinic_support_fcoe(void *hwdev, struct fcoe_service_cap *cap);
-/* PPF support,PF not support*/
+/* PPF support,PF not support */
 bool hinic_support_toe(void *hwdev, struct toe_service_cap *cap);
 bool hinic_support_iwarp(void *hwdev, struct rdma_service_cap *cap);
 bool hinic_support_fc(void *hwdev, struct fc_service_cap *cap);
@@ -413,24 +413,24 @@ int hinic_set_fcoe_enable(void *hwdev, bool enable);
 bool hinic_get_fcoe_enable(void *hwdev);
 bool hinic_get_stateful_enable(void *hwdev);
 
-/* Service interface for obtaining service_cap public fields*/
-/* Obtain service_cap.host_oq_id_mask_val*/
+/* Service interface for obtaining service_cap public fields */
+/* Obtain service_cap.host_oq_id_mask_val */
 u8 hinic_host_oq_id_mask(void *hwdev);
-u8 hinic_host_id(void *hwdev);/* Obtain service_cap.host_id*/
-/* Obtain service_cap.host_total_function*/
+u8 hinic_host_id(void *hwdev);/* Obtain service_cap.host_id */
+/* Obtain service_cap.host_total_function */
 u16 hinic_host_total_func(void *hwdev);
-/* Obtain service_cap.nic_cap.dev_nic_cap.max_sqs*/
+/* Obtain service_cap.nic_cap.dev_nic_cap.max_sqs */
 u16 hinic_func_max_nic_qnum(void *hwdev);
-/* Obtain service_cap.dev_cap.max_sqs*/
+/* Obtain service_cap.dev_cap.max_sqs */
 u16 hinic_func_max_qnum(void *hwdev);
-u8 hinic_ep_id(void *hwdev);/* Obtain service_cap.ep_id*/
-u8 hinic_er_id(void *hwdev);/* Obtain service_cap.er_id*/
-u8 hinic_physical_port_id(void *hwdev);/* Obtain service_cap.port_id*/
-u8 hinic_func_max_vf(void *hwdev);/* Obtain service_cap.max_vf*/
-u32 hinic_func_pf_num(void *hwdev);/* Obtain service_cap.pf_num*/
+u8 hinic_ep_id(void *hwdev);/* Obtain service_cap.ep_id */
+u8 hinic_er_id(void *hwdev);/* Obtain service_cap.er_id */
+u8 hinic_physical_port_id(void *hwdev);/* Obtain service_cap.port_id */
+u8 hinic_func_max_vf(void *hwdev);/* Obtain service_cap.max_vf */
+u32 hinic_func_pf_num(void *hwdev);/* Obtain service_cap.pf_num */
 u8 hinic_max_num_cos(void *hwdev);
 u8 hinic_cos_valid_bitmap(void *hwdev);
-u8 hinic_net_port_mode(void *hwdev);/* Obtain service_cap.net_port_mode*/
+u8 hinic_net_port_mode(void *hwdev);/* Obtain service_cap.net_port_mode */
 
 /* The following information is obtained from the bar space
  * which is recorded by SDK layer.
@@ -438,7 +438,7 @@ u8 hinic_net_port_mode(void *hwdev);/* Obtain service_cap.net_port_mode*/
  */
 /* func_attr.glb_func_idx, global function index */
 u16 hinic_global_func_id(void *hwdev);
-/* func_attr.intr_num, MSI-X table entry in function*/
+/* func_attr.intr_num, MSI-X table entry in function */
 u16 hinic_intr_num(void *hwdev);
 enum intr_type {
 	INTR_TYPE_MSIX,
@@ -486,7 +486,7 @@ enum hinic_msix_state {
 void hinic_set_msix_state(void *hwdev, u16 msix_idx,
 			  enum hinic_msix_state flag);
 
-/* Define the version information structure*/
+/* Define the version information structure */
 struct dev_version_info {
 	u8 up_ver;	/* uP version, directly read from uP
 			 * is not configured to file
@@ -494,18 +494,17 @@ struct dev_version_info {
 	u8 ucode_ver;	/* The microcode version,
 			 * read through the CMDq from microcode
 			 */
-	u8 cfg_file_ver;/* uP configuration file version*/
-	u8 sdk_ver;	/* SDK driver version*/
-	u8 hw_ver;	/* Hardware version*/
+	u8 cfg_file_ver;/* uP configuration file version */
+	u8 sdk_ver;	/* SDK driver version */
+	u8 hw_ver;	/* Hardware version */
 };
 
-/* Obtain service_cap.dev_version_info
- */
+/* Obtain service_cap.dev_version_info */
 int hinic_dev_ver_info(void *hwdev, struct dev_version_info *ver);
 
 int hinic_vector_to_eqn(void *hwdev, enum hinic_service_type type, int vector);
 
-/* Defines the IRQ information structure*/
+/* Defines the IRQ information structure */
 struct irq_info {
 	u16 msix_entry_idx; /* IRQ corresponding index number */
 	u32 irq_id;         /* the IRQ number from OS */

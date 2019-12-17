@@ -94,7 +94,7 @@ enum {
 	HINIC_FUNC_PRB_DELAY = BIT(2),
 };
 
-/* Structure pcidev private*/
+/* Structure pcidev private */
 struct hinic_pcidev {
 	struct pci_dev *pcidev;
 	void *hwdev;
@@ -821,7 +821,7 @@ static struct hinic_pcidev *hinic_get_pcidev_by_chip_name(char *ifname)
 {
 	struct hinic_pcidev *dev, *dev_hw_init;
 
-	/*find hw init device first*/
+	/* find hw init device first */
 	dev_hw_init = _get_pcidev_by_chip_name(ifname, TYPE_UNKNOWN);
 	if (dev_hw_init) {
 		if (hinic_func_type(dev_hw_init->hwdev) == TYPE_PPF)
@@ -1072,9 +1072,8 @@ void *hinic_get_uld_by_chip_name(char *ifname, enum hinic_service_type type)
 	struct hinic_pcidev *dev;
 
 	/* support search hwdev by chip name, net device name,
-	 * or fc device name
+	 * or fc device name, Find pcidev by chip_name first
 	 */
-	/* Find pcidev by chip_name first */
 	dev = hinic_get_pcidev_by_chip_name(ifname);
 	if (dev)
 		return dev->uld_dev[type];
@@ -1996,7 +1995,7 @@ static bool hinic_get_vf_load_state(struct pci_dev *pdev)
 	if (!pdev->is_virtfn)
 		return false;
 
-	/*vf used in vm*/
+	/* vf used in vm */
 	if (pci_is_root_bus(pdev->bus))
 		return disable_vf_load;
 
@@ -2042,7 +2041,6 @@ static void hinic_set_vf_load_state(struct hinic_pcidev *pci_adapter,
 int hinic_ovs_set_vf_load_state(struct pci_dev *pdev)
 {
 	struct hinic_pcidev *pci_adapter;
-
 	if (!pdev) {
 		pr_err("pdev is null.\n");
 		return -EINVAL;
@@ -2207,8 +2205,8 @@ static void hinic_notify_ppf_reg(struct hinic_pcidev *pci_adapter)
 /**
  * cfg_order_reg - when cpu model is haswell or broadwell, should configure dma
  * order register to zero
- * @pci_adapter: pci_adapter
- **/
+ * @pci_adapter: pci adapter
+ */
 /*lint -save -e40 */
 void cfg_order_reg(struct hinic_pcidev *pci_adapter)
 {
@@ -2292,7 +2290,7 @@ static int hinic_func_init(struct pci_dev *pdev,
 	if (!HINIC_FUNC_IS_VF(pci_adapter->hwdev))
 		hinic_sync_time_to_fmw(pci_adapter);
 
-	/*dbgtool init*/
+	/* dbgtool init */
 	lld_lock_chip_node();
 	err = dbgtool_knl_init(pci_adapter->hwdev, pci_adapter->chip_node);
 	if (err) {
@@ -2516,7 +2514,7 @@ static void slave_host_init_delay_work(struct work_struct *work)
 		return;
 	}
 
-	/*Make sure the PPF must be the first one.*/
+	/* Make sure the PPF must be the first one */
 	lld_dev_hold();
 	list_for_each_entry(ppf_pcidev, &chip_node->func_list, node) {
 		if (ppf_pcidev &&

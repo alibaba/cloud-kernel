@@ -61,7 +61,7 @@ struct pf_dev_info {
 	u64 phy_addr;
 };
 
-/* Interrupt at most records, interrupt will be recorded in the FFM*/
+/* Interrupt at most records, interrupt will be recorded in the FFM */
 #define FFM_RECORD_NUM_MAX 64
 
 struct ffm_intr_tm_info {
@@ -87,7 +87,7 @@ struct ffm_record_info {
 };
 
 struct msg_2_up {
-	u8 pf_id;   /* which pf sends messages to the up*/
+	u8 pf_id;   /* which pf sends messages to the up */
 	u8 mod;
 	u8 cmd;
 	void *buf_in;

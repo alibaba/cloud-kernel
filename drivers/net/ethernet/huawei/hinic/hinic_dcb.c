@@ -216,7 +216,7 @@ int hinic_dcb_init(struct hinic_nic_dev *nic_dev)
 	for (i = 0; i < HINIC_DCB_COS_MAX; i++) {
 		if (cos_valid_bitmap & BIT(i)) {
 			support_cos++;
-			default_cos = i;/* Find max cos id as default cos */
+			default_cos = i; /* Find max cos id as default cos */
 		}
 	}
 
@@ -1532,7 +1532,7 @@ const struct dcbnl_rtnl_ops hinic_dcbnl_ops = {
 	.ieee_getpfc	= hinic_dcbnl_ieee_get_pfc,
 	.ieee_setpfc	= hinic_dcbnl_ieee_set_pfc,
 
-	/*CEE std*/
+	/* CEE std */
 	.getstate	= hinic_dcbnl_get_state,
 	.setstate	= hinic_dcbnl_set_state,
 	.getpermhwaddr	= hinic_dcbnl_get_perm_hw_addr,

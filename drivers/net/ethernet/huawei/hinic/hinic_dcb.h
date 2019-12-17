@@ -19,7 +19,7 @@
 #define HINIC_DCB_CFG_TX	0
 #define HINIC_DCB_CFG_RX	1
 
-/*IEEE8021QAZ Transmission selection algorithm identifiers */
+/* IEEE8021QAZ Transmission selection algorithm identifiers */
 #define IEEE8021Q_TSA_STRICT	0x0
 #define IEEE8021Q_TSA_CBSHAPER	0x1
 #define IEEE8021Q_TSA_ETS	0x2

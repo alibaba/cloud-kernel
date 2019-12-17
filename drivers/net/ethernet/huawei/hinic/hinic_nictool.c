@@ -1364,7 +1364,7 @@ static int get_pf_dev_info(char *dev_name, struct msg_module *nt_msg)
 	chipif_get_all_pf_dev_info(dev_info, i,
 				   card_info->func_handle_array);
 
-	/* Copy the dev_info to user mode*/
+	/* Copy the dev_info to user mode */
 	if (copy_to_user(nt_msg->out_buf, dev_info, sizeof(dev_info))) {
 		pr_err("Copy dev_info to user fail\n");
 		return -EFAULT;
@@ -1446,7 +1446,7 @@ static int get_card_func_info(char *dev_name, struct msg_module *nt_msg)
 
 	card_func_info.usr_api_phy_addr = g_card_phy_addr[id];
 
-	/* Copy the dev_info to user mode*/
+	/* Copy the dev_info to user mode */
 	if (copy_to_user(nt_msg->out_buf, &card_func_info,
 			 sizeof(card_func_info))) {
 		pr_err("Copy dev_info to user fail\n");
@@ -2315,7 +2315,7 @@ int if_nictool_exist(void)
 
 /**
  * nictool_k_init - initialize the hw interface
- **/
+ */
 int nictool_k_init(void)
 {
 	int ret;
