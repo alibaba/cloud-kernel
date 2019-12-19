@@ -40,8 +40,8 @@
 #include "hinic_qp.h"
 #include "hinic_tx.h"
 
-#define MIN_SKB_LEN	17
-#define	MAX_PAYLOAD_OFFSET	221
+#define MIN_SKB_LEN        32
+#define MAX_PAYLOAD_OFFSET 221
 
 #define NIC_QID(q_id, nic_dev)	((q_id) & ((nic_dev)->num_qps - 1))
 
