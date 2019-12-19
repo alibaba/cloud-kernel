@@ -53,8 +53,6 @@ enum {
 #define HOST_VF_NUM         0
 #define HOST_OQID_MASK_VAL  2
 
-//#define MAX_NUM_AEQ         1
-
 /* L2NIC */
 #define L2NIC_SQ_DEPTH      (4 * K_UNIT)
 #define L2NIC_RQ_DEPTH      (4 * K_UNIT)

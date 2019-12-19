@@ -682,37 +682,38 @@ static void hinic_dcbnl_get_pfc_cfg(struct net_device *netdev, int prio,
 	*setting = nic_dev->dcb_cfg.tc_cfg[prio].pfc_en;
 }
 
-static u8 hinic_dcbnl_getcap(struct net_device *netdev, int capid, u8 *cap)
+static u8 hinic_dcbnl_getcap(struct net_device *netdev, int cap_id,
+			     u8 *dcb_cap)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
-	switch (capid) {
+	switch (cap_id) {
 	case DCB_CAP_ATTR_PG:
-		*cap = true;
+		*dcb_cap = true;
 		break;
 	case DCB_CAP_ATTR_PFC:
-		*cap = true;
+		*dcb_cap = true;
 		break;
 	case DCB_CAP_ATTR_UP2TC:
-		*cap = false;
+		*dcb_cap = false;
 		break;
 	case DCB_CAP_ATTR_PG_TCS:
-		*cap = 0x80;
+		*dcb_cap = 0x80;
 		break;
 	case DCB_CAP_ATTR_PFC_TCS:
-		*cap = 0x80;
+		*dcb_cap = 0x80;
 		break;
 	case DCB_CAP_ATTR_GSP:
-		*cap = true;
+		*dcb_cap = true;
 		break;
 	case DCB_CAP_ATTR_BCN:
-		*cap = false;
+		*dcb_cap = false;
 		break;
 	case DCB_CAP_ATTR_DCBX:
-		*cap = nic_dev->dcbx_cap;
+		*dcb_cap = nic_dev->dcbx_cap;
 		break;
 	default:
-		*cap = false;
+		*dcb_cap = false;
 		break;
 	}
 
