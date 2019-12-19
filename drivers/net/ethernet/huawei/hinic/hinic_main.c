@@ -438,7 +438,7 @@ static void hinic_destroy_num_qps(struct hinic_nic_dev *nic_dev)
 	kfree(nic_dev->qps_irq_info);
 }
 
-int hinic_poll(struct napi_struct *napi, int budget)
+static int hinic_poll(struct napi_struct *napi, int budget)
 {
 	int tx_pkts, rx_pkts;
 	struct hinic_irq *irq_cfg = container_of(napi, struct hinic_irq, napi);
@@ -450,6 +450,13 @@ int hinic_poll(struct napi_struct *napi, int budget)
 
 	if (tx_pkts >= budget || rx_pkts >= budget)
 		return budget;
+
+	set_bit(HINIC_RESEND_ON, &irq_cfg->intr_flag);
+	rx_pkts += hinic_rx_poll(irq_cfg->rxq, budget - rx_pkts);
+	if (rx_pkts >= budget) {
+		clear_bit(HINIC_RESEND_ON, &irq_cfg->intr_flag);
+		return budget;
+	}
 
 	napi_complete(napi);
 
@@ -484,24 +491,33 @@ static irqreturn_t qp_irq(int irq, void *data)
 {
 	struct hinic_irq *irq_cfg = (struct hinic_irq *)data;
 	struct hinic_nic_dev *nic_dev = netdev_priv(irq_cfg->netdev);
+	u16 msix_entry_idx = irq_cfg->msix_entry_idx;
 
-	if (l2nic_interrupt_switch) {
-		/* Disable the interrupt until napi will be completed */
-		if (!HINIC_FUNC_IS_VF(nic_dev->hwdev))
-			hinic_set_msix_state(nic_dev->hwdev,
-					     irq_cfg->msix_entry_idx,
-					     HINIC_MSIX_DISABLE);
-		else if (!nic_dev->in_vm)
-			disable_irq_nosync(irq_cfg->irq_id);
+	if (napi_schedule_prep(&irq_cfg->napi)) {
+		if (l2nic_interrupt_switch) {
+			/* Disable the interrupt until napi will be completed */
+			if (!HINIC_FUNC_IS_VF(nic_dev->hwdev)) {
+				hinic_set_msix_state(nic_dev->hwdev,
+						     msix_entry_idx,
+						     HINIC_MSIX_DISABLE);
+			} else if (!nic_dev->in_vm) {
+				disable_irq_nosync(irq_cfg->irq_id);
+			}
 
-		clear_bit(HINIC_INTR_ON, &irq_cfg->intr_flag);
+			clear_bit(HINIC_INTR_ON, &irq_cfg->intr_flag);
+		}
+
+		hinic_misx_intr_clear_resend_bit(nic_dev->hwdev,
+						 msix_entry_idx, 1);
+
+		clear_bit(HINIC_RESEND_ON, &irq_cfg->intr_flag);
+
+		__napi_schedule(&irq_cfg->napi);
+	} else if (!test_bit(HINIC_RESEND_ON, &irq_cfg->intr_flag)) {
+		hinic_misx_intr_clear_resend_bit(nic_dev->hwdev, msix_entry_idx,
+						 1);
 	}
 
-	/* 1 is resend_timer */
-	hinic_misx_intr_clear_resend_bit(nic_dev->hwdev,
-					 irq_cfg->msix_entry_idx, 1);
-
-	napi_schedule(&irq_cfg->napi);
 	return IRQ_HANDLED;
 }
 

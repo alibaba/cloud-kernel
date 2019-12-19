@@ -104,6 +104,7 @@ struct hinic_dcb_config {
 
 enum hinic_intr_flags {
 	HINIC_INTR_ON,
+	HINIC_RESEND_ON,
 };
 
 struct hinic_irq {
