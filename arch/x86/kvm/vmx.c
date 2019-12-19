@@ -1876,6 +1876,11 @@ static inline bool cpu_has_vmx_vpid(void)
 		SECONDARY_EXEC_ENABLE_VPID;
 }
 
+static inline bool vmx_pku_supported(void)
+{
+	return boot_cpu_has(X86_FEATURE_PKU);
+}
+
 static inline bool cpu_has_vmx_rdtscp(void)
 {
 	return vmcs_config.cpu_based_2nd_exec_ctrl &
@@ -14488,6 +14493,7 @@ static struct kvm_x86_ops vmx_x86_ops __ro_after_init = {
 	.mpx_supported = vmx_mpx_supported,
 	.xsaves_supported = vmx_xsaves_supported,
 	.umip_emulated = vmx_umip_emulated,
+	.pku_supported = vmx_pku_supported,
 
 	.check_nested_events = vmx_check_nested_events,
 	.request_immediate_exit = vmx_request_immediate_exit,
