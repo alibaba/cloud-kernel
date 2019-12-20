@@ -1,5 +1,4 @@
-/* mpam resource: like L3, memory */
-
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_ARM64_MPAM_RESOURCE_H
 #define _ASM_ARM64_MPAM_RESOURCE_H
 
