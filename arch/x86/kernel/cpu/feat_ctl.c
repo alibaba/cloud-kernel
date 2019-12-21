@@ -25,7 +25,7 @@ void init_ia32_feat_ctl(struct cpuinfo_x86 *c)
 	bool enable_sgx;
 	u64 msr;
 
-	if (rdmsrl_safe(MSR_IA32_FEATURE_CONTROL, &msr)) {
+	if (rdmsrl_safe(MSR_IA32_FEAT_CTL, &msr)) {
 		clear_sgx_caps();
 		return;
 	}
@@ -38,19 +38,19 @@ void init_ia32_feat_ctl(struct cpuinfo_x86 *c)
 		     cpu_has(c, X86_FEATURE_SGX_LC) &&
 		     IS_ENABLED(CONFIG_X86_SGX);
 
-	if (msr & FEATURE_CONTROL_LOCKED)
+	if (msr & FEAT_CTL_LOCKED)
 		goto update_sgx;
 
 	/*
 	 * Ignore whatever value BIOS left in the MSR to avoid enabling random
 	 * features or faulting on the WRMSR.
 	 */
-	msr = FEATURE_CONTROL_LOCKED;
+	msr = FEAT_CTL_LOCKED;
 
 	if (enable_sgx)
 		msr |= FEAT_CTL_SGX_ENABLED | FEAT_CTL_SGX_LC_ENABLED;
 
-	wrmsrl(MSR_IA32_FEATURE_CONTROL, msr);
+	wrmsrl(MSR_IA32_FEAT_CTL, msr);
 
 update_sgx:
 	if (!(msr & FEAT_CTL_SGX_ENABLED) ||
