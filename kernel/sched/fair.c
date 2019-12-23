@@ -692,6 +692,7 @@ static u64 sched_vslice(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 static int select_idle_sibling(struct task_struct *p, int prev_cpu, int cpu);
 static unsigned long task_h_load(struct task_struct *p);
+static unsigned long task_h_load_static(struct task_struct *p);
 
 /* Give new sched_entity start runnable values to heavy its load in infant time */
 void init_entity_runnable_average(struct sched_entity *se)
@@ -5653,10 +5654,19 @@ wake_affine_weight(struct sched_domain *sd, struct task_struct *p,
 	s64 this_eff_load, prev_eff_load;
 	unsigned long task_load;
 
-	this_eff_load = target_load(this_cpu, sd->wake_idx);
+	if (sched_feat(WA_STATIC_WEIGHT))
+		this_eff_load =
+			scale_load_down(cpu_rq(this_cpu)->cfs.load.weight);
+	else
+		this_eff_load = target_load(this_cpu, sd->wake_idx);
 
 	if (sync) {
-		unsigned long current_load = task_h_load(current);
+		unsigned long current_load;
+
+		if (sched_feat(WA_STATIC_WEIGHT))
+			current_load = task_h_load_static(current);
+		else
+			current_load = task_h_load(current);
 
 		if (current_load > this_eff_load)
 			return this_cpu;
@@ -5664,14 +5674,21 @@ wake_affine_weight(struct sched_domain *sd, struct task_struct *p,
 		this_eff_load -= current_load;
 	}
 
-	task_load = task_h_load(p);
+	if (sched_feat(WA_STATIC_WEIGHT))
+		task_load = task_h_load_static(p);
+	else
+		task_load = task_h_load(p);
 
 	this_eff_load += task_load;
 	if (sched_feat(WA_BIAS))
 		this_eff_load *= 100;
 	this_eff_load *= capacity_of(prev_cpu);
 
-	prev_eff_load = source_load(prev_cpu, sd->wake_idx);
+	if (sched_feat(WA_STATIC_WEIGHT))
+		prev_eff_load =
+			scale_load_down(cpu_rq(prev_cpu)->cfs.load.weight);
+	else
+		prev_eff_load = source_load(prev_cpu, sd->wake_idx);
 	prev_eff_load -= task_load;
 	if (sched_feat(WA_BIAS))
 		prev_eff_load *= 100 + (sd->imbalance_pct - 100) / 2;
@@ -7506,6 +7523,48 @@ static unsigned long task_h_load(struct task_struct *p)
 	return div64_ul(p->se.avg.load_avg * cfs_rq->h_load,
 			cfs_rq_load_avg(cfs_rq) + 1);
 }
+
+static void update_cfs_rq_h_load_static(struct cfs_rq *cfs_rq)
+{
+	struct rq *rq = rq_of(cfs_rq);
+	struct sched_entity *se = cfs_rq->tg->se[cpu_of(rq)];
+	unsigned long now = jiffies;
+	unsigned long load;
+
+	if (cfs_rq->last_h_load_update == now)
+		return;
+
+	WRITE_ONCE(cfs_rq->h_load_next, NULL);
+	for_each_sched_entity(se) {
+		cfs_rq = cfs_rq_of(se);
+		WRITE_ONCE(cfs_rq->h_load_next, se);
+		if (cfs_rq->last_h_load_update == now)
+			break;
+	}
+
+	if (!se) {
+		cfs_rq->h_load = scale_load_down(cfs_rq->load.weight);
+		cfs_rq->last_h_load_update = now;
+	}
+
+	while ((se = READ_ONCE(cfs_rq->h_load_next)) != NULL) {
+		load = cfs_rq->h_load;
+		load = div64_ul(load * se->load.weight,
+			cfs_rq->load.weight + 1);
+		cfs_rq = group_cfs_rq(se);
+		cfs_rq->h_load = load;
+		cfs_rq->last_h_load_update = now;
+	}
+}
+
+static unsigned long task_h_load_static(struct task_struct *p)
+{
+	struct cfs_rq *cfs_rq = task_cfs_rq(p);
+
+	update_cfs_rq_h_load_static(cfs_rq);
+	return div64_ul(p->se.load.weight * cfs_rq->h_load,
+			cfs_rq->load.weight + 1);
+}
 #else
 static inline void update_blocked_averages(int cpu)
 {
@@ -7533,6 +7592,11 @@ static inline void update_blocked_averages(int cpu)
 static unsigned long task_h_load(struct task_struct *p)
 {
 	return p->se.avg.load_avg;
+}
+
+static unsigned long task_h_load_static(struct task_struct *p)
+{
+	return scale_load_down(p->se.load.weight);
 }
 #endif
 
