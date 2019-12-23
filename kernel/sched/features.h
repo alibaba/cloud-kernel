@@ -85,6 +85,7 @@ SCHED_FEAT(ATTACH_AGE_LOAD, true)
 SCHED_FEAT(WA_IDLE, true)
 SCHED_FEAT(WA_WEIGHT, true)
 SCHED_FEAT(WA_BIAS, true)
+SCHED_FEAT(WA_STATIC_WEIGHT, false)
 
 /*
  * UtilEstimation. Use estimated CPU utilization.
