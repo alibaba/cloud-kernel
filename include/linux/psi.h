@@ -14,6 +14,8 @@ struct css_set;
 extern struct static_key_false psi_disabled;
 extern struct psi_group psi_system;
 
+extern struct static_key_false psi_v1_disabled;
+
 void psi_init(void);
 
 void psi_task_change(struct task_struct *task, int clear, int set);
