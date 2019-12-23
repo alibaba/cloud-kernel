@@ -725,7 +725,11 @@ static struct psi_group *iterate_groups(struct task_struct *task, void **iter)
 	struct cgroup *cgroup = NULL;
 
 	if (!*iter)
+#ifdef CONFIG_PSI_CGROUP_V1
+		cgroup = task_cgroup(task, cpuacct_cgrp_id);
+#else
 		cgroup = task->cgroups->dfl_cgrp;
+#endif
 	else if (*iter == &psi_system)
 		return NULL;
 	else
