@@ -2251,3 +2251,7 @@ unsigned long scale_irq_capacity(unsigned long util, unsigned long irq, unsigned
 	return util;
 }
 #endif
+
+#ifdef CONFIG_PSI
+extern struct cftype cgroup_v1_psi_files[];
+#endif
