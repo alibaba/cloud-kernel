@@ -379,3 +379,26 @@ struct cgroup_subsys cpuacct_cgrp_subsys = {
 	.legacy_cftypes	= files,
 	.early_init	= true,
 };
+
+#ifdef CONFIG_PSI
+
+static bool psi_v1_enable;
+static int __init setup_psi_v1(char *str)
+{
+	return kstrtobool(str, &psi_v1_enable) == 0;
+}
+__setup("psi_v1=", setup_psi_v1);
+
+static int __init cgroup_v1_psi_init(void)
+{
+	if (!psi_v1_enable) {
+		static_branch_enable(&psi_v1_disabled);
+		return 0;
+	}
+
+	cgroup_add_legacy_cftypes(&cpuacct_cgrp_subsys, cgroup_v1_psi_files);
+	return 0;
+}
+
+late_initcall_sync(cgroup_v1_psi_init);
+#endif
