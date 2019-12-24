@@ -3726,14 +3726,15 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 		return NULL;
 
 	psi_memstall_enter(&pflags);
-	start = ktime_get_ns();
+	memcg_lat_stat_start(&start);
 	noreclaim_flag = memalloc_noreclaim_save();
 
 	*compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
 									prio);
 
 	memalloc_noreclaim_restore(noreclaim_flag);
-	memcg_lat_stat_update(MEM_LAT_DIRECT_COMPACT, (ktime_get_ns() - start));
+	memcg_lat_stat_update(MEM_LAT_DIRECT_COMPACT,
+			      memcg_lat_stat_end(start));
 	psi_memstall_leave(&pflags);
 
 	if (*compact_result <= COMPACT_INACTIVE)
@@ -3941,7 +3942,7 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 	/* We now go into synchronous reclaim */
 	cpuset_memory_pressure_bump();
 	psi_memstall_enter(&pflags);
-	start = ktime_get_ns();
+	memcg_lat_stat_start(&start);
 	fs_reclaim_acquire(gfp_mask);
 	noreclaim_flag = memalloc_noreclaim_save();
 	reclaim_state.reclaimed_slab = 0;
@@ -3954,7 +3955,7 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 	memalloc_noreclaim_restore(noreclaim_flag);
 	fs_reclaim_release(gfp_mask);
 	memcg_lat_stat_update(MEM_LAT_GLOBAL_DIRECT_RECLAIM,
-			      (ktime_get_ns() - start));
+			      memcg_lat_stat_end(start));
 	psi_memstall_leave(&pflags);
 
 	cond_resched();

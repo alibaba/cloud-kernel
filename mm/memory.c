@@ -4042,11 +4042,13 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 	}
 
 	if (!pte_present(vmf->orig_pte)) {
-		u64 start = ktime_get_ns();
-		vm_fault_t retval = do_swap_page(vmf);
+		vm_fault_t retval;
+		u64 start;
 
+		memcg_lat_stat_start(&start);
+		retval = do_swap_page(vmf);
 		memcg_lat_stat_update(MEM_LAT_DIRECT_SWAPIN,
-				      (ktime_get_ns() - start));
+				      memcg_lat_stat_end(start));
 		return retval;
 	}
 

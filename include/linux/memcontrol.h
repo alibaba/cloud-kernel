@@ -937,6 +937,8 @@ void memcg_check_wmark_min_adj(struct task_struct *curr,
 		struct alloc_context *ac);
 
 extern void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration);
+extern void memcg_lat_stat_start(u64 *start);
+extern u64 memcg_lat_stat_end(u64 start);
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0
@@ -1291,6 +1293,15 @@ static inline void memcg_check_wmark_min_adj(struct task_struct *curr,
 static inline void memcg_lat_stat_update(enum mem_lat_stat_item sidx,
 					 u64 duration)
 {
+}
+
+static inline void memcg_lat_stat_start(u64 *start)
+{
+}
+
+static inline u64 memcg_lat_stat_end(u64 start)
+{
+	return 0;
 }
 #endif /* CONFIG_MEMCG */
 

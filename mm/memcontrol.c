@@ -71,6 +71,7 @@
 #include <net/sock.h>
 #include <net/ip.h>
 #include "slab.h"
+#include <linux/proc_fs.h>
 
 #include <linux/uaccess.h>
 
@@ -88,6 +89,9 @@ static bool cgroup_memory_nosocket;
 
 /* Kernel memory accounting disabled? */
 static bool cgroup_memory_nokmem;
+
+/* Cgroup memory SLI disabled? */
+static DEFINE_STATIC_KEY_FALSE(cgroup_memory_nosli);
 
 /* Whether the swap controller is active */
 #ifdef CONFIG_MEMCG_SWAP
@@ -2461,7 +2465,7 @@ void mem_cgroup_handle_over_high(void)
 		return;
 
 	memcg = get_mem_cgroup_from_mm(current->mm);
-	start = ktime_get_ns();
+	memcg_lat_stat_start(&start);
 	reclaim_high(memcg, nr_pages, GFP_KERNEL);
 	current->memcg_nr_pages_over_high = 0;
 
@@ -2532,7 +2536,7 @@ void mem_cgroup_handle_over_high(void)
 
 out:
 	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
-			      (ktime_get_ns() - start));
+			      memcg_lat_stat_end(start));
 	css_put(&memcg->css);
 }
 
@@ -2608,11 +2612,11 @@ retry:
 
 	memcg_memory_event(mem_over_limit, MEMCG_MAX);
 
-	start = ktime_get_ns();
+	memcg_lat_stat_start(&start);
 	nr_reclaimed = try_to_free_mem_cgroup_pages(mem_over_limit, nr_pages,
 						    gfp_mask, may_swap);
 	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
-			      (ktime_get_ns() - start));
+			      memcg_lat_stat_end(start));
 
 	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
 		goto retry;
@@ -4627,6 +4631,9 @@ void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration)
 	struct mem_cgroup *memcg, *iter;
 	enum mem_lat_count_t cidx;
 
+	if (static_branch_unlikely(&cgroup_memory_nosli))
+		return;
+
 	if (mem_cgroup_disabled())
 		return;
 
@@ -4639,6 +4646,22 @@ void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration)
 			       duration);
 	}
 	css_put(&memcg->css);
+}
+
+void memcg_lat_stat_start(u64 *start)
+{
+	if (!static_branch_unlikely(&cgroup_memory_nosli) &&
+	    !mem_cgroup_disabled())
+		*start = ktime_get_ns();
+}
+
+u64 memcg_lat_stat_end(u64 start)
+{
+	if (!static_branch_unlikely(&cgroup_memory_nosli) &&
+	    !mem_cgroup_disabled())
+		return ktime_get_ns() - start;
+	else
+		return 0;
 }
 
 static void __mem_cgroup_threshold(struct mem_cgroup *memcg, bool swap)
@@ -7754,6 +7777,56 @@ static int __init enable_cgroup_writeback_v1(char *s)
 __setup("cgwb_v1", enable_cgroup_writeback_v1);
 #endif
 
+static int memsli_enabled_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", !static_key_enabled(&cgroup_memory_nosli));
+	return 0;
+}
+
+static int memsli_enabled_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, memsli_enabled_show, NULL);
+}
+
+static ssize_t memsli_enabled_write(struct file *file, const char __user *ubuf,
+				    size_t count, loff_t *ppos)
+{
+	char val = -1;
+	int ret = count;
+
+	if (count < 1 || *ppos) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (copy_from_user(&val, ubuf, 1)) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	switch (val) {
+	case '0':
+		static_branch_enable(&cgroup_memory_nosli);
+		break;
+	case '1':
+		static_branch_disable(&cgroup_memory_nosli);
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+out:
+	return ret;
+}
+
+static const struct file_operations memsli_enabled_fops = {
+	.open           = memsli_enabled_open,
+	.read           = seq_read,
+	.write          = memsli_enabled_write,
+	.llseek         = seq_lseek,
+	.release        = single_release,
+};
+
 /*
  * subsys_initcall() for memory controller.
  *
@@ -7765,6 +7838,7 @@ __setup("cgwb_v1", enable_cgroup_writeback_v1);
 static int __init mem_cgroup_init(void)
 {
 	int cpu, node;
+	struct proc_dir_entry *memsli_dir, *memsli_enabled_file;
 
 	memcg_wmark_wq = alloc_workqueue("memcg_wmark", WQ_MEM_RECLAIM |
 				WQ_UNBOUND | WQ_FREEZABLE,
@@ -7772,6 +7846,17 @@ static int __init mem_cgroup_init(void)
 
 	if (!memcg_wmark_wq)
 		return -ENOMEM;
+
+	memsli_dir = proc_mkdir("memsli", NULL);
+	if (!memsli_dir)
+		return -ENOMEM;
+
+	memsli_enabled_file = proc_create("enabled", 0600,
+					  memsli_dir, &memsli_enabled_fops);
+	if (!memsli_enabled_file) {
+		remove_proc_entry("memsli", NULL);
+		return -ENOMEM;
+	}
 
 #ifdef CONFIG_MEMCG_KMEM
 	/*

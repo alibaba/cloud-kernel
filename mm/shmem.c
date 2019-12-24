@@ -1695,10 +1695,10 @@ repeat:
 				count_memcg_event_mm(charge_mm, PGMAJFAULT);
 			}
 			/* Here we actually start the io */
-			start = ktime_get_ns();
+			memcg_lat_stat_start(&start);
 			page = shmem_swapin(swap, gfp, info, index);
 			memcg_lat_stat_update(MEM_LAT_DIRECT_SWAPIN,
-					      (ktime_get_ns() - start));
+					      memcg_lat_stat_end(start));
 			if (!page) {
 				error = -ENOMEM;
 				goto failed;
