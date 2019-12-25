@@ -532,16 +532,6 @@ config PSI_DEFAULT_DISABLED
 
 	  Say N if unsure.
 
-config PSI_CGROUP_V1
-	bool "Support PSI under cgroup v1"
-	default Y
-	depends on PSI
-	help
-	  If set, pressure stall information tracking will be used
-	  for cgroup v1 other than v2.
-
-	  Say N if unsure.
-
 endmenu # "CPU/Task time and stats accounting"
 
 config CPU_ISOLATION
