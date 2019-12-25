@@ -145,6 +145,7 @@
 static int psi_bug __read_mostly;
 
 DEFINE_STATIC_KEY_FALSE(psi_disabled);
+DEFINE_STATIC_KEY_FALSE(psi_v1_disabled);
 
 #ifdef CONFIG_PSI_DEFAULT_DISABLED
 static bool psi_enable;
@@ -724,13 +725,12 @@ static struct psi_group *iterate_groups(struct task_struct *task, void **iter)
 #ifdef CONFIG_CGROUPS
 	struct cgroup *cgroup = NULL;
 
-	if (!*iter)
-#ifdef CONFIG_PSI_CGROUP_V1
-		cgroup = task_cgroup(task, cpuacct_cgrp_id);
-#else
-		cgroup = task->cgroups->dfl_cgrp;
-#endif
-	else if (*iter == &psi_system)
+	if (!*iter) {
+		if (static_branch_likely(&psi_v1_disabled))
+			cgroup = task->cgroups->dfl_cgrp;
+		else
+			cgroup = task_cgroup(task, cpuacct_cgrp_id);
+	} else if (*iter == &psi_system)
 		return NULL;
 	else
 		cgroup = cgroup_parent(*iter);
