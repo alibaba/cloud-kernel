@@ -2411,6 +2411,7 @@ extern unsigned long do_mmap(struct file *file, unsigned long addr,
 	struct list_head *uf);
 extern int do_munmap(struct mm_struct *, unsigned long, size_t,
 		     struct list_head *uf);
+extern int do_madvise(unsigned long start, size_t len_in, int behavior);
 
 static inline unsigned long
 do_mmap_pgoff(struct file *file, unsigned long addr,
