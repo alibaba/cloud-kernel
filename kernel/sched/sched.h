@@ -2283,10 +2283,13 @@ extern u64 get_idle_time(int cpu);
 extern u64 get_iowait_time(int cpu);
 extern void task_ca_increase_nr_migrations(struct task_struct *tsk);
 void cpuacct_update_latency(struct task_struct *tsk, u64 delta);
+void task_ca_update_block(struct task_struct *tsk, u64 runtime);
 #else
 static inline void task_ca_increase_nr_migrations(struct task_struct *tsk) { }
 static inline void cpuacct_update_latency(struct task_struct *tsk,
 		u64 delta) { }
+static inline void task_ca_update_block(struct task_struct *tsk,
+		u64 runtime) { }
 #endif
 
 #ifdef CONFIG_PSI

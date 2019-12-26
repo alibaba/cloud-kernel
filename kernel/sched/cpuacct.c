@@ -35,6 +35,8 @@ struct cpuacct_alistats {
 
 enum sched_lat_stat_item {
 	SCHED_LAT_WAIT,
+	SCHED_LAT_BLOCK,
+	SCHED_LAT_IOBLOCK,
 	SCHED_LAT_NR_STAT
 };
 
@@ -226,6 +228,30 @@ void task_ca_increase_nr_migrations(struct task_struct *tsk)
 	rcu_read_lock();
 	ca = task_ca(tsk);
 	this_cpu_ptr(ca->alistats)->nr_migrations++;
+	rcu_read_unlock();
+}
+
+void task_ca_update_block(struct task_struct *tsk, u64 runtime)
+{
+	int idx;
+	enum sched_lat_stat_item s;
+	struct cpuacct *ca;
+	unsigned int msecs;
+
+	if (static_branch_likely(&cpuacct_no_sched_lat))
+		return;
+
+	rcu_read_lock();
+	ca = task_ca(tsk);
+	if (tsk->in_iowait)
+		s = SCHED_LAT_IOBLOCK;
+	else
+		s = SCHED_LAT_BLOCK;
+
+	msecs = runtime >> 20; /* Proximately to speed up */
+	idx = get_sched_lat_count_idx(msecs);
+	this_cpu_inc(ca->lat_stat_cpu->item[s][idx]);
+	this_cpu_add(ca->lat_stat_cpu->item[s][SCHED_LAT_TOTAL], runtime);
 	rcu_read_unlock();
 }
 
@@ -780,9 +806,13 @@ static void smp_write_##name(void *info)				\
 }									\
 
 SCHED_LAT_STAT_SMP_WRITE(sched_wait_latency, SCHED_LAT_WAIT);
+SCHED_LAT_STAT_SMP_WRITE(sched_block_latency, SCHED_LAT_BLOCK);
+SCHED_LAT_STAT_SMP_WRITE(sched_ioblock_latency, SCHED_LAT_IOBLOCK);
 
 smp_call_func_t smp_sched_lat_write_funcs[] = {
-	smp_write_sched_wait_latency
+	smp_write_sched_wait_latency,
+	smp_write_sched_block_latency,
+	smp_write_sched_ioblock_latency
 };
 
 static int sched_lat_stat_write(struct cgroup_subsys_state *css,
@@ -889,6 +919,18 @@ static struct cftype files[] = {
 	{
 		.name = "wait_latency",
 		.private = SCHED_LAT_WAIT,
+		.write_u64 = sched_lat_stat_write,
+		.seq_show = sched_lat_stat_show
+	},
+	{
+		.name = "block_latency",
+		.private = SCHED_LAT_BLOCK,
+		.write_u64 = sched_lat_stat_write,
+		.seq_show = sched_lat_stat_show
+	},
+	{
+		.name = "ioblock_latency",
+		.private = SCHED_LAT_IOBLOCK,
 		.write_u64 = sched_lat_stat_write,
 		.seq_show = sched_lat_stat_show
 	},
