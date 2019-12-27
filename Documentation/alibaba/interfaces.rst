@@ -85,6 +85,10 @@ memory.exstat
     "wmark_min_throttled_ms" field is the total throttled time in milliseconds
     due to positive memory.wmark_min_adj under global memory pressure.
 
+    "wmark_reclaim_work_ms" field is the total background async page reclaim
+    (a.k.a, memcg kswap) work time in milliseconds, including sleep/resched
+    time currently, due to excessive usage of memory over wmark_high.
+
 zombie memcgs reaper
 ====================
     After memcg was deleted, page caches still reference to this memcg
