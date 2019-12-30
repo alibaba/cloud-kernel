@@ -4574,6 +4574,8 @@ static int io_submit_sqes(struct io_ring_ctx *ctx, unsigned int nr,
 			return -EBUSY;
 	}
 
+	nr = min(nr, ctx->sq_entries);
+
 	if (!percpu_ref_tryget_many(&ctx->refs, nr))
 		return -EAGAIN;
 
@@ -4739,7 +4741,6 @@ static int io_sq_thread(void *data)
 			ctx->rings->sq_flags &= ~IORING_SQ_NEED_WAKEUP;
 		}
 
-		to_submit = min(to_submit, ctx->sq_entries);
 		mutex_lock(&ctx->uring_lock);
 		ret = io_submit_sqes(ctx, to_submit, NULL, -1, &cur_mm, true);
 		mutex_unlock(&ctx->uring_lock);
@@ -6078,7 +6079,6 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	} else if (to_submit) {
 		struct mm_struct *cur_mm;
 
-		to_submit = min(to_submit, ctx->sq_entries);
 		mutex_lock(&ctx->uring_lock);
 		/* already have mm, so io_submit_sqes() won't try to grab it */
 		cur_mm = ctx->sqo_mm;
