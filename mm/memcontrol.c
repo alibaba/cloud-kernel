@@ -4214,7 +4214,7 @@ static u64 memcg_exstat_gather(struct mem_cgroup *memcg,
 	u64 sum = 0;
 	int cpu;
 
-	for_each_online_cpu(cpu)
+	for_each_possible_cpu(cpu)
 		sum += per_cpu_ptr(memcg->exstat_cpu, cpu)->item[idx];
 
 	return sum;
@@ -4568,7 +4568,7 @@ static u64 memcg_lat_stat_gather(struct mem_cgroup *memcg,
 	u64 sum = 0;
 	int cpu;
 
-	for_each_online_cpu(cpu)
+	for_each_possible_cpu(cpu)
 		sum += per_cpu_ptr(memcg->lat_stat_cpu, cpu)->item[sidx][cidx];
 
 	return sum;
