@@ -2508,7 +2508,7 @@ static u64 ioc_stat_prfill(struct seq_file *sf, struct blkg_policy_data *pd,
 		   dname, !list_empty(&iocg->active_list),
 		   iocg->active, iocg->inuse,
 		   iocg->hweight_active, iocg->hweight_inuse,
-		   atomic64_read(&ioc->vtime_rate));
+		   (unsigned long long)atomic64_read(&ioc->vtime_rate));
 
 	return 0;
 }
