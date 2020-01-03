@@ -1021,12 +1021,11 @@ static int dax_writeback_one(struct dax_device *dax_dev,
  * on persistent storage prior to completion of the operation.
  */
 int dax_writeback_mapping_range(struct address_space *mapping,
-		struct block_device *bdev, struct writeback_control *wbc)
+		struct dax_device *dax_dev, struct writeback_control *wbc)
 {
 	struct inode *inode = mapping->host;
 	pgoff_t start_index, end_index;
 	pgoff_t indices[PAGEVEC_SIZE];
-	struct dax_device *dax_dev;
 	struct pagevec pvec;
 	bool done = false;
 	int i, ret = 0;
@@ -1036,10 +1035,6 @@ int dax_writeback_mapping_range(struct address_space *mapping,
 
 	if (!mapping->nrexceptional || wbc->sync_mode != WB_SYNC_ALL)
 		return 0;
-
-	dax_dev = dax_get_by_host(bdev->bd_disk->disk_name);
-	if (!dax_dev)
-		return -EIO;
 
 	start_index = wbc->range_start >> PAGE_SHIFT;
 	end_index = wbc->range_end >> PAGE_SHIFT;
@@ -1073,7 +1068,6 @@ int dax_writeback_mapping_range(struct address_space *mapping,
 		start_index = indices[pvec.nr - 1] + 1;
 	}
 out:
-	put_dax(dax_dev);
 	trace_dax_writeback_range_done(inode, start_index, end_index);
 	return (ret < 0 ? ret : 0);
 }
