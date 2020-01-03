@@ -95,7 +95,7 @@ int do_swap_account __read_mostly;
 #define do_swap_account		0
 #endif
 
-struct workqueue_struct *memcg_wmark_wq;
+static struct workqueue_struct *memcg_wmark_wq;
 
 /* Whether legacy memory+swap accounting is active */
 static bool do_memsw_account(void)
