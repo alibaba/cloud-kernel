@@ -729,7 +729,11 @@ static struct psi_group *iterate_groups(struct task_struct *task, void **iter)
 		if (static_branch_likely(&psi_v1_disabled))
 			cgroup = task->cgroups->dfl_cgrp;
 		else
+#ifdef CONFIG_CGROUP_CPUACCT
 			cgroup = task_cgroup(task, cpuacct_cgrp_id);
+#else
+			cgroup = NULL;
+#endif
 	} else if (*iter == &psi_system)
 		return NULL;
 	else
