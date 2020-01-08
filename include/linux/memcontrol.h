@@ -935,10 +935,6 @@ static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
 int memcg_get_wmark_min_adj(struct task_struct *curr);
 void memcg_check_wmark_min_adj(struct task_struct *curr,
 		struct alloc_context *ac);
-
-extern void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration);
-extern void memcg_lat_stat_start(u64 *start);
-extern u64 memcg_lat_stat_end(u64 start);
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0
@@ -1289,7 +1285,13 @@ static inline void memcg_check_wmark_min_adj(struct task_struct *curr,
 		struct alloc_context *ac)
 {
 }
+#endif /* CONFIG_MEMCG */
 
+#ifdef CONFIG_MEMSLI
+extern void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration);
+extern void memcg_lat_stat_start(u64 *start);
+extern u64 memcg_lat_stat_end(u64 start);
+#else
 static inline void memcg_lat_stat_update(enum mem_lat_stat_item sidx,
 					 u64 duration)
 {
@@ -1303,7 +1305,7 @@ static inline u64 memcg_lat_stat_end(u64 start)
 {
 	return 0;
 }
-#endif /* CONFIG_MEMCG */
+#endif /* CONFIG_MEMSLI */
 
 /* idx can be of type enum memcg_stat_item or node_stat_item */
 static inline void __inc_memcg_state(struct mem_cgroup *memcg,

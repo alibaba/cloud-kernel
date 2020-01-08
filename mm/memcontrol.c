@@ -4523,6 +4523,7 @@ void memcg_check_wmark_min_adj(struct task_struct *curr,
 	}
 }
 
+#ifdef CONFIG_MEMSLI
 #define MEMCG_LAT_STAT_SMP_WRITE(name, sidx)				\
 static void smp_write_##name(void *info)				\
 {									\
@@ -4663,6 +4664,7 @@ u64 memcg_lat_stat_end(u64 start)
 	else
 		return 0;
 }
+#endif /* CONFIG_MEMSLI */
 
 static void __mem_cgroup_threshold(struct mem_cgroup *memcg, bool swap)
 {
@@ -5563,6 +5565,7 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.seq_show = memory_wmark_min_adj_show,
 		.write = memory_wmark_min_adj_write,
 	},
+#ifdef CONFIG_MEMSLI
 	{
 		.name = "direct_reclaim_global_latency",
 		.private = MEM_LAT_GLOBAL_DIRECT_RECLAIM,
@@ -5599,6 +5602,7 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write_u64 = memcg_lat_stat_write,
 		.seq_show =  memcg_lat_stat_show,
 	},
+#endif /* CONFIG_MEMSLI */
 	{
 		.name = "force_empty",
 		.write = mem_cgroup_force_empty_write,
@@ -7777,6 +7781,7 @@ static int __init enable_cgroup_writeback_v1(char *s)
 __setup("cgwb_v1", enable_cgroup_writeback_v1);
 #endif
 
+#ifdef CONFIG_MEMSLI
 static int memsli_enabled_show(struct seq_file *m, void *v)
 {
 	seq_printf(m, "%d\n", !static_key_enabled(&cgroup_memory_nosli));
@@ -7826,6 +7831,7 @@ static const struct file_operations memsli_enabled_fops = {
 	.llseek         = seq_lseek,
 	.release        = single_release,
 };
+#endif /* CONFIG_MEMSLI */
 
 /*
  * subsys_initcall() for memory controller.
@@ -7847,6 +7853,7 @@ static int __init mem_cgroup_init(void)
 	if (!memcg_wmark_wq)
 		return -ENOMEM;
 
+#ifdef CONFIG_MEMSLI
 	memsli_dir = proc_mkdir("memsli", NULL);
 	if (!memsli_dir)
 		return -ENOMEM;
@@ -7857,6 +7864,7 @@ static int __init mem_cgroup_init(void)
 		remove_proc_entry("memsli", NULL);
 		return -ENOMEM;
 	}
+#endif /* CONFIG_MEMSLI */
 
 #ifdef CONFIG_MEMCG_KMEM
 	/*

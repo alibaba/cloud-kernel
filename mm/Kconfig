@@ -786,4 +786,13 @@ config KIDLED
 
 	  See Documentation/vm/kidled.rst for more details.
 
+config MEMSLI
+	bool "Support memory latency histogram, a.k.a, memsli"
+	depends on MEMCG
+	default Y
+	help
+	  This probes and calculates various kinds of memory latency, and then
+	  groups into the corresponding latency histogram in every memory
+	  cgroup, respectively.
+
 endmenu
