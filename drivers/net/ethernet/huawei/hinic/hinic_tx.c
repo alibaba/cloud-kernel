@@ -1123,7 +1123,7 @@ int hinic_setup_all_tx_resources(struct net_device *netdev)
 
 init_txq_err:
 	for (i = 0; i < q_id; i++) {
-		txq = &nic_dev->txqs[q_id];
+		txq = &nic_dev->txqs[i];
 		kfree(txq->tx_info);
 	}
 
