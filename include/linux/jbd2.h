@@ -507,7 +507,10 @@ struct jbd2_journal_handle
 	unsigned int	h_type:		8;
 	unsigned int	h_line_no:	16;
 
+	unsigned long		h_pre_start_jiffies;
 	unsigned long		h_start_jiffies;
+	u64			h_sched_wait_sum;
+	u64			h_io_wait_sum;
 	unsigned int		h_requested_credits;
 
 	unsigned int		saved_alloc_context;
@@ -723,6 +726,9 @@ struct transaction_s
 	 * structures associated with the transaction
 	 */
 	struct list_head	t_private_list;
+
+	/* When this transaction is locked */
+	unsigned long           t_locked_time;
 };
 
 struct transaction_run_stats_s {
@@ -1231,6 +1237,15 @@ struct journal_s
 	 * @j_force_copy: if not zero, force to do buffer copy-out.
 	 */
 	unsigned int j_force_copy;
+
+	/**
+	 * @j_stall_thresh: when transaction is locked and there are still
+	 * outstanding handles, such handles will prevent transaction
+	 * committing, trace these handles if they have stalled the transaction
+	 * for @j_stall_thresh time, unit is millisecond, default 100ms.
+	 */
+#define	JBD2_DEFAULT_TRANS_STALL_THRESH	100
+	unsigned long j_stall_thresh;
 
 	/**
 	 * @j_failed_commit: Failed journal commit ID.
