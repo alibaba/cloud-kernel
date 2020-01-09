@@ -1460,6 +1460,54 @@ static const struct proc_ops jbd2_force_copy_proc_ops = {
 	.proc_release           = single_release,
 };
 
+static int jbd2_seq_stall_thresh_show(struct seq_file *m, void *v)
+{
+	journal_t *journal = m->private;
+
+	seq_printf(m, "%lu\n", journal->j_stall_thresh);
+	return 0;
+}
+
+static int jbd2_seq_stall_thresh_open(struct inode *inode, struct file *filp)
+{
+	journal_t *journal = PDE_DATA(inode);
+
+	return single_open(filp, jbd2_seq_stall_thresh_show, journal);
+}
+
+static ssize_t jbd2_seq_stall_thresh_write(struct file *file,
+			const char __user *buf, size_t count, loff_t *offset)
+{
+	struct inode *inode = file_inode(file);
+	journal_t *journal = PDE_DATA(inode);
+	char buffer[PROC_NUMBUF];
+	unsigned long long stall_thresh;
+	int err;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err = kstrtoull(strstrip(buffer), 0, &stall_thresh);
+	if (err)
+		goto out;
+	WRITE_ONCE(journal->j_stall_thresh, stall_thresh);
+out:
+	return err < 0 ? err : count;
+}
+
+static const struct proc_ops jbd2_stall_thresh_proc_ops = {
+	.proc_open              = jbd2_seq_stall_thresh_open,
+	.proc_read              = seq_read,
+	.proc_write             = jbd2_seq_stall_thresh_write,
+	.proc_lseek             = seq_lseek,
+	.proc_release           = single_release,
+};
+
 static struct proc_dir_entry *proc_jbd2_stats;
 
 static void jbd2_stats_proc_init(journal_t *journal)
@@ -1472,6 +1520,8 @@ static void jbd2_stats_proc_init(journal_t *journal)
 				 &jbd2_force_copy_proc_ops, journal);
 		proc_create_data("stats", 0444, journal->j_proc_entry,
 				 &jbd2_stats_proc_ops, journal);
+		proc_create_data("stall_thresh", 0644, journal->j_proc_entry,
+				 &jbd2_stall_thresh_proc_ops, journal);
 	}
 }
 
@@ -1480,6 +1530,7 @@ static void jbd2_stats_proc_exit(journal_t *journal)
 	remove_proc_entry("info", journal->j_proc_entry);
 	remove_proc_entry("force_copy", journal->j_proc_entry);
 	remove_proc_entry("stats", journal->j_proc_entry);
+	remove_proc_entry("stall_thresh", journal->j_proc_entry);
 	remove_proc_entry(journal->j_devname, proc_jbd2_stats);
 }
 
@@ -1534,6 +1585,7 @@ static journal_t *journal_init_common(struct block_device *bdev,
 	journal->j_commit_interval = (HZ * JBD2_DEFAULT_MAX_COMMIT_AGE);
 	journal->j_min_batch_time = 0;
 	journal->j_max_batch_time = 15000; /* 15ms */
+	journal->j_stall_thresh = JBD2_DEFAULT_TRANS_STALL_THRESH;
 	atomic_set(&journal->j_reserved_credits, 0);
 
 	/* The journal is marked for error until we succeed with recovery! */

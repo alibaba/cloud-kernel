@@ -245,6 +245,56 @@ TRACE_EVENT(jbd2_handle_stats,
 		  __entry->dirtied_blocks)
 );
 
+TRACE_EVENT(jbd2_slow_handle_stats,
+	TP_PROTO(dev_t dev, unsigned long tid, unsigned int type,
+		 unsigned int line_no, int interval, int sync,
+		 int requested_blocks, int dirtied_blocks,
+		 unsigned long trans_wait, unsigned long space_wait,
+		 u64 sched_wait, u64 io_wait),
+
+	TP_ARGS(dev, tid, type, line_no, interval, sync,
+		requested_blocks, dirtied_blocks, trans_wait, space_wait,
+		sched_wait, io_wait),
+
+	TP_STRUCT__entry(
+		__field(dev_t, dev)
+		__field(unsigned long, tid)
+		__field(unsigned int, type)
+		__field(unsigned int, line_no)
+		__field(int, interval)
+		__field(int, sync)
+		__field(int, requested_blocks)
+		__field(int, dirtied_blocks)
+		__field(unsigned long, trans_wait)
+		__field(unsigned long, space_wait)
+		__field(u64, sched_wait)
+		__field(u64, io_wait)
+	),
+
+	TP_fast_assign(
+		__entry->dev		  = dev;
+		__entry->tid		  = tid;
+		__entry->type		  = type;
+		__entry->line_no	  = line_no;
+		__entry->interval	  = interval;
+		__entry->sync		  = sync;
+		__entry->requested_blocks = requested_blocks;
+		__entry->dirtied_blocks	  = dirtied_blocks;
+		__entry->trans_wait	  = trans_wait;
+		__entry->space_wait	  = space_wait;
+		__entry->sched_wait	  = sched_wait;
+		__entry->io_wait	  = io_wait;
+	),
+
+	TP_printk("dev %d,%d tid %lu type %u line_no %u interval %d "
+		  "sync %d requested_blocks %d dirtied_blocks %d "
+		  "trans_wait %lu space_wait %lu sched_wait %llu io_wait %llu",
+		  MAJOR(__entry->dev), MINOR(__entry->dev), __entry->tid,
+		  __entry->type, __entry->line_no, __entry->interval,
+		  __entry->sync, __entry->requested_blocks,
+		  __entry->dirtied_blocks, __entry->trans_wait,
+		  __entry->space_wait, __entry->sched_wait, __entry->io_wait)
+);
 TRACE_EVENT(jbd2_run_stats,
 	TP_PROTO(dev_t dev, unsigned long tid,
 		 struct transaction_run_stats_s *stats),
