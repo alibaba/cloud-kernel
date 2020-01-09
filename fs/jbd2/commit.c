@@ -472,6 +472,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 	journal->j_fc_off = 0;
 	J_ASSERT(commit_transaction->t_state == T_RUNNING);
 	commit_transaction->t_state = T_LOCKED;
+	WRITE_ONCE(commit_transaction->t_locked_time, jiffies);
 
 	trace_jbd2_commit_locking(journal, commit_transaction);
 	stats.run.rs_wait = commit_transaction->t_max_wait;
