@@ -402,6 +402,9 @@ static handle_t *new_handle(int nblocks)
 		return NULL;
 	handle->h_buffer_credits = nblocks;
 	handle->h_ref = 1;
+	handle->h_pre_start_jiffies = jiffies;
+	handle->h_sched_wait_sum = current->se.statistics.wait_sum;
+	handle->h_io_wait_sum = current->se.statistics.iowait_sum;
 
 	return handle;
 }
@@ -1802,6 +1805,34 @@ int jbd2_journal_stop(handle_t *handle)
 		if (handle->h_sync && !(current->flags & PF_MEMALLOC))
 			wait_for_commit = 1;
 	}
+
+	do {
+		unsigned long transaction_locked_time, delta;
+		unsigned long journal_space_wait;
+		u64 sched_wait, io_wait;
+
+		transaction_locked_time = READ_ONCE(transaction->t_locked_time);
+		if (!transaction_locked_time)
+			break;
+
+		delta = jiffies_to_msecs(jiffies - transaction_locked_time);
+		if (delta < READ_ONCE(journal->j_stall_thresh))
+			break;
+
+		journal_space_wait = handle->h_start_jiffies -
+					handle->h_pre_start_jiffies;
+		sched_wait = current->se.statistics.wait_sum -
+					handle->h_sched_wait_sum;
+		io_wait = current->se.statistics.iowait_sum -
+					handle->h_io_wait_sum;
+		trace_jbd2_slow_handle_stats(journal->j_fs_dev->bd_dev,
+			transaction->t_tid, handle->h_type, handle->h_line_no,
+			jiffies - handle->h_start_jiffies, handle->h_sync,
+			handle->h_requested_credits,
+			handle->h_requested_credits - handle->h_buffer_credits,
+			delta, jiffies_to_msecs(journal_space_wait),
+			sched_wait / NSEC_PER_MSEC, io_wait / NSEC_PER_MSEC);
+	} while (0);
 
 	/*
 	 * Once we drop t_updates, if it goes to zero the transaction
