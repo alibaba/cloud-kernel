@@ -970,6 +970,9 @@ static void identify_cpu_without_cpuid(struct cpuinfo_x86 *c)
 #define VULNWL_AMD(family, whitelist)		\
 	VULNWL(AMD, family, X86_MODEL_ANY, whitelist)
 
+#define VULNWL_HYGON(family, whitelist)		\
+	VULNWL(HYGON, family, X86_MODEL_ANY, whitelist)
+
 static const __initconst struct x86_cpu_id cpu_vuln_whitelist[] = {
 	VULNWL(ANY,	4, X86_MODEL_ANY,	NO_SPECULATION),
 	VULNWL(CENTAUR,	5, X86_MODEL_ANY,	NO_SPECULATION),
@@ -1016,6 +1019,7 @@ static const __initconst struct x86_cpu_id cpu_vuln_whitelist[] = {
 
 	/* FAMILY_ANY must be last, otherwise 0x0f - 0x12 matches won't work */
 	VULNWL_AMD(X86_FAMILY_ANY,	NO_MELTDOWN | NO_L1TF | NO_MDS | NO_SWAPGS | NO_ITLB_MULTIHIT),
+	VULNWL_HYGON(X86_FAMILY_ANY,	NO_MELTDOWN | NO_L1TF | NO_MDS | NO_SWAPGS | NO_ITLB_MULTIHIT),
 	{}
 };
 
