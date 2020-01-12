@@ -90,8 +90,10 @@ static bool cgroup_memory_nosocket;
 /* Kernel memory accounting disabled? */
 static bool cgroup_memory_nokmem;
 
+#ifdef CONFIG_MEMSLI
 /* Cgroup memory SLI disabled? */
 static DEFINE_STATIC_KEY_FALSE(cgroup_memory_nosli);
+#endif /* CONFIG_MEMSLI */
 
 /* Whether the swap controller is active */
 #ifdef CONFIG_MEMCG_SWAP
@@ -2535,8 +2537,7 @@ void mem_cgroup_handle_over_high(void)
 	psi_memstall_leave(&pflags);
 
 out:
-	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
-			      memcg_lat_stat_end(start));
+	memcg_lat_stat_end(MEM_LAT_MEMCG_DIRECT_RECLAIM, start);
 	css_put(&memcg->css);
 }
 
@@ -2615,8 +2616,7 @@ retry:
 	memcg_lat_stat_start(&start);
 	nr_reclaimed = try_to_free_mem_cgroup_pages(mem_over_limit, nr_pages,
 						    gfp_mask, may_swap);
-	memcg_lat_stat_update(MEM_LAT_MEMCG_DIRECT_RECLAIM,
-			      memcg_lat_stat_end(start));
+	memcg_lat_stat_end(MEM_LAT_MEMCG_DIRECT_RECLAIM, start);
 
 	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
 		goto retry;
@@ -4604,7 +4604,7 @@ static int memcg_lat_stat_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-enum mem_lat_count_t get_mem_lat_count_idx(u64 duration)
+static enum mem_lat_count_t get_mem_lat_count_idx(u64 duration)
 {
 	enum mem_lat_count_t idx;
 
@@ -4627,19 +4627,30 @@ enum mem_lat_count_t get_mem_lat_count_idx(u64 duration)
 	return idx;
 }
 
-void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration)
+void memcg_lat_stat_start(u64 *start)
+{
+	if (!static_branch_unlikely(&cgroup_memory_nosli) &&
+	    !mem_cgroup_disabled())
+		*start = ktime_get_ns();
+	else
+		*start = 0;
+}
+
+void memcg_lat_stat_end(enum mem_lat_stat_item sidx, u64 start)
 {
 	struct mem_cgroup *memcg, *iter;
 	enum mem_lat_count_t cidx;
+	u64 duration;
 
-	if (static_branch_unlikely(&cgroup_memory_nosli))
+	if (static_branch_unlikely(&cgroup_memory_nosli) ||
+	    mem_cgroup_disabled())
 		return;
 
-	if (mem_cgroup_disabled())
+	if (start == 0)
 		return;
 
+	duration = ktime_get_ns() - start;
 	cidx = get_mem_lat_count_idx(duration);
-
 	memcg = get_mem_cgroup_from_mm(current->mm);
 	for (iter = memcg; iter; iter = parent_mem_cgroup(iter)) {
 		this_cpu_inc(iter->lat_stat_cpu->item[sidx][cidx]);
@@ -4647,22 +4658,6 @@ void memcg_lat_stat_update(enum mem_lat_stat_item sidx, u64 duration)
 			       duration);
 	}
 	css_put(&memcg->css);
-}
-
-void memcg_lat_stat_start(u64 *start)
-{
-	if (!static_branch_unlikely(&cgroup_memory_nosli) &&
-	    !mem_cgroup_disabled())
-		*start = ktime_get_ns();
-}
-
-u64 memcg_lat_stat_end(u64 start)
-{
-	if (!static_branch_unlikely(&cgroup_memory_nosli) &&
-	    !mem_cgroup_disabled())
-		return ktime_get_ns() - start;
-	else
-		return 0;
 }
 #endif /* CONFIG_MEMSLI */
 
@@ -7844,16 +7839,9 @@ static const struct file_operations memsli_enabled_fops = {
 static int __init mem_cgroup_init(void)
 {
 	int cpu, node;
+#ifdef CONFIG_MEMSLI
 	struct proc_dir_entry *memsli_dir, *memsli_enabled_file;
 
-	memcg_wmark_wq = alloc_workqueue("memcg_wmark", WQ_MEM_RECLAIM |
-				WQ_UNBOUND | WQ_FREEZABLE,
-				WQ_UNBOUND_MAX_ACTIVE);
-
-	if (!memcg_wmark_wq)
-		return -ENOMEM;
-
-#ifdef CONFIG_MEMSLI
 	memsli_dir = proc_mkdir("memsli", NULL);
 	if (!memsli_dir)
 		return -ENOMEM;
@@ -7865,6 +7853,13 @@ static int __init mem_cgroup_init(void)
 		return -ENOMEM;
 	}
 #endif /* CONFIG_MEMSLI */
+
+	memcg_wmark_wq = alloc_workqueue("memcg_wmark", WQ_MEM_RECLAIM |
+				WQ_UNBOUND | WQ_FREEZABLE,
+				WQ_UNBOUND_MAX_ACTIVE);
+
+	if (!memcg_wmark_wq)
+		return -ENOMEM;
 
 #ifdef CONFIG_MEMCG_KMEM
 	/*

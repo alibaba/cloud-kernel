@@ -4047,8 +4047,7 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 
 		memcg_lat_stat_start(&start);
 		retval = do_swap_page(vmf);
-		memcg_lat_stat_update(MEM_LAT_DIRECT_SWAPIN,
-				      memcg_lat_stat_end(start));
+		memcg_lat_stat_end(MEM_LAT_DIRECT_SWAPIN, start);
 		return retval;
 	}
 

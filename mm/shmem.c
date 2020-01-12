@@ -1697,8 +1697,7 @@ repeat:
 			/* Here we actually start the io */
 			memcg_lat_stat_start(&start);
 			page = shmem_swapin(swap, gfp, info, index);
-			memcg_lat_stat_update(MEM_LAT_DIRECT_SWAPIN,
-					      memcg_lat_stat_end(start));
+			memcg_lat_stat_end(MEM_LAT_DIRECT_SWAPIN, start);
 			if (!page) {
 				error = -ENOMEM;
 				goto failed;

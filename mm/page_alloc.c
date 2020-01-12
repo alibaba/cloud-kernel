@@ -3733,8 +3733,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 									prio);
 
 	memalloc_noreclaim_restore(noreclaim_flag);
-	memcg_lat_stat_update(MEM_LAT_DIRECT_COMPACT,
-			      memcg_lat_stat_end(start));
+	memcg_lat_stat_end(MEM_LAT_DIRECT_COMPACT, start);
 	psi_memstall_leave(&pflags);
 
 	if (*compact_result <= COMPACT_INACTIVE)
@@ -3954,8 +3953,7 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 	current->reclaim_state = NULL;
 	memalloc_noreclaim_restore(noreclaim_flag);
 	fs_reclaim_release(gfp_mask);
-	memcg_lat_stat_update(MEM_LAT_GLOBAL_DIRECT_RECLAIM,
-			      memcg_lat_stat_end(start));
+	memcg_lat_stat_end(MEM_LAT_GLOBAL_DIRECT_RECLAIM, start);
 	psi_memstall_leave(&pflags);
 
 	cond_resched();

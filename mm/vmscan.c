@@ -919,10 +919,10 @@ static pageout_t pageout(struct page *page, struct address_space *mapping,
 			memcg_lat_stat_start(&start);
 		res = mapping->a_ops->writepage(page, &wbc);
 		if (!current_is_kswapd())
-			memcg_lat_stat_update(global_reclaim(sc) ?
+			memcg_lat_stat_end(global_reclaim(sc) ?
 					      MEM_LAT_GLOBAL_DIRECT_SWAPOUT :
 					      MEM_LAT_MEMCG_DIRECT_SWAPOUT,
-					      memcg_lat_stat_end(start));
+					      start);
 		if (res < 0)
 			handle_write_error(mapping, page, res);
 		if (res == AOP_WRITEPAGE_ACTIVATE) {
