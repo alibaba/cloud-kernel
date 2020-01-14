@@ -331,9 +331,6 @@ struct mem_cgroup {
 	struct idle_page_stats idle_stats[KIDLED_STATS_NR_TYPE];
 #endif
 
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	struct deferred_split deferred_split_queue;
-#endif
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
 	ALI_HOTFIX_RESERVE(3)
