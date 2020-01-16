@@ -318,6 +318,95 @@ static inline struct task_group *cgroup_tg(struct cgroup *cgrp)
 				struct task_group, css);
 }
 
+static inline unsigned long nr_uninterruptible(void)
+{
+	unsigned long i, sum = 0;
+
+	for_each_possible_cpu(i)
+		sum += cpu_rq(i)->nr_uninterruptible;
+
+	/*
+	 * Since we read the counters lockless, it might be slightly
+	 * inaccurate. Do not allow it to go below zero though:
+	 */
+	if (unlikely((long)sum < 0))
+		sum = 0;
+
+	return sum;
+}
+
+#ifdef CONFIG_CFS_BANDWIDTH
+static inline bool tg_cfs_throttled(struct task_group *tg, int cpu)
+{
+	return tg->cfs_rq[cpu]->throttle_count;
+}
+#else
+static inline bool tg_cfs_throttled(struct task_group *tg, int cpu)
+{
+	return false;
+}
+#endif
+
+#ifdef CONFIG_RT_GROUP_SCHED
+static inline bool tg_rt_throttled(struct task_group *tg, int cpu)
+{
+	return tg->rt_rq[cpu]->rt_throttled && !tg->rt_rq[cpu]->rt_nr_boosted;
+}
+#endif
+
+static unsigned long ca_running(struct cpuacct *ca, int cpu)
+{
+	unsigned long nr_running = 0;
+	struct cgroup *cgrp = ca->css.cgroup;
+	struct task_group *tg;
+
+	/* Make sure it is only called for non-root cpuacct */
+	if (ca == &root_cpuacct)
+		return 0;
+
+	rcu_read_lock();
+	tg = cgroup_tg(cgrp);
+	if (unlikely(!tg))
+		goto out;
+
+	if (!tg_cfs_throttled(tg, cpu))
+		nr_running += tg->cfs_rq[cpu]->h_nr_running;
+#ifdef CONFIG_RT_GROUP_SCHED
+	if (!tg_rt_throttled(tg, cpu))
+		nr_running += tg->rt_rq[cpu]->rt_nr_running;
+#endif
+	/* SCHED_DEADLINE doesn't support cgroup yet */
+
+out:
+	rcu_read_unlock();
+	return nr_running;
+}
+
+static unsigned long ca_uninterruptible(struct cpuacct *ca, int cpu)
+{
+	unsigned long nr = 0;
+	struct cgroup *cgrp = ca->css.cgroup;
+	struct task_group *tg;
+
+	/* Make sure it is only called for non-root cpuacct */
+	if (ca == &root_cpuacct)
+		return nr;
+
+	rcu_read_lock();
+	tg = cgroup_tg(cgrp);
+	if (unlikely(!tg))
+		goto out_rcu_unlock;
+
+	nr = tg->cfs_rq[cpu]->nr_uninterruptible;
+#ifdef CONFIG_RT_GROUP_SCHED
+	nr += tg->rt_rq[cpu]->nr_uninterruptible;
+#endif
+
+out_rcu_unlock:
+	rcu_read_unlock();
+	return nr;
+}
+
 static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 		struct task_group *tg, struct cpuacct_usage_result *res)
 {
@@ -370,6 +459,7 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 	struct cpuacct *ca = css_ca(seq_css(sf));
 	struct cgroup *cgrp = seq_css(sf)->cgroup;
 	u64 user, nice, system, idle, iowait, irq, softirq, steal, guest;
+	unsigned long nr_run = 0, nr_uninter = 0;
 	int cpu;
 
 	user = nice = system = idle = iowait =
@@ -397,6 +487,9 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 			guest += res.guest_nice;
 			iowait += res.iowait;
 			idle += res.idle;
+
+			nr_run += ca_running(ca, cpu);
+			nr_uninter += ca_uninterruptible(ca, cpu);
 		}
 	} else {
 		struct kernel_cpustat *kcpustat;
@@ -414,6 +507,9 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 			iowait += get_iowait_time(kcpustat, cpu);
 			steal += kcpustat_cpu(cpu).cpustat[CPUTIME_STEAL];
 		}
+
+		nr_run = nr_running();
+		nr_uninter = nr_uninterruptible();
 	}
 
 	seq_printf(sf, "user %lld\n", nsec_to_clock_t(user));
@@ -425,6 +521,11 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 	seq_printf(sf, "softirq %lld\n", nsec_to_clock_t(softirq));
 	seq_printf(sf, "steal %lld\n", nsec_to_clock_t(steal));
 	seq_printf(sf, "guest %lld\n", nsec_to_clock_t(guest));
+
+	seq_printf(sf, "nr_running %lld\n", (u64)nr_run);
+	if ((long) nr_uninter < 0)
+		nr_uninter = 0;
+	seq_printf(sf, "nr_uninterruptible %lld\n", (u64)nr_uninter);
 
 	return 0;
 }
