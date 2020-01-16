@@ -3560,20 +3560,25 @@ static int mem_cgroup_idle_page_stats_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *iter, *memcg = mem_cgroup_from_css(seq_css(m));
 	struct kidled_scan_period scan_period, period;
-	struct idle_page_stats stats, cache;
+	struct idle_page_stats *stats, *cache;
 	unsigned long scans;
 	bool has_hierarchy = kidled_use_hierarchy();
 	bool no_buckets = false;
 	int i, j, t;
 
+	stats = kmalloc(sizeof(struct idle_page_stats) * 2, GFP_KERNEL);
+	if (!stats)
+		return -ENOMEM;
+	cache = stats + 1;
+
 	down_read(&memcg->idle_stats_rwsem);
-	stats = memcg->idle_stats[memcg->idle_stable_idx];
+	*stats = memcg->idle_stats[memcg->idle_stable_idx];
 	scans = memcg->idle_scans;
 	scan_period = memcg->scan_period;
 	up_read(&memcg->idle_stats_rwsem);
 
 	/* Nothing will be outputed with invalid buckets */
-	if (KIDLED_IS_BUCKET_INVALID(stats.buckets)) {
+	if (KIDLED_IS_BUCKET_INVALID(stats->buckets)) {
 		no_buckets = true;
 		scans = 0;
 		goto output;
@@ -3581,7 +3586,7 @@ static int mem_cgroup_idle_page_stats_show(struct seq_file *m, void *v)
 
 	/* Zeroes will be output with mismatched scan period */
 	if (!kidled_is_scan_period_equal(&scan_period)) {
-		memset(&stats.count, 0, sizeof(stats.count));
+		memset(&stats->count, 0, sizeof(stats->count));
 		scan_period = kidled_get_current_scan_period();
 		scans = 0;
 		goto output;
@@ -3594,7 +3599,7 @@ static int mem_cgroup_idle_page_stats_show(struct seq_file *m, void *v)
 				continue;
 
 			down_read(&iter->idle_stats_rwsem);
-			cache = iter->idle_stats[iter->idle_stable_idx];
+			*cache = iter->idle_stats[iter->idle_stable_idx];
 			period = memcg->scan_period;
 			up_read(&iter->idle_stats_rwsem);
 
@@ -3603,7 +3608,7 @@ static int mem_cgroup_idle_page_stats_show(struct seq_file *m, void *v)
 			 * or buckets are invalid.
 			 */
 			if (!kidled_is_scan_period_equal(&period) ||
-			     KIDLED_IS_BUCKET_INVALID(cache.buckets))
+			     KIDLED_IS_BUCKET_INVALID(cache->buckets))
 				continue;
 
 			/*
@@ -3616,13 +3621,14 @@ static int mem_cgroup_idle_page_stats_show(struct seq_file *m, void *v)
 			 */
 			for (i = 0; i < NUM_KIDLED_BUCKETS; i++) {
 				for (j = 0; j < NUM_KIDLED_BUCKETS - 1; j++) {
-					if (cache.buckets[i] <=
-					    stats.buckets[j])
+					if (cache->buckets[i] <=
+					    stats->buckets[j])
 						break;
 				}
 
 				for (t = 0; t < KIDLE_NR_TYPE; t++)
-					stats.count[t][j] += cache.count[t][i];
+					stats->count[t][j] +=
+						cache->count[t][i];
 			}
 		}
 	}
@@ -3636,14 +3642,14 @@ output:
 	seq_puts(m, "# buckets: ");
 	if (no_buckets) {
 		seq_puts(m, "no valid bucket available\n");
-		return 0;
+		goto out;
 	}
 
 	for (i = 0; i < NUM_KIDLED_BUCKETS; i++) {
-		seq_printf(m, "%d", stats.buckets[i]);
+		seq_printf(m, "%d", stats->buckets[i]);
 
 		if ((i == NUM_KIDLED_BUCKETS - 1) ||
-		    !stats.buckets[i + 1]) {
+		    !stats->buckets[i + 1]) {
 			seq_puts(m, "\n");
 			j = i + 1;
 			break;
@@ -3664,11 +3670,11 @@ output:
 
 		if (i == j - 1) {
 			snprintf(region, sizeof(region), "[%d,+inf)",
-				 stats.buckets[i]);
+				 stats->buckets[i]);
 		} else {
 			snprintf(region, sizeof(region), "[%d,%d)",
-				 stats.buckets[i],
-				 stats.buckets[i + 1]);
+				 stats->buckets[i],
+				 stats->buckets[i + 1]);
 		}
 
 		seq_printf(m, " %14s", region);
@@ -3687,12 +3693,14 @@ output:
 
 		for (i = 0; i < j; i++) {
 			seq_printf(m, " %14lu",
-				   stats.count[t][i] << PAGE_SHIFT);
+				   stats->count[t][i] << PAGE_SHIFT);
 		}
 
 		seq_puts(m, "\n");
 	}
 
+out:
+	kfree(stats);
 	return 0;
 }
 
