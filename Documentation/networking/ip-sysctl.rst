@@ -944,6 +944,23 @@ tcp_init_cwnd - UNSIGNED INTEGER
         The TCP initial congestion window. It must be larger than 10(RFC6928).
         Default: 10
 
+tcp_timeout_init - UNSIGNED INTEGER
+	This changes the return value of tcp_timeout_init() per net namespace.
+	Its unit is HZ and must be larger than TCP_TIMEOUT_MIN.
+	Default: TCP_TIMEOUT_INIT
+
+tcp_synack_timeout_init - UNSIGNED INTEGER
+	The initial timeout of SYN-ACK per net namespace. After the first
+	retransmit, the timeout would be double. Its unit is HZ and must be
+	larger than TCP_TIMEOUT_MIN.
+	Default: TCP_TIMEOUT_INIT
+
+tcp_synack_timeout_max - UNSIGNED INTEGER
+	The max timeout of SYN-ACK per net namespace. After the first
+	retransmit, the timeout would be double but can't be larger than this.
+	Its unit is HZ and must be larger than TCP_TIMEOUT_MIN.
+	Default: TCP_RTO_MAX
+
 
 UDP variables
 =============

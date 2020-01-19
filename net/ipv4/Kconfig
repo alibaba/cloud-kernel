@@ -751,3 +751,12 @@ config TCP_INIT_CWND_PROC
 	  be greater than 10 (RFC6928).
 
 	  If unsure, say N.
+
+config TCP_SYNACK_TIMEOUT_PROC
+	bool "TCP: proc interface for SYN/SYNACK timeout"
+	default n
+	help
+	  This enables some proc interfaces for TCP SYN/SYNACK timeout, so the
+	  timeout could be less than TCP_TIMEOUT_INIT/TCP_RTO_MAX.
+
+	  If unsure, say N.
