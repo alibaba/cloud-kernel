@@ -2871,6 +2871,11 @@ static int __net_init tcp_sk_init(struct net *net)
 
 	net->ipv4.sysctl_tcp_syn_retries = TCP_SYN_RETRIES;
 	net->ipv4.sysctl_tcp_synack_retries = TCP_SYNACK_RETRIES;
+#if IS_ENABLED(CONFIG_TCP_SYNACK_TIMEOUT_PROC)
+	net->ipv4.sysctl_tcp_timeo_init = TCP_TIMEOUT_INIT;
+	net->ipv4.sysctl_tcp_synack_timeo_init = TCP_TIMEOUT_INIT;
+	net->ipv4.sysctl_tcp_synack_timeo_max = TCP_RTO_MAX;
+#endif
 	net->ipv4.sysctl_tcp_syncookies = 1;
 	net->ipv4.sysctl_tcp_reordering = TCP_FASTRETRANS_THRESH;
 	net->ipv4.sysctl_tcp_retries1 = TCP_RETR1;

@@ -776,7 +776,12 @@ static void reqsk_timer_handler(struct timer_list *t)
 
 		if (req->num_timeout++ == 0)
 			atomic_dec(&queue->young);
+#if IS_ENABLED(CONFIG_TCP_SYNACK_TIMEOUT_PROC)
+		timeo = min(net->ipv4.sysctl_tcp_synack_timeo_init << req->num_timeout,
+			    net->ipv4.sysctl_tcp_synack_timeo_max);
+#else
 		timeo = min(TCP_TIMEOUT_INIT << req->num_timeout, TCP_RTO_MAX);
+#endif
 		mod_timer(&req->rsk_timer, jiffies + timeo);
 		return;
 	}

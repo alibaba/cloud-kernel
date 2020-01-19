@@ -55,6 +55,9 @@ static int tcp_tw_timeout_max = 600 * HZ;
 #if IS_ENABLED(CONFIG_TCP_INIT_CWND_PROC)
 static u32 tcp_init_cwnd_min = 10;
 #endif
+#if IS_ENABLED(CONFIG_TCP_SYNACK_TIMEOUT_PROC)
+static u32 tcp_timeo_init_min = TCP_TIMEOUT_MIN;
+#endif
 
 static int tcp_ato_min1 = 4;
 static int tcp_ato_min2 = 200;
@@ -949,6 +952,32 @@ static struct ctl_table ipv4_net_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
 	},
+#if IS_ENABLED(CONFIG_TCP_SYNACK_TIMEOUT_PROC)
+	{
+		.procname	= "tcp_timeout_init",
+		.data		= &init_net.ipv4.sysctl_tcp_timeo_init,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= &tcp_timeo_init_min
+	},
+	{
+		.procname	= "tcp_synack_timeout_init",
+		.data		= &init_net.ipv4.sysctl_tcp_synack_timeo_init,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= &tcp_timeo_init_min
+	},
+	{
+		.procname	= "tcp_synack_timeout_max",
+		.data		= &init_net.ipv4.sysctl_tcp_synack_timeo_max,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= &tcp_timeo_init_min
+	},
+#endif
 #ifdef CONFIG_SYN_COOKIES
 	{
 		.procname	= "tcp_syncookies",

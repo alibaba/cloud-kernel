@@ -2320,7 +2320,11 @@ static inline u32 tcp_timeout_init(struct sock *sk)
 	timeout = tcp_call_bpf(sk, BPF_SOCK_OPS_TIMEOUT_INIT, 0, NULL);
 
 	if (timeout <= 0)
+#if IS_ENABLED(CONFIG_TCP_SYNACK_TIMEOUT_PROC)
+		timeout = sock_net(sk)->ipv4.sysctl_tcp_timeo_init;
+#else
 		timeout = TCP_TIMEOUT_INIT;
+#endif
 	return timeout;
 }
 

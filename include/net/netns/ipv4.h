@@ -131,6 +131,11 @@ struct netns_ipv4 {
 
 	int sysctl_tcp_syn_retries;
 	int sysctl_tcp_synack_retries;
+#if IS_ENABLED(CONFIG_TCP_SYNACK_TIMEOUT_PROC)
+	unsigned int sysctl_tcp_timeo_init;
+	unsigned int sysctl_tcp_synack_timeo_init;
+	unsigned int sysctl_tcp_synack_timeo_max;
+#endif
 	int sysctl_tcp_syncookies;
 	int sysctl_tcp_reordering;
 	int sysctl_tcp_retries1;
