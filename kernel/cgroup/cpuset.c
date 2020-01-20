@@ -1545,9 +1545,10 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 	mutex_lock(&cpuset_mutex);
 
 	/* prepare for attach */
-	if (cs == &top_cpuset)
+	if (cs == &top_cpuset) {
 		cpumask_copy(cpus_attach, cpu_possible_mask);
-	else
+		wilds_cpus_allowed(cpus_attach);
+	} else
 		guarantee_online_cpus(cs, cpus_attach);
 
 	guarantee_online_mems(cs, &cpuset_attach_nodemask_to);
@@ -2102,8 +2103,24 @@ static void cpuset_bind(struct cgroup_subsys_state *root_css)
  */
 static void cpuset_fork(struct task_struct *task)
 {
-	if (task_css_is_root(task, cpuset_cgrp_id))
+	if (task_css_is_root(task, cpuset_cgrp_id)) {
+		/*
+		 * This is necessary since update_wilds_cpumask()
+		 * could have missed the 'task', if it's parent is
+		 * the last one on the iteratoration list, like:
+		 *
+		 * 1. 'task' dup old dyn_allowed from parent
+		 * 2. update_wilds_cpumask() begin
+		 * 3. new dyn_allowed applied to parent
+		 * 4. update_wilds_cpumask() end
+		 * 5. 'task' add into iteratoration list
+		 *
+		 * Fix this by redup current's allowed here if changed.
+		 */
+		if (!cpumask_equal(&task->cpus_allowed, &current->cpus_allowed))
+			set_cpus_allowed_ptr(task, &current->cpus_allowed);
 		return;
+	}
 
 	set_cpus_allowed_ptr(task, &current->cpus_allowed);
 	task->mems_allowed = current->mems_allowed;

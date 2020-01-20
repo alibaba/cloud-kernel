@@ -40,6 +40,13 @@ static inline void housekeeping_affine(struct task_struct *t,
 static inline void housekeeping_init(void) { }
 #endif /* CONFIG_CPU_ISOLATION */
 
+#if defined(CONFIG_CPU_ISOLATION) && defined(CONFIG_CGROUP_SCHED)
+DECLARE_STATIC_KEY_FALSE(dyn_isolcpus_enabled);
+extern void wilds_cpus_allowed(struct cpumask *pmask);
+#else
+static inline void wilds_cpus_allowed(struct cpumask *pmask) {}
+#endif
+
 static inline bool housekeeping_cpu(int cpu, enum hk_flags flags)
 {
 #ifdef CONFIG_CPU_ISOLATION
