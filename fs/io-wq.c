@@ -114,6 +114,8 @@ struct io_wq {
 	struct mm_struct *mm;
 	refcount_t refs;
 	struct completion done;
+
+	refcount_t use_refs;
 };
 
 static bool io_worker_get(struct io_worker *worker)
@@ -1074,6 +1076,7 @@ struct io_wq *io_wq_create(unsigned bounded, struct io_wq_data *data)
 			ret = -ENOMEM;
 			goto err;
 		}
+		refcount_set(&wq->use_refs, 1);
 		reinit_completion(&wq->done);
 		return wq;
 	}
@@ -1094,7 +1097,7 @@ static bool io_wq_worker_wake(struct io_worker *worker, void *data)
 	return false;
 }
 
-void io_wq_destroy(struct io_wq *wq)
+static void __io_wq_destroy(struct io_wq *wq)
 {
 	int node;
 
@@ -1113,4 +1116,10 @@ void io_wq_destroy(struct io_wq *wq)
 		kfree(wq->wqes[node]);
 	kfree(wq->wqes);
 	kfree(wq);
+}
+
+void io_wq_destroy(struct io_wq *wq)
+{
+	if (refcount_dec_and_test(&wq->use_refs))
+		__io_wq_destroy(wq);
 }
