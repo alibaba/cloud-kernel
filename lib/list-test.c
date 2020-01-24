@@ -566,7 +566,7 @@ static void list_test_list_for_each_prev_safe(struct kunit *test)
 static void list_test_list_for_each_entry(struct kunit *test)
 {
 	struct list_test_struct entries[5], *cur;
-	static LIST_HEAD(list);
+	LIST_HEAD(list);
 	int i = 0;
 
 	for (i = 0; i < 5; ++i) {
@@ -587,7 +587,7 @@ static void list_test_list_for_each_entry(struct kunit *test)
 static void list_test_list_for_each_entry_reverse(struct kunit *test)
 {
 	struct list_test_struct entries[5], *cur;
-	static LIST_HEAD(list);
+	LIST_HEAD(list);
 	int i = 0;
 
 	for (i = 0; i < 5; ++i) {
