@@ -709,7 +709,7 @@ static int dsu_pmu_device_probe(struct platform_device *pdev)
 	if (!name)
 		return -ENOMEM;
 	rc = devm_request_irq(&pdev->dev, irq, dsu_pmu_handle_irq,
-			      IRQF_NOBALANCING, name, dsu_pmu);
+			      IRQF_NOBALANCING | IRQF_SHARED, name, dsu_pmu);
 	if (rc) {
 		dev_warn(&pdev->dev, "Failed to request IRQ %d\n", irq);
 		return rc;
