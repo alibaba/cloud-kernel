@@ -1831,7 +1831,8 @@ int jbd2_journal_stop(handle_t *handle)
 			handle->h_requested_credits,
 			handle->h_requested_credits - handle->h_buffer_credits,
 			delta, jiffies_to_msecs(journal_space_wait),
-			sched_wait / NSEC_PER_MSEC, io_wait / NSEC_PER_MSEC);
+			div_u64(sched_wait, NSEC_PER_MSEC),
+			div_u64(io_wait, NSEC_PER_MSEC));
 	} while (0);
 
 	/*
