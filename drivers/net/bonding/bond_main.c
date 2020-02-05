@@ -4519,6 +4519,39 @@ out:
 	return ret;
 }
 
+/* Check whether the skb is arp or nd msg */
+static inline bool skb_is_arp_or_nd(struct sk_buff *skb)
+{
+	switch (ntohs(skb->protocol)) {
+	case ETH_P_ARP:
+		return true;
+	case ETH_P_IPV6:
+		if (pskb_may_pull(skb, sizeof(struct ipv6hdr) +
+				  sizeof(struct nd_msg))) {
+			struct ipv6hdr *hdr = ipv6_hdr(skb);
+			u8 nexthdr = hdr->nexthdr;
+			struct icmp6hdr *icmp6;
+
+			if (nexthdr == IPPROTO_ICMPV6) {
+				icmp6 = icmp6_hdr(skb);
+
+				if ((icmp6->icmp6_type ==
+				     NDISC_NEIGHBOUR_SOLICITATION ||
+				    icmp6->icmp6_type ==
+				    NDISC_NEIGHBOUR_ADVERTISEMENT) &&
+				    icmp6->icmp6_code == 0) {
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+static netdev_tx_t bond_xmit_broadcast(struct sk_buff *skb,
+				       struct net_device *bond_dev);
+
 static struct slave *bond_xmit_3ad_xor_slave_get(struct bonding *bond,
 						 struct sk_buff *skb,
 						 struct bond_up_slave *slaves)
@@ -4546,6 +4579,10 @@ static netdev_tx_t bond_3ad_xor_xmit(struct sk_buff *skb,
 	struct bonding *bond = netdev_priv(dev);
 	struct bond_up_slave *slaves;
 	struct slave *slave;
+
+	/* Broadcast to all slaves. */
+	if (sysctl_bond_broadcast_arp_or_nd && skb_is_arp_or_nd(skb))
+		return bond_xmit_broadcast(skb, dev);
 
 	slaves = rcu_dereference(bond->usable_slaves);
 	slave = bond_xmit_3ad_xor_slave_get(bond, skb, slaves);
@@ -5449,6 +5486,7 @@ static int __init bonding_init(void)
 		goto err_link;
 
 	bond_create_debugfs();
+	bond_create_sysctl();
 
 	for (i = 0; i < max_bonds; i++) {
 		res = bond_create(&init_net, NULL);
@@ -5465,6 +5503,7 @@ out:
 	return res;
 err:
 	bond_destroy_debugfs();
+	bond_destroy_sysctl();
 	bond_netlink_fini();
 err_link:
 	unregister_pernet_subsys(&bond_net_ops);
@@ -5477,6 +5516,7 @@ static void __exit bonding_exit(void)
 	unregister_netdevice_notifier(&bond_netdev_notifier);
 
 	bond_destroy_debugfs();
+	bond_destroy_sysctl();
 
 	bond_netlink_fini();
 	unregister_pernet_subsys(&bond_net_ops);

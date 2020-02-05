@@ -2718,3 +2718,14 @@ max_dgram_qlen - INTEGER
 
 	Default: 10
 
+
+``/proc/sys/net/bonding/*``
+========================
+
+broadcast_arp_or_nd - INTEGER
+	Control broadcasting ARP or ND messages to all slaves
+
+	0: Not broadcasting
+	1: Broadcasting
+
+	Default: 0
