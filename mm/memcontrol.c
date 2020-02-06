@@ -5601,7 +5601,6 @@ static int mem_cgroup_move_account(struct page *page,
 	unsigned int nr_pages = compound ? hpage_nr_pages(page) : 1;
 	int ret;
 	bool anon;
-	int nid = page_to_nid(page);
 
 	VM_BUG_ON(from == to);
 	VM_BUG_ON_PAGE(PageLRU(page), page);
