@@ -403,8 +403,10 @@ static handle_t *new_handle(int nblocks)
 	handle->h_buffer_credits = nblocks;
 	handle->h_ref = 1;
 	handle->h_pre_start_jiffies = jiffies;
+#ifdef CONFIG_SCHEDSTATS
 	handle->h_sched_wait_sum = current->se.statistics.wait_sum;
 	handle->h_io_wait_sum = current->se.statistics.iowait_sum;
+#endif
 
 	return handle;
 }
@@ -1821,10 +1823,15 @@ int jbd2_journal_stop(handle_t *handle)
 
 		journal_space_wait = handle->h_start_jiffies -
 					handle->h_pre_start_jiffies;
+#ifdef CONFIG_SCHEDSTATS
 		sched_wait = current->se.statistics.wait_sum -
 					handle->h_sched_wait_sum;
 		io_wait = current->se.statistics.iowait_sum -
 					handle->h_io_wait_sum;
+#else
+		sched_wait = 0;
+		io_wait = 0;
+#endif
 		trace_jbd2_slow_handle_stats(journal->j_fs_dev->bd_dev,
 			transaction->t_tid, handle->h_type, handle->h_line_no,
 			jiffies - handle->h_start_jiffies, handle->h_sync,
