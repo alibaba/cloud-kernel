@@ -2534,6 +2534,7 @@ static int io_openat_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 		return ret;
 	}
 
+	req->flags |= REQ_F_NEED_CLEANUP;
 	return 0;
 }
 
@@ -2572,6 +2573,7 @@ static int io_openat2_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 		return ret;
 	}
 
+	req->flags |= REQ_F_NEED_CLEANUP;
 	return 0;
 }
 
@@ -2603,6 +2605,7 @@ static int io_openat2(struct io_kiocb *req, struct io_kiocb **nxt,
 	}
 err:
 	putname(req->open.filename);
+	req->flags &= ~REQ_F_NEED_CLEANUP;
 	if (ret < 0)
 		req_set_fail_links(req);
 	io_cqring_add_event(req, ret);
@@ -2762,6 +2765,7 @@ static int io_statx_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 		return ret;
 	}
 
+	req->flags |= REQ_F_NEED_CLEANUP;
 	return 0;
 }
 
@@ -2799,6 +2803,7 @@ retry:
 		ret = cp_statx(&stat, ctx->buffer);
 err:
 	putname(ctx->filename);
+	req->flags &= ~REQ_F_NEED_CLEANUP;
 	if (ret < 0)
 		req_set_fail_links(req);
 	io_cqring_add_event(req, ret);
@@ -4219,6 +4224,11 @@ static void io_cleanup_req(struct io_kiocb *req)
 	case IORING_OP_RECVMSG:
 		if (io->msg.iov != io->msg.fast_iov)
 			kfree(io->msg.iov);
+		break;
+	case IORING_OP_OPENAT:
+	case IORING_OP_OPENAT2:
+	case IORING_OP_STATX:
+		putname(req->open.filename);
 		break;
 	}
 
