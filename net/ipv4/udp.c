@@ -456,6 +456,29 @@ static struct sock *udp4_lib_lookup2(struct net *net,
 	return result;
 }
 
+static struct sock *udp4_lib_lookup4(struct net *net,
+				     __be32 saddr, __be16 sport,
+				     __be32 daddr, unsigned int hnum,
+				     int dif, int sdif,
+				     struct udp_table *udptable)
+{
+	struct sock *sk;
+	struct udp_sock *up;
+	unsigned int hash4 = udp_ehashfn(net, daddr, hnum, saddr, sport);
+	struct udp_hslot *hslot4 = udp_hashslot4(udptable, hash4);
+
+	INET_ADDR_COOKIE(acookie, saddr, daddr);
+	const __portpair ports = INET_COMBINED_PORTS(sport, hnum);
+
+	udp_lrpa_for_each_entry_rcu(up, &hslot4->head) {
+		sk = (struct sock *)up;
+		if (INET_MATCH(sk, net, acookie, saddr,
+			       daddr, ports, dif, sdif))
+			return sk;
+	}
+	return NULL;
+}
+
 static struct sock *udp4_lookup_run_bpf(struct net *net,
 					struct udp_table *udptable,
 					struct sk_buff *skb,
@@ -490,6 +513,13 @@ struct sock *__udp4_lib_lookup(struct net *net, __be32 saddr,
 	unsigned int hash2, slot2;
 	struct udp_hslot *hslot2;
 	struct sock *result, *sk;
+
+	if (uhash4_enable) {
+		result = udp4_lib_lookup4(net, saddr, sport, daddr,
+					  hnum, dif, sdif, udptable);
+		if (result)
+			return result;
+	}
 
 	hash2 = ipv4_portaddr_hash(net, daddr, hnum);
 	slot2 = hash2 & udptable->mask;
@@ -1905,6 +1935,52 @@ int udp_pre_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 }
 EXPORT_SYMBOL(udp_pre_connect);
 
+/* call with sock lock */
+void udp4_hash4(struct sock *sk)
+{
+	struct net *net = sock_net(sk);
+	struct udp_table *udptable = sk->sk_prot->h.udp_table;
+	struct udp_hslot *hslot, *hslot4;
+	unsigned int hash;
+
+	if (sk_unhashed(sk) || udp_hashed4(sk) ||
+	    inet_sk(sk)->inet_rcv_saddr == htonl(INADDR_ANY))
+		return;
+
+	hash = udp_ehashfn(net,
+			   inet_sk(sk)->inet_rcv_saddr,
+			   inet_sk(sk)->inet_num,
+			   inet_sk(sk)->inet_daddr,
+			   inet_sk(sk)->inet_dport);
+
+	hslot = udp_hashslot(udptable, net, udp_sk(sk)->udp_port_hash);
+	hslot4 = udp_hashslot4(udptable, hash);
+	udp_sk(sk)->udp_lrpa_hash = hash;
+
+	spin_lock_bh(&hslot->lock);
+	if (rcu_access_pointer(sk->sk_reuseport_cb))
+		reuseport_detach_sock(sk);
+	spin_lock(&hslot4->lock);
+	hlist_add_head_rcu(&udp_sk(sk)->udp_lrpa_node, &hslot4->head);
+	hslot4->count++;
+	spin_unlock(&hslot4->lock);
+	spin_unlock_bh(&hslot->lock);
+}
+EXPORT_SYMBOL(udp4_hash4);
+
+int udp_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
+{
+	int res;
+
+	lock_sock(sk);
+	res = __ip4_datagram_connect(sk, uaddr, addr_len);
+	if (uhash4_enable && udp_sk(sk)->uhash4 && !res)
+		udp4_hash4(sk);
+	release_sock(sk);
+	return res;
+}
+EXPORT_SYMBOL(udp_connect);
+
 int __udp_disconnect(struct sock *sk, int flags)
 {
 	struct inet_sock *inet = inet_sk(sk);
@@ -1946,7 +2022,7 @@ void udp_lib_unhash(struct sock *sk)
 {
 	if (sk_hashed(sk)) {
 		struct udp_table *udptable = sk->sk_prot->h.udp_table;
-		struct udp_hslot *hslot, *hslot2;
+		struct udp_hslot *hslot, *hslot2, *hslot4;
 
 		hslot  = udp_hashslot(udptable, sock_net(sk),
 				      udp_sk(sk)->udp_port_hash);
@@ -1964,6 +2040,14 @@ void udp_lib_unhash(struct sock *sk)
 			hlist_del_init_rcu(&udp_sk(sk)->udp_portaddr_node);
 			hslot2->count--;
 			spin_unlock(&hslot2->lock);
+
+			if (uhash4_enable && udp_hashed4(sk)) {
+				hslot4 = udp_hashslot4(udptable, udp_sk(sk)->udp_lrpa_hash);
+				spin_lock(&hslot4->lock);
+				hlist_del_init_rcu(&udp_sk(sk)->udp_lrpa_node);
+				hslot4->count--;
+				spin_unlock(&hslot4->lock);
+			}
 		}
 		spin_unlock_bh(&hslot->lock);
 	}
@@ -2669,6 +2753,14 @@ int udp_lib_setsockopt(struct sock *sk, int level, int optname,
 		up->accept_udp_l4 = valbool;
 		release_sock(sk);
 		break;
+	case UDP_HASH4:
+		if (!uhash4_enable)
+			return -EOPNOTSUPP;
+		if (val == 0 && up->uhash4)
+			return -EPERM;
+		if (val != 0 && !up->uhash4)
+			up->uhash4 = 1;
+		break;
 
 	/*
 	 * 	UDP-Lite's partial checksum coverage (RFC 3828).
@@ -2758,6 +2850,12 @@ int udp_lib_getsockopt(struct sock *sk, int level, int optname,
 		val = up->gro_enabled;
 		break;
 
+	case UDP_HASH4:
+		if (!uhash4_enable)
+			return -EOPNOTSUPP;
+		val = up->uhash4;
+		break;
+
 	/* The following two cannot be changed on UDP sockets, the return is
 	 * always 0 (which corresponds to the full checksum coverage of UDP). */
 	case UDPLITE_SEND_CSCOV:
@@ -2845,7 +2943,7 @@ struct proto udp_prot = {
 	.owner			= THIS_MODULE,
 	.close			= udp_lib_close,
 	.pre_connect		= udp_pre_connect,
-	.connect		= ip4_datagram_connect,
+	.connect		= udp_connect,
 	.disconnect		= udp_disconnect,
 	.ioctl			= udp_ioctl,
 	.init			= udp_init_sock,
@@ -3139,12 +3237,22 @@ static int __init set_uhash_entries(char *str)
 }
 __setup("uhash_entries=", set_uhash_entries);
 
+bool uhash4_enable;
+EXPORT_SYMBOL(uhash4_enable);
+core_param(uhash4_enable, uhash4_enable, bool, 0444);
+
 void __init udp_table_init(struct udp_table *table, const char *name)
 {
 	unsigned int i;
+	unsigned long uhash_size = sizeof(struct udp_hslot);
+
+	if (uhash4_enable)
+		uhash_size *= 3;
+	else
+		uhash_size *= 2;
 
 	table->hash = alloc_large_system_hash(name,
-					      2 * sizeof(struct udp_hslot),
+					      uhash_size,
 					      uhash_entries,
 					      21, /* one slot per 2 MB */
 					      0,
@@ -3163,6 +3271,14 @@ void __init udp_table_init(struct udp_table *table, const char *name)
 		INIT_HLIST_HEAD(&table->hash2[i].head);
 		table->hash2[i].count = 0;
 		spin_lock_init(&table->hash2[i].lock);
+	}
+	if (uhash4_enable) {
+		table->hash4 = table->hash2 + (table->mask + 1);
+		for (i = 0; i <= table->mask; i++) {
+			INIT_HLIST_HEAD(&table->hash4[i].head);
+			table->hash4[i].count = 0;
+			spin_lock_init(&table->hash4[i].lock);
+		}
 	}
 }
 

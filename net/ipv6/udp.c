@@ -189,6 +189,26 @@ static struct sock *udp6_lib_lookup2(struct net *net,
 	return result;
 }
 
+static struct sock *
+udp6_lib_lookup4(struct net *net,
+		 const struct in6_addr *saddr, __be16 sport,
+		 const struct in6_addr *daddr, unsigned int hnum,
+		 int dif, int sdif, struct udp_table *udptable)
+{
+	struct sock *sk;
+	struct udp_sock *up;
+	unsigned int hash4 = udp6_ehashfn(net, daddr, hnum, saddr, sport);
+	struct udp_hslot *hslot4 = udp_hashslot4(udptable, hash4);
+	const __portpair ports = INET_COMBINED_PORTS(sport, hnum);
+
+	udp_lrpa_for_each_entry_rcu(up, &hslot4->head) {
+		sk = (struct sock *)up;
+		if (INET6_MATCH(sk, net, saddr, daddr, ports, dif, sdif))
+			return sk;
+	}
+	return NULL;
+}
+
 static inline struct sock *udp6_lookup_run_bpf(struct net *net,
 					       struct udp_table *udptable,
 					       struct sk_buff *skb,
@@ -225,6 +245,13 @@ struct sock *__udp6_lib_lookup(struct net *net,
 	unsigned int hash2, slot2;
 	struct udp_hslot *hslot2;
 	struct sock *result, *sk;
+
+	if (uhash4_enable) {
+		result = udp6_lib_lookup4(net, saddr, sport, daddr,
+					  hnum, dif, sdif, udptable);
+		if (result)
+			return result;
+	}
 
 	hash2 = ipv6_portaddr_hash(net, daddr, hnum);
 	slot2 = hash2 & udptable->mask;
@@ -1110,6 +1137,57 @@ static int udpv6_pre_connect(struct sock *sk, struct sockaddr *uaddr,
 	return BPF_CGROUP_RUN_PROG_INET6_CONNECT_LOCK(sk, uaddr);
 }
 
+/* call with sock lock */
+void udp6_hash4(struct sock *sk)
+{
+	struct net *net = sock_net(sk);
+	struct udp_table *udptable = sk->sk_prot->h.udp_table;
+	struct udp_hslot *hslot, *hslot4;
+	unsigned int hash;
+
+	if (ipv6_addr_v4mapped(&sk->sk_v6_rcv_saddr)) {
+		udp4_hash4(sk);
+		return;
+	}
+
+	if (sk_unhashed(sk) || udp_hashed4(sk) ||
+	    ipv6_addr_any(&sk->sk_v6_rcv_saddr))
+		return;
+
+	hash = udp6_ehashfn(net,
+			    &sk->sk_v6_rcv_saddr,
+			    inet_sk(sk)->inet_num,
+			    &sk->sk_v6_daddr,
+			    inet_sk(sk)->inet_dport);
+
+	hslot = udp_hashslot(udptable, net, udp_sk(sk)->udp_port_hash);
+	hslot4 = udp_hashslot4(udptable, hash);
+	udp_sk(sk)->udp_lrpa_hash = hash;
+
+	spin_lock_bh(&hslot->lock);
+	if (rcu_access_pointer(sk->sk_reuseport_cb))
+		reuseport_detach_sock(sk);
+	spin_lock(&hslot4->lock);
+	hlist_add_head_rcu(&udp_sk(sk)->udp_lrpa_node, &hslot4->head);
+	hslot4->count++;
+	spin_unlock(&hslot4->lock);
+	spin_unlock_bh(&hslot->lock);
+}
+EXPORT_SYMBOL(udp6_hash4);
+
+int udpv6_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
+{
+	int res;
+
+	lock_sock(sk);
+	res = __ip6_datagram_connect(sk, uaddr, addr_len);
+	if (uhash4_enable && udp_sk(sk)->uhash4 && !res)
+		udp6_hash4(sk);
+	release_sock(sk);
+	return res;
+}
+EXPORT_SYMBOL(udpv6_connect);
+
 /**
  *	udp6_hwcsum_outgoing  -  handle outgoing HW checksumming
  *	@sk:	socket we are sending on
@@ -1700,7 +1778,7 @@ struct proto udpv6_prot = {
 	.owner			= THIS_MODULE,
 	.close			= udp_lib_close,
 	.pre_connect		= udpv6_pre_connect,
-	.connect		= ip6_datagram_connect,
+	.connect		= udpv6_connect,
 	.disconnect		= udp_disconnect,
 	.ioctl			= udp_ioctl,
 	.init			= udp_init_sock,
