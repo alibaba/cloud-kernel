@@ -1,0 +1,42 @@
+UDP 4-tuple Hash(uhash4)
+========================
+Normally the udp_table has two hash tables, one for port hash and one
+for <port, addr> hash. Both of them are based on the local port/addr,
+and the remote port/addr is not included. As a server, we often bind
+on the same local <port, addr> and receive from thousands of clients
+with different remote <port, addr>. If the server is running with a
+TCP-like protocol such as QUIC, we need to distinguish connections
+via <local port, local addr, remote port, remote addr>. With the
+original hash table, the kernel has to compute the score for every
+socket on the same hash slot, which leads to high softirq CPU usage.
+
+To improve performance in certain cases, we introduce the uhash4,
+4-tuple hash with <local port, local addr, remote port, remote addr>,
+to the udp_table, and add a new UDP sockopt named UDP_HASH4 to enable
+the function per socket. If it's enabled by a socket, the socket would
+be added to a new hash table with 4-tuple hash when connecting to the
+peer. And when a packet is received by kernel, the UDP lookup function
+would search the uhash4 firstly, and compare the 4-tuple information.
+
+However, to simplify the implementation and for safe, there're some
+restrictions for uhash4:
+
+1) I strongly suggest the following steps to enable the uhash4:
+   a. socket()
+   b. bind()
+   c. setsockopt(UDP_HASH4)
+   d. connect()
+
+   The setsockopt() may succeed while the uhash4 doesn't work, and
+   you should check the bind() parameters and then report bug to
+   'Cambda Zhu <cambda@linux.alibaba.com>'.
+2) If it's enabled for a socket, you can not disable it. If you really
+   want it, please close the socket and create a new one.
+3) The 4-tuple info is fixed and can not be changed even if you call
+   connect() again or the socket is rehashed. So the uhash4 may be
+   not correct, and the user has the responsibility to close the
+   socket in this case.
+
+This feature is disabled globally by default and can be enabled by
+adding uhash4_enable=1 to the boot parameters. And you can check it
+via /sys/module/kernel/parameters/uhash4_enable.
