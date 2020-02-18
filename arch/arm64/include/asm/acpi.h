@@ -30,6 +30,9 @@
 	(!(entry) || (entry)->header.length != ACPI_MADT_GICC_LENGTH ||	\
 	(unsigned long)(entry) + ACPI_MADT_GICC_LENGTH > (end))
 
+#define ACPI_MADT_GICC_SPE  (ACPI_OFFSET(struct acpi_madt_generic_interrupt, \
+	spe_interrupt) + sizeof(u16))
+
 /* Basic configuration for ACPI */
 #ifdef	CONFIG_ACPI
 pgprot_t __acpi_get_mem_attribute(phys_addr_t addr);
