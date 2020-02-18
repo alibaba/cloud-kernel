@@ -1691,6 +1691,8 @@ config DMA_API_DEBUG_SG
 
 	  If unsure, say N.
 
+source "lib/kunit/Kconfig"
+
 menuconfig RUNTIME_TESTING_MENU
 	bool "Runtime Testing"
 	def_bool y
