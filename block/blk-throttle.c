@@ -1120,7 +1120,7 @@ static void throtl_bio_end_io(struct bio *bio)
 
 	rcu_read_lock();
 	/* see comments in throtl_bio_stats_start() */
-	if (bio_flagged(bio, BIO_THROTL_STATED))
+	if (!bio_flagged(bio, BIO_THROTL_STATED))
 		goto out;
 
 	tg = (struct throtl_grp *)bio->bi_tg_private;
