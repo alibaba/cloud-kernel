@@ -1473,6 +1473,10 @@ static const unsigned int memcg1_stats[] = {
 	NR_FILE_DIRTY,
 	NR_WRITEBACK,
 	MEMCG_SWAP,
+	WORKINGSET_REFAULT,
+	WORKINGSET_ACTIVATE,
+	WORKINGSET_RESTORE,
+	WORKINGSET_NODERECLAIM,
 };
 
 static const char *const memcg1_stat_names[] = {
@@ -1484,6 +1488,10 @@ static const char *const memcg1_stat_names[] = {
 	"dirty",
 	"writeback",
 	"swap",
+	"workingset_refault",
+	"workingset_activate",
+	"workingset_restore",
+	"workingset_nodereclaim",
 };
 
 #define K(x) ((x) << (PAGE_SHIFT-10))
