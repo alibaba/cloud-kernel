@@ -1,10 +1,10 @@
 .. SPDX-License-Identifier: GPL-2.0+
 
-=============================
-AliOS Cloud kernel interfaces
-=============================
+=======================
+Cloud Kernel interfaces
+=======================
 
-This file collects all the interfaces specific to AliOS Cloud kernel.
+This file collects all the interfaces specific to Cloud Kernel.
 
 memory.wmark_min_adj
 ====================
