@@ -2214,6 +2214,20 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
+		.procname	= "printk_memcg_oom_interval",
+		.data		= &oom_memcg_rs.interval,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_jiffies,
+	},
+	{
+		.procname	= "printk_memcg_oom_burst",
+		.data		= &oom_memcg_rs.burst,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "printk_ratelimit",
 		.data		= &printk_ratelimit_state.interval,
 		.maxlen		= sizeof(int),
