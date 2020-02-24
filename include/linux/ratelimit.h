@@ -72,6 +72,7 @@ ratelimit_set_flags(struct ratelimit_state *rs, unsigned long flags)
 }
 
 extern struct ratelimit_state printk_ratelimit_state;
+extern struct ratelimit_state oom_memcg_rs;
 
 extern int ___ratelimit(struct ratelimit_state *rs, const char *func);
 #define __ratelimit(state) ___ratelimit(state, __func__)

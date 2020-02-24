@@ -122,6 +122,9 @@ static const struct bin_table bin_kern_table[] = {
 	{ CTL_INT,	KERN_HPPA_PWRSW,		"soft-power" },
 	{ CTL_INT,	KERN_HPPA_UNALIGNED,		"unaligned-trap" },
 
+	{ CTL_INT,	KERN_PRINTK_MEMCG_OOM_INTERVAL,	"printk_memcg_oom_interval"},
+	{ CTL_INT,	KERN_PRINTK_MEMCG_OOM_BURST,	"printk_memcg_oom_burst"},
+
 	{ CTL_INT,	KERN_PRINTK_RATELIMIT,		"printk_ratelimit" },
 	{ CTL_INT,	KERN_PRINTK_RATELIMIT_BURST,	"printk_ratelimit_burst" },
 
