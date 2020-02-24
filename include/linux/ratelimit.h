@@ -41,6 +41,7 @@ ratelimit_set_flags(struct ratelimit_state *rs, unsigned long flags)
 }
 
 extern struct ratelimit_state printk_ratelimit_state;
+extern struct ratelimit_state oom_memcg_rs;
 
 #ifdef CONFIG_PRINTK
 
