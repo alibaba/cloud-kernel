@@ -449,6 +449,9 @@ static void dump_header(struct oom_control *oc, struct task_struct *p)
 		mem_cgroup_print_oom_info(oc->memcg, p);
 	else {
 #ifdef CONFIG_MEMCG
+		if (!p)
+			p = current;
+
 		pr_info("Task in ");
 		pr_cont_cgroup_path(task_cgroup(p, memory_cgrp_id));
 		pr_cont(" killed as a result of limit of host\n");
