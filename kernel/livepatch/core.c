@@ -289,11 +289,6 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	if (klp_transition_patch)
 		return -EBUSY;
 
-	/* enforce stacking: only the last enabled patch can be disabled */
-	if (!list_is_last(&patch->list, &klp_patches) &&
-	    list_next_entry(patch, list)->enabled)
-		return -EBUSY;
-
 	klp_init_transition(patch, KLP_UNPATCHED);
 
 	klp_for_each_object(patch, obj)
@@ -358,11 +353,6 @@ static int __klp_enable_patch(struct klp_patch *patch)
 
 	if (WARN_ON(patch->enabled))
 		return -EINVAL;
-
-	/* enforce stacking: only the first disabled patch can be enabled */
-	if (patch->list.prev != &klp_patches &&
-	    !list_prev_entry(patch, list)->enabled)
-		return -EBUSY;
 
 	/*
 	 * A reference is taken on the patch module to prevent it from being
