@@ -18,6 +18,7 @@ struct thread;
 
 struct auxtrace;
 struct itrace_synth_opts;
+struct arm_spe_synth_opts;
 
 struct perf_session {
 	struct perf_header	header;
@@ -25,6 +26,7 @@ struct perf_session {
 	struct perf_evlist	*evlist;
 	struct auxtrace		*auxtrace;
 	struct itrace_synth_opts *itrace_synth_opts;
+	struct arm_spe_synth_opts *arm_spe_synth_opts;
 	struct list_head	auxtrace_index;
 	struct trace_event	tevent;
 	struct time_conv_event	time_conv;

@@ -15,6 +15,8 @@
 #define ARM_SPE_NEED_MORE_BYTES		-1
 #define ARM_SPE_BAD_PACKET		-2
 
+#define ARM_SPE_PKT_MAX_SZ		16
+
 enum arm_spe_pkt_type {
 	ARM_SPE_BAD,
 	ARM_SPE_PAD,

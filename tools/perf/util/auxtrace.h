@@ -106,6 +106,22 @@ struct itrace_synth_opts {
 };
 
 /**
+ * struct arm_spe_synth_opts - ARM SPE tracing synthesis options.
+ * @set: indicates whether or not options have been set
+ * @llc_miss: whether to synthesize last level cache miss events
+ * @tlb_miss: whether to synthesize TLB miss events
+ * @branch_miss: whether to synthesize Branch miss events
+ * @remote_access: whether to synthesize Remote access events
+ */
+struct arm_spe_synth_opts {
+	bool			set;
+	bool			llc_miss;
+	bool			tlb_miss;
+	bool			branch_miss;
+	bool			remote_access;
+};
+
+/**
  * struct auxtrace_index_entry - indexes a AUX area tracing event within a
  *                               perf.data file.
  * @file_offset: offset within the perf.data file
@@ -533,6 +549,10 @@ int itrace_parse_synth_opts(const struct option *opt, const char *str,
 			    int unset);
 void itrace_synth_opts__set_default(struct itrace_synth_opts *synth_opts);
 
+int arm_spe_parse_synth_opts(const struct option *opt, const char *str,
+			     int unset);
+void arm_spe_synth_opts__set_default(struct arm_spe_synth_opts *synth_opts);
+
 size_t perf_event__fprintf_auxtrace_error(union perf_event *event, FILE *fp);
 void perf_session__auxtrace_error_inc(struct perf_session *session,
 				      union perf_event *event);
@@ -636,6 +656,15 @@ int itrace_parse_synth_opts(const struct option *opt __maybe_unused,
 			    int unset __maybe_unused)
 {
 	pr_err("AUX area tracing not supported\n");
+	return -EINVAL;
+}
+
+static inline
+int arm_spe_parse_synth_opts(const struct option *opt __maybe_unused,
+			     const char *str __maybe_unused,
+			     int unset __maybe_unused)
+{
+	pr_err("ARM SPE area tracing not supported\n");
 	return -EINVAL;
 }
 

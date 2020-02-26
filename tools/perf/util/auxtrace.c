@@ -1136,6 +1136,56 @@ out_err:
 	return -EINVAL;
 }
 
+void arm_spe_synth_opts__set_default(struct arm_spe_synth_opts *synth_opts)
+{
+	synth_opts->llc_miss = true;
+	synth_opts->tlb_miss = true;
+	synth_opts->branch_miss = true;
+	synth_opts->remote_access = true;
+}
+
+int arm_spe_parse_synth_opts(const struct option *opt, const char *str,
+			     int unset __maybe_unused)
+{
+	struct arm_spe_synth_opts *synth_opts = opt->value;
+	const char *p;
+
+	synth_opts->set = true;
+
+	if (!str) {
+		arm_spe_synth_opts__set_default(synth_opts);
+		return 0;
+	}
+
+	for (p = str; *p;) {
+		switch (*p++) {
+		case 'l':
+			synth_opts->llc_miss = true;
+			break;
+		case 't':
+			synth_opts->tlb_miss = true;
+			break;
+		case 'b':
+			synth_opts->branch_miss = true;
+			break;
+		case 'r':
+			synth_opts->remote_access = true;
+			break;
+		case ' ':
+		case ',':
+			break;
+		default:
+			goto out_err;
+		}
+	}
+
+	return 0;
+
+out_err:
+	pr_err("Bad ARM SPE Tracing options '%s'\n", str);
+	return -EINVAL;
+}
+
 static const char * const auxtrace_error_type_name[] = {
 	[PERF_AUXTRACE_ERROR_ITRACE] = "instruction trace",
 };
