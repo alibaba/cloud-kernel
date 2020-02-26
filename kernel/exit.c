@@ -1765,3 +1765,113 @@ __weak void abort(void)
 	panic("Oops failed to kill thread");
 }
 EXPORT_SYMBOL(abort);
+
+static int force_reap_process(int ptrace, struct task_struct *tsk)
+{
+	struct wait_opts wo;
+	struct pid *pid = get_task_pid(tsk, PIDTYPE_PID);
+	int ret;
+
+	memset(&wo, 0, sizeof(wo));
+	wo.wo_type = PIDTYPE_PID;
+	wo.wo_pid = pid;
+	wo.wo_flags = WEXITED;
+
+	ret = wait_consider_task(&wo, ptrace, tsk);
+	put_pid(pid);
+
+	return ret;
+}
+
+
+static void exit_zombie_process(struct task_struct *tsk)
+{
+	int ret;
+
+	read_lock(&tasklist_lock);
+	ret = force_reap_process(0, tsk);
+	if (ret)
+		goto out;
+	read_unlock(&tasklist_lock);
+out:
+	return;
+}
+
+extern int pid_max;
+#define LEN	8
+static ssize_t reclaim_zombie_process_write(struct file *file,
+					const char __user *ubuf,
+					size_t count, loff_t *ppos)
+{
+	int ret;
+	unsigned int pid;
+	struct task_struct *tsk;
+	char buf[LEN];
+
+	memset(buf, 0, LEN);
+	if (count > LEN - 1) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (copy_from_user(buf, ubuf, count)) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	ret = kstrtoint(strstrip(buf), 10, &pid);
+	if (ret)
+		goto out;
+
+	if (pid > pid_max) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* make sure the task status is zombie. */
+	rcu_read_lock();
+	tsk = find_task_by_pid_ns(pid, task_active_pid_ns(current));
+	if (tsk) {
+		get_task_struct(tsk);
+		if (READ_ONCE(tsk->exit_state) != EXIT_ZOMBIE) {
+			rcu_read_unlock();
+			put_task_struct(tsk);
+			ret = -EINVAL;
+			goto out;
+		}
+	} else {
+		rcu_read_unlock();
+		ret = -EINVAL;
+		goto out;
+	}
+	rcu_read_unlock();
+	exit_zombie_process(tsk);
+	put_task_struct(tsk);
+out:
+	return ret == 0 ? count : ret;
+}
+
+const struct file_operations  reclaim_zombie_process_fops = {
+	.owner           = THIS_MODULE,
+	.llseek		 = noop_llseek,
+	.write		 = reclaim_zombie_process_write,
+};
+
+static int __init reclaim_zombie_process_init(void)
+{
+	struct proc_dir_entry *rzp_dir, *rzp_file;
+
+	rzp_dir = proc_mkdir("toolkit", NULL);
+	if (!rzp_dir)
+		return -ENOMEM;
+
+	rzp_file = proc_create("reclaim_zombie_process", 0200, rzp_dir,
+						&reclaim_zombie_process_fops);
+	if (!rzp_file) {
+		remove_proc_entry("toolkit", NULL);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+late_initcall(reclaim_zombie_process_init);
