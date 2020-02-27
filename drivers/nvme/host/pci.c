@@ -1102,9 +1102,9 @@ static int nvme_poll_noirq(struct blk_mq_hw_ctx *hctx, unsigned int tag)
 
 	spin_lock(&nvmeq->cq_lock);
 	found = nvme_process_cq(nvmeq, &start, &end, tag);
+	nvme_complete_cqes(nvmeq, start, end);
 	spin_unlock(&nvmeq->cq_lock);
 
-	nvme_complete_cqes(nvmeq, start, end);
 	return found;
 }
 
