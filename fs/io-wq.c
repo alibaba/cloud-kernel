@@ -500,8 +500,6 @@ next:
 		 */
 		if (test_bit(IO_WQ_BIT_CANCEL, &wq->state))
 			work->flags |= IO_WQ_WORK_CANCEL;
-		if (worker->mm)
-			work->flags |= IO_WQ_WORK_HAS_MM;
 
 		if (wq->get_work) {
 			put_work = work;
