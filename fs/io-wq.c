@@ -480,9 +480,6 @@ next:
 		worker->cur_work = work;
 		spin_unlock_irq(&worker->lock);
 
-		if (work->flags & IO_WQ_WORK_CB)
-			work->func(&work);
-
 		if (work->files && current->files != work->files) {
 			task_lock(current);
 			current->files = work->files;
