@@ -162,9 +162,13 @@ static int arm_spe_read_finish(struct auxtrace_record *itr, int idx)
 	struct perf_evsel *evsel;
 
 	evlist__for_each_entry(sper->evlist, evsel) {
-		if (evsel->attr.type == sper->arm_spe_pmu->type)
-			return perf_evlist__enable_event_idx(sper->evlist,
-							     evsel, idx);
+		if (evsel->attr.type == sper->arm_spe_pmu->type) {
+			if (evsel->terminated)
+				return 0;
+			else
+				return perf_evlist__enable_event_idx(
+						sper->evlist, evsel, idx);
+		}
 	}
 	return -EINVAL;
 }
