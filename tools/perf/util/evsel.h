@@ -146,6 +146,7 @@ struct perf_evsel {
 	bool			collect_stat;
 	bool			weak_group;
 	const char		*pmu_name;
+	bool			terminated;
 };
 
 union u64_swap {

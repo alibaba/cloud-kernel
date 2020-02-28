@@ -1133,6 +1133,7 @@ static int __cmd_record(struct record *rec, int argc, const char **argv)
 		if (done && !disabled && !target__none(&opts->target)) {
 			trigger_off(&auxtrace_snapshot_trigger);
 			perf_evlist__disable(rec->evlist);
+			perf_evlist__terminate(rec->evlist);
 			disabled = true;
 		}
 	}

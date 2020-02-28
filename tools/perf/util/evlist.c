@@ -357,6 +357,20 @@ static int perf_evlist__nr_threads(struct perf_evlist *evlist,
 		return thread_map__nr(evlist->threads);
 }
 
+void perf_evlist__terminate(struct perf_evlist *evlist)
+{
+	struct perf_evsel *pos;
+
+	evlist__for_each_entry(evlist, pos) {
+		if (!perf_evsel__is_group_leader(pos) || !pos->fd)
+			continue;
+		perf_evsel__disable(pos);
+		pos->terminated = true;
+	}
+
+	evlist->enabled = false;
+}
+
 void perf_evlist__disable(struct perf_evlist *evlist)
 {
 	struct perf_evsel *pos;
