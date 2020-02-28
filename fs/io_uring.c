@@ -3101,6 +3101,21 @@ static int io_sync_file_range(struct io_kiocb *req, struct io_kiocb **nxt,
 	return 0;
 }
 
+static int io_setup_async_msg(struct io_kiocb *req,
+			      struct io_async_msghdr *kmsg)
+{
+	if (req->io)
+		return -EAGAIN;
+	if (io_alloc_async_ctx(req)) {
+		if (kmsg->iov != kmsg->fast_iov)
+			kfree(kmsg->iov);
+		return -ENOMEM;
+	}
+	req->flags |= REQ_F_NEED_CLEANUP;
+	memcpy(&req->io->msg, kmsg, sizeof(*kmsg));
+	return -EAGAIN;
+}
+
 static int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 {
 #if defined(CONFIG_NET)
@@ -3177,18 +3192,8 @@ static int io_sendmsg(struct io_kiocb *req, struct io_kiocb **nxt,
 			flags |= MSG_DONTWAIT;
 
 		ret = __sys_sendmsg_sock(sock, &kmsg->msg, flags);
-		if (force_nonblock && ret == -EAGAIN) {
-			if (req->io)
-				return -EAGAIN;
-			if (io_alloc_async_ctx(req)) {
-				if (kmsg->iov != kmsg->fast_iov)
-					kfree(kmsg->iov);
-				return -ENOMEM;
-			}
-			req->flags |= REQ_F_NEED_CLEANUP;
-			memcpy(&req->io->msg, &io.msg, sizeof(io.msg));
-			return -EAGAIN;
-		}
+		if (force_nonblock && ret == -EAGAIN)
+			return io_setup_async_msg(req, kmsg);
 		if (ret == -ERESTARTSYS)
 			ret = -EINTR;
 	}
@@ -3336,18 +3341,8 @@ static int io_recvmsg(struct io_kiocb *req, struct io_kiocb **nxt,
 
 		ret = __sys_recvmsg_sock(sock, &kmsg->msg, req->sr_msg.msg,
 						kmsg->uaddr, flags);
-		if (force_nonblock && ret == -EAGAIN) {
-			if (req->io)
-				return -EAGAIN;
-			if (io_alloc_async_ctx(req)) {
-				if (kmsg->iov != kmsg->fast_iov)
-					kfree(kmsg->iov);
-				return -ENOMEM;
-			}
-			memcpy(&req->io->msg, &io.msg, sizeof(io.msg));
-			req->flags |= REQ_F_NEED_CLEANUP;
-			return -EAGAIN;
-		}
+		if (force_nonblock && ret == -EAGAIN)
+			return io_setup_async_msg(req, kmsg);
 		if (ret == -ERESTARTSYS)
 			ret = -EINTR;
 	}
