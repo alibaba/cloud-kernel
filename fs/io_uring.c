@@ -2555,7 +2555,7 @@ static bool io_req_cancelled(struct io_kiocb *req)
 	if (req->work.flags & IO_WQ_WORK_CANCEL) {
 		req_set_fail_links(req);
 		io_cqring_add_event(req, -ECANCELED);
-		io_put_req(req);
+		io_double_put_req(req);
 		return true;
 	}
 
@@ -2605,6 +2605,7 @@ static void io_fsync_finish(struct io_wq_work **workptr)
 	if (io_req_cancelled(req))
 		return;
 	__io_fsync(req, &nxt);
+	io_put_req(req); /* drop submission reference */
 	if (nxt)
 		io_wq_assign_next(workptr, nxt);
 }
@@ -2614,7 +2615,6 @@ static int io_fsync(struct io_kiocb *req, struct io_kiocb **nxt,
 {
 	/* fsync always requires a blocking context */
 	if (force_nonblock) {
-		io_put_req(req);
 		req->work.func = io_fsync_finish;
 		return -EAGAIN;
 	}
@@ -2625,9 +2625,6 @@ static int io_fsync(struct io_kiocb *req, struct io_kiocb **nxt,
 static void __io_fallocate(struct io_kiocb *req, struct io_kiocb **nxt)
 {
 	int ret;
-
-	if (io_req_cancelled(req))
-		return;
 
 	ret = vfs_fallocate(req->file, req->sync.mode, req->sync.off,
 				req->sync.len);
@@ -2642,7 +2639,10 @@ static void io_fallocate_finish(struct io_wq_work **workptr)
 	struct io_kiocb *req = container_of(*workptr, struct io_kiocb, work);
 	struct io_kiocb *nxt = NULL;
 
+	if (io_req_cancelled(req))
+		return;
 	__io_fallocate(req, &nxt);
+	io_put_req(req); /* drop submission reference */
 	if (nxt)
 		io_wq_assign_next(workptr, nxt);
 }
@@ -2664,7 +2664,6 @@ static int io_fallocate(struct io_kiocb *req, struct io_kiocb **nxt,
 {
 	/* fallocate always requiring blocking context */
 	if (force_nonblock) {
-		io_put_req(req);
 		req->work.func = io_fallocate_finish;
 		return -EAGAIN;
 	}
@@ -3022,6 +3021,7 @@ static void io_close_finish(struct io_wq_work **workptr)
 
 	/* not cancellable, don't do io_req_cancelled() */
 	__io_close_finish(req, &nxt);
+	io_put_req(req); /* drop submission reference */
 	if (nxt)
 		io_wq_assign_next(workptr, nxt);
 }
@@ -3038,6 +3038,9 @@ static int io_close(struct io_kiocb *req, struct io_kiocb **nxt,
 
 	/* if the file has a flush method, be safe and punt to async */
 	if (req->close.put_file->f_op->flush && force_nonblock) {
+		/* submission ref will be dropped, take it for async */
+		refcount_inc(&req->refs);
+
 		req->work.func = io_close_finish;
 		/*
 		 * Do manual async queue here to avoid grabbing files - we don't
@@ -3095,6 +3098,7 @@ static void io_sync_file_range_finish(struct io_wq_work **workptr)
 	if (io_req_cancelled(req))
 		return;
 	__io_sync_file_range(req, &nxt);
+	io_put_req(req); /* put submission ref */
 	if (nxt)
 		io_wq_assign_next(workptr, nxt);
 }
@@ -3104,7 +3108,6 @@ static int io_sync_file_range(struct io_kiocb *req, struct io_kiocb **nxt,
 {
 	/* sync_file_range always requires a blocking context */
 	if (force_nonblock) {
-		io_put_req(req);
 		req->work.func = io_sync_file_range_finish;
 		return -EAGAIN;
 	}
@@ -3473,11 +3476,10 @@ static void io_accept_finish(struct io_wq_work **workptr)
 	struct io_kiocb *req = container_of(*workptr, struct io_kiocb, work);
 	struct io_kiocb *nxt = NULL;
 
-	io_put_req(req);
-
 	if (io_req_cancelled(req))
 		return;
 	__io_accept(req, &nxt, false);
+	io_put_req(req); /* drop submission reference */
 	if (nxt)
 		io_wq_assign_next(workptr, nxt);
 }
@@ -4746,17 +4748,14 @@ static void io_wq_submit_work(struct io_wq_work **workptr)
 		} while (1);
 	}
 
-	/* drop submission reference */
-	io_put_req(req);
-
 	if (ret) {
 		req_set_fail_links(req);
 		io_cqring_add_event(req, ret);
 		io_put_req(req);
 	}
 
-	/* if a dependent link is ready, pass it back */
-	if (!ret && nxt)
+	io_put_req(req); /* drop submission reference */
+	if (nxt)
 		io_wq_assign_next(workptr, nxt);
 }
 
