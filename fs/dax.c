@@ -612,8 +612,11 @@ restart:
 }
 
 /**
- * dax_layout_busy_page - find first pinned page in @mapping
+ * dax_layout_busy_page_range - find first pinned page in @mapping
  * @mapping: address space to scan for a page with ref count > 1
+ * @start: Starting offset. Page containing 'start' is included.
+ * @end: End offset. Page containing 'end' is included. If 'end' is LLONG_MAX,
+ *       pages from 'start' till the end of file are included.
  *
  * DAX requires ZONE_DEVICE mapped pages. These pages are never
  * 'onlined' to the page allocator so they are considered idle when
@@ -626,13 +629,15 @@ restart:
  * to be able to run unmap_mapping_range() and subsequently not race
  * mapping_mapped() becoming true.
  */
-struct page *dax_layout_busy_page(struct address_space *mapping)
+struct page *dax_layout_busy_page_range(struct address_space *mapping,
+					loff_t start, loff_t end)
 {
 	pgoff_t	indices[PAGEVEC_SIZE];
 	struct page *page = NULL;
 	struct pagevec pvec;
-	pgoff_t	index, end;
 	unsigned i;
+	pgoff_t start_idx = start >> PAGE_SHIFT;
+	pgoff_t	index, end_idx;
 
 	/*
 	 * In the 'limited' case get_user_pages() for dax is disabled.
@@ -644,8 +649,17 @@ struct page *dax_layout_busy_page(struct address_space *mapping)
 		return NULL;
 
 	pagevec_init(&pvec);
-	index = 0;
-	end = -1;
+	index = start_idx;
+
+	/*
+	 * If end == LLONG_MAX, all pages from start to till end of file.
+	 * Otherwise, calculate @end_idx (inclusive) corresponding to @end
+	 * (inclusive).
+	 */
+	if (end == LLONG_MAX)
+		end_idx = ULONG_MAX;
+	else
+		end_idx = end >> PAGE_SHIFT;
 
 	/*
 	 * If we race get_user_pages_fast() here either we'll see the
@@ -654,15 +668,15 @@ struct page *dax_layout_busy_page(struct address_space *mapping)
 	 * against is no longer mapped in the page tables and bail to the
 	 * get_user_pages() slow path.  The slow path is protected by
 	 * pte_lock() and pmd_lock(). New references are not taken without
-	 * holding those locks, and unmap_mapping_range() will not zero the
+	 * holding those locks, and unmap_mapping_pages() will not zero the
 	 * pte or pmd without holding the respective lock, so we are
 	 * guaranteed to either see new references or prevent new
 	 * references from being established.
 	 */
-	unmap_mapping_range(mapping, 0, 0, 0);
+	unmap_mapping_pages(mapping, start_idx, end_idx - start_idx + 1, 0);
 
-	while (index < end && pagevec_lookup_entries(&pvec, mapping, index,
-				min(end - index, (pgoff_t)PAGEVEC_SIZE),
+	while (index <= end_idx && pagevec_lookup_entries(&pvec, mapping, index,
+				min(end_idx - index + 1, (pgoff_t)PAGEVEC_SIZE),
 				indices)) {
 		pgoff_t nr_pages = 1;
 
@@ -671,7 +685,7 @@ struct page *dax_layout_busy_page(struct address_space *mapping)
 			void *entry;
 
 			index = indices[i];
-			if (index >= end)
+			if (index > end_idx)
 				break;
 
 			if (WARN_ON_ONCE(
@@ -709,6 +723,12 @@ struct page *dax_layout_busy_page(struct address_space *mapping)
 			break;
 	}
 	return page;
+}
+EXPORT_SYMBOL_GPL(dax_layout_busy_page_range);
+
+struct page *dax_layout_busy_page(struct address_space *mapping)
+{
+	return dax_layout_busy_page_range(mapping, 0, LLONG_MAX);
 }
 EXPORT_SYMBOL_GPL(dax_layout_busy_page);
 
