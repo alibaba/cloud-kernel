@@ -7,12 +7,14 @@ CFS Bandwidth Control
 CFS bandwidth control is a CONFIG_FAIR_GROUP_SCHED extension which allows the
 specification of the maximum CPU bandwidth available to a group or hierarchy.
 
-The bandwidth allowed for a group is specified using a quota and period. Within
-each given "period" (microseconds), a group is allowed to consume only up to
-"quota" microseconds of CPU time.  When the CPU bandwidth consumption of a
-group exceeds this limit (for that period), the tasks belonging to its
-hierarchy will be throttled and are not allowed to run again until the next
-period.
+The bandwidth allowed for a group is specified using a quota, period and burst.
+Within each given "period" (microseconds), a group is filled with "quota"
+microseconds of CPU time. If the group has consumed less than that in a period,
+unused "quota" will be accumulated and allowd to be used in the following
+periods. A cap "burst" should be set by user via cpu.cfs_burst_us. The
+accumulated CPU time won't exceed this time. When the CPU bandwidth consumption
+of a group exceeds its limit, the tasks belonging to its hierarchy will be
+throttled and are not allowed to run again until the next period.
 
 A group's unused runtime is globally tracked, being refreshed with quota units
 above at each period boundary.  As threads consume this bandwidth it is
@@ -21,26 +23,33 @@ within each of these updates is tunable and described as the "slice".
 
 Management
 ----------
-Quota and period are managed within the cpu subsystem via cgroupfs.
+Quota, period and burst are managed within the cpu subsystem via cgroupfs.
 
 cpu.cfs_quota_us: the total available run-time within a period (in microseconds)
 cpu.cfs_period_us: the length of a period (in microseconds)
+cpu.cfs_burst_us: the maximum accumulated run-time
 cpu.stat: exports throttling statistics [explained further below]
 
 The default values are:
 	cpu.cfs_period_us=100ms
-	cpu.cfs_quota=-1
+	cpu.cfs_quota_us=-1
+	cpu.cfs_burst_us=-1
 
 A value of -1 for cpu.cfs_quota_us indicates that the group does not have any
 bandwidth restriction in place, such a group is described as an unconstrained
-bandwidth group.  This represents the traditional work-conserving behavior for
+bandwidth group. This represents the traditional work-conserving behavior for
 CFS.
 
-Writing any (valid) positive value(s) will enact the specified bandwidth limit.
-The minimum quota allowed for the quota or period is 1ms.  There is also an
-upper bound on the period length of 1s.  Additional restrictions exist when
-bandwidth limits are used in a hierarchical fashion, these are explained in
-more detail below.
+Writing any (valid) positive value(s) into cpu.cfs_quota_us will enact the
+specified bandwidth limit. The minimum quota allowed for the quota or period
+is 1ms. There is also an upper bound on the period length of 1s. Additional
+restrictions exist when bandwidth limits are used in a hierarchical fashion,
+these are explained in more detail below.
+
+A value of 0 for cpu.cfs_burst_us indicates that the group can not accumulate
+any unused bandwidth. This represents the traditional bandwidth control
+behavior for CFS. Writing any (valid) positive value(s) into cpu.cfs_burst_us
+will enact the cap on unused bandwidth accumulation.
 
 Writing any negative value to cpu.cfs_quota_us will remove the bandwidth limit
 and return the group to an unconstrained state once more.
@@ -61,15 +70,35 @@ This is tunable via procfs:
 Larger slice values will reduce transfer overheads, while smaller values allow
 for more fine-grained consumption.
 
+
+There is also a global switch to turn off burst for all groups:
+	/proc/sys/kernel/sched_cfs_bw_burst_enabled (default=1)
+
+By default it is enabled. Write 0 values means no accumulated CPU time can be
+used for any group, even if cpu.cfs_burst_us is configured.
+
+
+Sometimes users might want a group to burst without accumulation. This is
+tunable via:
+	/proc/sys/kernel/sched_cfs_bw_burst_onset_percent (default=0)
+
+Up to 100% runtime of cpu.cfs_burst_us might be given on setting bandwidth.
+
 Statistics
 ----------
-A group's bandwidth statistics are exported via 3 fields in cpu.stat.
+A group's bandwidth statistics are exported via 7 fields in cpu.stat.
 
 cpu.stat:
 - nr_periods: Number of enforcement intervals that have elapsed.
 - nr_throttled: Number of times the group has been throttled/limited.
 - throttled_time: The total time duration (in nanoseconds) for which entities
   of the group have been throttled.
+- wait_sum: The total time duration (in nanoseconds) for which entities
+  of the group have been waiting.
+- current_bw: Current runtime in global pool.
+- nr_burst: Number of periods burst occurs.
+- burst_time: Cumulative wall-time that any cpus has used above quota in
+  respective periods
 
 This interface is read-only.
 
@@ -165,3 +194,14 @@ Examples
 	By using a small period here we are ensuring a consistent latency
 	response at the expense of burst capacity.
 
+4. Limit a group to 20% of 1 CPU, and allow accumulate up to 60% of 1 CPU
+   addtionally, in case accumulation has been done.
+
+	With 50ms period, 10ms quota will be equivalent to 20% of 1 CPU.
+	And 30ms burst will be equivalent to 60% of 1 CPU.
+
+	# echo 10000 > cpu.cfs_quota_us /* quota = 10ms */
+	# echo 50000 > cpu.cfs_period_us /* period = 50ms */
+	# echo 30000 > cpu.cfs_burst_us /* burst = 30ms */
+
+	Larger buffer setting allows greater burst capacity.
