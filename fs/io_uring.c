@@ -1521,6 +1521,27 @@ static void io_free_req(struct io_kiocb *req)
 		io_queue_async_work(nxt);
 }
 
+static void io_link_work_cb(struct io_wq_work **workptr)
+{
+	struct io_wq_work *work = *workptr;
+	struct io_kiocb *link = work->data;
+
+	io_queue_linked_timeout(link);
+	io_wq_submit_work(workptr);
+}
+
+static void io_wq_assign_next(struct io_wq_work **workptr, struct io_kiocb *nxt)
+{
+	struct io_kiocb *link;
+
+	*workptr = &nxt->work;
+	link = io_prep_linked_timeout(nxt);
+	if (link) {
+		nxt->work.func = io_link_work_cb;
+		nxt->work.data = link;
+	}
+}
+
 /*
  * Drop reference to request, return next in chain (if there is one) if this
  * was the last reference to this request.
@@ -1538,6 +1559,27 @@ static void io_put_req(struct io_kiocb *req)
 {
 	if (refcount_dec_and_test(&req->refs))
 		io_free_req(req);
+}
+
+static void io_put_req_async_completion(struct io_kiocb *req,
+					struct io_wq_work **workptr)
+{
+	/*
+	 * It's in an io-wq worker, so there always should be at least
+	 * one reference, which will be dropped in io_put_work() just
+	 * after the current handler returns.
+	 *
+	 * It also means, that if the counter dropped to 1, then there is
+	 * no asynchronous users left, so it's safe to steal the next work.
+	 */
+	refcount_dec(&req->refs);
+	if (refcount_read(&req->refs) == 1) {
+		struct io_kiocb *nxt = NULL;
+
+		io_req_find_next(req, &nxt);
+		if (nxt)
+			io_wq_assign_next(workptr, nxt);
+	}
 }
 
 /*
@@ -2548,27 +2590,6 @@ static bool io_req_cancelled(struct io_kiocb *req)
 	return false;
 }
 
-static void io_link_work_cb(struct io_wq_work **workptr)
-{
-	struct io_wq_work *work = *workptr;
-	struct io_kiocb *link = work->data;
-
-	io_queue_linked_timeout(link);
-	io_wq_submit_work(workptr);
-}
-
-static void io_wq_assign_next(struct io_wq_work **workptr, struct io_kiocb *nxt)
-{
-	struct io_kiocb *link;
-
-	*workptr = &nxt->work;
-	link = io_prep_linked_timeout(nxt);
-	if (link) {
-		nxt->work.func = io_link_work_cb;
-		nxt->work.data = link;
-	}
-}
-
 static void __io_fsync(struct io_kiocb *req)
 {
 	loff_t end = req->sync.off + req->sync.len;
@@ -2586,14 +2607,11 @@ static void __io_fsync(struct io_kiocb *req)
 static void io_fsync_finish(struct io_wq_work **workptr)
 {
 	struct io_kiocb *req = container_of(*workptr, struct io_kiocb, work);
-	struct io_kiocb *nxt = NULL;
 
 	if (io_req_cancelled(req))
 		return;
 	__io_fsync(req);
-	io_put_req(req); /* drop submission reference */
-	if (nxt)
-		io_wq_assign_next(workptr, nxt);
+	io_put_req_async_completion(req, workptr);
 }
 
 static int io_fsync(struct io_kiocb *req, bool force_nonblock)
@@ -2622,14 +2640,11 @@ static void __io_fallocate(struct io_kiocb *req)
 static void io_fallocate_finish(struct io_wq_work **workptr)
 {
 	struct io_kiocb *req = container_of(*workptr, struct io_kiocb, work);
-	struct io_kiocb *nxt = NULL;
 
 	if (io_req_cancelled(req))
 		return;
 	__io_fallocate(req);
-	io_put_req(req); /* drop submission reference */
-	if (nxt)
-		io_wq_assign_next(workptr, nxt);
+	io_put_req_async_completion(req, workptr);
 }
 
 static int io_fallocate_prep(struct io_kiocb *req,
@@ -2995,13 +3010,10 @@ static void __io_close_finish(struct io_kiocb *req)
 static void io_close_finish(struct io_wq_work **workptr)
 {
 	struct io_kiocb *req = container_of(*workptr, struct io_kiocb, work);
-	struct io_kiocb *nxt = NULL;
 
 	/* not cancellable, don't do io_req_cancelled() */
 	__io_close_finish(req);
-	io_put_req(req); /* drop submission reference */
-	if (nxt)
-		io_wq_assign_next(workptr, nxt);
+	io_put_req_async_completion(req, workptr);
 }
 
 static int io_close(struct io_kiocb *req, bool force_nonblock)
@@ -3445,14 +3457,11 @@ static int __io_accept(struct io_kiocb *req, bool force_nonblock)
 static void io_accept_finish(struct io_wq_work **workptr)
 {
 	struct io_kiocb *req = container_of(*workptr, struct io_kiocb, work);
-	struct io_kiocb *nxt = NULL;
 
 	if (io_req_cancelled(req))
 		return;
 	__io_accept(req, false);
-	io_put_req(req); /* drop submission reference */
-	if (nxt)
-		io_wq_assign_next(workptr, nxt);
+	io_put_req_async_completion(req, workptr);
 }
 #endif
 
@@ -4694,7 +4703,6 @@ static void io_wq_submit_work(struct io_wq_work **workptr)
 {
 	struct io_wq_work *work = *workptr;
 	struct io_kiocb *req = container_of(work, struct io_kiocb, work);
-	struct io_kiocb *nxt = NULL;
 	int ret = 0;
 
 	/* if NO_CANCEL is set, we must still run the work */
@@ -4723,9 +4731,7 @@ static void io_wq_submit_work(struct io_wq_work **workptr)
 		io_put_req(req);
 	}
 
-	io_put_req(req); /* drop submission reference */
-	if (nxt)
-		io_wq_assign_next(workptr, nxt);
+	io_put_req_async_completion(req, workptr);
 }
 
 static int io_req_needs_file(struct io_kiocb *req, int fd)
@@ -6136,6 +6142,7 @@ static void io_put_work(struct io_wq_work *work)
 {
 	struct io_kiocb *req = container_of(work, struct io_kiocb, work);
 
+	/* Consider that io_put_req_async_completion() relies on this ref */
 	io_put_req(req);
 }
 
