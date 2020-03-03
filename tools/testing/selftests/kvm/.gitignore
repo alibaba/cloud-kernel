@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 cr4_cpuid_sync_test
 platform_info_test
 set_sregs_test

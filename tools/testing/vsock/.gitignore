@@ -1,2 +1,3 @@
+# SPDX-License-Identifier: GPL-2.0-only
 *.d
 vsock_diag_test
