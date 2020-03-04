@@ -66,12 +66,15 @@
 #define MODULES_VADDR		(VA_START + KASAN_SHADOW_SIZE)
 #define MODULES_VSIZE		(SZ_128M)
 #define VMEMMAP_START		(PAGE_OFFSET - VMEMMAP_SIZE)
+#define VMEMMAP_END		(VMEMMAP_START + VMEMMAP_SIZE)
 #define PCI_IO_END		(VMEMMAP_START - SZ_2M)
 #define PCI_IO_START		(PCI_IO_END - PCI_IO_SIZE)
 #define FIXADDR_TOP		(PCI_IO_START - SZ_2M)
 
 #define KERNEL_START      _text
 #define KERNEL_END        _end
+
+#define PAGE_END		(PAGE_OFFSET + BIT(VA_BITS - 1) - 1)
 
 /*
  * KASAN requires 1/8th of the kernel virtual address space for the shadow
