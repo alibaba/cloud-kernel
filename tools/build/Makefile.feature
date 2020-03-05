@@ -33,6 +33,7 @@ FEATURE_TESTS_BASIC :=                  \
         dwarf_getlocations              \
         fortify-source                  \
         sync-compare-and-swap           \
+        gettid                          \
         glibc                           \
         gtk2                            \
         gtk2-infobar                    \
