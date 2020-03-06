@@ -91,6 +91,10 @@ struct cpuidle_state;
 #define TASK_ON_RQ_QUEUED	1
 #define TASK_ON_RQ_MIGRATING	2
 
+#ifdef CONFIG_CFS_BANDWIDTH
+extern const u64 max_cfs_runtime;
+#endif
+
 extern __read_mostly int scheduler_running;
 
 extern unsigned long calc_load_update;
@@ -369,6 +373,7 @@ struct cfs_bandwidth {
 	u64			runtime;
 	u64			burst;
 	u64			buffer;
+	u64			max_overrun;
 	s64			hierarchical_quota;
 
 	u8			idle;
@@ -481,8 +486,7 @@ extern void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 			struct sched_entity *parent);
 extern void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b);
 
-extern void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b);
-extern void start_cfs_bandwidth(struct cfs_bandwidth *cfs_b);
+extern void start_cfs_bandwidth(struct cfs_bandwidth *cfs_b, int init);
 extern void unthrottle_cfs_rq(struct cfs_rq *cfs_rq);
 
 extern void free_rt_sched_group(struct task_group *tg);
