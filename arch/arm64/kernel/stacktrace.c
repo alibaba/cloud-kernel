@@ -42,9 +42,6 @@
  *	add	sp, sp, #0x10
  */
 
-/* The bottom of kernel thread stacks points there */
-extern void *kthread_return_to_user;
-
 /*
  * unwind_frame -- unwind a single stack frame.
  * Returns 0 when there are more frames to go.
@@ -86,19 +83,13 @@ int notrace unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
 
 	/*
-	 * kthreads created via copy_thread() (called from kthread_create())
-	 * will have a zero BP and a return value into ret_from_fork.
-	 */
-	if (!frame->fp && frame->pc == (unsigned long)&kthread_return_to_user)
-		return 1;
-
-	/*
 	 * Frames created upon entry from EL0 have NULL FP and PC values, so
 	 * don't bother reporting these. Frames created by __noreturn functions
-	 * might have a valid FP even if PC is bogus, so only terminate where
-	 * both are NULL.
+	 * might have a valid FP even if PC is bogus, so terminate where
+	 * both are NULL, check the kthread stack, it also has a zero BP
 	 */
-	if (!frame->fp && !frame->pc)
+	if (!frame->fp && (!frame->pc ||
+			__kernel_text_address(frame->pc)))
 		return 1;
 
 	return 0;
