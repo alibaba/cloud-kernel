@@ -1064,17 +1064,15 @@ ENTRY(cpu_switch_to)
 ENDPROC(cpu_switch_to)
 NOKPROBE(cpu_switch_to)
 
-	.global	kthread_return_to_user
 /*
  * This is how we return from a fork.
  */
 ENTRY(ret_from_fork)
 	bl	schedule_tail
-	cbz	x19, kthread_return_to_user	// not a kernel thread
+	cbz	x19, 1f				// not a kernel thread
 	mov	x0, x20
 	blr	x19
-kthread_return_to_user:
-	get_thread_info tsk
+1:	get_thread_info tsk
 	b	ret_to_user
 ENDPROC(ret_from_fork)
 NOKPROBE(ret_from_fork)
