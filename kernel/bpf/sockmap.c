@@ -931,11 +931,6 @@ static int bpf_tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 	struct smap_psock *psock;
 	int copied = 0;
 
-	if (unlikely(flags & MSG_ERRQUEUE))
-		return inet_recv_error(sk, msg, len, addr_len);
-	if (!skb_queue_empty(&sk->sk_receive_queue))
-		return tcp_recvmsg(sk, msg, len, nonblock, flags, addr_len);
-
 	rcu_read_lock();
 	psock = smap_psock_sk(sk);
 	if (unlikely(!psock))
@@ -944,6 +939,12 @@ static int bpf_tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 	if (unlikely(!refcount_inc_not_zero(&psock->refcnt)))
 		goto out;
 	rcu_read_unlock();
+
+	if (unlikely(flags & MSG_ERRQUEUE))
+		return inet_recv_error(sk, msg, len, addr_len);
+	if (!skb_queue_empty(&sk->sk_receive_queue) &&
+	    list_empty(&psock->ingress))
+		return tcp_recvmsg(sk, msg, len, nonblock, flags, addr_len);
 
 	lock_sock(sk);
 bytes_ready:
@@ -1010,7 +1011,7 @@ bytes_ready:
 		data = bpf_wait_data(sk, psock, flags, timeo, &err);
 
 		if (data) {
-			if (!skb_queue_empty(&sk->sk_receive_queue)) {
+			if (list_empty(&psock->ingress)) {
 				release_sock(sk);
 				smap_release_sock(psock, sk);
 				copied = tcp_recvmsg(sk, msg, len, nonblock, flags, addr_len);
