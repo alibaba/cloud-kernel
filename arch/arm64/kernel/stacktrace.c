@@ -107,10 +107,11 @@ int notrace unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 	/*
 	 * Frames created upon entry from EL0 have NULL FP and PC values, so
 	 * don't bother reporting these. Frames created by __noreturn functions
-	 * might have a valid FP even if PC is bogus, so only terminate where
-	 * both are NULL.
+	 * might have a valid FP even if PC is bogus, so terminate where
+	 * both are NULL, check the kthread stack, it also has a zero BP
 	 */
-	if (!frame->fp && !frame->pc)
+	if (!frame->fp && (!frame->pc ||
+			__kernel_text_address(frame->pc)))
 		return -EINVAL;
 
 	return 0;
