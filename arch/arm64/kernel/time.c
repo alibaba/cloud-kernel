@@ -56,7 +56,7 @@ unsigned long profile_pc(struct pt_regs *regs)
 #endif
 	do {
 		int ret = unwind_frame(NULL, &frame);
-		if (ret < 0)
+		if (ret)
 			return 0;
 	} while (in_lock_functions(frame.pc));
 
