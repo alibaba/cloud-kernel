@@ -75,6 +75,7 @@ Currently, these files are in /proc/sys/vm:
 - watermark_boost_factor
 - watermark_scale_factor
 - zone_reclaim_mode
+- enable_context_readahead
 
 
 admin_reserve_kbytes
@@ -995,3 +996,20 @@ of other processes running on other nodes will not be affected.
 Allowing regular swap effectively restricts allocations to the local
 node unless explicitly overridden by memory policies or cpuset
 configurations.
+
+
+enable_context_readahead
+========================
+
+Specific workloads whose io activities are mostly random, context readahead
+feature may introduce unnecessary io read operations, which will impact app's
+performance.
+
+Default it is enabled.
+
+To disable context readahead:
+       echo 0 > /proc/sys/vm/enable_context_readahead
+
+To enable context readahead again:
+       echo 1 > /proc/sys/vm/enable_context_readahead
+
