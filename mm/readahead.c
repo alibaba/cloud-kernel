@@ -24,6 +24,9 @@
 
 #include "internal.h"
 
+/* enable context readahead default */
+int sysctl_enable_context_readahead = 1;
+
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
  * memset *ra to zero.
@@ -458,8 +461,11 @@ ondemand_readahead(struct address_space *mapping,
 	 * Query the page cache and look for the traces(cached history pages)
 	 * that a sequential stream would leave behind.
 	 */
-	if (try_context_readahead(mapping, ra, offset, req_size, max_pages))
-		goto readit;
+	if (sysctl_enable_context_readahead) {
+		if (try_context_readahead(mapping, ra, offset, req_size,
+					  max_pages))
+			goto readit;
+	}
 
 	/*
 	 * standalone, small random read
