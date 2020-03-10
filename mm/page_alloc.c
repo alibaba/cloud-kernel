@@ -1630,12 +1630,17 @@ deferred_init_maxorder(u64 *i, struct zone *zone, unsigned long *start_pfn,
 	return nr_pages;
 }
 
+/*
+ * Release the pending interrupts for every TICK_PAGE_COUNT pages.
+ */
+#define TICK_PAGE_COUNT	(32 * 1024)
+
 /* Initialise remaining memory on a node */
 static int __init deferred_init_memmap(void *data)
 {
 	pg_data_t *pgdat = data;
 	const struct cpumask *cpumask = cpumask_of_node(pgdat->node_id);
-	unsigned long spfn = 0, epfn = 0, nr_pages = 0;
+	unsigned long spfn = 0, epfn = 0, nr_pages = 0, prev_nr_pages = 0;
 	unsigned long first_init_pfn, flags;
 	unsigned long start = jiffies;
 	struct zone *zone;
@@ -1646,6 +1651,7 @@ static int __init deferred_init_memmap(void *data)
 	if (!cpumask_empty(cpumask))
 		set_cpus_allowed_ptr(current, cpumask);
 
+again:
 	pgdat_resize_lock(pgdat, &flags);
 	first_init_pfn = pgdat->first_deferred_pfn;
 	if (first_init_pfn == ULONG_MAX) {
@@ -1657,7 +1663,6 @@ static int __init deferred_init_memmap(void *data)
 	/* Sanity check boundaries */
 	BUG_ON(pgdat->first_deferred_pfn < pgdat->node_start_pfn);
 	BUG_ON(pgdat->first_deferred_pfn > pgdat_end_pfn(pgdat));
-	pgdat->first_deferred_pfn = ULONG_MAX;
 
 	/* Only the highest zone is deferred so find it */
 	for (zid = 0; zid < MAX_NR_ZONES; zid++) {
@@ -1676,9 +1681,23 @@ static int __init deferred_init_memmap(void *data)
 	 * that we can avoid introducing any issues with the buddy
 	 * allocator.
 	 */
-	while (spfn < epfn)
+	while (spfn < epfn) {
 		nr_pages += deferred_init_maxorder(&i, zone, &spfn, &epfn);
+		/*
+		 * Release the interrupts for every TICK_PAGE_COUNT pages
+		 * (128MB) to give tick timer the chance to update the
+		 * system jiffies.
+		 */
+		if ((nr_pages - prev_nr_pages) > TICK_PAGE_COUNT) {
+			prev_nr_pages = nr_pages;
+			pgdat->first_deferred_pfn = spfn;
+			pgdat_resize_unlock(pgdat, &flags);
+			goto again;
+		}
+	}
+
 zone_empty:
+	pgdat->first_deferred_pfn = ULONG_MAX;
 	pgdat_resize_unlock(pgdat, &flags);
 
 	/* Sanity check that the next zone really is unpopulated */
