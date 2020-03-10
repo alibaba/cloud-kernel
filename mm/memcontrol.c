@@ -1078,10 +1078,10 @@ static void invalidate_reclaim_iterators(struct mem_cgroup *dead_memcg)
 						dead_memcg);
 }
 
-/* memcg priority */
+/* memcg oom priority */
 /*
- * mem_cgroup_account_oom_skip - account the OOM-unkillable task
- * @task: non OOM-killable task
+ * do_mem_cgroup_account_oom_skip - account the memcg with OOM-unkillable task
+ * @memcg: mem_cgroup struct with OOM-unkillable task
  * @oc: oom_control struct
  *
  * Account OOM-unkillable task to its cgroup and up to the OOMing cgroup's
@@ -1093,21 +1093,20 @@ static void invalidate_reclaim_iterators(struct mem_cgroup *dead_memcg)
  * tasks might become killable.
  *
  */
-void mem_cgroup_account_oom_skip(struct task_struct *task,
-		struct oom_control *oc)
+static void do_mem_cgroup_account_oom_skip(struct mem_cgroup *memcg,
+					   struct oom_control *oc)
 {
-	struct mem_cgroup *root, *memcg;
+	struct mem_cgroup *root;
 	struct cgroup_subsys_state *css;
 
 	if (!oc->use_priority_oom)
+		return;
+	if (unlikely(!memcg))
 		return;
 	root = oc->memcg;
 	if (!root)
 		root = root_mem_cgroup;
 
-	memcg = mem_cgroup_from_task(task);
-	if (unlikely(!memcg))
-		return;
 	css = &memcg->css;
 	while (css) {
 		struct mem_cgroup *tmp;
@@ -1130,6 +1129,12 @@ void mem_cgroup_account_oom_skip(struct task_struct *task,
 
 		css = css->parent;
 	}
+}
+
+void mem_cgroup_account_oom_skip(struct task_struct *task,
+		struct oom_control *oc)
+{
+	do_mem_cgroup_account_oom_skip(mem_cgroup_from_task(task), oc);
 }
 
 static struct mem_cgroup *
@@ -1261,8 +1266,10 @@ retry:
 	mem_cgroup_scan_tasks(victim, oom_evaluate_task, oc);
 	if (oc->use_priority_oom) {
 		css_put(&victim->css);
-		if (!oc->chosen && victim != memcg)
+		if (!oc->chosen && victim != memcg) {
+			do_mem_cgroup_account_oom_skip(victim, oc);
 			goto retry;
+		}
 	}
 out:
 	/* See commets in mem_cgroup_account_oom_skip() */
