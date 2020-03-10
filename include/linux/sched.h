@@ -462,6 +462,10 @@ struct sched_entity {
 	u64				vruntime;
 	u64				prev_sum_exec_runtime;
 
+	u64				cg_idle_start;
+	u64				cg_idle_sum;
+	seqcount_t			idle_seqcount;
+
 	u64				nr_migrations;
 
 	struct sched_statistics		statistics;

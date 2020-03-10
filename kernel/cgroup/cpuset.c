@@ -896,6 +896,7 @@ static void update_tasks_cpumask(struct cpuset *cs)
 static void update_cpumasks_hier(struct cpuset *cs, struct cpumask *new_cpus)
 {
 	struct cpuset *cp;
+	struct cpumask added, deleted, old_cpus;
 	struct cgroup_subsys_state *pos_css;
 	bool need_rebuild_sched_domains = false;
 
@@ -911,6 +912,11 @@ static void update_cpumasks_hier(struct cpuset *cs, struct cpumask *new_cpus)
 		 */
 		if (is_in_v2_mode() && cpumask_empty(new_cpus))
 			cpumask_copy(new_cpus, parent->effective_cpus);
+
+		if (cpumask_empty(cp->effective_cpus))
+			cpumask_copy(&old_cpus, parent->effective_cpus);
+		else
+			cpumask_copy(&old_cpus, cp->effective_cpus);
 
 		/* Skip the whole subtree if the cpumask remains the same. */
 		if (cpumask_equal(new_cpus, cp->effective_cpus)) {
@@ -929,7 +935,15 @@ static void update_cpumasks_hier(struct cpuset *cs, struct cpumask *new_cpus)
 		WARN_ON(!is_in_v2_mode() &&
 			!cpumask_equal(cp->cpus_allowed, cp->effective_cpus));
 
+		/* add = new - old = new & (~old) */
+		cpumask_andnot(&added, new_cpus, &old_cpus);
+		cpuacct_cpuset_changed(cs->css.cgroup, NULL, &added);
+
 		update_tasks_cpumask(cp);
+
+		/* deleted = old - new = old & (~new) */
+		cpumask_andnot(&deleted, &old_cpus, new_cpus);
+		cpuacct_cpuset_changed(cs->css.cgroup, &deleted, NULL);
 
 		/*
 		 * If the effective cpumask of any non-empty cpuset is changed,
@@ -2026,6 +2040,7 @@ static int cpuset_css_online(struct cgroup_subsys_state *css)
 	cs->effective_mems = parent->mems_allowed;
 	cpumask_copy(cs->cpus_allowed, parent->cpus_allowed);
 	cpumask_copy(cs->effective_cpus, parent->cpus_allowed);
+	cpuacct_cpuset_changed(cs->css.cgroup, NULL, cs->effective_cpus);
 	spin_unlock_irq(&callback_lock);
 out_unlock:
 	mutex_unlock(&cpuset_mutex);
