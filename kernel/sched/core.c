@@ -6615,6 +6615,8 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota,
 		}
 	}
 
+	cfs_b->previous_runtime = cfs_b->runtime;
+
 	/* Restart the period timer (if active) to handle new period expiry: */
 	if (runtime_enabled)
 		start_cfs_bandwidth(cfs_b, 1);
@@ -6862,6 +6864,10 @@ static int cpu_cfs_stat_show(struct seq_file *sf, void *v)
 
 		seq_printf(sf, "wait_sum %llu\n", ws);
 	}
+
+	seq_printf(sf, "current_bw %llu\n", cfs_b->runtime);
+	seq_printf(sf, "nr_burst %d\n", cfs_b->nr_burst);
+	seq_printf(sf, "burst_time %llu\n", cfs_b->burst_time);
 
 	return 0;
 }
