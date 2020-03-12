@@ -1796,20 +1796,24 @@ static int cgroup_remount(struct kernfs_root *kf_root, int *flags, char *data)
 	return 0;
 }
 
-static void css_account_tasks(struct css_set *cset, int num)
+static void css_account_procs(struct task_struct *task,
+			      struct css_set *cset, int num)
 {
 	struct cgroup_subsys *ss;
 	int ssid;
+
+	if (!thread_group_leader(task))
+		return;
 
 	for_each_subsys(ss, ssid) {
 		struct cgroup_subsys_state *css = cset->subsys[ssid];
 
 		if (!css)
 			continue;
-		css->nr_tasks += num;
+		css->nr_procs += num;
 		while (css->parent) {
 			css = css->parent;
-			css->nr_tasks += num;
+			css->nr_procs += num;
 		}
 	}
 }
@@ -1865,7 +1869,7 @@ static void cgroup_enable_task_cg_lists(void)
 			list_add_tail(&p->cg_list, &cset->tasks);
 			get_css_set(cset);
 			cset->nr_tasks++;
-			css_account_tasks(cset, 1);
+			css_account_procs(p, cset, 1);
 		}
 		spin_unlock(&p->sighand->siglock);
 	} while_each_thread(g, p);
@@ -2358,11 +2362,11 @@ static int cgroup_migrate_execute(struct cgroup_mgctx *mgctx)
 
 			get_css_set(to_cset);
 			to_cset->nr_tasks++;
-			css_account_tasks(to_cset, 1);
+			css_account_procs(task, to_cset, 1);
 			css_set_move_task(task, from_cset, to_cset, true);
 			put_css_set_locked(from_cset);
 			from_cset->nr_tasks--;
-			css_account_tasks(from_cset, -1);
+			css_account_procs(task, from_cset, -1);
 		}
 	}
 	spin_unlock_irq(&css_set_lock);
@@ -5849,7 +5853,7 @@ void cgroup_post_fork(struct task_struct *child)
 		if (list_empty(&child->cg_list)) {
 			get_css_set(cset);
 			cset->nr_tasks++;
-			css_account_tasks(cset, 1);
+			css_account_procs(child, cset, 1);
 			css_set_move_task(child, NULL, cset, false);
 		}
 		spin_unlock_irq(&css_set_lock);
@@ -5901,7 +5905,7 @@ void cgroup_exit(struct task_struct *tsk)
 		css_set_move_task(tsk, cset, NULL, false);
 		list_add_tail(&tsk->cg_list, &cset->dying_tasks);
 		cset->nr_tasks--;
-		css_account_tasks(cset, -1);
+		css_account_procs(tsk, cset, -1);
 		spin_unlock_irq(&css_set_lock);
 	} else {
 		get_css_set(cset);
