@@ -1158,7 +1158,7 @@ again:
 
 		parent_mem = mem_cgroup_from_css(parent);
 
-		if (parent->nr_tasks <= parent_mem->num_oom_skip)
+		if (parent->nr_procs <= parent_mem->num_oom_skip)
 			break;
 		victim = parent;
 		chosen = NULL;
@@ -1168,7 +1168,7 @@ again:
 
 			tmp = mem_cgroup_from_css(pos);
 
-			if (pos->nr_tasks <= tmp->num_oom_skip)
+			if (pos->nr_procs <= tmp->num_oom_skip)
 				continue;
 			if (tmp->priority > chosen_priority)
 				continue;
