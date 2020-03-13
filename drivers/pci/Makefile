@@ -36,5 +36,6 @@ obj-$(CONFIG_PCI_ENDPOINT)	+= endpoint/
 
 obj-y				+= controller/
 obj-y				+= switch/
+obj-$(CONFIG_PCI_IOHUB_SRIOV)	+= iohub-sriov/
 
 ccflags-$(CONFIG_PCI_DEBUG) := -DDEBUG
