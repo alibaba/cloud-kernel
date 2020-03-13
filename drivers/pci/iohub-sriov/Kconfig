@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0
+# #
+# # PCI configuration
+# #
+#
+
+menu "PCIe IOHub"
+
+config PCI_IOHUB_SRIOV
+	tristate "Alibaba PCIe IOHub SRIOV Driver"
+	depends on PCI
+	help
+	  Enables support for Alibaba PCIe IOHub SRIOV Driver,
+	  It enables SRIOV of PCIe devices of Alibaba MOC,
+	  then VFs can be used by other applications.
+
+endmenu
