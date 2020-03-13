@@ -1266,6 +1266,8 @@ retry:
 	mem_cgroup_scan_tasks(victim, oom_evaluate_task, oc);
 	if (oc->use_priority_oom) {
 		css_put(&victim->css);
+		if (oc->chosen == (void *)-1UL)
+			goto out;
 		if (!oc->chosen && victim != memcg) {
 			do_mem_cgroup_account_oom_skip(victim, oc);
 			goto retry;
