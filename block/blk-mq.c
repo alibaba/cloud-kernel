@@ -106,7 +106,7 @@ static void blk_mq_check_inflight(struct blk_mq_hw_ctx *hctx,
 	 */
 	if (rq->part == mi->part)
 		mi->inflight[0]++;
-	if (mi->part->partno)
+	if (rq->part && mi->part->partno)
 		mi->inflight[1]++;
 }
 
