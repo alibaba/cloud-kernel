@@ -1116,7 +1116,11 @@ bool out_of_memory(struct oom_control *oc)
 	select_bad_process(oc);
 	/* Found nothing?!?! */
 	if (!oc->chosen) {
-		dump_global_header(oc, NULL);
+		if (is_memcg_oom(oc) && __ratelimit(&oom_memcg_rs))
+			dump_memcg_header(oc, NULL);
+		else if (!is_memcg_oom(oc))
+			dump_global_header(oc, NULL);
+
 		pr_warn("Out of memory and no killable processes...\n");
 		/*
 		 * If we got here due to an actual allocation at the
