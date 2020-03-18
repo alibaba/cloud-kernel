@@ -4219,7 +4219,7 @@ static int memcg_exstat_show(struct seq_file *m, void *v)
 	seq_printf(m, "wmark_min_throttled_ms %llu\n",
 		   memcg_exstat_gather(memcg, MEMCG_WMARK_MIN));
 	seq_printf(m, "wmark_reclaim_work_ms %llu\n",
-		   memcg_exstat_gather(memcg, MEMCG_WMARK_RECLAIM) / 1000000);
+		   memcg_exstat_gather(memcg, MEMCG_WMARK_RECLAIM) >> 20);
 
 	return 0;
 }
