@@ -287,7 +287,7 @@ int amdgpu_vm_validate_pt_bos(struct amdgpu_device *adev, struct amdgpu_vm *vm,
 {
 	struct ttm_bo_global *glob = adev->mman.bdev.glob;
 	struct amdgpu_vm_bo_base *bo_base, *tmp;
-	int r = 0;
+	int r;
 
 	list_for_each_entry_safe(bo_base, tmp, &vm->evicted, vm_status) {
 		struct amdgpu_bo *bo = bo_base->bo;
@@ -295,7 +295,7 @@ int amdgpu_vm_validate_pt_bos(struct amdgpu_device *adev, struct amdgpu_vm *vm,
 		if (bo->parent) {
 			r = validate(param, bo);
 			if (r)
-				break;
+				return r;
 
 			spin_lock(&glob->lru_lock);
 			ttm_bo_move_to_lru_tail(&bo->tbo);
@@ -326,7 +326,11 @@ int amdgpu_vm_validate_pt_bos(struct amdgpu_device *adev, struct amdgpu_vm *vm,
 	}
 	spin_unlock(&glob->lru_lock);
 
-	return r;
+	mutex_lock(&vm->eviction_lock);
+	vm->evicting = false;
+	mutex_unlock(&vm->eviction_lock);
+
+	return 0;
 }
 
 /**
@@ -1388,6 +1392,12 @@ static int amdgpu_vm_bo_update_mapping(struct amdgpu_device *adev,
 	if (!(flags & AMDGPU_PTE_VALID))
 		owner = AMDGPU_FENCE_OWNER_UNDEFINED;
 
+	mutex_lock(&vm->eviction_lock);
+	if (vm->evicting) {
+		r = -EBUSY;
+		goto error_unlock;
+	}
+
 	if (vm->use_cpu_for_update) {
 		/* params.src is used as flag to indicate system Memory */
 		if (pages_addr)
@@ -1398,12 +1408,13 @@ static int amdgpu_vm_bo_update_mapping(struct amdgpu_device *adev,
 		 */
 		r = amdgpu_vm_wait_pd(adev, vm, owner);
 		if (unlikely(r))
-			return r;
+			goto error_unlock;
 
 		params.func = amdgpu_vm_cpu_set_ptes;
 		params.pages_addr = pages_addr;
-		return amdgpu_vm_frag_ptes(&params, start, last + 1,
+		r = amdgpu_vm_frag_ptes(&params, start, last + 1,
 					   addr, flags);
+		goto error_unlock;
 	}
 
 	ring = container_of(vm->entity.rq->sched, struct amdgpu_ring, sched);
@@ -1448,7 +1459,7 @@ static int amdgpu_vm_bo_update_mapping(struct amdgpu_device *adev,
 
 	r = amdgpu_job_alloc_with_ib(adev, ndw * 4, &job);
 	if (r)
-		return r;
+		goto error_unlock;
 
 	params.ib = &job->ibs[0];
 
@@ -1495,10 +1506,13 @@ static int amdgpu_vm_bo_update_mapping(struct amdgpu_device *adev,
 	amdgpu_bo_fence(vm->root.base.bo, f, true);
 	dma_fence_put(*fence);
 	*fence = f;
+	mutex_unlock(&vm->eviction_lock);
 	return 0;
 
 error_free:
 	amdgpu_job_free(job);
+error_unlock:
+	mutex_unlock(&vm->eviction_lock);
 	return r;
 }
 
@@ -2436,6 +2450,13 @@ bool amdgpu_vm_evictable(struct amdgpu_bo *bo)
 	if (!reservation_object_test_signaled_rcu(bo->tbo.resv, true))
 		return false;
 
+	/* Try to block ongoing updates */
+	if (!mutex_trylock(&bo_base->vm->eviction_lock))
+		return false;
+
+	bo_base->vm->evicting = true;
+	mutex_unlock(&bo_base->vm->eviction_lock);
+
 	return true;
 }
 
@@ -2663,6 +2684,9 @@ int amdgpu_vm_init(struct amdgpu_device *adev, struct amdgpu_vm *vm,
 	WARN_ONCE((vm->use_cpu_for_update & !amdgpu_gmc_vram_full_visible(&adev->gmc)),
 		  "CPU update of VM recommended only for large BAR system\n");
 	vm->last_update = NULL;
+
+	mutex_init(&vm->eviction_lock);
+	vm->evicting = false;
 
 	flags = AMDGPU_GEM_CREATE_VRAM_CONTIGUOUS;
 	if (vm->use_cpu_for_update)
