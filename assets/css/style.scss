@@ -7,10 +7,32 @@ $section-headings-color: #ff6a00;
 
 @import 'jekyll-theme-cayman';
 
+@font-face {
+    font-family: "Alibaba Sans";
+    src: url('/cloud-kernel/assets/css/AlibabaSans-Regular.otf');
+    font-style: normal;
+}
+
+@font-face {
+    font-family: "Alibaba Sans Bold";
+    src: url('/cloud-kernel/assets/css/AlibabaSans-Bold.otf');
+    font-style: bold;
+}
+
+@font-face {
+    font-family: "Alibaba Sans Light";
+    src: url('/cloud-kernel/assets/css/AlibabaSans-Light.otf');
+    font-style: normal;
+}
+
 body {
-    font-family: "Univers 45 Light", "Helvetica Light", Helvetica, Arial, sans-serif;
+    font-family: "Alibaba Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+footer {
+    font-family: "Alibaba Sans Light", "Helvetica Light", Helvetica, Arial, sans-serif;
 }
 
 h1, h2, h3, h4, h5, h6 {
-    font-family: "Univers IT std bold", "Helvetica Bold", Helvetica, Arial, sans-serif;
+    font-family: "Alibaba Sans Bold", "Helvetica Bold", Helvetica, Arial, sans-serif;
 }
