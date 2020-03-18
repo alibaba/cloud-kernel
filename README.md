@@ -64,7 +64,7 @@ sudo yum install -y kernel kernel-devel kernel-headers
   + Download from [Releases](https://github.com/alibaba/cloud-kernel/releases) page for a stable release and extract the source;
   + Or clone from the project repo: `git clone git@github.com:alibaba/cloud-kernel.git`.
 
-+ Step 2: Fetch a [default kernel config](config-4.19.y-x86_64) from `master` branch and rename it to `.config`, then copy it to the top of kernel source directory;
++ Step 2: Fetch a [default kernel config](https://github.com/alibaba/cloud-kernel/blob/configs/config-4.19.y-x86_64) from `configs` branch and rename it to `.config`, then copy it to the top of kernel source directory;
 
 + Step 3: Compile and install kernel via the following commands:
 

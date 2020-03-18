@@ -64,7 +64,7 @@ sudo yum install -y kernel kernel-devel kernel-headers
   + 从 [Releases](https://github.com/alibaba/cloud-kernel/releases) 页面获取最新的稳定版内核代码压缩包，并解压到当前目录；
   + 或者从项目 Git 树 Clone 代码： `git clone git@github.com:alibaba/cloud-kernel.git`.
 
-+ 第二步，从 `master` 分支获取[默认内核配置文件](config-4.19.y-x86_64)，重命名为 `.config`, 并复制到源码树的顶层目录下；
++ 第二步，从 `configs` 分支获取[默认内核配置文件](https://github.com/alibaba/cloud-kernel/blob/configs/config-4.19.y-x86_64)，重命名为 `.config`, 并复制到源码树的顶层目录下；
 
 + 第三步，通过下列命令编译并安装内核：
 

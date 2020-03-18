@@ -57,21 +57,21 @@ Alternatively, you can use Git to clone from our git repo.
 
 ```shell
 git clone git@github.com:alibaba/cloud-kernel.git
-cd cloud-kernel
 ```
 
-> You may have noticed that `master` is not the default branch, instead, you would get a branch named like `ck-4.19.y`. This is due to our 'rebase' approach, every time we rebase from an LTS version, a new branch will be created and then be used as the default branch.
+Cloud Kernel is developed based on upstream LTS kernel v4.19.91, with `master` branch as the release branch and `linux-next` as the development branch. It is recommended to develop based on `linux-next` branch.
 
 ### 2.2 Build kernel
 
 Before building the kernel, you will need a kernel config file. Here we provide a [default kernel config](config-4.19.y-x86_64) in `master` branch, just fetch it and rename to `.config`, then copy it to the top of kernel source directory.
 
 ```bash
-wget https://raw.githubusercontent.com/alibaba/cloud-kernel/master/config-4.19.y-x86_64
-cp config-4.19.y-x86_64 cloud-kernel/.config
+cd cloud-kernel/
+wget https://raw.githubusercontent.com/alibaba/cloud-kernel/configs/config-4.19.y-x86_64 -O .config
 ```
 
 > The default kernel config is a simplified and customized version, which cuts numerous driver modules, like storage drivers, network drivers, etc. Hence, you should not run the kernel directly on a physical machine, otherwise the system would probably fail to boot. It is recommended that you run the kernel in KVM guests only, unless you are pretty sure required kernel drivers have enabled in your config.
+> If you want to run Cloud Kernel on a physical machine anyway, you may use the [alternative config](https://raw.githubusercontent.com/alibaba/cloud-kernel/configs/kernel-4.19-x86_64-alios7.config)
 
 Now you can start your build, presuming you have already installed all required toolchains, then execute:
 
@@ -147,3 +147,10 @@ Other rules include:
     <snip>
     ICX: intel_rapl: Fix module autoloading issue
     ```
+
+#### 2.3.4 How to submit
+
+Once your patches are ready, you can submit your patches in the follow ways:
+
++ Send your patch to the [mailing list: aliyunlinux2-dev@linux.alibaba.com](mailto:aliyunlinux2-dev@linux.alibaba.com) for review, which is a traditional way, or:
++ Send us a pull request in [GitHub pages](https://github.com/alibaba/cloud-kernel/pulls).

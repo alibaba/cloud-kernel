@@ -57,22 +57,21 @@ tar xzf ck-release-7.tar.gz
 
 ```shell
 git clone git@github.com:alibaba/cloud-kernel.git
-cd cloud-kernel
 ```
 
-> 您或许已经注意到项目的默认分支并非 `master` 分支而是形如 `ck-4.19.y` 格式的分支。这是由于我们采用了 "rebase" 策略来更新我们的代码，每次从 Upstream LTS 版本同步代码后，我们都会 rebase 到新的代码分支，并将此分支作为新的默认分支。
-
+Cloud Kernel 是基于 Upstream LTS v4.19.91 版本进行开发的，正式发布分支为 `master` 分支，开发分支为 `linux-next` 分支。建议您基于开发分支进行开发。
 
 ### 2.2 构建内核
 
-构建内核之前，您需要一个内核配置文件。我们在 `master` 分支提供了一个[默认内核配置文件](config-4.19.y-x86_64)，您只需下载并将其重命名为 `.config`，然后保存到内核源码树的顶层目录下。
+构建内核之前，您需要一个内核配置文件。我们在 `configs` 分支提供了一个[默认内核配置文件](https://github.com/alibaba/cloud-kernel/blob/configs/config-4.19.y-x86_64)，您只需下载并将其重命名为 `.config`，然后保存到内核源码树的顶层目录下。
 
 ```bash
-wget https://raw.githubusercontent.com/alibaba/cloud-kernel/master/config-4.19.y-x86_64
-cp config-4.19.y-x86_64 cloud-kernel/.config
+cd cloud-kernel/
+wget https://raw.githubusercontent.com/alibaba/cloud-kernel/configs/config-4.19.y-x86_64 -O .config
 ```
 
 > 请注意，默认内核配置文件是一个精简定制版本，删掉了众多驱动模块，其中就包括存储设备驱动和网卡驱动等。因此您不应该直接将此内核运行于物理机上，否则物理机可能因缺少驱动而无法启动。我们推荐您只在 KVM 虚拟机中运行该内核，或者您确认已自行在非 KVM 平台中启用所需的驱动模块。
+> 如需在物理机上运行，可以使用我们提供的[备用配置文件](https://raw.githubusercontent.com/alibaba/cloud-kernel/configs/kernel-4.19-x86_64-alios7.config)
 
 假设您已事先安装好所需的工具链，此时您可以开始构建内核了：
 
@@ -148,3 +147,10 @@ Cloud Kernel 的开发和 Linux 内核社区开发模式基本一致，您可以
     ```
 
     此条规则既适用于回合补丁，也适用于自己制作的补丁。
+
+#### 2.3.4 提交补丁的方式
+
+当您的补丁完成后，可以提交给我们审核。当前我们接受下列两种方式进行审核：
+
++ 使用传统的内核开发者的方式，发送补丁到[开发者邮件列表: aliyunlinux2-dev@linux.alibaba.com](mailto:aliyunlinux2-dev@linux.alibaba.com)，或者：
++ 在 [GitHub 页面](https://github.com/alibaba/cloud-kernel/pulls) 上给我们发送 pull request.
