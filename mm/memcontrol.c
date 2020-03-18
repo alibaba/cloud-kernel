@@ -4599,7 +4599,7 @@ static int memcg_lat_stat_show(struct seq_file *m, void *v)
 	seq_printf(m, ">=1000ms: \t%llu\n",
 		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_1000_INF));
 	seq_printf(m, "total(ms): \t%llu\n",
-		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_TOTAL) / 1000000);
+		   memcg_lat_stat_gather(memcg, idx, MEM_LAT_TOTAL) >> 20);
 
 	return 0;
 }
@@ -4608,7 +4608,7 @@ static enum mem_lat_count_t get_mem_lat_count_idx(u64 duration)
 {
 	enum mem_lat_count_t idx;
 
-	duration = duration / 1000000;
+	duration = duration >> 20;
 	if (duration < 1)
 		idx = MEM_LAT_0_1;
 	else if (duration < 5)
