@@ -4395,18 +4395,8 @@ void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b, u64 overrun)
 
 		overrun = min(overrun, cfs_b->max_overrun);
 		refill = cfs_b->quota * overrun;
-
-		if (cfs_b->buffer != RUNTIME_INF ||
-				RUNTIME_INF - refill >= cfs_b->runtime) {
-			cfs_b->runtime += refill;
-			cfs_b->runtime = min(cfs_b->runtime, cfs_b->buffer);
-		} else {
-			/*
-			 * cfs_b->buffer == RUNTIME_INF &&
-			 * cfs_b->runtime + refill > RUNTIME_INF
-			 */
-			cfs_b->runtime = RUNTIME_INF;
-		}
+		cfs_b->runtime += refill;
+		cfs_b->runtime = min(cfs_b->runtime, cfs_b->buffer);
 
 		cfs_b->previous_runtime = cfs_b->runtime;
 	}
@@ -4986,8 +4976,7 @@ static enum hrtimer_restart sched_cfs_period_timer(struct hrtimer *timer)
 				cfs_b->quota = min(cfs_b->quota * 2,
 						max_cfs_runtime);
 
-				if (cfs_b->buffer != RUNTIME_INF)
-					cfs_b->buffer = min(max_cfs_runtime,
+				cfs_b->buffer = min(max_cfs_runtime,
 						cfs_b->quota + cfs_b->burst);
 				/* Add 1 in case max_overrun becomes 0. */
 				cfs_b->max_overrun >>= 1;

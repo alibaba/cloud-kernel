@@ -6562,11 +6562,11 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota,
 	/*
 	 * Bound burst to defend burst against overflow during bandwidth shift.
 	 */
-	if (burst != RUNTIME_INF && burst > max_cfs_runtime)
+	if (burst > max_cfs_runtime)
 		return -EINVAL;
 
-	if (quota == RUNTIME_INF || burst == RUNTIME_INF)
-		buffer = RUNTIME_INF;
+	if (quota == RUNTIME_INF)
+		buffer = max_cfs_runtime;
 	else
 		buffer = min(max_cfs_runtime, quota + burst);
 	/*
@@ -6604,15 +6604,8 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota,
 		burst_onset = burst / 100 *
 			sysctl_sched_cfs_bw_burst_onset_percent;
 
-		if (cfs_b->burst != RUNTIME_INF) {
-			cfs_b->runtime += burst_onset;
-			cfs_b->runtime = min(max_cfs_runtime, cfs_b->runtime);
-		} else { /* cfs_b->burst == RUNTIME_INF */
-			if (RUNTIME_INF - burst_onset >= cfs_b->runtime)
-				cfs_b->runtime += burst_onset;
-			else
-				cfs_b->runtime = RUNTIME_INF;
-		}
+		cfs_b->runtime += burst_onset;
+		cfs_b->runtime = min(max_cfs_runtime, cfs_b->runtime);
 	}
 
 	cfs_b->previous_runtime = cfs_b->runtime;
