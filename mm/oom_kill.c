@@ -453,7 +453,9 @@ static void dump_header(struct oom_control *oc, struct task_struct *p)
 			p = current;
 
 		pr_info("Task in ");
+		rcu_read_lock();
 		pr_cont_cgroup_path(task_cgroup(p, memory_cgrp_id));
+		rcu_read_unlock();
 		pr_cont(" killed as a result of limit of host\n");
 #endif
 		show_mem(SHOW_MEM_FILTER_NODES, oc->nodemask);
