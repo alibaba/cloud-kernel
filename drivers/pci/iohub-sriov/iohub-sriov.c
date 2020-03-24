@@ -56,11 +56,13 @@ xdragon_sriov_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	}
 
 	/* VF number fixed as 255, will change to a parameter later */
-	err = pci_enable_sriov(dev, 255);
-	if (err) {
-		dev_err(&dev->dev, "Failed to enable PCI sriov: %d\n",
-			err);
-		goto error;
+	if (dev->is_physfn) {
+		err = pci_enable_sriov(dev, 255);
+		if (err) {
+			dev_err(&dev->dev, "Failed to enable PCI sriov: %d\n",
+					err);
+			goto error;
+		}
 	}
 
 	return 0;
