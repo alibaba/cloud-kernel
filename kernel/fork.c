@@ -1658,7 +1658,9 @@ static __latent_entropy struct task_struct *copy_process(
 	int retval;
 	struct task_struct *p;
 	struct multiprocess_signals delayed;
+#ifdef CONFIG_X86_64
 	unsigned long flags;
+#endif
 
 	/*
 	 * Don't allow sharing the root directory with processes in a different
@@ -1987,11 +1989,17 @@ static __latent_entropy struct task_struct *copy_process(
 	 * Make it visible to the rest of the system, but dont wake it up yet.
 	 * Need tasklist lock for parent etc handling!
 	 */
+
+#ifdef CONFIG_X86_64
+	/* Reduce jitters due to lock contention for co-location */
 retry:
 	if (!write_trylock_irqsave(&tasklist_lock, flags)) {
 		cond_resched();
 		goto retry;
 	}
+#else
+	write_lock_irq(&tasklist_lock);
+#endif
 
 	/* CLONE_PARENT re-uses the old parent */
 	if (clone_flags & (CLONE_PARENT|CLONE_THREAD)) {
