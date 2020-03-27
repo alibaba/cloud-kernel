@@ -866,11 +866,18 @@ static bool task_will_free_mem(struct task_struct *task)
 	return ret;
 }
 
-static void __oom_kill_process(struct task_struct *victim, const char *message)
+static void __oom_kill_process(struct task_struct *victim, const char *message,
+							   bool is_memcg)
 {
 	struct task_struct *p;
 	struct mm_struct *mm;
 	bool can_oom_reap = true;
+	bool suppress_print = false;
+
+#ifdef CONFIG_PRINTK
+	if (is_memcg && __ratelimit(&printk_ratelimit_state))
+		suppress_print = true;
+#endif
 
 	p = find_lock_task_mm(victim);
 	if (!p) {
@@ -899,13 +906,14 @@ static void __oom_kill_process(struct task_struct *victim, const char *message)
 	 */
 	do_send_sig_info(SIGKILL, SEND_SIG_PRIV, victim, PIDTYPE_TGID);
 	mark_oom_victim(victim);
-	pr_err("%s: Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB, UID:%u pgtables:%lukB oom_score_adj:%hd\n",
-		message, task_pid_nr(victim), victim->comm, K(mm->total_vm),
-		K(get_mm_counter(mm, MM_ANONPAGES)),
-		K(get_mm_counter(mm, MM_FILEPAGES)),
-		K(get_mm_counter(mm, MM_SHMEMPAGES)),
-		from_kuid(&init_user_ns, task_uid(victim)),
-		mm_pgtables_bytes(mm) >> 10, victim->signal->oom_score_adj);
+	if (!suppress_print)
+		pr_err("%s: Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB, UID:%u pgtables:%lukB oom_score_adj:%hd\n",
+			message, task_pid_nr(victim), victim->comm, K(mm->total_vm),
+			K(get_mm_counter(mm, MM_ANONPAGES)),
+			K(get_mm_counter(mm, MM_FILEPAGES)),
+			K(get_mm_counter(mm, MM_SHMEMPAGES)),
+			from_kuid(&init_user_ns, task_uid(victim)),
+			mm_pgtables_bytes(mm) >> 10, victim->signal->oom_score_adj);
 	task_unlock(victim);
 
 	/*
@@ -958,7 +966,7 @@ static int oom_kill_memcg_member(struct task_struct *task, void *message)
 	if (task->signal->oom_score_adj != OOM_SCORE_ADJ_MIN &&
 	    !is_global_init(task)) {
 		get_task_struct(task);
-		__oom_kill_process(task, message);
+		__oom_kill_process(task, message, true);
 	}
 	return 0;
 }
@@ -999,7 +1007,7 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 	 */
 	oom_group = mem_cgroup_get_oom_group(victim, oc->memcg);
 
-	__oom_kill_process(victim, message);
+	__oom_kill_process(victim, message, is_memcg_oom(oc));
 
 	/*
 	 * If necessary, kill all tasks in the selected memory cgroup.
