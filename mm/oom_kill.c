@@ -855,12 +855,15 @@ static bool task_will_free_mem(struct task_struct *task)
 	return ret;
 }
 
-static void __oom_kill_process(struct task_struct *victim)
+static void __oom_kill_process(struct task_struct *victim, bool is_memcg)
 {
 	struct task_struct *p;
 	struct mm_struct *mm;
 	bool can_oom_reap = true;
+	bool suppress_print = false;
 
+	if (is_memcg && __ratelimit(&printk_ratelimit_state))
+		suppress_print = true;
 	p = find_lock_task_mm(victim);
 	if (!p) {
 		put_task_struct(victim);
@@ -886,11 +889,13 @@ static void __oom_kill_process(struct task_struct *victim)
 	 */
 	do_send_sig_info(SIGKILL, SEND_SIG_FORCED, victim, PIDTYPE_TGID);
 	mark_oom_victim(victim);
-	pr_err("Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB\n",
-		task_pid_nr(victim), victim->comm, K(victim->mm->total_vm),
-		K(get_mm_counter(victim->mm, MM_ANONPAGES)),
-		K(get_mm_counter(victim->mm, MM_FILEPAGES)),
-		K(get_mm_counter(victim->mm, MM_SHMEMPAGES)));
+	if (!suppress_print)
+		pr_err("Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB\n",
+			task_pid_nr(victim), victim->comm,
+			K(victim->mm->total_vm),
+			K(get_mm_counter(victim->mm, MM_ANONPAGES)),
+			K(get_mm_counter(victim->mm, MM_FILEPAGES)),
+			K(get_mm_counter(victim->mm, MM_SHMEMPAGES)));
 	task_unlock(victim);
 
 	/*
@@ -943,7 +948,7 @@ static int oom_kill_memcg_member(struct task_struct *task, void *unused)
 	if (task->signal->oom_score_adj != OOM_SCORE_ADJ_MIN &&
 	    !is_global_init(task)) {
 		get_task_struct(task);
-		__oom_kill_process(task);
+		__oom_kill_process(task, true);
 	}
 	return 0;
 }
@@ -961,6 +966,7 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 	unsigned int victim_points = 0;
 	static DEFINE_RATELIMIT_STATE(oom_global_rs, DEFAULT_RATELIMIT_INTERVAL,
 					      DEFAULT_RATELIMIT_BURST);
+	bool suppress_print = false;
 
 	/*
 	 * If the task is already exiting, don't alarm the sysadmin or kill
@@ -982,8 +988,17 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 	else if (!is_memcg_oom(oc) && __ratelimit(&oom_global_rs))
 		dump_global_header(oc, p);
 
-	pr_err("%s: Kill process %d (%s) score %u or sacrifice child\n",
-		message, task_pid_nr(p), p->comm, points);
+	/*
+	 * Prevent too much printk to result in softlock in memory cgroup oom.
+	 * Meanwhile, Use printk_ratelimit_state rather than oom_memcg_rs to
+	 * not suppress important print message overly.
+	 */
+	if (is_memcg_oom(oc) && __ratelimit(&printk_ratelimit_state))
+		suppress_print = true;
+
+	if (!suppress_print)
+		pr_err("%s: Kill process %d (%s) score %u or sacrifice child\n",
+			message, task_pid_nr(p), p->comm, points);
 
 	/*
 	 * If any of p's children has a different mm and is eligible for kill,
@@ -1028,7 +1043,7 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 	 */
 	oom_group = mem_cgroup_get_oom_group(victim, oc->memcg);
 
-	__oom_kill_process(victim);
+	__oom_kill_process(victim, is_memcg_oom(oc));
 
 	/*
 	 * If necessary, kill all tasks in the selected memory cgroup.
