@@ -196,6 +196,9 @@ extern int amd_iommu_register_ga_log_notifier(int (*notifier)(u32));
 extern int
 amd_iommu_update_ga(int cpu, bool is_run, void *data);
 
+extern int amd_iommu_activate_guest_mode(void *data);
+extern int amd_iommu_deactivate_guest_mode(void *data);
+
 #else /* defined(CONFIG_AMD_IOMMU) && defined(CONFIG_IRQ_REMAP) */
 
 static inline int
@@ -210,6 +213,15 @@ amd_iommu_update_ga(int cpu, bool is_run, void *data)
 	return 0;
 }
 
+static inline int amd_iommu_activate_guest_mode(void *data)
+{
+	return 0;
+}
+
+static inline int amd_iommu_deactivate_guest_mode(void *data)
+{
+	return 0;
+}
 #endif /* defined(CONFIG_AMD_IOMMU) && defined(CONFIG_IRQ_REMAP) */
 
 #endif /* _ASM_X86_AMD_IOMMU_H */
