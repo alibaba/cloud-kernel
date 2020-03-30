@@ -1538,8 +1538,13 @@ static int iommu_map_page(struct protection_domain *dom,
 	ret = 0;
 
 out:
-	if (updated)
+	if (updated) {
+		unsigned long flags;
+
+		spin_lock_irqsave(&dom->lock, flags);
 		update_domain(dom);
+		spin_unlock_irqrestore(&dom->lock, flags);
+	}
 
 	return ret;
 }
@@ -1778,8 +1783,12 @@ static void free_gcr3_table(struct protection_domain *domain)
 
 static void dma_ops_domain_flush_tlb(struct dma_ops_domain *dom)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&dom->domain.lock, flags);
 	domain_flush_tlb(&dom->domain);
 	domain_flush_complete(&dom->domain);
+	spin_unlock_irqrestore(&dom->domain.lock, flags);
 }
 
 static void iova_domain_flush_tlb(struct iova_domain *iovad)
@@ -2357,6 +2366,7 @@ static dma_addr_t __map_single(struct device *dev,
 {
 	dma_addr_t offset = paddr & ~PAGE_MASK;
 	dma_addr_t address, start, ret;
+	unsigned long flags;
 	unsigned int pages;
 	int prot = 0;
 	int i;
@@ -2397,8 +2407,10 @@ out_unmap:
 		iommu_unmap_page(&dma_dom->domain, start, PAGE_SIZE);
 	}
 
+	spin_lock_irqsave(&dma_dom->domain.lock, flags);
 	domain_flush_tlb(&dma_dom->domain);
 	domain_flush_complete(&dma_dom->domain);
+	spin_unlock_irqrestore(&dma_dom->domain.lock, flags);
 
 	dma_ops_free_iova(dma_dom, address, pages);
 
@@ -2427,8 +2439,12 @@ static void __unmap_single(struct dma_ops_domain *dma_dom,
 	}
 
 	if (amd_iommu_unmap_flush) {
+		unsigned long flags;
+
+		spin_lock_irqsave(&dma_dom->domain.lock, flags);
 		domain_flush_tlb(&dma_dom->domain);
 		domain_flush_complete(&dma_dom->domain);
+		spin_unlock_irqrestore(&dma_dom->domain.lock, flags);
 		dma_ops_free_iova(dma_dom, dma_addr, pages);
 	} else {
 		pages = __roundup_pow_of_two(pages);
@@ -3200,9 +3216,12 @@ static bool amd_iommu_is_attach_deferred(struct iommu_domain *domain,
 static void amd_iommu_flush_iotlb_all(struct iommu_domain *domain)
 {
 	struct protection_domain *dom = to_pdomain(domain);
+	unsigned long flags;
 
+	spin_lock_irqsave(&dom->lock, flags);
 	domain_flush_tlb_pde(dom);
 	domain_flush_complete(dom);
+	spin_unlock_irqrestore(&dom->lock, flags);
 }
 
 static void amd_iommu_iotlb_range_add(struct iommu_domain *domain,
