@@ -26,7 +26,7 @@ Current released version is Alibaba Cloud Linux OS version 2, or known as 'Aliyu
 ## 2. How to use
 
 - Simply buy an ECS instance and get started: [chs](https://ecs-buy.aliyun.com/), [eng](https://ecs-buy-intl.aliyun.com/);
-- Or download an on-premise virtual machine image and run on your own QEMU/KVM virtualization system, instructions could be found via [chs](https://github.com/alibaba/cloud-kernel/wiki/Aliyun-Linux-2-On-Premise-Image), [eng](image).
+- Or download an on-premise virtual machine image and run on your own QEMU/KVM virtualization system, instructions could be found [here](https://www.alibabacloud.com/help/doc-detail/155430.htm).
 
 ## 3. Getting source
 

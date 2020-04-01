@@ -28,7 +28,7 @@ Alibaba Cloud Linux 2 是 Alibaba Cloud Linux 的下一代版本，其开发团�
 ## 2. 如何使用 Alibaba Cloud Linux 2
 
 - 当前我们随阿里云 ECS 实例免费提供 Alibaba Cloud Linux 2 操作系统镜像。如需使用，可以通过以下链接购买 ECS 实例：[中文站](https://ecs-buy.aliyun.com/), [eng](https://ecs-buy-intl.aliyun.com/);
-- 也可以通过我们提供的独立虚拟机本地镜像，在支持 QEMU/KVM 虚拟化技术的操作系统中，启动 Alibaba Cloud Linux 2 操作系统镜像。操作说明可参考：[中文版](https://github.com/alibaba/cloud-kernel/wiki/Aliyun-Linux-2-On-Premise-Image), [English version](../image).
+- 也可以通过我们提供的独立虚拟机本地镜像，在支持 QEMU/KVM 虚拟化技术的操作系统中，启动 Alibaba Cloud Linux 2 操作系统镜像。操作说明可参考[官方文档](https://help.aliyun.com/document_detail/155430.html)。
 
 ## 3. 获取源码
 
