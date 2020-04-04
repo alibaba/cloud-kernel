@@ -3793,11 +3793,6 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	memcg_lat_stat_end(MEM_LAT_DIRECT_COMPACT, start);
 	psi_memstall_leave(&pflags);
 
-	if (*compact_result <= COMPACT_INACTIVE) {
-		WARN_ON_ONCE(page);
-		return NULL;
-	}
-
 	/*
 	 * At least in one zone compaction wasn't deferred or skipped, so let's
 	 * count a compaction stall
