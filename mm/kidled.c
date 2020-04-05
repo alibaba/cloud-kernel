@@ -75,9 +75,10 @@ int kidled_inc_page_age(pg_data_t *pgdat, unsigned long pfn)
 		if (age >= KIDLED_AGE_MASK)
 			break;
 
+		age++;
 		new = old = page->flags;
 		new &= ~(KIDLED_AGE_MASK << KIDLED_AGE_PGSHIFT);
-		new |= (((age + 1) & KIDLED_AGE_MASK) << KIDLED_AGE_PGSHIFT);
+		new |= ((age & KIDLED_AGE_MASK) << KIDLED_AGE_PGSHIFT);
 	} while (unlikely(cmpxchg(&page->flags, old, new) != old));
 
 	return age;
