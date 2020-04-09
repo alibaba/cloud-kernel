@@ -468,12 +468,18 @@ static int fuse_match_uint(substring_t *s, unsigned int *res)
 }
 
 int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
-		   struct user_namespace *user_ns)
+		   struct user_namespace *user_ns, int is_virtiofs)
 {
 	char *p;
 	memset(d, 0, sizeof(struct fuse_mount_data));
 	d->max_read = ~0;
 	d->blksize = FUSE_DEFAULT_BLKSIZE;
+
+	if (is_virtiofs) {
+		d->rootmode = S_IFDIR;
+		d->default_permissions = 1;
+		d->allow_other = 1;
+	}
 
 	while ((p = strsep(&opt, ",")) != NULL) {
 		int token;
@@ -548,6 +554,10 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 			return 0;
 		}
 	}
+
+	/* no need to check rootmode/user_id/group_id for virtiofs */
+	if (is_virtiofs)
+		return 1;
 
 	if (!d->rootmode_present || !d->user_id_present ||
 	    !d->group_id_present)
@@ -1201,7 +1211,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	struct fuse_req *init_req;
 
 	err = -EINVAL;
-	if (!parse_fuse_opt(data, &d, is_bdev, sb->s_user_ns))
+	if (!parse_fuse_opt(data, &d, is_bdev, sb->s_user_ns, false))
 		goto err;
 	if (!d.fd_present)
 		goto err;

@@ -1002,7 +1002,7 @@ void fuse_dev_free(struct fuse_dev *fud);
  * Parse a mount options string
  */
 int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
-				struct user_namespace *user_ns);
+		   struct user_namespace *user_ns, int is_virtiofs);
 
 /**
  * Fill in superblock and initialize fuse connection
