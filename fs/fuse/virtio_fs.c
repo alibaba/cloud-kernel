@@ -1035,7 +1035,7 @@ static int virtio_fs_fill_super(struct super_block *sb, void *data,
 
 	mutex_lock(&virtio_fs_mutex);
 	err = -EINVAL;
-	if (!parse_fuse_opt(data, &d, is_bdev, sb->s_user_ns))
+	if (!parse_fuse_opt(data, &d, is_bdev, sb->s_user_ns, true))
 		goto err;
 
 	if (d.fd_present) {
