@@ -1349,4 +1349,8 @@ static inline int find_acpi_cpu_cache_topology(unsigned int cpu, int level)
 }
 #endif
 
+struct acpi_pptt_processor *
+acpi_pptt_find_cache_backwards(struct acpi_table_header *table_hdr,
+			       struct acpi_pptt_cache *cache);
+
 #endif	/*_LINUX_ACPI_H*/
