@@ -95,6 +95,8 @@
  */
 
 struct mpam_node {
+	/* for label mpam_node instance*/
+	u32 component_id;
 	/* MPAM node header */
 	u8              type;   /* MPAM_SMMU, MPAM_CACHE, MPAM_MC */
 	u64             addr;
@@ -105,8 +107,19 @@ struct mpam_node {
 	/* for debug */
 	char            *cpus_list;
 	char		*name;
+	struct list_head list;
 };
 
-int mpam_nodes_init(void);
+int __init mpam_force_init(void);
+
+int __init mpam_nodes_discovery_start(void);
+
+void __init mpam_nodes_discovery_failed(void);
+
+int __init mpam_nodes_discovery_complete(void);
+
+int mpam_create_cache_node(u32 component_id, phys_addr_t hwpage_address);
+
+int mpam_create_memory_node(u32 component_id, phys_addr_t hwpage_address);
 
 #endif /* _ASM_ARM64_MPAM_RESOURCE_H */

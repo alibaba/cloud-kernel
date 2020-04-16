@@ -7,3 +7,6 @@ config ACPI_IORT
 
 config ACPI_GTDT
 	bool
+
+config ACPI_MPAM
+	bool

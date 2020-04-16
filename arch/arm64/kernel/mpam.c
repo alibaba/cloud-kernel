@@ -67,12 +67,6 @@ int max_name_width, max_data_width;
  */
 bool rdt_alloc_capable;
 
-char *mpam_types_str[] = {
-	"MPAM_RESOURCE_SMMU",
-	"MPAM_RESOURCE_CACHE",
-	"MPAM_RESOURCE_MC",
-};
-
 /*
  * Hi1620 2P Base Address Map
  *
@@ -86,35 +80,30 @@ char *mpam_types_str[] = {
  *   AFF2: MPIDR.AFF2
  */
 
-#define MPAM_BASE(suffix, offset) ((suffix) << 24 | (offset) << 16)
-#define MPAM_NODE(n, t, suffix, offset)			\
-	{						\
-		.name	= #n,				\
-		.type	= t,				\
-		.addr	= MPAM_BASE(suffix, (offset)),	\
-		.cpus_list = "0",			\
-	}
-
-struct mpam_node mpam_node_all[] = {
-	MPAM_NODE(L3TALL0, MPAM_RESOURCE_CACHE, 0x000098ULL, 0xB9),
-	MPAM_NODE(L3TALL1, MPAM_RESOURCE_CACHE, 0x000090ULL, 0xB9),
-	MPAM_NODE(L3TALL2, MPAM_RESOURCE_CACHE, 0x200098ULL, 0xB9),
-	MPAM_NODE(L3TALL3, MPAM_RESOURCE_CACHE, 0x200090ULL, 0xB9),
-
-	MPAM_NODE(HHAALL0, MPAM_RESOURCE_MC, 0x000098ULL, 0xC1),
-	MPAM_NODE(HHAALL1, MPAM_RESOURCE_MC, 0x000090ULL, 0xC1),
-	MPAM_NODE(HHAALL2, MPAM_RESOURCE_MC, 0x200098ULL, 0xC1),
-	MPAM_NODE(HHAALL3, MPAM_RESOURCE_MC, 0x200090ULL, 0xC1),
-};
-
-void mpam_nodes_unmap(void)
+static inline void mpam_node_assign_val(struct mpam_node *n,
+				char *name,
+				u8 type,
+				phys_addr_t hwpage_address,
+				u32 component_id)
 {
-	int i;
-	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
+	n->name = name;
+	n->type = type;
+	n->addr = hwpage_address;
+	n->component_id = component_id;
+	n->cpus_list = "0";
+}
+
+#define MPAM_NODE_NAME_SIZE (10)
+
+struct mpam_node *mpam_nodes_ptr;
+
+static int __init mpam_init(void);
+
+static void mpam_nodes_unmap(void)
+{
 	struct mpam_node *n;
 
-	for (i = 0; i < num_nodes; i++) {
-		n = &mpam_node_all[i];
+	list_for_each_entry(n, &mpam_nodes_ptr->list, list) {
 		if (n->base) {
 			iounmap(n->base);
 			n->base = NULL;
@@ -122,14 +111,12 @@ void mpam_nodes_unmap(void)
 	}
 }
 
-int mpam_nodes_init(void)
+static int mpam_nodes_init(void)
 {
-	int i, ret = 0;
-	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
+	int ret = 0;
 	struct mpam_node *n;
 
-	for (i = 0; i < num_nodes; i++) {
-		n = &mpam_node_all[i];
+	list_for_each_entry(n, &mpam_nodes_ptr->list, list) {
 		ret |= cpulist_parse(n->cpus_list, &n->cpu_mask);
 		n->base = ioremap(n->addr, 0x10000);
 		if (!n->base) {
@@ -139,6 +126,160 @@ int mpam_nodes_init(void)
 	}
 
 	return ret;
+}
+
+static void mpam_nodes_destroy(void)
+{
+	struct mpam_node *n, *tmp;
+
+	if (!mpam_nodes_ptr)
+		return;
+
+	list_for_each_entry_safe(n, tmp, &mpam_nodes_ptr->list, list) {
+		kfree(n->name);
+		list_del(&n->list);
+		kfree(n);
+	}
+
+	list_del(&mpam_nodes_ptr->list);
+	kfree(mpam_nodes_ptr);
+	mpam_nodes_ptr = NULL;
+}
+
+int __init mpam_nodes_discovery_start(void)
+{
+	if (!mpam_enabled)
+		return -EINVAL;
+
+	mpam_nodes_ptr = kzalloc(sizeof(struct mpam_node), GFP_KERNEL);
+	if (!mpam_nodes_ptr)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&mpam_nodes_ptr->list);
+
+	return 0;
+}
+
+void __init mpam_nodes_discovery_failed(void)
+{
+	mpam_nodes_destroy();
+}
+
+int __init mpam_nodes_discovery_complete(void)
+{
+	return mpam_init();
+}
+
+static inline int validate_mpam_node(int type,
+				int component_id)
+{
+	int ret = 0;
+	struct mpam_node *n;
+
+	list_for_each_entry(n, &mpam_nodes_ptr->list, list) {
+		if (n->component_id == component_id &&
+				n->type == type) {
+			ret = -EINVAL;
+			break;
+		}
+	}
+
+	return ret;
+}
+
+int mpam_create_cache_node(u32 component_id,
+			phys_addr_t hwpage_address)
+{
+	struct mpam_node *new;
+	char *name;
+
+	if (validate_mpam_node(MPAM_RESOURCE_CACHE, component_id))
+		goto skip;
+
+	new = kzalloc(sizeof(struct mpam_node), GFP_KERNEL);
+	if (!new)
+		return -ENOMEM;
+
+	name = kzalloc(MPAM_NODE_NAME_SIZE, GFP_KERNEL);
+	if (!name) {
+		kfree(new);
+		return -ENOMEM;
+	}
+	snprintf(name, MPAM_NODE_NAME_SIZE, "%s%d", "L3TALL", component_id);
+
+	mpam_node_assign_val(new,
+			name,
+			MPAM_RESOURCE_CACHE,
+			hwpage_address,
+			component_id);
+	list_add_tail(&new->list, &mpam_nodes_ptr->list);
+
+skip:
+	return 0;
+}
+
+int mpam_create_memory_node(u32 component_id,
+			phys_addr_t hwpage_address)
+{
+	struct mpam_node *new;
+	char *name;
+
+	if (validate_mpam_node(MPAM_RESOURCE_MC, component_id))
+		goto skip;
+
+	new = kzalloc(sizeof(struct mpam_node), GFP_KERNEL);
+	if (!new)
+		return -ENOMEM;
+
+	name = kzalloc(MPAM_NODE_NAME_SIZE, GFP_KERNEL);
+	if (!name) {
+		kfree(new);
+		return -ENOMEM;
+	}
+	snprintf(name, MPAM_NODE_NAME_SIZE, "%s%d", "HHAALL", component_id);
+
+	mpam_node_assign_val(new,
+			name,
+			MPAM_RESOURCE_MC,
+			hwpage_address,
+			component_id);
+	list_add_tail(&new->list, &mpam_nodes_ptr->list);
+
+skip:
+	return 0;
+
+}
+
+int __init mpam_force_init(void)
+{
+	int ret;
+
+	if (mpam_enabled != enable_default)
+		return 0;
+
+	ret = mpam_nodes_discovery_start();
+	if (ret)
+		return ret;
+
+	ret |= mpam_create_cache_node(0, 0x000098b90000ULL);
+	ret |= mpam_create_cache_node(1, 0x000090b90000ULL);
+	ret |= mpam_create_cache_node(2, 0x200098b90000ULL);
+	ret |= mpam_create_cache_node(3, 0x200090b90000ULL);
+	ret |= mpam_create_memory_node(0, 0x000098c10000ULL);
+	ret |= mpam_create_memory_node(1, 0x000090c10000ULL);
+	ret |= mpam_create_memory_node(2, 0x200098c10000ULL);
+	ret |= mpam_create_memory_node(3, 0x200090c10000ULL);
+	if (ret) {
+		mpam_nodes_discovery_failed();
+		pr_err("Failed to force create mpam node\n");
+		return -EINVAL;
+	}
+
+	ret = mpam_nodes_discovery_complete();
+	if (!ret)
+		pr_info("Successfully init mpam by hardcode.\n");
+
+	return 1;
 }
 
 static void
@@ -1142,16 +1283,14 @@ static void mpam_domains_destroy(struct resctrl_resource *r)
 
 static void mpam_domains_init(struct resctrl_resource *r)
 {
-	int i, id = 0;
-	size_t num_nodes = ARRAY_SIZE(mpam_node_all);
+	int id = 0;
 	struct mpam_node *n;
 	struct list_head *add_pos = NULL;
 	struct rdt_domain *d;
 	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
 	u32 val;
 
-	for (i = 0; i < num_nodes; i++) {
-		n = &mpam_node_all[i];
+	list_for_each_entry(n, &mpam_nodes_ptr->list, list) {
 		if (r->rid != n->type)
 			continue;
 
@@ -1220,24 +1359,21 @@ static void mpam_domains_init(struct resctrl_resource *r)
 	}
 }
 
-int __read_mostly mpam_enabled;
+enum mpam_enable_type __read_mostly mpam_enabled;
 static int __init mpam_setup(char *str)
 {
-	mpam_enabled = 1;
+	if (!strcmp(str, "=acpi"))
+		mpam_enabled = enable_acpi;
+	else
+		mpam_enabled = enable_default;
 	return 1;
 }
 __setup("mpam", mpam_setup);
 
-static int __init mpam_late_init(void)
+static int __init mpam_init(void)
 {
 	struct resctrl_resource *r;
 	int state, ret;
-
-	if (!mpam_enabled)
-		return 0;
-
-	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
-		return -ENODEV;
 
 	rdt_alloc_capable = 1;
 	rdt_mon_capable = 1;
@@ -1247,7 +1383,7 @@ static int __init mpam_late_init(void)
 	ret = mpam_nodes_init();
 	if (ret) {
 		pr_err("internal error: bad cpu list\n");
-		return ret;
+		goto out;
 	}
 
 	mpam_domains_init(&resctrl_resources_all[MPAM_RESOURCE_CACHE]);
@@ -1256,8 +1392,10 @@ static int __init mpam_late_init(void)
 	state = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
 				  "arm64/mpam:online:",
 				  mpam_online_cpu, mpam_offline_cpu);
-	if (state < 0)
-		return state;
+	if (state < 0) {
+		ret = state;
+		goto out;
+	}
 
 	register_resctrl_specific_files(res_specific_files, ARRAY_SIZE(res_specific_files));
 
@@ -1267,7 +1405,7 @@ static int __init mpam_late_init(void)
 	ret = resctrl_group_init();
 	if (ret) {
 		cpuhp_remove_state(state);
-		return ret;
+		goto out;
 	}
 
 	for_each_resctrl_resource(r) {
@@ -1280,10 +1418,10 @@ static int __init mpam_late_init(void)
 			pr_info("MPAM %s monitoring detected\n", r->name);
 	}
 
-	return 0;
+out:
+	mpam_nodes_destroy();
+	return ret;
 }
-
-late_initcall(mpam_late_init);
 
 /*
  * __intel_rdt_sched_in() - Writes the task's CLOSid/RMID to IA32_PQR_MSR
