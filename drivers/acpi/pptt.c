@@ -431,6 +431,61 @@ static struct acpi_pptt_cache *acpi_find_cache_node(struct acpi_table_header *ta
 }
 
 /**
+ * acpi_pptt_min_physid_from_cpu_node() - Recursivly find @min_physid for all
+ * leaf CPUs below @cpu_node.
+ * @table_hdr:  Pointer to the head of the PPTT table
+ * @cpu_node:   The point in the toplogy to start the walk
+ * @min_physid: The min_physid to update with leaf CPUs.
+ * @min_cpu_node: The min_cpu_node to update with leaf CPUs.
+ */
+void acpi_pptt_find_min_physid_cpu_node(struct acpi_table_header *table_hdr,
+			struct acpi_pptt_processor *cpu_node,
+			phys_cpuid_t *min_physid,
+			struct acpi_pptt_processor **min_cpu_node)
+{
+	bool leaf = true;
+	u32 acpi_processor_id;
+	phys_cpuid_t cpu_node_phys_id;
+	struct acpi_subtable_header *iter;
+	struct acpi_pptt_processor *iter_node = NULL;
+	u32 target_node = ACPI_PTR_DIFF(cpu_node, table_hdr);
+	u32 proc_sz = sizeof(struct acpi_pptt_processor *);
+	unsigned long table_end = (unsigned long)table_hdr + table_hdr->length;
+
+	/*
+	 * Walk the PPTT, looking for nodes that reference cpu_node
+	 * as parent.
+	 */
+	iter = ACPI_ADD_PTR(struct acpi_subtable_header, table_hdr,
+				sizeof(struct acpi_table_pptt));
+
+	while ((unsigned long)iter + proc_sz < table_end) {
+		iter_node = (struct acpi_pptt_processor *)iter;
+
+		if (iter->type == ACPI_PPTT_TYPE_PROCESSOR &&
+			iter_node->parent == target_node) {
+			leaf = false;
+			acpi_pptt_find_min_physid_cpu_node(table_hdr, iter_node,
+						min_physid, min_cpu_node);
+		}
+
+		if (iter->length == 0)
+			return;
+		iter = ACPI_ADD_PTR(struct acpi_subtable_header, iter,
+					iter->length);
+	}
+
+	acpi_processor_id = cpu_node->acpi_processor_id;
+	cpu_node_phys_id = acpi_id_to_phys_cpuid(acpi_processor_id);
+	if (!invalid_phys_cpuid(cpu_node_phys_id) &&
+		*min_physid > cpu_node_phys_id &&
+		leaf == true) {
+		*min_physid = cpu_node_phys_id;
+		*min_cpu_node = cpu_node;
+	}
+}
+
+/**
  * update_cache_properties() - Update cacheinfo for the given processor
  * @this_leaf: Kernel cache info structure being updated
  * @found_cache: The PPTT node describing this cache instance
