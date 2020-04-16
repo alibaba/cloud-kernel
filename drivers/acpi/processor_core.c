@@ -9,7 +9,9 @@
  *	Yinghai Lu <yinghai@kernel.org>
  *	Jiang Liu <jiang.liu@intel.com>
  */
+#include <linux/percpu.h>
 #include <linux/export.h>
+#include <linux/cpumask.h>
 #include <linux/acpi.h>
 #include <acpi/processor.h>
 
@@ -262,6 +264,20 @@ int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 	return acpi_map_cpuid(phys_id, acpi_id);
 }
 EXPORT_SYMBOL_GPL(acpi_get_cpuid);
+
+phys_cpuid_t acpi_id_to_phys_cpuid(u32 acpi_id)
+{
+	int cpu;
+	struct acpi_processor *pr;
+
+	for_each_possible_cpu(cpu) {
+		pr = per_cpu(processors, cpu);
+		if (pr && pr->acpi_id == acpi_id)
+			return pr->phys_id;
+	}
+
+	return PHYS_CPUID_INVALID;
+}
 
 #ifdef CONFIG_ACPI_HOTPLUG_IOAPIC
 static int get_ioapic_id(struct acpi_subtable_header *entry, u32 gsi_base,
