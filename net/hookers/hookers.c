@@ -275,48 +275,73 @@ static inline void hookers_restore_cr0(unsigned int val)
 }
 #else
 
-static void remove_memprotect(unsigned long addr)
+static int remove_memprotect(unsigned long addr)
 {
-	pgd_t *pgd, pgdd;
-	pud_t *pud, pudd;
+	pgd_t *pgd;
+	pud_t *pud;
 	pmd_t *pmd, pmdd;
+	pte_t *pte, pted;
 	u64 addr_aligned;
 
 	addr_aligned = addr & PAGE_MASK;
 
 	pgd = pgd_offset(orig_init_mm, (unsigned long)addr_aligned);
-	pgdd = READ_ONCE(*pgd);
+	if (!pgd_present(READ_ONCE(*pgd)))
+		return 1;
 
 	pud = pud_offset(pgd, (unsigned long)addr_aligned);
-	pudd = READ_ONCE(*pud);
+	if (!pud_present(*pud))
+		return 1;
 
 	pmd = pmd_offset(pud, (unsigned long)addr_aligned);
 	pmdd = READ_ONCE(*pmd);
 
-	set_pmd(pmd, __pmd(pmd_val(pmdd) & ~PMD_SECT_RDONLY));
+	// remove the pmd wirte protect attr if huge page
+	if (pmd_huge(pmdd)) {
+		set_pmd(pmd, __pmd(pmd_val(pmdd) & ~PMD_SECT_RDONLY));
+	} else {
+		pte = pte_offset_kernel(pmd, addr);
+		pted = pte_wrprotect(*pte);
+		set_pte(pte, pted);
+	}
+
 	flush_tlb_kernel_range(addr_aligned, addr_aligned + PAGE_SIZE);
+
+	return 0;
 }
 
-static void set_memprotect(unsigned long addr)
+static int set_memprotect(unsigned long addr)
 {
-	pgd_t *pgd, pgdd;
-	pud_t *pud, pudd;
+	pgd_t *pgd;
+	pud_t *pud;
 	pmd_t *pmd, pmdd;
+	pte_t *pte, pted;
 	u64 addr_aligned;
 
 	addr_aligned = addr & PAGE_MASK;
 
 	pgd = pgd_offset(orig_init_mm, (unsigned long)addr_aligned);
-	pgdd = READ_ONCE(*pgd);
+	if (!pgd_present(READ_ONCE(*pgd)))
+		return 1;
 
 	pud = pud_offset(pgd, (unsigned long)addr_aligned);
-	pudd = READ_ONCE(*pud);
+	if (!pud_present(*pud))
+		return 1;
 
 	pmd = pmd_offset(pud, (unsigned long)addr_aligned);
 	pmdd = READ_ONCE(*pmd);
 
-	set_pmd(pmd, __pmd(pmd_val(pmdd) | PMD_SECT_RDONLY));
+	if (pmd_huge(pmdd)) {
+		set_pmd(pmd, __pmd(pmd_val(pmdd) | PMD_SECT_RDONLY));
+	} else {
+		pte = pte_offset_kernel(pmd, addr);
+		pted = pte_wrprotect(*pte);
+		set_pte(pte, pted);
+	}
+
 	flush_tlb_kernel_range(addr_aligned, addr_aligned + PAGE_SIZE);
+
+	return 0;
 }
 #endif
 
@@ -400,9 +425,12 @@ static int hookers_init(void)
 		put_online_cpus();
 #else
 		get_online_cpus();
-		remove_memprotect((unsigned long)place);
-		*place = place_table[i].stub;
-		set_memprotect((unsigned long)place);
+		if (!remove_memprotect((unsigned long)place)) {
+			*place = place_table[i].stub;
+			set_memprotect((unsigned long)place);
+		} else {
+			pr_warn("%s hooker failed\n", place_table[i].name);
+		}
 		put_online_cpus();
 #endif
 	}
@@ -428,9 +456,10 @@ static void hookers_exit(void)
 		put_online_cpus();
 #else
 		get_online_cpus();
-		remove_memprotect((unsigned long)place);
-		*place = place_table[i].orig;
-		set_memprotect((unsigned long)place);
+		if (!remove_memprotect((unsigned long)place)) {
+			*place = place_table[i].orig;
+			set_memprotect((unsigned long)place);
+		}
 		put_online_cpus();
 #endif
 	}
