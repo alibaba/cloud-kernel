@@ -1075,6 +1075,21 @@ config CGROUP_DEVICE
 	  Provides a cgroup controller implementing whitelists for
 	  devices which a process in the cgroup can mknod or open.
 
+config SCHED_SLI
+	bool "cgroup CPU usage and additional scheduler statistics"
+	depends on CGROUP_CPUACCT
+	depends on FAIR_GROUP_SCHED
+	default Y
+	help
+	  This accounts CPU time spent by tasks in a cgroup into "usr%" "sys%"
+	  "idle" "steal%" "irq%" "softirq%" "guest%". And this exports
+	  nr_migrations, nr_running, nr_uninterruptible of a cgroup.
+
+	  The corresponding interface is cpuacct.proc_stat.
+
+	  Note CPU usage requires cpuacct and cpu cgroup subsys to be mounted
+	  together to take effect.
+
 config CGROUP_CPUACCT
 	bool "Simple CPU accounting controller"
 	help
