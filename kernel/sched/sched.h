@@ -1677,6 +1677,7 @@ struct sched_class {
 #endif
 
 	void (*update_nr_uninterruptible)(struct task_struct *p, long inc);
+	void (*update_nr_iowait)(struct task_struct *p, long inc);
 };
 
 static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
@@ -1687,6 +1688,12 @@ static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
 static inline void set_curr_task(struct rq *rq, struct task_struct *curr)
 {
 	curr->sched_class->set_curr_task(rq);
+}
+
+static inline void update_nr_iowait(struct task_struct *p, long inc)
+{
+	if (p->sched_class->update_nr_iowait)
+		p->sched_class->update_nr_iowait(p, inc);
 }
 
 #ifdef CONFIG_SMP

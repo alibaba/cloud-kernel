@@ -2046,6 +2046,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	if (p->in_iowait) {
 		delayacct_blkio_end(p);
 		atomic_dec(&task_rq(p)->nr_iowait);
+		update_nr_iowait(p, -1);
 	}
 
 	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags);
@@ -2060,6 +2061,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	if (p->in_iowait) {
 		delayacct_blkio_end(p);
 		atomic_dec(&task_rq(p)->nr_iowait);
+		update_nr_iowait(p, -1);
 	}
 
 #endif /* CONFIG_SMP */
@@ -3436,6 +3438,7 @@ static void __sched notrace __schedule(bool preempt)
 
 			if (prev->in_iowait) {
 				atomic_inc(&rq->nr_iowait);
+				update_nr_iowait(prev, 1);
 				delayacct_blkio_start();
 			}
 		}
