@@ -77,6 +77,7 @@ static struct cpuacct root_cpuacct = {
 #endif
 };
 
+#ifdef CONFIG_SCHED_SLI
 void task_ca_increase_nr_migrations(struct task_struct *tsk)
 {
 	struct cpuacct *ca;
@@ -86,6 +87,7 @@ void task_ca_increase_nr_migrations(struct task_struct *tsk)
 	this_cpu_ptr(ca->alistats)->nr_migrations++;
 	rcu_read_unlock();
 }
+#endif
 
 /* Create a new CPU accounting group */
 static struct cgroup_subsys_state *
