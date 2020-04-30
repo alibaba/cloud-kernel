@@ -10042,7 +10042,7 @@ static void update_nr_iowait_fair(struct task_struct *p, long inc)
 	if (!schedstat_enabled())
 		return;
 
-	clock = __rq_clock_broken(cpu_rq(p->cpu));
+	clock = __rq_clock_broken(cpu_rq(task_cpu(p)));
 
 	for_each_sched_entity(se) {
 		/*
