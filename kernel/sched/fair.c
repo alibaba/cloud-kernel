@@ -4654,10 +4654,11 @@ static void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b,
 			}
 		}
 
+		cfs_b->current_buffer = max(cfs_b->runtime, cfs_b->buffer);
 		overrun = min(overrun, cfs_b->max_overrun);
 		refill = cfs_b->quota * overrun;
 		cfs_b->runtime += refill;
-		cfs_b->runtime = min(cfs_b->runtime, cfs_b->buffer);
+		cfs_b->runtime = min(cfs_b->runtime, cfs_b->current_buffer);
 
 		cfs_b->previous_runtime = cfs_b->runtime;
 	}
@@ -5309,6 +5310,7 @@ void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 	cfs_b->quota = RUNTIME_INF;
 	cfs_b->period = ns_to_ktime(default_cfs_period());
 	cfs_b->burst = 0;
+	cfs_b->init_buffer = 0;
 	cfs_b->buffer = RUNTIME_INF;
 
 	INIT_LIST_HEAD(&cfs_b->throttled_cfs_rq);
