@@ -23,7 +23,7 @@
 
 #include <asm/cacheflush.h>
 #include <asm/intel-family.h>
-#include <asm/resctrl_sched.h>
+#include <asm/resctrl.h>
 #include <asm/perf_event.h>
 
 #include "internal.h"
