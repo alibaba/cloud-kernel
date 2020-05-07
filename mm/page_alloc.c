@@ -8422,6 +8422,7 @@ done:
 				pfn_max_align_up(end), migratetype);
 	return ret;
 }
+EXPORT_SYMBOL(alloc_contig_range);
 
 void free_contig_range(unsigned long pfn, unsigned nr_pages)
 {
@@ -8435,6 +8436,7 @@ void free_contig_range(unsigned long pfn, unsigned nr_pages)
 	}
 	WARN(count != 0, "%d pages are still in use!\n", count);
 }
+EXPORT_SYMBOL(free_contig_range);
 #endif
 
 /*
