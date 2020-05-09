@@ -107,4 +107,4 @@ obj-$(CONFIG_HMM) += hmm.o
 obj-$(CONFIG_MEMFD_CREATE) += memfd.o
 obj-$(CONFIG_KIDLED) += kidled.o
 obj-$(CONFIG_PAGE_REPORTING) += page_reporting.o
-obj-y += unevictable.o
+mmu-$(CONFIG_MMU) += unevictable.o
