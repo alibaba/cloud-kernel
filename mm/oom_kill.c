@@ -862,8 +862,10 @@ static void __oom_kill_process(struct task_struct *victim, bool is_memcg)
 	bool can_oom_reap = true;
 	bool suppress_print = false;
 
+#ifdef CONFIG_PRINTK
 	if (is_memcg && __ratelimit(&printk_ratelimit_state))
 		suppress_print = true;
+#endif
 	p = find_lock_task_mm(victim);
 	if (!p) {
 		put_task_struct(victim);
@@ -993,8 +995,10 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 	 * Meanwhile, Use printk_ratelimit_state rather than oom_memcg_rs to
 	 * not suppress important print message overly.
 	 */
+#ifdef CONFIG_PRINTK
 	if (is_memcg_oom(oc) && __ratelimit(&printk_ratelimit_state))
 		suppress_print = true;
+#endif
 
 	if (!suppress_print)
 		pr_err("%s: Kill process %d (%s) score %u or sacrifice child\n",
