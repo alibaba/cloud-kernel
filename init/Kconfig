@@ -911,6 +911,7 @@ config CGROUP_DEVICE
 config SCHED_SLI
 	bool "cgroup CPU usage and additional scheduler statistics"
 	depends on CGROUP_CPUACCT
+	depends on FAIR_GROUP_SCHED
 	default Y
 	help
 	  This accounts CPU time spent by tasks in a cgroup into "usr%" "sys%"
