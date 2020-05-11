@@ -41,6 +41,7 @@
 #include <net/snmp.h>
 #include <net/ip.h>
 #include <net/tcp_states.h>
+#include <net/tcp_rt.h>
 #include <net/inet_ecn.h>
 #include <net/dst.h>
 

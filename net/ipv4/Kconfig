@@ -753,3 +753,16 @@ config TCP_MD5SIG
 	  on the Internet.
 
 	  If unsure, say N.
+
+config TCP_RT
+	bool "TCP RT"
+	default n
+	help
+	  TcpRT: Instrument and Diagnostic Analysis System for Service Quality
+	  of Cloud Databases at Massive Scale in Real-time.
+
+	  It can also provide information for all request/response services. Such as
+	  HTTP request.
+
+	  This is used for account opening kernel framework, more work needs
+	  tcprt module support.

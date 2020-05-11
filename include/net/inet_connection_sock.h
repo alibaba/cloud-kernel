@@ -1,7 +1,7 @@
 /*
  * NET		Generic infrastructure for INET connection oriented protocols.
  *
- *		Definitions for inet_connection_sock 
+ *		Definitions for inet_connection_sock
  *
  * Authors:	Many people, see the TCP sources
  *
@@ -138,6 +138,11 @@ struct inet_connection_sock {
 		u32		  probe_timestamp;
 	} icsk_mtup;
 	u32			  icsk_user_timeout;
+
+#ifdef CONFIG_TCP_RT
+	const struct tcp_rt_ops  *icsk_tcp_rt_ops;
+	void                     *icsk_tcp_rt_priv;
+#endif
 
 	u64			  icsk_ca_priv[88 / sizeof(u64)];
 #define ICSK_CA_PRIV_SIZE      (11 * sizeof(u64))

@@ -2406,6 +2406,9 @@ repair:
 			tcp_schedule_loss_probe(sk, false);
 		is_cwnd_limited |= (tcp_packets_in_flight(tp) >= tp->snd_cwnd);
 		tcp_cwnd_validate(sk, is_cwnd_limited);
+
+		tcp_rt_call(sk, send_data);
+
 		return false;
 	}
 	return !tp->packets_out && !tcp_write_queue_empty(sk);

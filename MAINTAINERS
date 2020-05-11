@@ -136,6 +136,11 @@ Maintainers List (try to look for most precise areas first)
 
 		-----------------------------------
 
+TCP RT
+M:	xuanzhuo <xuanzhuo@linux.alibaba.com>
+S:	Maintained
+F:	net/ipv4/tcp_rt.c
+
 3C59X NETWORK DRIVER
 M:	Steffen Klassert <klassert@kernel.org>
 L:	netdev@vger.kernel.org
