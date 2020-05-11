@@ -760,3 +760,16 @@ config TCP_SYNACK_TIMEOUT_PROC
 	  timeout could be less than TCP_TIMEOUT_INIT/TCP_RTO_MAX.
 
 	  If unsure, say N.
+
+config TCP_RT
+	bool "TCP RT"
+	default n
+	help
+	  TcpRT: Instrument and Diagnostic Analysis System for Service Quality
+	  of Cloud Databases at Massive Scale in Real-time.
+
+	  It can also provide information for all request/response services. Such as
+	  HTTP request.
+
+	  This is used for account opening kernel framework, more work needs
+	  tcprt module support.
