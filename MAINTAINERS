@@ -143,6 +143,12 @@ Maintainers List
           first. When adding to this list, please keep the entries in
           alphabetical order.
 
+TCP RT
+M:	Cambda Zhu <cambda@linux.alibaba.com>
+M:	Xuan Zhuo <xuanzhuo@linux.alibaba.com>
+S:	Maintained
+F:	net/ipv4/tcp_rt.c
+
 3C59X NETWORK DRIVER
 M:	Steffen Klassert <klassert@kernel.org>
 L:	netdev@vger.kernel.org

@@ -2715,6 +2715,8 @@ repair:
 		/* Send one loss probe per tail loss episode. */
 		if (push_one != 2)
 			tcp_schedule_loss_probe(sk, false);
+
+		tcp_rt_call(sk, send_data);
 		return false;
 	}
 	return !tp->packets_out && !tcp_write_queue_empty(sk);
