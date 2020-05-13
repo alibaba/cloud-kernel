@@ -87,5 +87,10 @@ extern int sysctl_blocked_averages(struct ctl_table *table, int write,
 				 void __user *buffer, size_t *lenp,
 				 loff_t *ppos);
 
+extern int sysctl_tick_update_load(struct ctl_table *table, int write,
+				 void __user *buffer, size_t *lenp,
+				 loff_t *ppos);
+
+extern struct static_key_true sched_tick_update_load;
 extern struct static_key_true sched_blocked_averages;
 #endif /* _LINUX_SCHED_SYSCTL_H */

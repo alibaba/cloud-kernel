@@ -355,6 +355,15 @@ static struct ctl_table kern_table[] = {
 	},
 #ifdef CONFIG_SMP
 	{
+		.procname	= "sched_tick_update_load",
+		.data		= NULL,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_tick_update_load,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+	{
 		.procname	= "sched_blocked_averages",
 		.data		= NULL,
 		.maxlen		= sizeof(unsigned int),

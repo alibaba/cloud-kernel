@@ -4233,6 +4233,36 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 	cfs_rq->curr = NULL;
 }
 
+DEFINE_STATIC_KEY_TRUE(sched_tick_update_load);
+
+static void set_tick_update_load(bool enabled)
+{
+	if (enabled)
+		static_branch_enable(&sched_tick_update_load);
+	else
+		static_branch_disable(&sched_tick_update_load);
+}
+
+int sysctl_tick_update_load(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table t;
+	int err;
+	int state = static_branch_likely(&sched_tick_update_load);
+
+	if (write && !capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	t = *table;
+	t.data = &state;
+	err = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		set_tick_update_load(state);
+	return err;
+}
+
 static void
 entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 {
@@ -4241,11 +4271,13 @@ entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 	 */
 	update_curr(cfs_rq);
 
-	/*
-	 * Ensure that runnable average is periodically updated.
-	 */
-	update_load_avg(cfs_rq, curr, UPDATE_TG);
-	update_cfs_group(curr);
+	if (static_branch_likely(&sched_tick_update_load)) {
+		/*
+		 * Ensure that runnable average is periodically updated.
+		 */
+		update_load_avg(cfs_rq, curr, UPDATE_TG);
+		update_cfs_group(curr);
+	}
 
 #ifdef CONFIG_SCHED_HRTICK
 	/*
