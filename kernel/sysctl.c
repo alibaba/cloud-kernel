@@ -355,6 +355,15 @@ static struct ctl_table kern_table[] = {
 	},
 #ifdef CONFIG_SMP
 	{
+		.procname	= "sched_blocked_averages",
+		.data		= NULL,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_blocked_averages,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+	{
 		.procname	= "sched_tunable_scaling",
 		.data		= &sysctl_sched_tunable_scaling,
 		.maxlen		= sizeof(enum sched_tunable_scaling),

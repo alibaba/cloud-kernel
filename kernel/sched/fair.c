@@ -7449,6 +7449,35 @@ static inline bool others_have_blocked(struct rq *rq)
 }
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
+DEFINE_STATIC_KEY_TRUE(sched_blocked_averages);
+
+static void set_blocked_averages(bool enabled)
+{
+	if (enabled)
+		static_branch_enable(&sched_blocked_averages);
+	else
+		static_branch_disable(&sched_blocked_averages);
+}
+
+int sysctl_blocked_averages(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table t;
+	int err;
+	int state = static_branch_likely(&sched_blocked_averages);
+
+	if (write && !capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	t = *table;
+	t.data = &state;
+	err = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		set_blocked_averages(state);
+	return err;
+}
 
 static void update_blocked_averages(int cpu)
 {
@@ -7457,6 +7486,9 @@ static void update_blocked_averages(int cpu)
 	const struct sched_class *curr_class;
 	struct rq_flags rf;
 	bool done = true;
+
+	if (!static_branch_unlikely(&sched_blocked_averages))
+		return;
 
 	rq_lock_irqsave(rq, &rf);
 	update_rq_clock(rq);
@@ -7592,6 +7624,9 @@ static unsigned long task_h_load_static(struct task_struct *p)
 #else
 static inline void update_blocked_averages(int cpu)
 {
+	if (!static_key_true(&sched_blocked_averages))
+		return;
+
 	struct rq *rq = cpu_rq(cpu);
 	struct cfs_rq *cfs_rq = &rq->cfs;
 	const struct sched_class *curr_class;
