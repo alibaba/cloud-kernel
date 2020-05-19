@@ -766,3 +766,5 @@ config TCP_RT
 
 	  This is used for account opening kernel framework, more work needs
 	  tcprt module support.
+
+source "net/ipv4/tcp_rt/Kconfig"
