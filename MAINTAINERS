@@ -148,6 +148,7 @@ M:	Cambda Zhu <cambda@linux.alibaba.com>
 M:	Xuan Zhuo <xuanzhuo@linux.alibaba.com>
 S:	Maintained
 F:	net/ipv4/tcp_rt.c
+F:	net/ipv4/tcp_rt/
 
 3C59X NETWORK DRIVER
 M:	Steffen Klassert <klassert@kernel.org>

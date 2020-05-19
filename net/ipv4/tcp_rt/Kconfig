@@ -1,0 +1,7 @@
+config TCP_RT_MODULE
+	tristate "TCP-RT module"
+	default m
+	depends on TCP_RT
+	help
+	  This module depends on TCP-RT framework, collect the request
+	  information on tcp and output by relay.
