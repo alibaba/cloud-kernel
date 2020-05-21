@@ -366,7 +366,12 @@ static struct dentry *create_buf_file_handler(const char *filename,
 					      struct rchan_buf *buf,
 					      int *is_global)
 {
-	return debugfs_create_file(filename, mode, tcprt_dir, buf,
+	if (buf->chan->private_data) {
+		*is_global = 1;
+		filename = "rt-network-stats";
+	}
+
+	return debugfs_create_file(filename, mode, parent, buf,
 				   &relay_file_operations);
 }
 
@@ -376,9 +381,18 @@ static int remove_buf_file_handler(struct dentry *dentry)
 	return 0;
 }
 
+static int subbuf_start(struct rchan_buf *buf,
+			void *subbuf,
+			void *prev_subbuf,
+			size_t prev_padding)
+{
+	return 1;
+}
+
 static struct rchan_callbacks relay_callbacks = {
 	.create_buf_file = create_buf_file_handler,
 	.remove_buf_file = remove_buf_file_handler,
+	.subbuf_start    = subbuf_start,
 };
 
 int tcp_rt_output_init(int log_buf_num, int stats_buf_num,
@@ -394,7 +408,7 @@ int tcp_rt_output_init(int log_buf_num, int stats_buf_num,
 		return -1;
 	}
 
-	relay_log = relay_open("rt-network-log", NULL, LOG_SUBBUF_SIZE,
+	relay_log = relay_open("rt-network-log", tcprt_dir, LOG_SUBBUF_SIZE,
 			       log_buf_num, &relay_callbacks, NULL);
 	if (!relay_log) {
 		debugfs_remove_recursive(tcprt_dir);
@@ -404,8 +418,9 @@ int tcp_rt_output_init(int log_buf_num, int stats_buf_num,
 	}
 	pr_info("tcp-rt: relay_log ready!\n");
 
-	relay_stats = relay_open("rt-network-real", NULL, STATS_SUBBUF_SIZE,
-				 stats_buf_num, &relay_callbacks, NULL);
+	relay_stats = relay_open("rt-network-stats", tcprt_dir,
+				 STATS_SUBBUF_SIZE, stats_buf_num,
+				 &relay_callbacks, (void *)1);
 	if (!relay_stats) {
 		relay_close(relay_log);
 		relay_log = NULL;
