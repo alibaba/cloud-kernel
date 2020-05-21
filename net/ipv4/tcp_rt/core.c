@@ -4,9 +4,11 @@
 
 static int            ports_number;
 static int            ports_peer_number;
+static int            ports_range_number;
 
 static int            ports[PORT_MAX_NUM];
 static int            ports_peer[PORT_MAX_NUM];
+static int            ports_range[PORT_MAX_NUM];
 
 static int            log_buf_num = 8;
 static int            real_buf_num = 2;
@@ -21,10 +23,13 @@ module_param(check_interval, int, 0644);
 MODULE_PARM_DESC(check_interval, "how many seconds later do stats");
 
 module_param_array(ports, int, &ports_number, 0644);
-MODULE_PARM_DESC(ports, "port array of	port_number size");
+MODULE_PARM_DESC(ports, "local port array. config: ports=80,3306.");
+
+module_param_array(ports_range, int, &ports_range_number, 0644);
+MODULE_PARM_DESC(ports_range, "local port range array. config: ports_range=1000,2000,3500,4000. means: 1000-2000 or 3500-4000");
 
 module_param_array(ports_peer, int, &ports_peer_number, 0644);
-MODULE_PARM_DESC(ports_peer, "peer ports array");
+MODULE_PARM_DESC(ports_peer, "peer port array. config: ports_peer=80,3306");
 
 module_param(log_buf_num, int, 0644);
 MODULE_PARM_DESC(log_buf_num, "the num of buffers for every cpu log buffer. unit is 256k. just work when module load.");
@@ -36,10 +41,17 @@ struct timer_list tcp_rt_timer;
 static void tcp_rt_timer_handler(struct timer_list *t)
 {
 	if (check) {
-		int i = 0;
+		int i, port;
 
 		for (i = 0; i < ports_number; i++)
-			tcp_rt_timer_output(i, ports[i], "L");
+			tcp_rt_timer_output(0, ports[i], "L");
+
+		for (i = 0; i < ports_range_number / 2; ++i) {
+			for (port = ports_range[i * 2];
+			     port <= ports_range[i * 2 + 1]; ++port) {
+				tcp_rt_timer_output(PORT_MAX_NUM, port, "L");
+			}
+		}
 
 		for (i = 0; i < ports_peer_number; i++)
 			tcp_rt_timer_output(i, ports_peer[i], "P");
@@ -281,6 +293,17 @@ static int tcp_rt_sk_init(struct sock *sk)
 		}
 	}
 
+	for (i = 0; i < ports_range_number / 2; ++i) {
+		if (port < ports_range[i * 2])
+			continue;
+
+		if (port > ports_range[i * 2 + 1])
+			continue;
+
+		type = TCPRT_TYPE_LOCAL_PORT_RANG;
+		goto ok;
+	}
+
 	port = ntohs(inet_sk(sk)->inet_dport);
 
 	for (i = 0; i < ports_peer_number; i++) {
@@ -292,7 +315,7 @@ static int tcp_rt_sk_init(struct sock *sk)
 
 	return -1;
 ok:
-	rt = kmalloc(sizeof(*rt), GFP_KERNEL);
+	rt = kmalloc(sizeof(*rt), GFP_ATOMIC);
 	if (!rt)
 		return -1;
 
