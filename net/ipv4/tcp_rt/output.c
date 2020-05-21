@@ -4,26 +4,27 @@
 #include "tcp_rt.h"
 
 #define CHUNK_SIZE      (4096)
-#define PORTS_PER_CHUNK (CHUNK_SIZE / sizeof(struct tcp_rt_real))
+#define PORTS_PER_CHUNK (CHUNK_SIZE / sizeof(struct tcp_rt_stats))
 #define PORT_TOTAL_NUM  (U16_MAX + 1)
 #define CHUNK_COUNT     (PORT_TOTAL_NUM / PORTS_PER_CHUNK + 1)
 
 static struct rchan *relay_log;
 static struct rchan *relay_stats;
 static struct dentry *tcprt_dir;
-static struct tcp_rt_real *statis_local[CHUNK_COUNT];
-static struct tcp_rt_real statis_peer[PORT_MAX_NUM];
 
-#define statis_local_inc(item)      atomic64_inc(&(item))
-#define statis_local_add(item, val) atomic64_add(val, &(item))
+static struct tcp_rt_stats *stats_local[CHUNK_COUNT];
+static struct tcp_rt_stats  stats_peer[PORT_MAX_NUM];
 
-#define statis_peer_inc(rt, item)      \
-	atomic64_inc(&statis_peer[(rt)->index].item)
-#define statis_peer_add(rt, item, val) \
-	atomic64_add(val, &statis_peer[(rt)->index].item)
+#define stats_local_inc(item)      atomic64_inc(&(item))
+#define stats_local_add(item, val) atomic64_add(val, &(item))
 
-#define tcp_rt_get_local_statis_sk(sk) \
-	tcp_rt_get_local_statis(ntohs(inet_sk(sk)->inet_sport), true)
+#define stats_peer_inc(rt, item)      \
+	atomic64_inc(&stats_peer[(rt)->index].item)
+#define stats_peer_add(rt, item, val) \
+	atomic64_add(val, &stats_peer[(rt)->index].item)
+
+#define tcp_rt_get_local_stats_sk(sk) \
+	tcp_rt_get_local_stats(ntohs(inet_sk(sk)->inet_sport), true)
 
 static int64_t timespec64_dec(struct timespec64 tv1, struct timespec64 tv2)
 {
@@ -76,14 +77,14 @@ static int ip_format2(char *buf, u32 addr, char end)
 	return idx;
 }
 
-static struct tcp_rt_real *tcp_rt_get_local_statis(int port, bool alloc)
+static struct tcp_rt_stats *tcp_rt_get_local_stats(int port, bool alloc)
 {
 	int chunkid;
-	struct tcp_rt_real *p;
+	struct tcp_rt_stats *p;
 
 	chunkid = port / PORTS_PER_CHUNK;
 
-	p = statis_local[chunkid];
+	p = stats_local[chunkid];
 
 	if (unlikely(!p)) {
 		if (!alloc)
@@ -95,9 +96,9 @@ static struct tcp_rt_real *tcp_rt_get_local_statis(int port, bool alloc)
 
 		memset(p, 0, CHUNK_SIZE);
 
-		if (cmpxchg(&statis_local[chunkid], NULL, p)) {
+		if (cmpxchg(&stats_local[chunkid], NULL, p)) {
 			vfree(p);
-			p = READ_ONCE(statis_local[chunkid]);
+			p = READ_ONCE(stats_local[chunkid]);
 		}
 	}
 
@@ -129,11 +130,11 @@ static int bufheader(char *buf, int size, char flag,
 	return n;
 }
 
-void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
+void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 {
 #define MAX_BUF_SIZE 512
 
-	struct tcp_rt_real *r;
+	struct tcp_rt_stats *r;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_rt *rt = TCP_SK_RT(sk);
 	char buf[MAX_BUF_SIZE];
@@ -176,21 +177,21 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 		size += bufappend(buf, size, tp->mss_cache);
 		buf[size++] = '\n';
 
-		if (check && t_seq > 0) {
-			r = tcp_rt_get_local_statis_sk(sk);
+		if (stats && t_seq > 0) {
+			r = tcp_rt_get_local_stats_sk(sk);
 			if (!r)
 				break;
 
-			statis_local_inc(r->number);
+			stats_local_inc(r->number);
 
-			statis_local_add(r->rt, t_rt);
-			statis_local_add(r->bytes, t_seq);
-			statis_local_add(r->drop, t_retrans);
-			statis_local_add(r->packets,
-					 t_seq / tp->mss_cache + 1);
-			statis_local_add(r->server_time, rt->server_time);
-			statis_local_add(r->upload_time, rt->upload_time);
-			statis_local_add(r->upload_data, rt->upload_data);
+			stats_local_add(r->rt, t_rt);
+			stats_local_add(r->bytes, t_seq);
+			stats_local_add(r->drop, t_retrans);
+			stats_local_add(r->packets,
+					t_seq / tp->mss_cache + 1);
+			stats_local_add(r->server_time, rt->server_time);
+			stats_local_add(r->upload_time, rt->upload_time);
+			stats_local_add(r->upload_data, rt->upload_data);
 		}
 		break;
 
@@ -213,12 +214,12 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 		size += bufappend(buf, size, tp->mss_cache);
 		buf[size++] = '\n';
 
-		if (check && t_rt > HZ / 10) {
-			r = tcp_rt_get_local_statis_sk(sk);
+		if (stats && t_rt > HZ / 10) {
+			r = tcp_rt_get_local_stats_sk(sk);
 			if (!r)
 				break;
 
-			statis_local_inc(r->fail);
+			stats_local_inc(r->fail);
 		}
 		break;
 
@@ -248,12 +249,12 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 		buf[size++] = '\n';
 
 		if (mrtt > 0) {
-			r = tcp_rt_get_local_statis_sk(sk);
+			r = tcp_rt_get_local_stats_sk(sk);
 			if (!r)
 				break;
 
-			statis_local_inc(r->con_num);
-			statis_local_add(r->rtt, mrtt);
+			stats_local_inc(r->con_num);
+			stats_local_add(r->rtt, mrtt);
 		}
 		break;
 
@@ -270,13 +271,13 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 		size += bufappend(buf, size, tp->mss_cache);
 		buf[size++] = '\n';
 
-		if (check) {
-			statis_peer_inc(rt, number);
-			statis_peer_inc(rt, con_num);
-			statis_peer_add(rt, bytes, t_seq);
-			statis_peer_add(rt, rtt, mrtt);
-			statis_peer_add(rt, packets, t_seq / tp->mss_cache + 1);
-			statis_peer_add(rt, drop, t_retrans);
+		if (stats) {
+			stats_peer_inc(rt, number);
+			stats_peer_inc(rt, con_num);
+			stats_peer_add(rt, bytes, t_seq);
+			stats_peer_add(rt, rtt, mrtt);
+			stats_peer_add(rt, packets, t_seq / tp->mss_cache + 1);
+			stats_peer_add(rt, drop, t_retrans);
 		}
 		break;
 	}
@@ -287,25 +288,25 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 
 void tcp_rt_timer_output(int index, int port, char *flag)
 {
-	struct tcp_rt_real *r;
-	struct _tcp_rt_real t;
-	struct _tcp_rt_real avg = {0};
+	struct tcp_rt_stats *r;
+	struct _tcp_rt_stats t;
+	struct _tcp_rt_stats avg = {0};
 	int size;
 
 	char buf[MAX_BUF_SIZE];
 
 	if (*flag == 'L') {
 		if (index == PORT_MAX_NUM)
-			r = tcp_rt_get_local_statis(port, false);
+			r = tcp_rt_get_local_stats(port, false);
 		else
-			r = tcp_rt_get_local_statis(port, true);
+			r = tcp_rt_get_local_stats(port, true);
 
 		if (!r)
 			return;
 
 		flag = "";
 	} else {
-		r = statis_peer + index;
+		r = stats_peer + index;
 	}
 
 	t.number = atomic64_read(&r->number);
@@ -380,7 +381,7 @@ static struct rchan_callbacks relay_callbacks = {
 	.remove_buf_file = remove_buf_file_handler,
 };
 
-int tcp_rt_output_init(int log_buf_num, int real_buf_num,
+int tcp_rt_output_init(int log_buf_num, int stats_buf_num,
 		       const struct file_operations *fops)
 {
 	tcprt_dir = debugfs_create_dir("tcp-rt", NULL);
@@ -404,7 +405,7 @@ int tcp_rt_output_init(int log_buf_num, int real_buf_num,
 	pr_info("tcp-rt: relay_log ready!\n");
 
 	relay_stats = relay_open("rt-network-real", NULL, STATS_SUBBUF_SIZE,
-				 real_buf_num, &relay_callbacks, NULL);
+				 stats_buf_num, &relay_callbacks, NULL);
 	if (!relay_stats) {
 		relay_close(relay_log);
 		relay_log = NULL;
@@ -426,8 +427,8 @@ void tcp_rt_output_released(void)
 	relay_close(relay_stats);
 	debugfs_remove_recursive(tcprt_dir);
 
-	for (i = 0; i < ARRAY_SIZE(statis_local); ++i)
-		kfree(statis_local[i]);
+	for (i = 0; i < ARRAY_SIZE(stats_local); ++i)
+		kfree(stats_local[i]);
 
 	pr_info("tcp-rt: output released\n");
 }
