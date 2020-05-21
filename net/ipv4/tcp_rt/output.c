@@ -3,20 +3,27 @@
 #include <linux/relay.h>
 #include "tcp_rt.h"
 
+#define CHUNK_SIZE      (4096)
+#define PORTS_PER_CHUNK (CHUNK_SIZE / sizeof(struct tcp_rt_real))
+#define PORT_TOTAL_NUM  (U16_MAX + 1)
+#define CHUNK_COUNT     (PORT_TOTAL_NUM / PORTS_PER_CHUNK + 1)
+
 static struct rchan *relay_log;
 static struct rchan *relay_stats;
 static struct dentry *tcprt_dir;
-static struct tcp_rt_real statis_local[PORT_MAX_NUM];
+static struct tcp_rt_real *statis_local[CHUNK_COUNT];
 static struct tcp_rt_real statis_peer[PORT_MAX_NUM];
 
-#define get_statis_local(rt)       (statis_local[(rt)->index])
-#define get_statis_peer(rt)        (statis_peer[(rt)->index])
-#define statis_local_inc(rt, item) atomic64_inc(&statis_local[(rt)->index].item)
-#define statis_peer_inc(rt, item)  atomic64_inc(&statis_peer[(rt)->index].item)
-#define statis_local_add(rt, item, val) \
-	atomic64_add(val, &statis_local[(rt)->index].item)
+#define statis_local_inc(item)      atomic64_inc(&(item))
+#define statis_local_add(item, val) atomic64_add(val, &(item))
+
+#define statis_peer_inc(rt, item)      \
+	atomic64_inc(&statis_peer[(rt)->index].item)
 #define statis_peer_add(rt, item, val) \
 	atomic64_add(val, &statis_peer[(rt)->index].item)
+
+#define tcp_rt_get_local_statis_sk(sk) \
+	tcp_rt_get_local_statis(ntohs(inet_sk(sk)->inet_sport), true)
 
 static int64_t timespec64_dec(struct timespec64 tv1, struct timespec64 tv2)
 {
@@ -69,6 +76,34 @@ static int ip_format2(char *buf, u32 addr, char end)
 	return idx;
 }
 
+static struct tcp_rt_real *tcp_rt_get_local_statis(int port, bool alloc)
+{
+	int chunkid;
+	struct tcp_rt_real *p;
+
+	chunkid = port / PORTS_PER_CHUNK;
+
+	p = statis_local[chunkid];
+
+	if (unlikely(!p)) {
+		if (!alloc)
+			return NULL;
+
+		p = kmalloc(CHUNK_SIZE, GFP_ATOMIC);
+		if (!p)
+			return NULL;
+
+		memset(p, 0, CHUNK_SIZE);
+
+		if (cmpxchg(&statis_local[chunkid], NULL, p)) {
+			vfree(p);
+			p = READ_ONCE(statis_local[chunkid]);
+		}
+	}
+
+	return p + (port - chunkid * PORTS_PER_CHUNK);
+}
+
 #define  bufappend(buf, size, v)  \
 	ulong_format2((buf) + (size), (unsigned long)(v))
 
@@ -98,6 +133,7 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 {
 #define MAX_BUF_SIZE 512
 
+	struct tcp_rt_real *r;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_rt *rt = TCP_SK_RT(sk);
 	char buf[MAX_BUF_SIZE];
@@ -141,16 +177,20 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 		buf[size++] = '\n';
 
 		if (check && t_seq > 0) {
-			statis_local_inc(rt, number);
+			r = tcp_rt_get_local_statis_sk(sk);
+			if (!r)
+				break;
 
-			statis_local_add(rt, rt, t_rt);
-			statis_local_add(rt, bytes, t_seq);
-			statis_local_add(rt, drop, t_retrans);
-			statis_local_add(rt, packets,
+			statis_local_inc(r->number);
+
+			statis_local_add(r->rt, t_rt);
+			statis_local_add(r->bytes, t_seq);
+			statis_local_add(r->drop, t_retrans);
+			statis_local_add(r->packets,
 					 t_seq / tp->mss_cache + 1);
-			statis_local_add(rt, server_time, rt->server_time);
-			statis_local_add(rt, upload_time, rt->upload_time);
-			statis_local_add(rt, upload_data, rt->upload_data);
+			statis_local_add(r->server_time, rt->server_time);
+			statis_local_add(r->upload_time, rt->upload_time);
+			statis_local_add(r->upload_data, rt->upload_data);
 		}
 		break;
 
@@ -173,8 +213,13 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 		size += bufappend(buf, size, tp->mss_cache);
 		buf[size++] = '\n';
 
-		if (check && t_rt > HZ / 10)
-			statis_local_inc(rt, fail);
+		if (check && t_rt > HZ / 10) {
+			r = tcp_rt_get_local_statis_sk(sk);
+			if (!r)
+				break;
+
+			statis_local_inc(r->fail);
+		}
 		break;
 
 	case LOG_STATUS_N:
@@ -203,8 +248,12 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check)
 		buf[size++] = '\n';
 
 		if (mrtt > 0) {
-			statis_local_inc(rt, con_num);
-			statis_local_add(rt, rtt, mrtt);
+			r = tcp_rt_get_local_statis_sk(sk);
+			if (!r)
+				break;
+
+			statis_local_inc(r->con_num);
+			statis_local_add(r->rtt, mrtt);
 		}
 		break;
 
@@ -246,14 +295,24 @@ void tcp_rt_timer_output(int index, int port, char *flag)
 	char buf[MAX_BUF_SIZE];
 
 	if (*flag == 'L') {
-		r = statis_local + index;
+		if (index == PORT_MAX_NUM)
+			r = tcp_rt_get_local_statis(port, false);
+		else
+			r = tcp_rt_get_local_statis(port, true);
+
+		if (!r)
+			return;
+
 		flag = "";
 	} else {
 		r = statis_peer + index;
 	}
 
+	t.number = atomic64_read(&r->number);
+	if (!t.number && index == PORT_MAX_NUM)
+		return;
+
 	t.rt          = atomic64_read(&r->rt);
-	t.number      = atomic64_read(&r->number);
 	t.bytes       = atomic64_read(&r->bytes);
 	t.drop        = atomic64_read(&r->drop);
 	t.fail        = atomic64_read(&r->fail);
@@ -361,8 +420,14 @@ int tcp_rt_output_init(int log_buf_num, int real_buf_num,
 
 void tcp_rt_output_released(void)
 {
+	int i;
+
 	relay_close(relay_log);
 	relay_close(relay_stats);
 	debugfs_remove_recursive(tcprt_dir);
+
+	for (i = 0; i < ARRAY_SIZE(statis_local); ++i)
+		kfree(statis_local[i]);
+
 	pr_info("tcp-rt: output released\n");
 }
