@@ -61,7 +61,11 @@ enum sched_lat_count_t {
 	SCHED_LAT_1_4,
 	SCHED_LAT_4_7,
 	SCHED_LAT_7_10,
-	SCHED_LAT_10_100,
+	SCHED_LAT_10_20,
+	SCHED_LAT_20_30,
+	SCHED_LAT_30_40,
+	SCHED_LAT_40_50,
+	SCHED_LAT_50_100,
 	SCHED_LAT_100_500,
 	SCHED_LAT_500_1000,
 	SCHED_LAT_1000_5000,
@@ -88,8 +92,16 @@ static inline enum sched_lat_count_t get_sched_lat_count_idx(u64 msecs)
 		idx = SCHED_LAT_4_7;
 	else if (msecs < 10)
 		idx = SCHED_LAT_7_10;
+	else if (msecs < 20)
+		idx = SCHED_LAT_10_20;
+	else if (msecs < 30)
+		idx = SCHED_LAT_20_30;
+	else if (msecs < 40)
+		idx = SCHED_LAT_30_40;
+	else if (msecs < 50)
+		idx = SCHED_LAT_40_50;
 	else if (msecs < 100)
-		idx = SCHED_LAT_10_100;
+		idx = SCHED_LAT_50_100;
 	else if (msecs < 500)
 		idx = SCHED_LAT_100_500;
 	else if (msecs < 1000)
@@ -1182,8 +1194,16 @@ static int sched_lat_stat_show(struct seq_file *sf, void *v)
 		sched_lat_stat_gather(ca, s, SCHED_LAT_4_7));
 	seq_printf(sf, "7-10ms: \t%llu\n",
 		sched_lat_stat_gather(ca, s, SCHED_LAT_7_10));
-	seq_printf(sf, "10-100ms: \t%llu\n",
-		sched_lat_stat_gather(ca, s, SCHED_LAT_10_100));
+	seq_printf(sf, "10-20ms: \t%llu\n",
+		sched_lat_stat_gather(ca, s, SCHED_LAT_10_20));
+	seq_printf(sf, "20-30ms: \t%llu\n",
+		sched_lat_stat_gather(ca, s, SCHED_LAT_20_30));
+	seq_printf(sf, "30-40ms: \t%llu\n",
+		sched_lat_stat_gather(ca, s, SCHED_LAT_30_40));
+	seq_printf(sf, "40-50ms: \t%llu\n",
+		sched_lat_stat_gather(ca, s, SCHED_LAT_40_50));
+	seq_printf(sf, "50-100ms: \t%llu\n",
+		sched_lat_stat_gather(ca, s, SCHED_LAT_50_100));
 	seq_printf(sf, "100-500ms: \t%llu\n",
 		sched_lat_stat_gather(ca, s, SCHED_LAT_100_500));
 	seq_printf(sf, "500-1000ms: \t%llu\n",
