@@ -248,7 +248,13 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 		size += bufappend(buf, size, mrtt);
 		buf[size++] = '\n';
 
-		if (mrtt > 0) {
+		if (mrtt <= 0)
+			break;
+
+		if (rt->type == TCPRT_TYPE_PEER_PORT) {
+			stats_peer_inc(rt, con_num);
+			stats_peer_add(rt, rtt, mrtt);
+		} else {
 			r = tcp_rt_get_local_stats_sk(sk);
 			if (!r)
 				break;
@@ -273,9 +279,7 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 
 		if (stats) {
 			stats_peer_inc(rt, number);
-			stats_peer_inc(rt, con_num);
 			stats_peer_add(rt, bytes, t_seq);
-			stats_peer_add(rt, rtt, mrtt);
 			stats_peer_add(rt, packets, t_seq / tp->mss_cache + 1);
 			stats_peer_add(rt, drop, t_retrans);
 		}
