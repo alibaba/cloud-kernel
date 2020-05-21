@@ -80,7 +80,7 @@ struct tcp_rt {
 	enum tcp_rt_stage_peer stage_peer;
 };
 
-struct tcp_rt_real {
+struct tcp_rt_stats {
 	atomic64_t rt;
 	atomic64_t number;
 	atomic64_t drop;
@@ -94,7 +94,7 @@ struct tcp_rt_real {
 	atomic64_t con_num;
 };
 
-struct _tcp_rt_real {
+struct _tcp_rt_stats {
 	u32 rt;
 	u32 number;
 	u32 drop;
@@ -108,7 +108,7 @@ struct _tcp_rt_real {
 	u32 con_num;
 };
 
-int tcp_rt_output_init(int log_buf_num, int real_buf_num,
+int tcp_rt_output_init(int log_buf_num, int stats_buf_num,
 		       const struct file_operations *fops);
 void tcp_rt_output_released(void);
 void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check);
