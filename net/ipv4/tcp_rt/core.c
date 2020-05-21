@@ -2,25 +2,25 @@
 
 #include "tcp_rt.h"
 
-static int            ports_number;
-static int            ports_peer_number;
-static int            ports_range_number;
+static int ports_number;
+static int ports_peer_number;
+static int ports_range_number;
 
-static int            ports[PORT_MAX_NUM];
-static int            ports_peer[PORT_MAX_NUM];
-static int            ports_range[PORT_MAX_NUM];
+static int ports[PORT_MAX_NUM];
+static int ports_peer[PORT_MAX_NUM];
+static int ports_range[PORT_MAX_NUM];
 
-static int            log_buf_num = 8;
-static int            real_buf_num = 2;
+static int log_buf_num = 8;
+static int stats_buf_num = 2;
 
-static int            check = 1;
-static int            check_interval = 60;
+static int stats;
+static int stats_interval = 60;
 
-module_param(check, int, 0644);
-MODULE_PARM_DESC(check, "whether check the init_cwnd is ok");
+module_param(stats, int, 0644);
+MODULE_PARM_DESC(stats, "stats is enable");
 
-module_param(check_interval, int, 0644);
-MODULE_PARM_DESC(check_interval, "how many seconds later do stats");
+module_param(stats_interval, int, 0644);
+MODULE_PARM_DESC(stats_interval, "how many seconds later do stats");
 
 module_param_array(ports, int, &ports_number, 0644);
 MODULE_PARM_DESC(ports, "local port array. config: ports=80,3306.");
@@ -33,14 +33,14 @@ MODULE_PARM_DESC(ports_peer, "peer port array. config: ports_peer=80,3306");
 
 module_param(log_buf_num, int, 0644);
 MODULE_PARM_DESC(log_buf_num, "the num of buffers for every cpu log buffer. unit is 256k. just work when module load.");
-module_param(real_buf_num, int, 0644);
-MODULE_PARM_DESC(real_buf_num, "the num of buffers for every cpu real buffer. unit is 16k. just work when module load.");
+module_param(stats_buf_num, int, 0644);
+MODULE_PARM_DESC(stats_buf_num, "the num of buffers for every cpu stats buffer. unit is 16k. just work when module load.");
 
 struct timer_list tcp_rt_timer;
 
 static void tcp_rt_timer_handler(struct timer_list *t)
 {
-	if (check) {
+	if (stats) {
 		int i, port;
 
 		for (i = 0; i < ports_number; i++)
@@ -56,7 +56,7 @@ static void tcp_rt_timer_handler(struct timer_list *t)
 		for (i = 0; i < ports_peer_number; i++)
 			tcp_rt_timer_output(i, ports_peer[i], "P");
 	}
-	mod_timer(&tcp_rt_timer, jiffies + check_interval * HZ);
+	mod_timer(&tcp_rt_timer, jiffies + stats_interval * HZ);
 }
 
 static void tcp_rt_sk_send_data_peer(const struct sock *sk, struct tcp_rt *rt,
@@ -64,7 +64,7 @@ static void tcp_rt_sk_send_data_peer(const struct sock *sk, struct tcp_rt *rt,
 {
 	switch (rt->stage_peer) {
 	case TCPRT_STAGE_PEER_RESPONSE:
-		tcp_rt_log_printk(sk, LOG_STATUS_P, false, check);
+		tcp_rt_log_printk(sk, LOG_STATUS_P, false, stats);
 		/* fall through */
 
 	case TCPRT_STAGE_PEER_NONE:
@@ -139,7 +139,7 @@ static void tcp_rt_sk_recv_data_local(const struct sock *sk, struct tcp_rt *rt,
 			 */
 			ktime_get_real_ts64(&rt->end_time);
 		}
-		tcp_rt_log_printk(sk, LOG_STATUS_R, false, check);
+		tcp_rt_log_printk(sk, LOG_STATUS_R, false, stats);
 
 		/* fall through */
 
@@ -185,7 +185,7 @@ static void tcp_rt_sk_release_peer(const struct sock *sk, struct tcp_rt *rt,
 		return;
 
 	case TCPRT_STAGE_PEER_RESPONSE:
-		tcp_rt_log_printk(sk, LOG_STATUS_P, false, check);
+		tcp_rt_log_printk(sk, LOG_STATUS_P, false, stats);
 		return;
 	}
 }
@@ -199,7 +199,7 @@ static void tcp_rt_sk_release_local(const struct sock *sk, struct tcp_rt *rt,
 
 	case TCPRT_STAGE_REQUEST:
 		/* closed when receiving data */
-		tcp_rt_log_printk(sk, LOG_STATUS_N, false, check);
+		tcp_rt_log_printk(sk, LOG_STATUS_N, false, stats);
 		break;
 
 	case TCPRT_STAGE_RESPONSE:
@@ -210,12 +210,10 @@ static void tcp_rt_sk_release_local(const struct sock *sk, struct tcp_rt *rt,
 			if (after(tp->snd_una, rt->last_update_seq + 1))
 				ktime_get_real_ts64(&rt->end_time);
 
-			tcp_rt_log_printk(sk, LOG_STATUS_R, true,
-					  check);
+			tcp_rt_log_printk(sk, LOG_STATUS_R, true, stats);
 		} else {
 			/* closed when sending data */
-			tcp_rt_log_printk(sk, LOG_STATUS_W, false,
-					  check);
+			tcp_rt_log_printk(sk, LOG_STATUS_W, false, stats);
 		}
 
 		break;
@@ -236,7 +234,7 @@ static void tcp_rt_sk_release(struct sock *sk)
 		tcp_rt_sk_release_local(sk, rt, tp);
 
 	/* closed, 1 record per connection */
-	tcp_rt_log_printk(sk, LOG_STATUS_E, false, check);
+	tcp_rt_log_printk(sk, LOG_STATUS_E, false, stats);
 
 free:
 	kfree(rt);
@@ -364,7 +362,7 @@ static int __init tcp_rt_module_init(void)
 {
 	int ret;
 
-	ret = tcp_rt_output_init(log_buf_num, real_buf_num, &fops);
+	ret = tcp_rt_output_init(log_buf_num, stats_buf_num, &fops);
 	if (ret)
 		return ret;
 
