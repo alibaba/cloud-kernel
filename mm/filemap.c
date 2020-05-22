@@ -1160,6 +1160,36 @@ int wait_on_page_bit_killable(struct page *page, int bit_nr)
 }
 EXPORT_SYMBOL(wait_on_page_bit_killable);
 
+static int __wait_on_page_locked_async(struct page *page,
+				       struct wait_page_queue *wait, bool set)
+{
+	struct wait_queue_head *q = page_waitqueue(page);
+	int ret = 0;
+
+	wait->page = page;
+	wait->bit_nr = PG_locked;
+
+	spin_lock_irq(&q->lock);
+	__add_wait_queue_entry_tail(q, &wait->wait);
+	SetPageWaiters(page);
+	if (set)
+		ret = !trylock_page(page);
+	else
+		ret = PageLocked(page);
+	/*
+	 * If we were succesful now, we know we're still on the
+	 * waitqueue as we're still under the lock. This means it's
+	 * safe to remove and return success, we know the callback
+	 * isn't going to trigger.
+	 */
+	if (!ret)
+		__remove_wait_queue(q, &wait->wait);
+	else
+		ret = -EIOCBQUEUED;
+	spin_unlock_irq(&q->lock);
+	return ret;
+}
+
 /**
  * add_page_wait_queue - Add an arbitrary waiter to a page's wait queue
  * @page: Page defining the wait queue of interest
@@ -1300,6 +1330,11 @@ int __lock_page_killable(struct page *__page)
 	return wait_on_page_bit_common(q, page, PG_locked, TASK_KILLABLE, true);
 }
 EXPORT_SYMBOL_GPL(__lock_page_killable);
+
+int __lock_page_async(struct page *page, struct wait_page_queue *wait)
+{
+	return __wait_on_page_locked_async(page, wait, true);
+}
 
 /*
  * Return values:
@@ -2246,6 +2281,11 @@ page_not_up_to_date_locked:
 		}
 
 readpage:
+		if (iocb->ki_flags & IOCB_NOWAIT) {
+			unlock_page(page);
+			put_page(page);
+			goto would_block;
+		}
 		/*
 		 * A previous I/O error may have been due to temporary
 		 * failures, eg. multipath errors.
@@ -2265,7 +2305,10 @@ readpage:
 		}
 
 		if (!PageUptodate(page)) {
-			error = lock_page_killable(page);
+			if (iocb->ki_flags & IOCB_WAITQ)
+				error = lock_page_async(page, iocb->ki_waitq);
+			else
+				error = lock_page_killable(page);
 			if (unlikely(error))
 				goto readpage_error;
 			if (!PageUptodate(page)) {
