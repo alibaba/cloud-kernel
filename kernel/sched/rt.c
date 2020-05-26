@@ -2374,16 +2374,6 @@ static unsigned int get_rr_interval_rt(struct rq *rq, struct task_struct *task)
 		return 0;
 }
 
-#ifdef CONFIG_SCHED_SLI
-static void update_nr_uninterruptible_rt(struct task_struct *p, long inc)
-{
-	struct sched_rt_entity *se = &p->rt;
-
-	for_each_sched_rt_entity(se)
-		rt_rq_of_se(se)->nr_uninterruptible += inc;
-}
-#endif
-
 const struct sched_class rt_sched_class = {
 	.next			= &fair_sched_class,
 	.enqueue_task		= enqueue_task_rt,
@@ -2414,10 +2404,6 @@ const struct sched_class rt_sched_class = {
 	.switched_to		= switched_to_rt,
 
 	.update_curr		= update_curr_rt,
-
-#ifdef CONFIG_SCHED_SLI
-	.update_nr_uninterruptible = update_nr_uninterruptible_rt,
-#endif
 };
 
 #ifdef CONFIG_RT_GROUP_SCHED

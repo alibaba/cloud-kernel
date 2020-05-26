@@ -575,8 +575,6 @@ struct cfs_rq {
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
-	unsigned long nr_uninterruptible;
-
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
 	ALI_HOTFIX_RESERVE(3)
@@ -627,8 +625,6 @@ struct rt_rq {
 	struct rq		*rq;
 	struct task_group	*tg;
 #endif
-
-	unsigned long nr_uninterruptible;
 };
 
 static inline bool rt_rq_is_runnable(struct rt_rq *rt_rq)
@@ -1675,8 +1671,6 @@ struct sched_class {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	void (*task_change_group)(struct task_struct *p, int type);
 #endif
-
-	void (*update_nr_uninterruptible)(struct task_struct *p, long inc);
 	void (*update_nr_iowait)(struct task_struct *p, long inc);
 };
 
