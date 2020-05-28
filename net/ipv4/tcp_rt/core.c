@@ -2,13 +2,13 @@
 
 #include "tcp_rt.h"
 
-static int ports_number;
-static int ports_peer_number;
-static int ports_range_number;
+static int lports_number;
+static int pports_number;
+static int lports_range_number;
 
-static int ports[PORT_MAX_NUM];
-static int ports_peer[PORT_MAX_NUM];
-static int ports_range[PORT_MAX_NUM];
+static int lports[PORT_MAX_NUM];
+static int pports[PORT_MAX_NUM];
+static int lports_range[PORT_MAX_NUM];
 
 static int log_buf_num = 8;
 static int stats_buf_num = 2;
@@ -22,14 +22,14 @@ MODULE_PARM_DESC(stats, "stats is enable");
 module_param(stats_interval, int, 0644);
 MODULE_PARM_DESC(stats_interval, "how many seconds later do stats");
 
-module_param_array(ports, int, &ports_number, 0644);
-MODULE_PARM_DESC(ports, "local port array. config: ports=80,3306.");
+module_param_array(lports, int, &lports_number, 0644);
+MODULE_PARM_DESC(lports, "local port array. config: lports=80,3306.");
 
-module_param_array(ports_range, int, &ports_range_number, 0644);
-MODULE_PARM_DESC(ports_range, "local port range array. config: ports_range=1000,2000,3500,4000. means: 1000-2000 or 3500-4000");
+module_param_array(lports_range, int, &lports_range_number, 0644);
+MODULE_PARM_DESC(lports_range, "local port range array. config: lports_range=1000,2000,3500,4000. means: 1000-2000 or 3500-4000");
 
-module_param_array(ports_peer, int, &ports_peer_number, 0644);
-MODULE_PARM_DESC(ports_peer, "peer port array. config: ports_peer=80,3306");
+module_param_array(pports, int, &pports_number, 0644);
+MODULE_PARM_DESC(pports, "peer port array. config: pports=80,3306");
 
 module_param(log_buf_num, int, 0644);
 MODULE_PARM_DESC(log_buf_num, "the num of buffers for every cpu log buffer. unit is 256k. just work when module load.");
@@ -43,18 +43,18 @@ static void tcp_rt_timer_handler(struct timer_list *t)
 	if (stats) {
 		int i, port;
 
-		for (i = 0; i < ports_number; i++)
-			tcp_rt_timer_output(0, ports[i], "L");
+		for (i = 0; i < lports_number; i++)
+			tcp_rt_timer_output(0, lports[i], "L");
 
-		for (i = 0; i < ports_range_number / 2; ++i) {
-			for (port = ports_range[i * 2];
-			     port <= ports_range[i * 2 + 1]; ++port) {
+		for (i = 0; i < lports_range_number / 2; ++i) {
+			for (port = lports_range[i * 2];
+			     port <= lports_range[i * 2 + 1]; ++port) {
 				tcp_rt_timer_output(PORT_MAX_NUM, port, "L");
 			}
 		}
 
-		for (i = 0; i < ports_peer_number; i++)
-			tcp_rt_timer_output(i, ports_peer[i], "P");
+		for (i = 0; i < pports_number; i++)
+			tcp_rt_timer_output(i, pports[i], "P");
 	}
 	mod_timer(&tcp_rt_timer, jiffies + stats_interval * HZ);
 }
@@ -284,18 +284,18 @@ static int tcp_rt_sk_init(struct sock *sk)
 
 	port = ntohs(inet_sk(sk)->inet_sport);
 
-	for (i = 0; i < ports_number; i++) {
-		if (port == ports[i]) {
+	for (i = 0; i < lports_number; i++) {
+		if (port == lports[i]) {
 			type = TCPRT_TYPE_LOCAL_PORT;
 			goto ok;
 		}
 	}
 
-	for (i = 0; i < ports_range_number / 2; ++i) {
-		if (port < ports_range[i * 2])
+	for (i = 0; i < lports_range_number / 2; ++i) {
+		if (port < lports_range[i * 2])
 			continue;
 
-		if (port > ports_range[i * 2 + 1])
+		if (port > lports_range[i * 2 + 1])
 			continue;
 
 		type = TCPRT_TYPE_LOCAL_PORT_RANG;
@@ -304,8 +304,8 @@ static int tcp_rt_sk_init(struct sock *sk)
 
 	port = ntohs(inet_sk(sk)->inet_dport);
 
-	for (i = 0; i < ports_peer_number; i++) {
-		if (port == ports_peer[i]) {
+	for (i = 0; i < pports_number; i++) {
+		if (port == pports[i]) {
 			type = TCPRT_TYPE_PEER_PORT;
 			goto ok;
 		}
