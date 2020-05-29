@@ -208,6 +208,17 @@ static int (*bpf_skb_change_head)(void *, int len, int flags) =
 static int (*bpf_skb_pull_data)(void *, int len) =
 	(void *) BPF_FUNC_skb_pull_data;
 
+static long (*bpf_ringbuf_output)(void *ringbuf, void *data, __u64 size, __u64 flags) =
+	(void *) BPF_FUNC_ringbuf_output;
+static void *(*bpf_ringbuf_reserve)(void *ringbuf, __u64 size, __u64 flags) =
+	(void *) BPF_FUNC_ringbuf_reserve;
+static void (*bpf_ringbuf_submit)(void *data, __u64 flags) =
+	(void *) BPF_FUNC_ringbuf_submit;
+static void (*bpf_ringbuf_discard)(void *data, __u64 flags) =
+	(void *) BPF_FUNC_ringbuf_discard;
+static __u64 (*bpf_ringbuf_query)(void *ringbuf, __u64 flags) =
+	(void *) BPF_FUNC_ringbuf_query;
+
 /* Scan the ARCH passed in from ARCH env variable (see Makefile) */
 #if defined(__TARGET_ARCH_x86)
 	#define bpf_target_x86
