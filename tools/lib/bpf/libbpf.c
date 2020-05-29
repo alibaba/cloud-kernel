@@ -50,6 +50,7 @@
 #include <gelf.h>
 
 #include "libbpf.h"
+#include "libbpf_internal.h"
 #include "bpf.h"
 #include "btf.h"
 #include "str_error.h"
@@ -80,15 +81,33 @@ static __printf(1, 2) libbpf_print_fn_t __pr_warning = __base_pr;
 static __printf(1, 2) libbpf_print_fn_t __pr_info = __base_pr;
 static __printf(1, 2) libbpf_print_fn_t __pr_debug;
 
-#define __pr(func, fmt, ...)	\
-do {				\
-	if ((func))		\
-		(func)("libbpf: " fmt, ##__VA_ARGS__); \
-} while (0)
+__printf(2, 3)
+void libbpf_print(enum libbpf_print_level level, const char *format, ...)
+{
+	va_list args;
+	libbpf_print_fn_t fn_print = NULL;
 
-#define pr_warning(fmt, ...)	__pr(__pr_warning, fmt, ##__VA_ARGS__)
-#define pr_info(fmt, ...)	__pr(__pr_info, fmt, ##__VA_ARGS__)
-#define pr_debug(fmt, ...)	__pr(__pr_debug, fmt, ##__VA_ARGS__)
+	switch(level) {
+	case LIBBPF_WARN:
+		fn_print = __pr_warning;
+		break;
+	case LIBBPF_INFO:
+		fn_print = __pr_info;
+		break;
+	case LIBBPF_DEBUG:
+		fn_print = __pr_debug;
+		break;
+	default:
+		break;
+	}
+
+	if (!fn_print)
+		return;
+
+	va_start(args, format);
+	fn_print(format, args);
+	va_end(args);
+}
 
 void libbpf_set_print(libbpf_print_fn_t warn,
 		      libbpf_print_fn_t info,
