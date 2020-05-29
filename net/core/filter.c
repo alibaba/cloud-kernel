@@ -4985,6 +4985,18 @@ bpf_base_func_proto(enum bpf_func_id func_id)
 		return &bpf_tail_call_proto;
 	case BPF_FUNC_ktime_get_ns:
 		return &bpf_ktime_get_ns_proto;
+#if IS_ENABLED(CONFIG_BPF_SYSCALL)
+	case BPF_FUNC_ringbuf_output:
+		return &bpf_ringbuf_output_proto;
+	case BPF_FUNC_ringbuf_reserve:
+		return &bpf_ringbuf_reserve_proto;
+	case BPF_FUNC_ringbuf_submit:
+		return &bpf_ringbuf_submit_proto;
+	case BPF_FUNC_ringbuf_discard:
+		return &bpf_ringbuf_discard_proto;
+	case BPF_FUNC_ringbuf_query:
+		return &bpf_ringbuf_query_proto;
+#endif
 	case BPF_FUNC_trace_printk:
 		if (capable(CAP_SYS_ADMIN))
 			return bpf_get_trace_printk_proto();

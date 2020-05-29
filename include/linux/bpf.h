@@ -18,6 +18,7 @@
 #include <linux/mm_types.h>
 #include <linux/wait.h>
 #include <linux/mutex.h>
+#include <linux/poll.h>
 
 struct bpf_verifier_env;
 struct perf_event;
@@ -55,6 +56,8 @@ struct bpf_map_ops {
 			     const struct btf_type *key_type,
 			     const struct btf_type *value_type);
 	int (*map_mmap)(struct bpf_map *map, struct vm_area_struct *vma);
+	__poll_t (*map_poll)(struct bpf_map *map, struct file *filp,
+			     struct poll_table_struct *pts);
 };
 
 struct bpf_map_memory {
@@ -165,6 +168,10 @@ enum bpf_arg_type {
 	ARG_PTR_TO_CTX,		/* pointer to context */
 	ARG_ANYTHING,		/* any (initialized) argument is ok */
 	ARG_PTR_TO_SOCKET,	/* pointer to bpf_sock */
+
+	ARG_PTR_TO_ALLOC_MEM,	/* pointer to dynamically allocated memory */
+	ARG_PTR_TO_ALLOC_MEM_OR_NULL,	/* pointer to dynamically allocated memory or NULL */
+	ARG_CONST_ALLOC_SIZE_OR_ZERO,	/* number of allocated bytes requested */
 };
 
 /* type of values returned from helper functions */
@@ -174,6 +181,7 @@ enum bpf_return_type {
 	RET_PTR_TO_MAP_VALUE,		/* returns a pointer to map elem value */
 	RET_PTR_TO_MAP_VALUE_OR_NULL,	/* returns a pointer to map elem value or NULL */
 	RET_PTR_TO_SOCKET_OR_NULL,	/* returns a pointer to a socket or NULL */
+	RET_PTR_TO_ALLOC_MEM_OR_NULL,	/* returns a pointer to dynamically allocated memory or NULL */
 };
 
 /* eBPF function prototype used by verifier to allow BPF_CALLs from eBPF programs
@@ -226,6 +234,8 @@ enum bpf_reg_type {
 	PTR_TO_PACKET_END,	 /* skb->data + headlen */
 	PTR_TO_SOCKET,		 /* reg points to struct bpf_sock */
 	PTR_TO_SOCKET_OR_NULL,	 /* reg points to struct bpf_sock or NULL */
+	PTR_TO_MEM,		 /* reg points to valid memory region */
+	PTR_TO_MEM_OR_NULL,	 /* reg points to valid memory region or NULL */
 };
 
 /* The information passed from prog-specific *_is_valid_access
@@ -844,6 +854,12 @@ extern const struct bpf_func_proto bpf_sock_hash_update_proto;
 extern const struct bpf_func_proto bpf_get_current_cgroup_id_proto;
 
 extern const struct bpf_func_proto bpf_get_local_storage_proto;
+
+extern const struct bpf_func_proto bpf_ringbuf_output_proto;
+extern const struct bpf_func_proto bpf_ringbuf_reserve_proto;
+extern const struct bpf_func_proto bpf_ringbuf_submit_proto;
+extern const struct bpf_func_proto bpf_ringbuf_discard_proto;
+extern const struct bpf_func_proto bpf_ringbuf_query_proto;
 
 /* Shared helpers among cBPF and eBPF. */
 void bpf_user_rnd_init_once(void);
