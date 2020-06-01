@@ -4387,10 +4387,12 @@ void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b, u64 overrun)
 			return;
 		}
 
-		runtime = cfs_b->previous_runtime - cfs_b->runtime;
-		if (runtime > cfs_b->quota) {
-			cfs_b->burst_time += runtime - cfs_b->quota;
-			cfs_b->nr_burst++;
+		if (cfs_b->previous_runtime > cfs_b->runtime) {
+			runtime = cfs_b->previous_runtime - cfs_b->runtime;
+			if (runtime > cfs_b->quota) {
+				cfs_b->burst_time += runtime - cfs_b->quota;
+				cfs_b->nr_burst++;
+			}
 		}
 
 		cfs_b->current_buffer = max(cfs_b->runtime, cfs_b->buffer);
