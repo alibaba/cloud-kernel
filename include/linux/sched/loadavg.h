@@ -44,5 +44,7 @@ extern unsigned long calc_load_n(unsigned long load, unsigned long exp,
 #define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
 
 extern void calc_global_load(unsigned long ticks);
+extern u64 stress_avg_total[3];
+extern void schedule_stress(void);
 
 #endif /* _LINUX_SCHED_LOADAVG_H */

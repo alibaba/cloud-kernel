@@ -818,6 +818,14 @@ update_exec_raw(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	curr->exec_start_raw = now;
 }
 
+static inline void cpu_stress_update(struct rq *rq, u64 delta_exec)
+{
+	if (rq->nr_running > 1) {
+		atomic64_add(delta_exec * (rq->nr_running - 1),
+				&rq->cpu_stress);
+	}
+}
+
 /*
  * Update the current task's runtime statistics.
  */
@@ -851,6 +859,8 @@ static void update_curr(struct cfs_rq *cfs_rq)
 		trace_sched_stat_runtime(curtask, delta_exec, curr->vruntime);
 		cgroup_account_cputime(curtask, delta_exec);
 		account_group_exec_runtime(curtask, delta_exec);
+
+		cpu_stress_update(rq_of(cfs_rq), delta_exec);
 	}
 
 	account_cfs_rq_runtime(cfs_rq, delta_exec);

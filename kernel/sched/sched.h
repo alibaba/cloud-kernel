@@ -885,6 +885,8 @@ struct rq {
 	unsigned long		calc_load_update;
 	long			calc_load_active;
 
+	atomic64_t		cpu_stress;
+
 #ifdef CONFIG_SCHED_HRTICK
 #ifdef CONFIG_SMP
 	int			hrtick_csd_pending;
