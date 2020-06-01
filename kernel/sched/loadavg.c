@@ -383,3 +383,68 @@ void calc_global_load_tick(struct rq *this_rq)
 
 	this_rq->calc_load_update += LOAD_FREQ;
 }
+
+static void calc_stress_avgs_work(struct work_struct *work);
+#define STRESS_FREQ (5*HZ+1)
+u64 stress_avg_total[3];
+static u64 stress_avg_next;
+static u64 stress_avg_last;
+static u64 stress_period __read_mostly;
+DECLARE_DELAYED_WORK(stress_delayed_work, calc_stress_avgs_work);
+
+static void calc_avgs(u64 avg[3], int missed_periods, u64 stress, u64 period)
+{
+	unsigned long pct;
+
+	/* Fill in zeroes for periods of no activity */
+	if (missed_periods) {
+		avg[0] = calc_load_n(avg[0], EXP_1, 0, missed_periods);
+		avg[1] = calc_load_n(avg[1], EXP_5, 0, missed_periods);
+		avg[2] = calc_load_n(avg[2], EXP_15, 0, missed_periods);
+	}
+
+	/* Sample the most recent active period */
+	if (period == 0)
+		period = 1;
+	pct = div64_u64(stress, period);
+	pct *= FIXED_1;
+	avg[0] = calc_load(avg[0], EXP_1, pct);
+	avg[1] = calc_load(avg[1], EXP_5, pct);
+	avg[2] = calc_load(avg[2], EXP_15, pct);
+}
+
+static void calc_stress_avgs_work(struct work_struct *work)
+{
+	int cpu;
+	struct rq *rq;
+	unsigned long delay_ticks;
+	u64 now, stress, period, missed_periods = 0, stress_total = 0;
+
+	now = sched_clock();
+
+	if (now - stress_avg_next >= stress_period)
+		missed_periods = div64_u64(now - stress_avg_next,
+						stress_period);
+
+	period = now - (stress_avg_last + (missed_periods * stress_period));
+	stress_avg_last = now;
+
+	for_each_possible_cpu(cpu) {
+		rq = cpu_rq(cpu);
+
+		stress = atomic64_xchg(&rq->cpu_stress, 0);
+		stress_total += stress;
+	}
+
+	calc_avgs(stress_avg_total, missed_periods, stress_total, period);
+
+	stress_avg_next += (1 + missed_periods) * stress_period;
+	delay_ticks = nsecs_to_jiffies(stress_avg_next - now) + 1;
+	schedule_delayed_work(&stress_delayed_work, delay_ticks);
+}
+
+void schedule_stress(void)
+{
+	stress_period = jiffies_to_nsecs(STRESS_FREQ);
+	schedule_delayed_work(&stress_delayed_work, STRESS_FREQ);
+}
