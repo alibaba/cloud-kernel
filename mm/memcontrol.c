@@ -2382,7 +2382,8 @@ static void reclaim_high(struct mem_cgroup *memcg,
 			 gfp_t gfp_mask)
 {
 	do {
-		if (page_counter_read(&memcg->memory) <= READ_ONCE(memcg->high))
+		if (page_counter_read(&memcg->memory) <=
+		    READ_ONCE(memcg->memory.high))
 			continue;
 		memcg_memory_event(memcg, MEMCG_HIGH);
 		try_to_free_mem_cgroup_pages(memcg, nr_pages, gfp_mask, true);
@@ -2474,7 +2475,7 @@ static u64 mem_find_max_overage(struct mem_cgroup *memcg)
 
 	do {
 		overage = calculate_overage(page_counter_read(&memcg->memory),
-					    READ_ONCE(memcg->high));
+					    READ_ONCE(memcg->memory.high));
 		max_overage = max(overage, max_overage);
 	} while ((memcg = parent_mem_cgroup(memcg)) &&
 		 !mem_cgroup_is_root(memcg));
@@ -2752,7 +2753,8 @@ done_restock:
 			break;
 		}
 
-		if (page_counter_read(&memcg->memory) > READ_ONCE(memcg->high)) {
+		if (page_counter_read(&memcg->memory) >
+		    READ_ONCE(memcg->memory.high)) {
 			/* Don't bother a random interrupted task */
 			if (in_interrupt()) {
 				schedule_work(&memcg->high_work);
@@ -3183,8 +3185,8 @@ static void setup_memcg_wmark(struct mem_cgroup *memcg)
 {
 	unsigned long high_wmark;
 	unsigned long low_wmark;
-	unsigned long max = memcg->high > memcg->memory.max ?
-			    memcg->memory.max : memcg->high;
+	unsigned long max = memcg->memory.high > memcg->memory.max ?
+			    memcg->memory.max : memcg->memory.high;
 	unsigned int wmark_ratio = memcg->wmark_ratio;
 	unsigned int wmark_scale_factor = memcg->wmark_scale_factor;
 	unsigned long gap;
@@ -5151,7 +5153,7 @@ void mem_cgroup_wb_stats(struct bdi_writeback *wb, unsigned long *pfilepages,
 
 	while ((parent = parent_mem_cgroup(memcg))) {
 		unsigned long ceiling = min(READ_ONCE(memcg->memory.max),
-					    READ_ONCE(memcg->high));
+					    READ_ONCE(memcg->memory.high));
 		unsigned long used = page_counter_read(&memcg->memory);
 
 		*pheadroom = min(*pheadroom, ceiling - min(ceiling, used));
@@ -5462,7 +5464,7 @@ static ssize_t memory_low_write(struct kernfs_open_file *of,
 static int memory_high_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
-	unsigned long high = READ_ONCE(memcg->high);
+	unsigned long high = READ_ONCE(memcg->memory.high);
 
 	if (high == PAGE_COUNTER_MAX)
 		seq_puts(m, "max\n");
@@ -5485,7 +5487,7 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
 	if (err)
 		return err;
 
-	WRITE_ONCE(memcg->high, high);
+	page_counter_set_high(&memcg->memory, high);
 
 	nr_pages = page_counter_read(&memcg->memory);
 	if (nr_pages > high)
@@ -5999,7 +6001,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	if (!memcg)
 		return ERR_PTR(error);
 
-	WRITE_ONCE(memcg->high, PAGE_COUNTER_MAX);
+	page_counter_set_high(&memcg->memory, PAGE_COUNTER_MAX);
 	memcg->soft_limit = PAGE_COUNTER_MAX;
 	if (parent) {
 		memcg->swappiness = max(mem_cgroup_swappiness(parent), 0);
@@ -6162,7 +6164,7 @@ static void mem_cgroup_css_reset(struct cgroup_subsys_state *css)
 	page_counter_set_low(&memcg->memory, 0);
 	page_counter_set_wmark_low(&memcg->memory, PAGE_COUNTER_MAX);
 	page_counter_set_wmark_high(&memcg->memory, PAGE_COUNTER_MAX);
-	WRITE_ONCE(memcg->high, PAGE_COUNTER_MAX);
+	page_counter_set_high(&memcg->memory, PAGE_COUNTER_MAX);
 	memcg->soft_limit = PAGE_COUNTER_MAX;
 	memcg_wb_domain_size_changed(memcg);
 }

@@ -10,6 +10,7 @@ struct page_counter {
 	atomic_long_t usage;
 	unsigned long min;
 	unsigned long low;
+	unsigned long high;
 	unsigned long max;
 	struct page_counter *parent;
 
@@ -63,6 +64,13 @@ void page_counter_set_wmark_high(struct page_counter *counter,
 				 unsigned long nr_pages);
 void page_counter_set_wmark_low(struct page_counter *counter,
 				unsigned long nr_pages);
+
+static inline void page_counter_set_high(struct page_counter *counter,
+					 unsigned long nr_pages)
+{
+	WRITE_ONCE(counter->high, nr_pages);
+}
+
 int page_counter_set_max(struct page_counter *counter, unsigned long nr_pages);
 int page_counter_memparse(const char *buf, const char *max,
 			  unsigned long *nr_pages);
