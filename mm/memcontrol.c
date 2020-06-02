@@ -7306,6 +7306,8 @@ static int memory_stat_show(struct seq_file *m, void *v)
 		   memcg_page_state(memcg, WORKINGSET_REFAULT));
 	seq_printf(m, "workingset_activate %lu\n",
 		   memcg_page_state(memcg, WORKINGSET_ACTIVATE));
+	seq_printf(m, "workingset_restore %lu\n",
+		   memcg_page_state(memcg, WORKINGSET_RESTORE));
 	seq_printf(m, "workingset_nodereclaim %lu\n",
 		   memcg_page_state(memcg, WORKINGSET_NODERECLAIM));
 
