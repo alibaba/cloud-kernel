@@ -2805,7 +2805,7 @@ repeat:
 		if (vmf->pte)
 			vmf->pte += iter.index - last_pgoff;
 		last_pgoff = iter.index;
-		if (alloc_set_pte(vmf, NULL, page))
+		if (alloc_set_pte(vmf, page))
 			goto unlock;
 		unlock_page(page);
 		goto next;
