@@ -167,7 +167,7 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 
 	VM_BUG_ON_PAGE(PageTransHuge(old_page), old_page);
 
-	err = mem_cgroup_charge(new_page, vma->vm_mm, GFP_KERNEL, false);
+	err = mem_cgroup_charge(new_page, vma->vm_mm, GFP_KERNEL);
 	if (err)
 		return err;
 

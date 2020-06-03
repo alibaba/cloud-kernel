@@ -606,7 +606,7 @@ static int shmem_add_to_page_cache(struct page *page,
 	page->index = index;
 
 	if (!PageSwapCache(page)) {
-		error = mem_cgroup_charge(page, charge_mm, gfp, false);
+		error = mem_cgroup_charge(page, charge_mm, gfp);
 		if (error) {
 			page->mapping = NULL;
 			page_ref_sub(page, nr);
@@ -1254,7 +1254,7 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 	 * the shmem_swaplist_mutex which might hold up shmem_writepage().
 	 * Charged back to the user (not to caller) when swap account is used.
 	 */
-	error = mem_cgroup_charge(page, current->mm, GFP_KERNEL, PageSwapCache(page));
+	error = mem_cgroup_charge(page, current->mm, GFP_KERNEL);
 	if (error)
 		goto out;
 	/* No radix_tree_preload: swap entry keeps a place for page in tree */
