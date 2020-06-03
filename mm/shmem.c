@@ -590,7 +590,7 @@ static inline bool is_huge_enabled(struct shmem_sb_info *sbinfo)
  */
 static int shmem_add_to_page_cache(struct page *page,
 				   struct address_space *mapping,
-				   pgoff_t index, void *expected)
+				   pgoff_t index, void *expected, gfp_t gfp)
 {
 	int error, nr = hpage_nr_pages(page);
 
@@ -1204,7 +1204,7 @@ static int shmem_unuse_inode(struct shmem_inode_info *info,
 	 */
 	if (!error)
 		error = shmem_add_to_page_cache(*pagep, mapping, index,
-						radswap);
+						radswap, gfp);
 	if (error != -ENOMEM) {
 		/*
 		 * Truncation and eviction use free_swap_and_cache(), which
@@ -1723,28 +1723,15 @@ repeat:
 		}
 
 		error = mem_cgroup_try_charge_delay(page, charge_mm, gfp, &memcg);
-		if (!error) {
-			error = shmem_add_to_page_cache(page, mapping, index,
-						swp_to_radix_entry(swap));
-			/*
-			 * We already confirmed swap under page lock, and make
-			 * no memory allocation here, so usually no possibility
-			 * of error; but free_swap_and_cache() only trylocks a
-			 * page, so it is just possible that the entry has been
-			 * truncated or holepunched since swap was confirmed.
-			 * shmem_undo_range() will have done some of the
-			 * unaccounting, now delete_from_swap_cache() will do
-			 * the rest.
-			 * Reset swap.val? No, leave it so "failed" goes back to
-			 * "repeat": reading a hole and writing should succeed.
-			 */
-			if (error) {
-				mem_cgroup_cancel_charge(page, memcg);
-				delete_from_swap_cache(page);
-			}
-		}
 		if (error)
 			goto failed;
+
+		error = shmem_add_to_page_cache(page, mapping, index,
+						swp_to_radix_entry(swap), gfp);
+		if (error) {
+			mem_cgroup_cancel_charge(page, memcg);
+			goto failed;
+		}
 
 		mem_cgroup_commit_charge(page, memcg, true);
 
@@ -1834,7 +1821,7 @@ alloc_nohuge:		page = shmem_alloc_and_acct_page(gfp, inode,
 				compound_order(page));
 		if (!error) {
 			error = shmem_add_to_page_cache(page, mapping, hindex,
-							NULL);
+							NULL, gfp & GFP_RECLAIM_MASK);
 			radix_tree_preload_end();
 		}
 		if (error) {
@@ -2312,7 +2299,8 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 
 	ret = radix_tree_maybe_preload(gfp & GFP_RECLAIM_MASK);
 	if (!ret) {
-		ret = shmem_add_to_page_cache(page, mapping, pgoff, NULL);
+		ret = shmem_add_to_page_cache(page, mapping, pgoff, NULL,
+									  gfp & GFP_RECLAIM_MASK);
 		radix_tree_preload_end();
 	}
 	if (ret)
