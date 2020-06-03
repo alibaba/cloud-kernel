@@ -1244,8 +1244,7 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 	 * the shmem_swaplist_mutex which might hold up shmem_writepage().
 	 * Charged back to the user (not to caller) when swap account is used.
 	 */
-	error = mem_cgroup_try_charge_delay(page, current->mm, GFP_KERNEL,
-					    &memcg, false);
+	error = mem_cgroup_try_charge_delay(page, current->mm, GFP_KERNEL, &memcg);
 	if (error)
 		goto out;
 	/* No radix_tree_preload: swap entry keeps a place for page in tree */
@@ -1268,9 +1267,9 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 	if (error) {
 		if (error != -ENOMEM)
 			error = 0;
-		mem_cgroup_cancel_charge(page, memcg, false);
+		mem_cgroup_cancel_charge(page, memcg);
 	} else
-		mem_cgroup_commit_charge(page, memcg, true, false);
+		mem_cgroup_commit_charge(page, memcg, true);
 out:
 	unlock_page(page);
 	put_page(page);
@@ -1723,8 +1722,7 @@ repeat:
 				goto failed;
 		}
 
-		error = mem_cgroup_try_charge_delay(page, charge_mm, gfp, &memcg,
-				false);
+		error = mem_cgroup_try_charge_delay(page, charge_mm, gfp, &memcg);
 		if (!error) {
 			error = shmem_add_to_page_cache(page, mapping, index,
 						swp_to_radix_entry(swap));
@@ -1741,14 +1739,14 @@ repeat:
 			 * "repeat": reading a hole and writing should succeed.
 			 */
 			if (error) {
-				mem_cgroup_cancel_charge(page, memcg, false);
+				mem_cgroup_cancel_charge(page, memcg);
 				delete_from_swap_cache(page);
 			}
 		}
 		if (error)
 			goto failed;
 
-		mem_cgroup_commit_charge(page, memcg, true, false);
+		mem_cgroup_commit_charge(page, memcg, true);
 
 		spin_lock_irq(&info->lock);
 		info->swapped--;
@@ -1829,8 +1827,7 @@ alloc_nohuge:		page = shmem_alloc_and_acct_page(gfp, inode,
 		if (sgp == SGP_WRITE)
 			__SetPageReferenced(page);
 
-		error = mem_cgroup_try_charge_delay(page, charge_mm, gfp, &memcg,
-				PageTransHuge(page));
+		error = mem_cgroup_try_charge_delay(page, charge_mm, gfp, &memcg);
 		if (error)
 			goto unacct;
 		error = radix_tree_maybe_preload_order(gfp & GFP_RECLAIM_MASK,
@@ -1841,12 +1838,10 @@ alloc_nohuge:		page = shmem_alloc_and_acct_page(gfp, inode,
 			radix_tree_preload_end();
 		}
 		if (error) {
-			mem_cgroup_cancel_charge(page, memcg,
-					PageTransHuge(page));
+			mem_cgroup_cancel_charge(page, memcg);
 			goto unacct;
 		}
-		mem_cgroup_commit_charge(page, memcg, false,
-				PageTransHuge(page));
+		mem_cgroup_commit_charge(page, memcg, false);
 		lru_cache_add_anon(page);
 
 		spin_lock_irq(&info->lock);
@@ -2311,7 +2306,7 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	if (unlikely(offset >= max_off))
 		goto out_release;
 
-	ret = mem_cgroup_try_charge_delay(page, dst_mm, gfp, &memcg, false);
+	ret = mem_cgroup_try_charge_delay(page, dst_mm, gfp, &memcg);
 	if (ret)
 		goto out_release;
 
@@ -2323,7 +2318,7 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	if (ret)
 		goto out_release_uncharge;
 
-	mem_cgroup_commit_charge(page, memcg, false, false);
+	mem_cgroup_commit_charge(page, memcg, false);
 
 	_dst_pte = mk_pte(page, dst_vma->vm_page_prot);
 	if (dst_vma->vm_flags & VM_WRITE)
@@ -2374,7 +2369,7 @@ out_release_uncharge_unlock:
 	ClearPageDirty(page);
 	delete_from_page_cache(page);
 out_release_uncharge:
-	mem_cgroup_cancel_charge(page, memcg, false);
+	mem_cgroup_cancel_charge(page, memcg);
 out_release:
 	unlock_page(page);
 	put_page(page);
