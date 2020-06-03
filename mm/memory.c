@@ -2980,7 +2980,7 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 					goto out_page;
 				}
 
-				lru_cache_add_anon(page);
+				lru_cache_add(page);
 				swap_readpage(page, true);
 			}
 		} else {
