@@ -590,7 +590,8 @@ static inline bool is_huge_enabled(struct shmem_sb_info *sbinfo)
  */
 static int shmem_add_to_page_cache(struct page *page,
 				   struct address_space *mapping,
-				   pgoff_t index, void *expected, gfp_t gfp)
+				   pgoff_t index, void *expected, gfp_t gfp,
+				   struct mm_struct *charge_mm)
 {
 	int error, nr = hpage_nr_pages(page);
 
@@ -603,6 +604,14 @@ static int shmem_add_to_page_cache(struct page *page,
 	page_ref_add(page, nr);
 	page->mapping = mapping;
 	page->index = index;
+
+	error = mem_cgroup_charge(page, charge_mm, gfp, PageSwapCache(page));
+	if (error) {
+		page->mapping = NULL;
+		page_ref_sub(page, nr);
+		return error;
+	}
+	cgroup_throttle_swaprate(page, gfp);
 
 	xa_lock_irq(&mapping->i_pages);
 	if (PageTransHuge(page)) {
@@ -1204,7 +1213,7 @@ static int shmem_unuse_inode(struct shmem_inode_info *info,
 	 */
 	if (!error)
 		error = shmem_add_to_page_cache(*pagep, mapping, index,
-						radswap, gfp);
+						radswap, gfp, current->mm);
 	if (error != -ENOMEM) {
 		/*
 		 * Truncation and eviction use free_swap_and_cache(), which
@@ -1229,7 +1238,6 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 {
 	struct list_head *this, *next;
 	struct shmem_inode_info *info;
-	struct mem_cgroup *memcg;
 	int error = 0;
 
 	/*
@@ -1244,7 +1252,7 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 	 * the shmem_swaplist_mutex which might hold up shmem_writepage().
 	 * Charged back to the user (not to caller) when swap account is used.
 	 */
-	error = mem_cgroup_try_charge_delay(page, current->mm, GFP_KERNEL, &memcg);
+	error = mem_cgroup_charge(page, current->mm, GFP_KERNEL, PageSwapCache(page));
 	if (error)
 		goto out;
 	/* No radix_tree_preload: swap entry keeps a place for page in tree */
@@ -1267,9 +1275,7 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 	if (error) {
 		if (error != -ENOMEM)
 			error = 0;
-		mem_cgroup_cancel_charge(page, memcg);
-	} else
-		mem_cgroup_commit_charge(page, memcg, true);
+	}
 out:
 	unlock_page(page);
 	put_page(page);
@@ -1632,7 +1638,6 @@ static int shmem_getpage_gfp(struct inode *inode, pgoff_t index,
 	struct shmem_inode_info *info = SHMEM_I(inode);
 	struct shmem_sb_info *sbinfo;
 	struct mm_struct *charge_mm;
-	struct mem_cgroup *memcg;
 	struct page *page;
 	swp_entry_t swap;
 	enum sgp_type sgp_huge = sgp;
@@ -1722,18 +1727,11 @@ repeat:
 				goto failed;
 		}
 
-		error = mem_cgroup_try_charge_delay(page, charge_mm, gfp, &memcg);
+		error = shmem_add_to_page_cache(page, mapping, index,
+						swp_to_radix_entry(swap), gfp,
+						charge_mm);
 		if (error)
 			goto failed;
-
-		error = shmem_add_to_page_cache(page, mapping, index,
-						swp_to_radix_entry(swap), gfp);
-		if (error) {
-			mem_cgroup_cancel_charge(page, memcg);
-			goto failed;
-		}
-
-		mem_cgroup_commit_charge(page, memcg, true);
 
 		spin_lock_irq(&info->lock);
 		info->swapped--;
@@ -1814,21 +1812,16 @@ alloc_nohuge:		page = shmem_alloc_and_acct_page(gfp, inode,
 		if (sgp == SGP_WRITE)
 			__SetPageReferenced(page);
 
-		error = mem_cgroup_try_charge_delay(page, charge_mm, gfp, &memcg);
-		if (error)
-			goto unacct;
 		error = radix_tree_maybe_preload_order(gfp & GFP_RECLAIM_MASK,
 				compound_order(page));
 		if (!error) {
 			error = shmem_add_to_page_cache(page, mapping, hindex,
-							NULL, gfp & GFP_RECLAIM_MASK);
+							NULL, gfp & GFP_RECLAIM_MASK,
+							charge_mm);
 			radix_tree_preload_end();
 		}
-		if (error) {
-			mem_cgroup_cancel_charge(page, memcg);
+		if (error)
 			goto unacct;
-		}
-		mem_cgroup_commit_charge(page, memcg, false);
 		lru_cache_add_anon(page);
 
 		spin_lock_irq(&info->lock);
@@ -2243,7 +2236,6 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	struct address_space *mapping = inode->i_mapping;
 	gfp_t gfp = mapping_gfp_mask(mapping);
 	pgoff_t pgoff = linear_page_index(dst_vma, dst_addr);
-	struct mem_cgroup *memcg;
 	spinlock_t *ptl;
 	void *page_kaddr;
 	struct page *page;
@@ -2293,20 +2285,14 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	if (unlikely(offset >= max_off))
 		goto out_release;
 
-	ret = mem_cgroup_try_charge_delay(page, dst_mm, gfp, &memcg);
-	if (ret)
-		goto out_release;
-
 	ret = radix_tree_maybe_preload(gfp & GFP_RECLAIM_MASK);
 	if (!ret) {
 		ret = shmem_add_to_page_cache(page, mapping, pgoff, NULL,
-									  gfp & GFP_RECLAIM_MASK);
+								gfp & GFP_RECLAIM_MASK, dst_mm);
 		radix_tree_preload_end();
 	}
 	if (ret)
-		goto out_release_uncharge;
-
-	mem_cgroup_commit_charge(page, memcg, false);
+		goto out_release;
 
 	_dst_pte = mk_pte(page, dst_vma->vm_page_prot);
 	if (dst_vma->vm_flags & VM_WRITE)
@@ -2327,11 +2313,11 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	ret = -EFAULT;
 	max_off = DIV_ROUND_UP(i_size_read(inode), PAGE_SIZE);
 	if (unlikely(offset >= max_off))
-		goto out_release_uncharge_unlock;
+		goto out_release_unlock;
 
 	ret = -EEXIST;
 	if (!pte_none(*dst_pte))
-		goto out_release_uncharge_unlock;
+		goto out_release_unlock;
 
 	lru_cache_add_anon(page);
 
@@ -2352,12 +2338,10 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	ret = 0;
 out:
 	return ret;
-out_release_uncharge_unlock:
+out_release_unlock:
 	pte_unmap_unlock(dst_pte, ptl);
 	ClearPageDirty(page);
 	delete_from_page_cache(page);
-out_release_uncharge:
-	mem_cgroup_cancel_charge(page, memcg);
 out_release:
 	unlock_page(page);
 	put_page(page);

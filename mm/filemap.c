@@ -854,29 +854,30 @@ static int __add_to_page_cache_locked(struct page *page,
 				      void **shadowp)
 {
 	int huge = PageHuge(page);
-	struct mem_cgroup *memcg;
 	int error;
 
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	VM_BUG_ON_PAGE(PageSwapBacked(page), page);
 
+	get_page(page);
+	page->mapping = mapping;
+	page->index = offset;
+
 	if (!huge) {
-		error = mem_cgroup_try_charge(page, current->mm,
-					      gfp_mask, &memcg);
-		if (error)
+		error = mem_cgroup_charge(page, current->mm, gfp_mask, false);
+		if (error) {
+			page->mapping = NULL;
+			put_page(page);
 			return error;
+		}
 	}
 
 	error = radix_tree_maybe_preload(gfp_mask & GFP_RECLAIM_MASK);
 	if (error) {
-		if (!huge)
-			mem_cgroup_cancel_charge(page, memcg);
+		page->mapping = NULL;
+		put_page(page);
 		return error;
 	}
-
-	get_page(page);
-	page->mapping = mapping;
-	page->index = offset;
 
 	xa_lock_irq(&mapping->i_pages);
 	error = page_cache_tree_insert(mapping, page, shadowp);
@@ -888,16 +889,12 @@ static int __add_to_page_cache_locked(struct page *page,
 	if (!huge)
 		__inc_node_page_state(page, NR_FILE_PAGES);
 	xa_unlock_irq(&mapping->i_pages);
-	if (!huge)
-		mem_cgroup_commit_charge(page, memcg, false);
 	trace_mm_filemap_add_to_page_cache(page);
 	return 0;
 err_insert:
 	page->mapping = NULL;
 	/* Leave page->index set: truncation relies upon it */
 	xa_unlock_irq(&mapping->i_pages);
-	if (!huge)
-		mem_cgroup_cancel_charge(page, memcg);
 	put_page(page);
 	return error;
 }
