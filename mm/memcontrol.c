@@ -832,13 +832,6 @@ static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 					 struct page *page,
 					 int nr_pages)
 {
-	/*
-	 * Here, RSS means 'mapped anon' and anon's SwapCache. Shmem/tmpfs is
-	 * counted as CACHE even if it's on ANON LRU.
-	 */
-	if (PageAnon(page))
-		__mod_memcg_state(memcg, MEMCG_RSS, nr_pages);
-
 	if (abs(nr_pages) > 1) {
 		VM_BUG_ON_PAGE(!PageTransHuge(page), page);
 		__mod_memcg_state(memcg, MEMCG_RSS_HUGE, nr_pages);
@@ -1567,7 +1560,7 @@ static bool mem_cgroup_wait_acct_move(struct mem_cgroup *memcg)
 
 static const unsigned int memcg1_stats[] = {
 	NR_FILE_PAGES,
-	MEMCG_RSS,
+	NR_ANON_MAPPED,
 	MEMCG_RSS_HUGE,
 	NR_SHMEM,
 	NR_FILE_MAPPED,
@@ -3657,7 +3650,7 @@ static unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 
 	if (mem_cgroup_is_root(memcg)) {
 		val = memcg_page_state(memcg, NR_FILE_PAGES) +
-			memcg_page_state(memcg, MEMCG_RSS);
+			memcg_page_state(memcg, NR_ANON_MAPPED);
 		if (swap)
 			val += memcg_page_state(memcg, MEMCG_SWAP);
 	} else {
@@ -6612,7 +6605,12 @@ static int mem_cgroup_move_account(struct page *page,
 
 	lock_page_memcg(page);
 
-	if (!PageAnon(page)) {
+	if (PageAnon(page)) {
+		if (page_mapped(page)) {
+			__mod_lruvec_state(from_vec, NR_ANON_MAPPED, -nr_pages);
+			__mod_lruvec_state(to_vec, NR_ANON_MAPPED, nr_pages);
+		}
+	} else {
 		__mod_lruvec_state(from_vec, NR_FILE_PAGES, -nr_pages);
 		__mod_lruvec_state(to_vec, NR_FILE_PAGES, nr_pages);
 
@@ -7294,7 +7292,7 @@ static int memory_stat_show(struct seq_file *m, void *v)
 	 */
 
 	seq_printf(m, "anon %llu\n",
-		   (u64)memcg_page_state(memcg, MEMCG_RSS) * PAGE_SIZE);
+		   (u64)memcg_page_state(memcg, NR_ANON_MAPPED) * PAGE_SIZE);
 	seq_printf(m, "file %llu\n",
 		   (u64)memcg_page_state(memcg, NR_FILE_PAGES) * PAGE_SIZE);
 	seq_printf(m, "kernel_stack %llu\n",
@@ -7699,7 +7697,6 @@ void mem_cgroup_commit_charge(struct page *page, struct mem_cgroup *memcg,
 {
 	unsigned int nr_pages = hpage_nr_pages(page);
 
-	VM_BUG_ON_PAGE(!page->mapping, page);
 	VM_BUG_ON_PAGE(PageLRU(page) && !lrucare, page);
 
 	if (mem_cgroup_disabled())
@@ -7772,8 +7769,6 @@ int mem_cgroup_charge(struct page *page, struct mm_struct *mm, gfp_t gfp_mask,
 	struct mem_cgroup *memcg;
 	int ret;
 
-	VM_BUG_ON_PAGE(!page->mapping, page);
-
 	ret = mem_cgroup_try_charge(page, mm, gfp_mask, &memcg);
 	if (ret)
 		return ret;
@@ -7785,7 +7780,6 @@ struct uncharge_gather {
 	struct mem_cgroup *memcg;
 	unsigned long nr_pages;
 	unsigned long pgpgout;
-	unsigned long nr_anon;
 	unsigned long nr_kmem;
 	unsigned long nr_huge;
 	struct page *dummy_page;
@@ -7810,7 +7804,6 @@ static void uncharge_batch(const struct uncharge_gather *ug)
 	}
 
 	local_irq_save(flags);
-	__mod_memcg_state(ug->memcg, MEMCG_RSS, -ug->nr_anon);
 	__mod_memcg_state(ug->memcg, MEMCG_RSS_HUGE, -ug->nr_huge);
 	__count_memcg_events(ug->memcg, PGPGOUT, ug->pgpgout);
 	__this_cpu_add(ug->memcg->vmstats_percpu->nr_page_events, ug->nr_pages);
@@ -7850,8 +7843,6 @@ static void uncharge_page(struct page *page, struct uncharge_gather *ug)
 	if (!PageKmemcg(page)) {
 		if (PageTransHuge(page))
 			ug->nr_huge += nr_pages;
-		if (PageAnon(page))
-			ug->nr_anon += nr_pages;
 		ug->pgpgout++;
 	} else {
 		ug->nr_kmem += nr_pages;
