@@ -230,9 +230,9 @@ static void unaccount_page_cache_page(struct address_space *mapping,
 
 	nr = hpage_nr_pages(page);
 
-	__mod_node_page_state(page_pgdat(page), NR_FILE_PAGES, -nr);
+	__mod_lruvec_page_state(page, NR_FILE_PAGES, -nr);
 	if (PageSwapBacked(page)) {
-		__mod_node_page_state(page_pgdat(page), NR_SHMEM, -nr);
+		__mod_lruvec_page_state(page, NR_SHMEM, -nr);
 		if (PageTransHuge(page))
 			__dec_node_page_state(page, NR_SHMEM_THPS);
 	} else {
@@ -824,6 +824,8 @@ int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask)
 		new->mapping = mapping;
 		new->index = offset;
 
+		mem_cgroup_migrate(old, new);
+
 		xa_lock_irqsave(&mapping->i_pages, flags);
 		__delete_from_page_cache(old, NULL);
 		error = page_cache_tree_insert(mapping, new, NULL);
@@ -833,11 +835,10 @@ int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask)
 		 * hugetlb pages do not participate in page cache accounting.
 		 */
 		if (!PageHuge(new))
-			__inc_node_page_state(new, NR_FILE_PAGES);
+			__inc_lruvec_page_state(new, NR_FILE_PAGES);
 		if (PageSwapBacked(new))
-			__inc_node_page_state(new, NR_SHMEM);
+			__inc_lruvec_page_state(new, NR_SHMEM);
 		xa_unlock_irqrestore(&mapping->i_pages, flags);
-		mem_cgroup_migrate(old, new);
 		radix_tree_preload_end();
 		if (freepage)
 			freepage(old);
@@ -887,7 +888,7 @@ static int __add_to_page_cache_locked(struct page *page,
 
 	/* hugetlb pages do not participate in page cache accounting. */
 	if (!huge)
-		__inc_node_page_state(page, NR_FILE_PAGES);
+		__inc_lruvec_page_state(page, NR_FILE_PAGES);
 	xa_unlock_irq(&mapping->i_pages);
 	trace_mm_filemap_add_to_page_cache(page);
 	return 0;
