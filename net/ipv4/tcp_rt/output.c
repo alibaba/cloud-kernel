@@ -333,7 +333,7 @@ void tcp_rt_timer_output(int index, int port, char *flag)
 	}
 
 	size = snprintf(buf, sizeof(buf),
-			"%llu all %s%u %u %u %u %u %u %u %u %u %u\n",
+			"%llu all %s%u %llu %llu %llu %llu %llu %llu %llu %llu %llu\n",
 			ktime_get_real_seconds(), flag, port, avg.rt,
 			avg.server_time, avg.drop, avg.rtt, avg.fail, avg.bytes,
 			avg.upload_time, avg.upload_data, t.number);
