@@ -95,17 +95,17 @@ struct tcp_rt_stats {
 };
 
 struct _tcp_rt_stats {
-	u32 rt;
-	u32 number;
-	u32 drop;
-	u32 bytes;
-	u32 server_time;
-	u32 fail;
-	u32 packets;
-	u32 rtt;
-	u32 upload_time;
-	u32 upload_data;
-	u32 con_num;
+	u64 rt;
+	u64 number;
+	u64 drop;
+	u64 bytes;
+	u64 server_time;
+	u64 fail;
+	u64 packets;
+	u64 rtt;
+	u64 upload_time;
+	u64 upload_data;
+	u64 con_num;
 };
 
 int tcp_rt_output_init(int log_buf_num, int stats_buf_num,
