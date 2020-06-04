@@ -5,10 +5,12 @@
 static int lports_number;
 static int pports_number;
 static int lports_range_number;
+static int pports_range_number;
 
 static int lports[PORT_MAX_NUM];
 static int pports[PORT_MAX_NUM];
 static int lports_range[PORT_MAX_NUM];
+static int pports_range[PORT_MAX_NUM];
 
 static int log_buf_num = 8;
 static int stats_buf_num = 2;
@@ -31,6 +33,9 @@ MODULE_PARM_DESC(lports_range, "local port range array. config: lports_range=100
 module_param_array(pports, int, &pports_number, 0644);
 MODULE_PARM_DESC(pports, "peer port array. config: pports=80,3306");
 
+module_param_array(pports_range, int, &pports_range_number, 0644);
+MODULE_PARM_DESC(pports_range, "peer port range array. config: pports_range=1000,2000,3500,4000. means: 1000-2000 or 3500-4000");
+
 module_param(log_buf_num, int, 0644);
 MODULE_PARM_DESC(log_buf_num, "the num of buffers for every cpu log buffer. unit is 256k. just work when module load.");
 module_param(stats_buf_num, int, 0644);
@@ -44,17 +49,24 @@ static void tcp_rt_timer_handler(struct timer_list *t)
 		int i, port;
 
 		for (i = 0; i < lports_number; i++)
-			tcp_rt_timer_output(0, lports[i], "L");
+			tcp_rt_timer_output(lports[i], "L", true);
 
 		for (i = 0; i < lports_range_number / 2; ++i) {
 			for (port = lports_range[i * 2];
 			     port <= lports_range[i * 2 + 1]; ++port) {
-				tcp_rt_timer_output(PORT_MAX_NUM, port, "L");
+				tcp_rt_timer_output(port, "L", false);
 			}
 		}
 
 		for (i = 0; i < pports_number; i++)
-			tcp_rt_timer_output(i, pports[i], "P");
+			tcp_rt_timer_output(pports[i], "P", true);
+
+		for (i = 0; i < pports_range_number / 2; ++i) {
+			for (port = pports_range[i * 2];
+			     port <= pports_range[i * 2 + 1]; ++port) {
+				tcp_rt_timer_output(port, "P", false);
+			}
+		}
 	}
 	mod_timer(&tcp_rt_timer, jiffies + stats_interval * HZ);
 }
@@ -236,7 +248,7 @@ static void tcp_rt_sk_release(struct sock *sk)
 	if (!rt->request_num)
 		goto free;
 
-	if (rt->type == TCPRT_TYPE_PEER_PORT)
+	if (rt->type >= TCPRT_TYPE_PEER_PORT)
 		tcp_rt_sk_release_peer(sk, rt, tp);
 	else
 		tcp_rt_sk_release_local(sk, rt, tp);
@@ -264,7 +276,7 @@ static void tcp_rt_sk_send_data(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_rt *rt = TCP_SK_RT(sk);
 
-	if (rt->type == TCPRT_TYPE_PEER_PORT)
+	if (rt->type >= TCPRT_TYPE_PEER_PORT)
 		return tcp_rt_sk_send_data_peer(sk, rt, tp);
 	else
 		return tcp_rt_sk_send_data_local(sk, rt, tp);
@@ -275,7 +287,7 @@ static void tcp_rt_sk_recv_data(struct sock *sk)
 	struct tcp_rt *rt = TCP_SK_RT(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (rt->type == TCPRT_TYPE_PEER_PORT)
+	if (rt->type >= TCPRT_TYPE_PEER_PORT)
 		return tcp_rt_sk_recv_data_peer(sk, rt, tp);
 	else
 		return tcp_rt_sk_recv_data_local(sk, rt, tp);
@@ -317,6 +329,17 @@ static int tcp_rt_sk_init(struct sock *sk)
 			type = TCPRT_TYPE_PEER_PORT;
 			goto ok;
 		}
+	}
+
+	for (i = 0; i < pports_range_number / 2; ++i) {
+		if (port < pports_range[i * 2])
+			continue;
+
+		if (port > pports_range[i * 2 + 1])
+			continue;
+
+		type = TCPRT_TYPE_PEER_PORT_RANG;
+		goto ok;
 	}
 
 	return -1;
