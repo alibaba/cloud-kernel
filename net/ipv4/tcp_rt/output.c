@@ -305,20 +305,20 @@ void tcp_rt_timer_output(int index, int port, char *flag)
 		r = stats_peer + index;
 	}
 
-	t.number = atomic64_read(&r->number);
+	t.number = atomic64_xchg(&r->number, 0);
 	if (!t.number && index == PORT_MAX_NUM)
 		return;
 
-	t.rt          = atomic64_read(&r->rt);
-	t.bytes       = atomic64_read(&r->bytes);
-	t.drop        = atomic64_read(&r->drop);
-	t.fail        = atomic64_read(&r->fail);
-	t.server_time = atomic64_read(&r->server_time);
-	t.packets     = atomic64_read(&r->packets);
-	t.con_num     = atomic64_read(&r->con_num);
-	t.rtt         = atomic64_read(&r->rtt);
-	t.upload_time = atomic64_read(&r->upload_time);
-	t.upload_data = atomic64_read(&r->upload_data);
+	t.server_time = atomic64_xchg(&r->server_time, 0);
+	t.rt          = atomic64_xchg(&r->rt,          0);
+	t.bytes       = atomic64_xchg(&r->bytes,       0);
+	t.drop        = atomic64_xchg(&r->drop,        0);
+	t.fail        = atomic64_xchg(&r->fail,        0);
+	t.packets     = atomic64_xchg(&r->packets,     0);
+	t.con_num     = atomic64_xchg(&r->con_num,     0);
+	t.rtt         = atomic64_xchg(&r->rtt,         0);
+	t.upload_time = atomic64_xchg(&r->upload_time, 0);
+	t.upload_data = atomic64_xchg(&r->upload_data, 0);
 
 	if (t.number > 0) {
 		avg.rt           = t.rt / t.number;
@@ -340,18 +340,6 @@ void tcp_rt_timer_output(int index, int port, char *flag)
 
 	if (relay_stats)
 		relay_write(relay_stats, buf, size);
-
-	atomic64_set(&r->rt, 0);
-	atomic64_set(&r->number, 0);
-	atomic64_set(&r->bytes, 0);
-	atomic64_set(&r->drop, 0);
-	atomic64_set(&r->fail, 0);
-	atomic64_set(&r->server_time, 0);
-	atomic64_set(&r->packets, 0);
-	atomic64_set(&r->con_num, 0);
-	atomic64_set(&r->rtt, 0);
-	atomic64_set(&r->upload_time, 0);
-	atomic64_set(&r->upload_data, 0);
 }
 
 static struct dentry *create_buf_file_handler(const char *filename,
