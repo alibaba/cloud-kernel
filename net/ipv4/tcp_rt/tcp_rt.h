@@ -34,6 +34,7 @@ enum tcp_rt_type {
 	TCPRT_TYPE_LOCAL_PORT,
 	TCPRT_TYPE_LOCAL_PORT_RANG,
 	TCPRT_TYPE_PEER_PORT,
+	TCPRT_TYPE_PEER_PORT_RANG,
 };
 
 enum tcp_rt_stage {
@@ -91,7 +92,6 @@ struct tcp_rt_stats {
 	atomic64_t rtt;
 	atomic64_t upload_time;
 	atomic64_t upload_data;
-	atomic64_t con_num;
 };
 
 struct _tcp_rt_stats {
@@ -105,11 +105,10 @@ struct _tcp_rt_stats {
 	u64 rtt;
 	u64 upload_time;
 	u64 upload_data;
-	u64 con_num;
 };
 
 int tcp_rt_output_init(int log_buf_num, int stats_buf_num,
 		       const struct file_operations *fops);
 void tcp_rt_output_released(void);
 void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool check);
-void tcp_rt_timer_output(int index, int port, char *flag);
+void tcp_rt_timer_output(int port, char *flag, bool alloc);
