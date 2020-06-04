@@ -144,7 +144,7 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 	struct timespec64 now;
 	u32 start_time, mrtt;
 
-	mrtt = tcp_min_rtt(tp) >> 10;
+	mrtt = tcp_min_rtt(tp);
 
 	start_time = rt->start_time.tv_sec;
 
@@ -192,6 +192,7 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 			stats_local_add(r->server_time, rt->server_time);
 			stats_local_add(r->upload_time, rt->upload_time);
 			stats_local_add(r->upload_data, rt->upload_data);
+			stats_local_add(r->rtt, mrtt);
 		}
 		break;
 
@@ -247,21 +248,6 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 		size += bufappend(buf, size, tp->total_retrans);
 		size += bufappend(buf, size, mrtt);
 		buf[size++] = '\n';
-
-		if (mrtt <= 0)
-			break;
-
-		if (rt->type == TCPRT_TYPE_PEER_PORT) {
-			stats_peer_inc(rt, con_num);
-			stats_peer_add(rt, rtt, mrtt);
-		} else {
-			r = tcp_rt_get_local_stats_sk(sk);
-			if (!r)
-				break;
-
-			stats_local_inc(r->con_num);
-			stats_local_add(r->rtt, mrtt);
-		}
 		break;
 
 	case LOG_STATUS_P:
@@ -287,6 +273,7 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 			stats_peer_add(rt, rt, t_rt);
 			stats_peer_add(rt, packets, t_seq / tp->mss_cache + 1);
 			stats_peer_add(rt, drop, t_retrans);
+			stats_peer_add(rt, rtt, mrtt);
 		}
 		break;
 	}
@@ -340,12 +327,10 @@ void tcp_rt_timer_output(int index, int port, char *flag)
 		avg.server_time  = t.server_time / t.number;
 		avg.upload_time  = t.upload_time / t.number;
 		avg.upload_data  = t.upload_data / t.number;
+		avg.rtt          = t.rtt / t.number;
 		if (t.packets > 0)
 			avg.drop = 1000 * t.drop / t.packets;
 	}
-
-	if (t.con_num > 0)
-		avg.rtt = t.rtt / t.con_num;
 
 	size = snprintf(buf, sizeof(buf),
 			"%llu all %s%u %u %u %u %u %u %u %u %u %u\n",
