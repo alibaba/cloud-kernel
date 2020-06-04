@@ -119,6 +119,10 @@ struct arm_spe_synth_opts {
 	bool			tlb_miss;
 	bool			branch_miss;
 	bool			remote_access;
+	bool			c2c_mode;
+	bool			c2c_remote;
+	bool			c2c_store;
+	bool			c2c_tshare;
 };
 
 /**

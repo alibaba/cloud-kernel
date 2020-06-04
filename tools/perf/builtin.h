@@ -16,6 +16,8 @@ int cmd_buildid_cache(int argc, const char **argv);
 int cmd_buildid_list(int argc, const char **argv);
 int cmd_config(int argc, const char **argv);
 int cmd_c2c(int argc, const char **argv);
+int perf_c2c__report(int argc, const char **argv);
+int cmd_spe_c2c(int argc, const char **argv);
 int cmd_diff(int argc, const char **argv);
 int cmd_evlist(int argc, const char **argv);
 int cmd_help(int argc, const char **argv);

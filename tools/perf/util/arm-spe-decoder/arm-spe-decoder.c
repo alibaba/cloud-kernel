@@ -46,9 +46,8 @@ struct arm_spe_decoder {
 	unsigned char temp_buf[ARM_SPE_PKT_MAX_SZ];
 };
 
-static uint64_t arm_spe_calc_ip(uint64_t payload)
+static uint64_t arm_spe_calc_ip(uint64_t ip)
 {
-	uint64_t ip = (payload & ~(0xffULL << 56));
 
 	/* fill high 8 bits for kernel virtual address */
 	/* In Armv8 Architecture Reference Manual: Xn[55] determines
@@ -167,32 +166,62 @@ static int arm_spe_walk_trace(struct arm_spe_decoder *decoder)
 		switch (decoder->packet.type) {
 		case ARM_SPE_TIMESTAMP:
 			decoder->sample_timestamp = payload;
+			decoder->state.ts = payload;
 			return 0;
 		case ARM_SPE_END:
 			decoder->sample_timestamp = 0;
+			decoder->state.ts = 0;
 			return 0;
 		case ARM_SPE_ADDRESS:
-			decoder->ip = arm_spe_calc_ip(payload);
-			if (idx == 0)
-				decoder->state.from_ip = decoder->ip;
-			else if (idx == 1)
-				decoder->state.to_ip = decoder->ip;
+			switch (idx) {
+			case 0:
+			case 1:
+				payload &= ~(0xffULL << 56);
+				decoder->ip = arm_spe_calc_ip(payload);
+				if (idx == 0)
+					decoder->state.from_ip = decoder->ip;
+				else
+					decoder->state.to_ip = decoder->ip;
+				break;
+			case 2:
+				decoder->ip = arm_spe_calc_ip(payload);
+				decoder->state.addr = decoder->ip;
+				break;
+			case 3:
+				payload &= ~(0xffULL << 56);
+				decoder->state.phys_addr = payload;
+				break;
+			default:
+				break;
+			}
 			break;
 		case ARM_SPE_COUNTER:
 			break;
 		case ARM_SPE_CONTEXT:
 			break;
 		case ARM_SPE_OP_TYPE:
+			if (idx == 0x1) {
+				if (payload & 0x1)
+					decoder->state.is_st = true;
+				else
+					decoder->state.is_ld = true;
+			}
 			break;
 		case ARM_SPE_EVENTS:
-			if (payload & BIT(EV_TLB_REFILL))
+			if (payload & BIT(EV_TLB_REFILL)) {
 				decoder->state.type |= ARM_SPE_TLB_MISS;
+				decoder->state.is_tlb_miss = true;
+			}
 			if (payload & BIT(EV_MISPRED))
 				decoder->state.type |= ARM_SPE_BRANCH_MISS;
-			if (idx > 1 && (payload & BIT(EV_LLC_REFILL)))
+			if (idx > 1 && (payload & BIT(EV_LLC_REFILL))) {
 				decoder->state.type |= ARM_SPE_LLC_MISS;
-			if (idx > 1 && (payload & BIT(EV_REMOTE_ACCESS)))
+				decoder->state.is_llc_miss = true;
+			}
+			if (idx > 1 && (payload & BIT(EV_REMOTE_ACCESS))) {
 				decoder->state.type |= ARM_SPE_REMOTE_ACCESS;
+				decoder->state.is_remote = true;
+			}
 
 			break;
 		case ARM_SPE_DATA_SOURCE:
@@ -212,7 +241,7 @@ const struct arm_spe_state *arm_spe_decode(struct arm_spe_decoder *decoder)
 {
 	int err;
 
-	decoder->state.type = 0;
+	memset(&(decoder->state), 0, sizeof(struct arm_spe_state));
 
 	err = arm_spe_walk_trace(decoder);
 	if (err)

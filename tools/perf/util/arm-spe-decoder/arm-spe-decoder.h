@@ -35,8 +35,19 @@ enum arm_spe_sample_type {
 struct arm_spe_state {
 	enum arm_spe_sample_type type;
 	int err;
+	bool is_ld;		/* Is load ? */
+	bool is_st;		/* Is store ? */
+	bool is_l1d_miss;	/* Is l1d miss ? */
+	bool is_l2d_miss;	/* Is l2d miss ? */
+	bool is_llc_miss;	/* Is llc miss ? */
+	bool is_tlb_miss;	/* Is tlb miss ? */
+	bool is_remote;		/* Is remote access ? */
+	uint64_t ts;		/* timestamp */
 	uint64_t from_ip;
 	uint64_t to_ip;
+	uint64_t data_src;
+	uint64_t addr;
+	uint64_t phys_addr;
 	uint64_t timestamp;
 };
 

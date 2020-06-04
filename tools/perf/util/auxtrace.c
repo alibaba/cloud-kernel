@@ -1142,6 +1142,8 @@ void arm_spe_synth_opts__set_default(struct arm_spe_synth_opts *synth_opts)
 	synth_opts->tlb_miss = true;
 	synth_opts->branch_miss = true;
 	synth_opts->remote_access = true;
+	synth_opts->c2c_remote = false;
+	synth_opts->c2c_store = false;
 }
 
 int arm_spe_parse_synth_opts(const struct option *opt, const char *str,
@@ -1169,7 +1171,14 @@ int arm_spe_parse_synth_opts(const struct option *opt, const char *str,
 			synth_opts->branch_miss = true;
 			break;
 		case 'r':
-			synth_opts->remote_access = true;
+			if (synth_opts->c2c_mode)
+				synth_opts->c2c_remote = true;
+			else
+				synth_opts->remote_access = true;
+			break;
+		case 's':
+			if (synth_opts->c2c_mode)
+				synth_opts->c2c_store = true;
 			break;
 		case ' ':
 		case ',':

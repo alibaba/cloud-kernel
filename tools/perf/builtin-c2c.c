@@ -356,6 +356,8 @@ static struct perf_c2c c2c = {
 		.exit		= perf_event__process_exit,
 		.fork		= perf_event__process_fork,
 		.lost		= perf_event__process_lost,
+		.auxtrace_info	= perf_event__process_auxtrace_info,
+		.auxtrace	= perf_event__process_auxtrace,
 		.ordered_events	= true,
 		.ordering_requires_timestamps = true,
 	},
@@ -2704,9 +2706,12 @@ static int setup_coalesce(const char *coalesce, bool no_source)
 	return 0;
 }
 
-static int perf_c2c__report(int argc, const char **argv)
+int perf_c2c__report(int argc, const char **argv)
 {
 	struct perf_session *session;
+	struct itrace_synth_opts itrace_synth_opts = { .set = 0, };
+	struct arm_spe_synth_opts arm_spe_synth_opts = { .c2c_mode = true,
+								.set = 0, };
 	struct ui_progress prog;
 	struct perf_data data = {
 		.mode = PERF_DATA_MODE_READ,
@@ -2737,6 +2742,12 @@ static int perf_c2c__report(int argc, const char **argv)
 			     "print_type,threshold[,print_limit],order,sort_key[,branch],value",
 			     callchain_help, &parse_callchain_opt,
 			     callchain_default_opt),
+	OPT_CALLBACK_OPTARG(0, "itrace", &itrace_synth_opts, NULL, "opts",
+			    "Instruction Tracing options",
+			    itrace_parse_synth_opts),
+	OPT_CALLBACK_OPTARG(0, "spe", &arm_spe_synth_opts, NULL, "spe opts",
+			    "ARM SPE Tracing options",
+			    arm_spe_parse_synth_opts),
 	OPT_STRING('d', "display", &display, "Switch HITM output type", "lcl,rmt"),
 	OPT_STRING('c', "coalesce", &coalesce, "coalesce fields",
 		   "coalesce fields: pid,tid,iaddr,dso"),
@@ -2781,6 +2792,9 @@ static int perf_c2c__report(int argc, const char **argv)
 		pr_debug("No memory for session\n");
 		goto out;
 	}
+
+	session->itrace_synth_opts = &itrace_synth_opts;
+	session->arm_spe_synth_opts = &arm_spe_synth_opts;
 
 	err = setup_nodes(session);
 	if (err) {
