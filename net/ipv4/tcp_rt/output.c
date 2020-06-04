@@ -13,18 +13,16 @@ static struct rchan *relay_stats;
 static struct dentry *tcprt_dir;
 
 static struct tcp_rt_stats *stats_local[CHUNK_COUNT];
-static struct tcp_rt_stats  stats_peer[PORT_MAX_NUM];
+static struct tcp_rt_stats *stats_peer[CHUNK_COUNT];
 
-#define stats_local_inc(item)      atomic64_inc(&(item))
-#define stats_local_add(item, val) atomic64_add(val, &(item))
-
-#define stats_peer_inc(rt, item)      \
-	atomic64_inc(&stats_peer[(rt)->index].item)
-#define stats_peer_add(rt, item, val) \
-	atomic64_add(val, &stats_peer[(rt)->index].item)
+#define stats_inc(item)      atomic64_inc(&(item))
+#define stats_add(item, val) atomic64_add(val, &(item))
 
 #define tcp_rt_get_local_stats_sk(sk) \
-	tcp_rt_get_local_stats(ntohs(inet_sk(sk)->inet_sport), true)
+	tcp_rt_get_stats(stats_local, ntohs(inet_sk(sk)->inet_sport), true)
+
+#define tcp_rt_get_peer_stats_sk(sk) \
+	tcp_rt_get_stats(stats_peer, ntohs(inet_sk(sk)->inet_dport), true)
 
 static int64_t timespec64_dec(struct timespec64 tv1, struct timespec64 tv2)
 {
@@ -77,14 +75,15 @@ static int ip_format2(char *buf, u32 addr, char end)
 	return idx;
 }
 
-static struct tcp_rt_stats *tcp_rt_get_local_stats(int port, bool alloc)
+static struct tcp_rt_stats *tcp_rt_get_stats(struct tcp_rt_stats **stats,
+					     int port, bool alloc)
 {
 	int chunkid;
 	struct tcp_rt_stats *p;
 
 	chunkid = port / PORTS_PER_CHUNK;
 
-	p = stats_local[chunkid];
+	p = stats[chunkid];
 
 	if (unlikely(!p)) {
 		if (!alloc)
@@ -96,9 +95,9 @@ static struct tcp_rt_stats *tcp_rt_get_local_stats(int port, bool alloc)
 
 		memset(p, 0, CHUNK_SIZE);
 
-		if (cmpxchg(&stats_local[chunkid], NULL, p)) {
+		if (cmpxchg(&stats[chunkid], NULL, p)) {
 			vfree(p);
-			p = READ_ONCE(stats_local[chunkid]);
+			p = READ_ONCE(stats[chunkid]);
 		}
 	}
 
@@ -182,17 +181,16 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 			if (!r)
 				break;
 
-			stats_local_inc(r->number);
+			stats_inc(r->number);
 
-			stats_local_add(r->rt, t_rt);
-			stats_local_add(r->bytes, t_seq);
-			stats_local_add(r->drop, t_retrans);
-			stats_local_add(r->packets,
-					t_seq / tp->mss_cache + 1);
-			stats_local_add(r->server_time, rt->server_time);
-			stats_local_add(r->upload_time, rt->upload_time);
-			stats_local_add(r->upload_data, rt->upload_data);
-			stats_local_add(r->rtt, mrtt);
+			stats_add(r->rt,          t_rt);
+			stats_add(r->bytes,       t_seq);
+			stats_add(r->drop,        t_retrans);
+			stats_add(r->packets,     t_seq / tp->mss_cache + 1);
+			stats_add(r->server_time, rt->server_time);
+			stats_add(r->upload_time, rt->upload_time);
+			stats_add(r->upload_data, rt->upload_data);
+			stats_add(r->rtt,         mrtt);
 		}
 		break;
 
@@ -220,7 +218,7 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 			if (!r)
 				break;
 
-			stats_local_inc(r->fail);
+			stats_inc(r->fail);
 		}
 		break;
 
@@ -268,12 +266,17 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 		buf[size++] = '\n';
 
 		if (stats) {
-			stats_peer_inc(rt, number);
-			stats_peer_add(rt, bytes, t_seq);
-			stats_peer_add(rt, rt, t_rt);
-			stats_peer_add(rt, packets, t_seq / tp->mss_cache + 1);
-			stats_peer_add(rt, drop, t_retrans);
-			stats_peer_add(rt, rtt, mrtt);
+			r = tcp_rt_get_peer_stats_sk(sk);
+			if (!r)
+				break;
+
+			stats_inc(r->number);
+
+			stats_add(r->bytes,   t_seq);
+			stats_add(r->rt,      t_rt);
+			stats_add(r->packets, t_seq / tp->mss_cache + 1);
+			stats_add(r->drop,    t_retrans);
+			stats_add(r->rtt,     mrtt);
 		}
 		break;
 	}
@@ -282,9 +285,10 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 		relay_write(relay_log, buf, size);
 }
 
-void tcp_rt_timer_output(int index, int port, char *flag)
+void tcp_rt_timer_output(int port, char *flag, bool alloc)
 {
 	struct tcp_rt_stats *r;
+	struct tcp_rt_stats **stats;
 	struct _tcp_rt_stats t;
 	struct _tcp_rt_stats avg = {0};
 	int size;
@@ -292,21 +296,19 @@ void tcp_rt_timer_output(int index, int port, char *flag)
 	char buf[MAX_BUF_SIZE];
 
 	if (*flag == 'L') {
-		if (index == PORT_MAX_NUM)
-			r = tcp_rt_get_local_stats(port, false);
-		else
-			r = tcp_rt_get_local_stats(port, true);
-
-		if (!r)
-			return;
-
 		flag = "";
+		stats = stats_local;
 	} else {
-		r = stats_peer + index;
+		stats = stats_peer;
 	}
 
+	r = tcp_rt_get_stats(stats, port, alloc);
+
+	if (!r)
+		return;
+
 	t.number = atomic64_xchg(&r->number, 0);
-	if (!t.number && index == PORT_MAX_NUM)
+	if (!t.number && !alloc)
 		return;
 
 	t.server_time = atomic64_xchg(&r->server_time, 0);
@@ -315,7 +317,6 @@ void tcp_rt_timer_output(int index, int port, char *flag)
 	t.drop        = atomic64_xchg(&r->drop,        0);
 	t.fail        = atomic64_xchg(&r->fail,        0);
 	t.packets     = atomic64_xchg(&r->packets,     0);
-	t.con_num     = atomic64_xchg(&r->con_num,     0);
 	t.rtt         = atomic64_xchg(&r->rtt,         0);
 	t.upload_time = atomic64_xchg(&r->upload_time, 0);
 	t.upload_data = atomic64_xchg(&r->upload_data, 0);
