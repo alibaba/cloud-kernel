@@ -139,7 +139,7 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 	char buf[MAX_BUF_SIZE];
 	int size = 0;
 	u32 t_rt;
-	u32 t_seq, t_retrans;
+	u32 t_seq, t_retrans, recv;
 	struct timespec64 now;
 	u32 start_time, mrtt;
 
@@ -170,8 +170,8 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 		size += bufappend(buf, size, t_retrans);
 		size += bufappend(buf, size, rt->request_num);
 		size += bufappend(buf, size, rt->server_time);
-		size += bufappend(buf, size, rt->upload_time);
-		size += bufappend(buf, size, rt->upload_data);
+		size += bufappend(buf, size, rt->recv_time);
+		size += bufappend(buf, size, rt->recv_data);
 		size += bufappend(buf, size, rt->rcv_reorder);
 		size += bufappend(buf, size, tp->mss_cache);
 		buf[size++] = '\n';
@@ -188,8 +188,8 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 			stats_add(r->drop,        t_retrans);
 			stats_add(r->packets,     t_seq / tp->mss_cache + 1);
 			stats_add(r->server_time, rt->server_time);
-			stats_add(r->upload_time, rt->upload_time);
-			stats_add(r->upload_data, rt->upload_data);
+			stats_add(r->recv_time,   rt->recv_time);
+			stats_add(r->recv_data,   rt->recv_data);
 			stats_add(r->rtt,         mrtt);
 		}
 		break;
@@ -207,7 +207,7 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 				  tp->total_retrans - rt->last_total_retrans);
 		size += bufappend(buf, size, rt->request_num);
 		size += bufappend(buf, size, rt->server_time);
-		size += bufappend(buf, size, rt->upload_time);
+		size += bufappend(buf, size, rt->recv_time);
 		size += bufappend(buf, size, tp->snd_nxt - tp->snd_una);
 		size += bufappend(buf, size, rt->rcv_reorder);
 		size += bufappend(buf, size, tp->mss_cache);
@@ -251,16 +251,20 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 	case LOG_STATUS_P:
 		t_rt =	timespec64_dec(rt->end_time, rt->start_time);
 
-		t_seq = rt->upload_data;
+		t_seq = rt->sent_data;
 		t_retrans = tp->total_retrans - rt->last_total_retrans;
+		recv = tp->rcv_nxt - rt->start_rcv_nxt;
 
 		size = bufheader(buf, size, flag, sk);
 
 		size += bufappend(buf, size, t_seq);
 		size += bufappend(buf, size, t_rt);
+		size += bufappend(buf, size, mrtt);
 		size += bufappend(buf, size, t_retrans);
 		size += bufappend(buf, size, rt->request_num);
-		size += bufappend(buf, size, mrtt);
+		size += bufappend(buf, size, rt->server_time);
+		size += bufappend(buf, size, rt->recv_time);
+		size += bufappend(buf, size, recv);
 		size += bufappend(buf, size, rt->rcv_reorder);
 		size += bufappend(buf, size, tp->mss_cache);
 		buf[size++] = '\n';
@@ -272,11 +276,14 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 
 			stats_inc(r->number);
 
-			stats_add(r->bytes,   t_seq);
-			stats_add(r->rt,      t_rt);
-			stats_add(r->packets, t_seq / tp->mss_cache + 1);
-			stats_add(r->drop,    t_retrans);
-			stats_add(r->rtt,     mrtt);
+			stats_add(r->bytes,       t_seq);
+			stats_add(r->rt,          t_rt);
+			stats_add(r->packets,     t_seq / tp->mss_cache + 1);
+			stats_add(r->drop,        t_retrans);
+			stats_add(r->server_time, rt->server_time);
+			stats_add(r->recv_time,   rt->recv_time);
+			stats_add(r->recv_data,   recv);
+			stats_add(r->rtt,         mrtt);
 		}
 		break;
 	}
@@ -318,17 +325,17 @@ void tcp_rt_timer_output(int port, char *flag, bool alloc)
 	t.fail        = atomic64_xchg(&r->fail,        0);
 	t.packets     = atomic64_xchg(&r->packets,     0);
 	t.rtt         = atomic64_xchg(&r->rtt,         0);
-	t.upload_time = atomic64_xchg(&r->upload_time, 0);
-	t.upload_data = atomic64_xchg(&r->upload_data, 0);
+	t.recv_time   = atomic64_xchg(&r->recv_time,   0);
+	t.recv_data   = atomic64_xchg(&r->recv_data,   0);
 
 	if (t.number > 0) {
-		avg.rt           = t.rt / t.number;
-		avg.fail         = 1000 * t.fail / t.number;
-		avg.bytes        = t.bytes / t.number;
-		avg.server_time  = t.server_time / t.number;
-		avg.upload_time  = t.upload_time / t.number;
-		avg.upload_data  = t.upload_data / t.number;
-		avg.rtt          = t.rtt / t.number;
+		avg.rt          = t.rt / t.number;
+		avg.fail        = 1000 * t.fail / t.number;
+		avg.bytes       = t.bytes / t.number;
+		avg.server_time = t.server_time / t.number;
+		avg.recv_time   = t.recv_time / t.number;
+		avg.recv_data   = t.recv_data / t.number;
+		avg.rtt         = t.rtt / t.number;
 		if (t.packets > 0)
 			avg.drop = 1000 * t.drop / t.packets;
 	}
@@ -337,7 +344,7 @@ void tcp_rt_timer_output(int port, char *flag, bool alloc)
 			"%llu all %s%u %llu %llu %llu %llu %llu %llu %llu %llu %llu\n",
 			ktime_get_real_seconds(), flag, port, avg.rt,
 			avg.server_time, avg.drop, avg.rtt, avg.fail, avg.bytes,
-			avg.upload_time, avg.upload_data, t.number);
+			avg.recv_time, avg.recv_data, t.number);
 
 	if (relay_stats)
 		relay_write(relay_stats, buf, size);
