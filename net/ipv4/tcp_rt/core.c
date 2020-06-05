@@ -80,14 +80,48 @@ static void tcp_rt_sk_send_data_peer(const struct sock *sk, struct tcp_rt *rt,
 		/* fall through */
 
 	case TCPRT_STAGE_PEER_NONE:
-		ktime_get_real_ts64(&rt->start_time);
-		rt->end_time = rt->start_time;
-		rt->request_num += 1;
-		rt->upload_data = 0;
 		rt->stage_peer = TCPRT_STAGE_PEER_REQUEST;
 
+		ktime_get_real_ts64(&rt->start_time);
+		rt->end_time = rt->start_time;
+
+		rt->request_num += 1;
+		rt->sent_data = 0;
+		rt->recv_data = 0;
+		rt->recv_time = 0;
+
+		rt->start_rcv_nxt = tp->rcv_nxt;
 		rt->last_total_retrans = tp->total_retrans;
+
+		rt->lsenttime_us = tcp_clock_us();
 		break;
+
+	default:
+		rt->lsenttime_us = tcp_clock_us();
+		break;
+	}
+}
+
+static void tcp_rt_sk_recv_data_peer(const struct sock *sk, struct tcp_rt *rt,
+				     const struct tcp_sock *tp)
+{
+	switch (rt->stage_peer) {
+	case TCPRT_STAGE_PEER_REQUEST:
+		rt->stage_peer = TCPRT_STAGE_PEER_RESPONSE;
+		rt->sent_data = tp->snd_nxt - rt->start_seq;
+		rt->start_seq = tp->snd_nxt;
+		rt->lrcvtime_us = tcp_clock_us();
+		rt->server_time = tcp_clock_us() - rt->lsenttime_us;
+		ktime_get_real_ts64(&rt->end_time);
+		return;
+
+	case TCPRT_STAGE_PEER_RESPONSE:
+		ktime_get_real_ts64(&rt->end_time);
+		if (!RB_EMPTY_ROOT(&tp->out_of_order_queue))
+			rt->rcv_reorder = 1;
+
+		rt->recv_time = tcp_clock_us() - rt->lrcvtime_us;
+		return;
 
 	default:
 		break;
@@ -106,8 +140,8 @@ static void tcp_rt_sk_send_data_local(const struct sock *sk, struct tcp_rt *rt,
 		rt->stage = TCPRT_STAGE_RESPONSE;
 
 		rt->server_time = this_us - rt->lrcvtime_us;
-		rt->upload_time = rt->lrcvtime_us - rt->frcvtime_us;
-		rt->upload_data = tp->rcv_nxt - rt->start_rcv_nxt;
+		rt->recv_time = rt->lrcvtime_us - rt->frcvtime_us;
+		rt->recv_data = tp->rcv_nxt - rt->start_rcv_nxt;
 
 		/* because recv_data is after rcv_nxt update, so
 		 * record the value at here.
@@ -120,28 +154,6 @@ static void tcp_rt_sk_send_data_local(const struct sock *sk, struct tcp_rt *rt,
 		break;
 
 	case TCPRT_STAGE_NONE:
-		break;
-	}
-}
-
-static void tcp_rt_sk_recv_data_peer(const struct sock *sk, struct tcp_rt *rt,
-				     const struct tcp_sock *tp)
-{
-	switch (rt->stage_peer) {
-	case TCPRT_STAGE_PEER_REQUEST:
-		rt->stage_peer = TCPRT_STAGE_PEER_RESPONSE;
-		rt->upload_data = tp->snd_nxt - rt->start_seq;
-		rt->start_seq = tp->snd_nxt;
-		ktime_get_real_ts64(&rt->end_time);
-		return;
-
-	case TCPRT_STAGE_PEER_RESPONSE:
-		ktime_get_real_ts64(&rt->end_time);
-		if (!RB_EMPTY_ROOT(&tp->out_of_order_queue))
-			rt->rcv_reorder = 1;
-		return;
-
-	default:
 		break;
 	}
 }
@@ -176,8 +188,8 @@ static void tcp_rt_sk_recv_data_local(const struct sock *sk, struct tcp_rt *rt,
 		rt->last_update_seq = tp->snd_una;
 
 		rt->server_time = 0;
-		rt->upload_time = 0;
-		rt->upload_data = 0;
+		rt->recv_time = 0;
+		rt->recv_data = 0;
 
 		rt->rcv_reorder = 0;
 
