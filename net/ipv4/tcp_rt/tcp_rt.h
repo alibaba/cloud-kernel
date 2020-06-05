@@ -62,7 +62,10 @@ struct tcp_rt {
 	struct timespec64    start_time;
 	struct timespec64    end_time;
 
-	u64               frcvtime_us;
+	union {
+		u64       frcvtime_us;
+		u64       lsenttime_us;
+	};
 	u64               lrcvtime_us;
 
 	u32               start_seq;
@@ -72,8 +75,11 @@ struct tcp_rt {
 	u32               last_update_seq;
 
 	int               server_time;
-	int               upload_time;
-	u32               upload_data;
+	int               recv_time;
+	union {
+		u32       recv_data;
+		u32       sent_data;
+	};
 
 	u8                rcv_reorder;
 
@@ -90,8 +96,8 @@ struct tcp_rt_stats {
 	atomic64_t fail;
 	atomic64_t packets;
 	atomic64_t rtt;
-	atomic64_t upload_time;
-	atomic64_t upload_data;
+	atomic64_t recv_time;
+	atomic64_t recv_data;
 };
 
 struct _tcp_rt_stats {
@@ -103,8 +109,8 @@ struct _tcp_rt_stats {
 	u64 fail;
 	u64 packets;
 	u64 rtt;
-	u64 upload_time;
-	u64 upload_data;
+	u64 recv_time;
+	u64 recv_data;
 };
 
 int tcp_rt_output_init(int log_buf_num, int stats_buf_num,
