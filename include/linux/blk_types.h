@@ -214,8 +214,9 @@ struct bio {
 
 	struct bio_set		*bi_pool;
 
+	unsigned long		bi_ext_flags;	/* extend the bi_flags */
+
 	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
@@ -244,7 +245,11 @@ struct bio {
 #define BIO_TRACE_COMPLETION 10	/* bio_endio() should trace the final completion
 				 * of this bio. */
 #define BIO_QUEUE_ENTERED 11	/* can use blk_queue_enter_live() */
-#define BIO_THROTL_STATED 12	/* bio already stated */
+
+/*
+ * Extend bio flags should be added in here
+ */
+#define BIO_THROTL_STATED 0	/* bio already stated */
 
 /* See BVEC_POOL_OFFSET below before adding new flags */
 
