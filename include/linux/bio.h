@@ -247,6 +247,21 @@ static inline void bio_clear_flag(struct bio *bio, unsigned int bit)
 	bio->bi_flags &= ~(1U << bit);
 }
 
+static inline bool bio_ext_flagged(struct bio *bio, unsigned int bit)
+{
+	return (bio->bi_ext_flags & (1U << bit)) != 0;
+}
+
+static inline void bio_set_ext_flag(struct bio *bio, unsigned int bit)
+{
+	bio->bi_ext_flags |= (1U << bit);
+}
+
+static inline void bio_clear_ext_flag(struct bio *bio, unsigned int bit)
+{
+	bio->bi_ext_flags &= ~(1U << bit);
+}
+
 static inline void bio_get_first_bvec(struct bio *bio, struct bio_vec *bv)
 {
 	*bv = mp_bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);

@@ -1133,7 +1133,7 @@ static void throtl_bio_end_io(struct bio *bio)
 
 	rcu_read_lock();
 	/* see comments in throtl_bio_stats_start() */
-	if (!bio_flagged(bio, BIO_THROTL_STATED))
+	if (!bio_ext_flagged(bio, BIO_THROTL_STATED))
 		goto out;
 
 	tg = (struct throtl_grp *)bio->bi_tg_private;
@@ -1144,7 +1144,7 @@ static void throtl_bio_end_io(struct bio *bio)
 				       bio_io_start_time_ns(bio),
 				       bio_op(bio));
 	blkg_put(tg_to_blkg(tg));
-	bio_clear_flag(bio, BIO_THROTL_STATED);
+	bio_clear_ext_flag(bio, BIO_THROTL_STATED);
 out:
 	rcu_read_unlock();
 }
@@ -1160,9 +1160,9 @@ static inline void throtl_bio_stats_start(struct bio *bio, struct throtl_grp *tg
 	 * BIO_THROTL_STATED to do only once statistics.
 	 */
 	if ((op == REQ_OP_READ || op == REQ_OP_WRITE) &&
-	    !bio_flagged(bio, BIO_THROTL_STATED)) {
+	    !bio_ext_flagged(bio, BIO_THROTL_STATED)) {
 		blkg_get(tg_to_blkg(tg));
-		bio_set_flag(bio, BIO_THROTL_STATED);
+		bio_set_ext_flag(bio, BIO_THROTL_STATED);
 		bio->bi_tg_end_io = throtl_bio_end_io;
 		bio->bi_tg_private = tg;
 		bio_set_start_time_ns(bio);
