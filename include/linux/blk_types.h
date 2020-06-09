@@ -264,6 +264,8 @@ struct bio {
 
 	struct bio_set		*bi_pool;
 
+	unsigned long		bi_ext_flags;	/* extend the bi_flags */
+
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
 	 * double allocations for a small number of bio_vecs. This member
@@ -291,9 +293,13 @@ enum {
 				 * of this bio. */
 	BIO_CGROUP_ACCT,	/* has been accounted to a cgroup */
 	BIO_TRACKED,		/* set if bio goes through the rq_qos path */
-	BIO_THROTL_STATED,	/* bio already stated */
 	BIO_FLAG_LAST
 };
+
+/*
+ * Extend bio flags should be added in here
+ */
+#define BIO_THROTL_STATED 0	/* bio already stated */
 
 /* See BVEC_POOL_OFFSET below before adding new flags */
 
