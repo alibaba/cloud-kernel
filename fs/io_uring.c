@@ -3969,6 +3969,9 @@ static int io_accept(struct io_kiocb *req, bool force_nonblock)
 {
 	int ret;
 
+	if (req->file->f_flags & O_NONBLOCK)
+		req->flags |= REQ_F_NOWAIT;
+
 	ret = __io_accept(req, force_nonblock);
 	if (ret == -EAGAIN && force_nonblock) {
 		req->work.func = io_accept_finish;
