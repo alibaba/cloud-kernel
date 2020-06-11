@@ -185,7 +185,7 @@ struct mem_cgroup_per_node {
 	bool			on_tree;
 	bool			congested;	/* memcg has many dirty pages */
 						/* backed by a congested BDI */
-	bool			dirty;		/* mecg has too many dirty pages */
+	bool			dirty;		/* memcg has too many dirty pages */
 	bool			writeback;	/* memcg has too many writeback */
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
