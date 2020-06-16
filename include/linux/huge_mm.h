@@ -61,6 +61,7 @@ enum transparent_hugepage_flag {
 #ifdef CONFIG_DEBUG_VM
 	TRANSPARENT_HUGEPAGE_DEBUG_COW_FLAG,
 #endif
+	TRANSPARENT_HUGEPAGE_FAST_COW_FLAG,
 };
 
 struct kobject;
@@ -131,6 +132,9 @@ bool transparent_hugepage_enabled(struct vm_area_struct *vma);
 #else /* CONFIG_DEBUG_VM */
 #define transparent_hugepage_debug_cow() 0
 #endif /* CONFIG_DEBUG_VM */
+#define transparent_hugepage_fast_cow()					\
+	(transparent_hugepage_flags &					\
+	 (1<<TRANSPARENT_HUGEPAGE_FAST_COW_FLAG))
 
 extern unsigned long thp_get_unmapped_area(struct file *filp,
 		unsigned long addr, unsigned long len, unsigned long pgoff,
