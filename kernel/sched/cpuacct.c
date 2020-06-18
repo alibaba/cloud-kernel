@@ -68,6 +68,7 @@ enum sched_lat_count_t {
 	SCHED_LAT_5000_10000,
 	SCHED_LAT_10000_INF,
 	SCHED_LAT_TOTAL,
+	SCHED_LAT_NR,
 	SCHED_LAT_NR_COUNT,
 };
 
@@ -270,6 +271,7 @@ void task_ca_update_block(struct task_struct *tsk, u64 runtime)
 	msecs = runtime >> 20; /* Proximately to speed up */
 	idx = get_sched_lat_count_idx(msecs);
 	this_cpu_inc(ca->lat_stat_cpu->item[s][idx]);
+	this_cpu_inc(ca->lat_stat_cpu->item[s][SCHED_LAT_NR]);
 	this_cpu_add(ca->lat_stat_cpu->item[s][SCHED_LAT_TOTAL], runtime);
 	rcu_read_unlock();
 }
@@ -300,6 +302,7 @@ void cpuacct_update_latency(struct sched_entity *se, u64 delta)
 	msecs = delta >> 20; /* Proximately to speed up */
 	idx = get_sched_lat_count_idx(msecs);
 	this_cpu_inc(ca->lat_stat_cpu->item[s][idx]);
+	this_cpu_inc(ca->lat_stat_cpu->item[s][SCHED_LAT_NR]);
 	this_cpu_add(ca->lat_stat_cpu->item[s][SCHED_LAT_TOTAL], delta);
 	rcu_read_unlock();
 }
@@ -1193,6 +1196,8 @@ static int sched_lat_stat_show(struct seq_file *sf, void *v)
 		sched_lat_stat_gather(ca, s, SCHED_LAT_10000_INF));
 	seq_printf(sf, "total(ms): \t%llu\n",
 		sched_lat_stat_gather(ca, s, SCHED_LAT_TOTAL) / 1000000);
+	seq_printf(sf, "nr: \t%llu\n",
+		sched_lat_stat_gather(ca, s, SCHED_LAT_NR));
 
 	return 0;
 }
