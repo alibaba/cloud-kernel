@@ -56,6 +56,7 @@ extern struct pci_ecam_ops thunder_pem_ecam_ops; /* Cavium ThunderX 1.x & 2.x */
 extern struct pci_ecam_ops pci_thunder_ecam_ops; /* Cavium ThunderX 1.x */
 extern struct pci_ecam_ops xgene_v1_pcie_ecam_ops; /* APM X-Gene PCIe v1 */
 extern struct pci_ecam_ops xgene_v2_pcie_ecam_ops; /* APM X-Gene PCIe v2.x */
+extern struct pci_ecam_ops pci_32b_read_ops;   /* 32-bit read accesses only */
 #endif
 
 #ifdef CONFIG_PCI_HOST_COMMON
