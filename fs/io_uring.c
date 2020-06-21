@@ -3095,10 +3095,6 @@ copy_iov:
 					&iter);
 		if (ret)
 			goto out_free;
-		/* any defer here is final, must blocking retry */
-		if (!(req->flags & REQ_F_NOWAIT) &&
-		    !file_can_poll(req->file))
-			req->flags |= REQ_F_MUST_PUNT;
 		if (no_async)
 			return -EAGAIN;
 		/* it's copied and will be cleaned with ->io */
@@ -3223,10 +3219,6 @@ copy_iov:
 					&iter);
 		if (ret)
 			goto out_free;
-		/* any defer here is final, must blocking retry */
-		if (!(req->flags & REQ_F_NOWAIT) &&
-		    !file_can_poll(req->file))
-			req->flags |= REQ_F_MUST_PUNT;
 		/* it's copied and will be cleaned with ->io */
 		iovec = NULL;
 		return -EAGAIN;
