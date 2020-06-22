@@ -772,9 +772,11 @@ static int arm_cmn_init_pmu(struct arm_cmn *cmn)
 {
 	struct platform_device *pdev = to_platform_device(cmn->dev);
 	struct arm_cmn_dtc *dtc;
+#ifdef CONFIG_ACPI
 	unsigned long long value;
 	acpi_handle handle;
 	acpi_status status;
+#endif
 	const char *name;
 	int irq, err;
 
@@ -817,6 +819,7 @@ static int arm_cmn_init_pmu(struct arm_cmn *cmn)
 		.read = arm_cmn_event_read,
 	};
 
+#ifdef CONFIG_ACPI
 	handle = ACPI_HANDLE(cmn->dev);
 	if (handle) {
 		status = acpi_evaluate_integer(handle, METHOD_NAME__UID, NULL,
@@ -833,6 +836,9 @@ static int arm_cmn_init_pmu(struct arm_cmn *cmn)
 		/* FIXME: multiple instance if no ACPI? */
 		name = "arm_cmn";
 	}
+#else
+	name = "arm_cmn";
+#endif
 
 	cpuhp_state_add_instance_nocalls(CPUHP_AP_PERF_ARM_CMN_ONLINE,
 					 &dtc->cpuhp_node);
