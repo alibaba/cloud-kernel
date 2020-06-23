@@ -43,6 +43,29 @@ conn_reuse_mode - INTEGER
 	balancer in Direct Routing mode. This bit helps on adding new
 	real servers to a very busy cluster.
 
+conn_reuse_old_conntrack - BOOLEAN
+	- 0 - disabled (default)
+	- not 0 - enabled
+
+	If set, when a new TCP syn packet hits an old ipvs connection
+	table and need reschedule to a new dest: if
+	  1) the packet uses conntrack
+	  2) the old ipvs connection table is not a master control
+		 connection (E.g. the command connection of passive FTP)
+	  3) the old ipvs connection table hasn't been controlled by any
+		 connection (E.g. the data connection of passive FTP)
+	ipvs will not release the old conntrack, just let the conntrack
+	reopen the old session as it is a new one. This is an optimization
+	option selectable by the system administrator.
+
+	If not set, when a new TCP syn packet hits an old ipvs connection
+	table and need reschedule to a new dest: if
+	  1) the packet uses conntrack
+	ipvs just drops this syn packet, expires the old connection by timer.
+	This will cause the client to retransmit TCP SYN.
+
+	Only has effect when conn_reuse_mode not 0.
+
 conntrack - BOOLEAN
 	0 - disabled (default)
 	not 0 - enabled
