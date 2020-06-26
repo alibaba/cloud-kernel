@@ -907,6 +907,7 @@ static int __remove_mapping(struct address_space *mapping, struct page *page,
 		__delete_from_swap_cache(page);
 		xa_unlock_irqrestore(&mapping->i_pages, flags);
 		put_swap_page(page, swap);
+		workingset_eviction(page, target_memcg);
 	} else {
 		void (*freepage)(struct page *);
 		void *shadow = NULL;
@@ -1847,6 +1848,9 @@ putback_inactive_pages(struct lruvec *lruvec, struct list_head *page_list)
 				spin_lock_irq(&pgdat->lru_lock);
 			} else
 				list_add(&page->lru, &pages_to_free);
+		} else {
+			if (PageActive(page))
+				workingset_age_nonresident(lruvec, hpage_nr_pages(page));
 		}
 	}
 
@@ -2038,6 +2042,8 @@ static unsigned move_active_pages_to_lru(struct lruvec *lruvec,
 				list_add(&page->lru, pages_to_free);
 		} else {
 			nr_moved += nr_pages;
+			if (PageActive(page))
+				workingset_age_nonresident(lruvec, nr_pages);
 		}
 	}
 
