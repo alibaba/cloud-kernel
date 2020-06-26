@@ -24,6 +24,7 @@
 #include <linux/shmem_fs.h>
 
 #include <asm/pgtable.h>
+#include "internal.h"
 
 /*
  * swapper_space is a fiction, retained to simplify the path through
@@ -553,7 +554,7 @@ struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 	}
 
 	/* call radix_tree_preload() while we can wait. */
-	if (radix_tree_maybe_preload(gfp_mask & GFP_KERNEL)) {
+	if (radix_tree_maybe_preload(gfp_mask & GFP_RECLAIM_MASK)) {
 		put_swap_page(page, entry);
 		put_page(page);
 		return NULL;
