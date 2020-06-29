@@ -14,6 +14,7 @@ int __node_distance(int from, int to);
 extern nodemask_t numa_nodes_parsed __initdata;
 
 extern bool numa_off;
+extern bool fix_numa_dist_off;
 
 /* Mappings between node number and cpus on that node. */
 extern cpumask_var_t node_to_cpumask_map[MAX_NUMNODES];
@@ -40,6 +41,10 @@ void __init early_map_cpu_to_node(unsigned int cpu, int nid);
 void numa_store_cpu_info(unsigned int cpu);
 void numa_add_cpu(unsigned int cpu);
 void numa_remove_cpu(unsigned int cpu);
+
+#ifdef CONFIG_ARCH_HISI
+void __init arm64_numa_distance_init(void);
+#endif
 
 #else	/* CONFIG_NUMA */
 

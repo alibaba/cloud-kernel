@@ -424,6 +424,10 @@ void __init bootmem_init(void)
 
 	arm64_numa_init();
 
+#ifdef CONFIG_ARCH_HISI
+	arm64_numa_distance_init();
+#endif
+
 	/*
 	 * must be done after arm64_numa_init() which calls numa_init() to
 	 * initialize node_online_map that gets used in hugetlb_cma_reserve()

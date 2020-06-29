@@ -24,6 +24,7 @@ static int cpu_to_node_map[NR_CPUS] = { [0 ... NR_CPUS-1] = NUMA_NO_NODE };
 static int numa_distance_cnt;
 static u8 *numa_distance;
 bool numa_off;
+bool fix_numa_dist_off;
 
 static __init int numa_parse_early_param(char *opt)
 {
@@ -35,6 +36,17 @@ static __init int numa_parse_early_param(char *opt)
 	return 0;
 }
 early_param("numa", numa_parse_early_param);
+
+static __init int fix_numa_dist_parse_early_param(char *opt)
+{
+	if (!opt)
+		return -EINVAL;
+	if (!strncmp(opt, "off", 3))
+		fix_numa_dist_off = true;
+
+	return 0;
+}
+early_param("fix_numa_dist", fix_numa_dist_parse_early_param);
 
 cpumask_var_t node_to_cpumask_map[MAX_NUMNODES];
 EXPORT_SYMBOL(node_to_cpumask_map);
@@ -462,3 +474,37 @@ void __init arm64_numa_init(void)
 
 	numa_init(dummy_numa_init);
 }
+
+#ifdef CONFIG_ARCH_HISI
+/**
+ * arm64_numa_distance_init - fill more accurate value for NUMA
+ *
+ * For the HiSilicon chips, filling more accurate value into numa_distance[].
+ */
+void __init arm64_numa_distance_init(void)
+{
+	int i, j;
+	int numa_accurate_distance[4][4] = {
+		{10, 12, 22, 22},
+		{12, 10, 22, 22},
+		{22, 22, 10, 12},
+		{22, 22, 12, 10}
+	};
+
+	/* when numa=on, then check and correct numa_distance */
+	if (numa_off)
+		return;
+	if (fix_numa_dist_off)
+		return;
+	if ((read_cpuid_implementor() == ARM_CPU_IMP_HISI) && (nr_node_ids == 4)) {
+		/* fill with the more accurate distances */
+		for (i = 0; i < nr_node_ids; i++) {
+			for (j = 0; j < nr_node_ids; j++) {
+				numa_distance[i * numa_distance_cnt + j] =
+					numa_accurate_distance[i][j];
+			}
+		}
+	}
+}
+#endif
+
