@@ -503,6 +503,9 @@ void __init bootmem_init(void)
 	max_pfn = max_low_pfn = max;
 
 	arm64_numa_init();
+#ifdef CONFIG_ARCH_HISI
+	arm64_numa_distance_init();
+#endif
 	/*
 	 * Sparsemem tries to allocate bootmem in memory_present(), so must be
 	 * done after the fixed reservations.
