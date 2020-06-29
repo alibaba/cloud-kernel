@@ -818,6 +818,11 @@
 			Defaults to the default architecture's huge page size
 			if not specified.
 
+	deferred_meminit
+			[KNL] When CONFIG_DEFERRED_STRUCT_PAGE_INIT is set,
+			this parameter enables the deferred page struct
+			initialization at boot time. In default, it is disabled.
+
 	deferred_probe_timeout=
 			[KNL] Debugging option to set a timeout in seconds for
 			deferred probe to give up waiting on dependencies to
