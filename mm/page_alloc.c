@@ -389,6 +389,7 @@ EXPORT_SYMBOL(nr_online_nodes);
 int page_group_by_mobility_disabled __read_mostly;
 
 #ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
+static bool deferred_mem_init_enabled __meminitdata;
 /*
  * During boot we initialize deferred pages on-demand, as needed, but once
  * page_alloc_init_late() has finished, the deferred pages are all initialized,
@@ -435,6 +436,9 @@ defer_init(int nid, unsigned long pfn, unsigned long end_pfn)
 {
 	static unsigned long prev_end_pfn, nr_initialised;
 
+	if (!deferred_mem_init_enabled)
+		return false;
+
 	/*
 	 * prev_end_pfn static that contains the end of previous zone
 	 * No need to protect because called very early in boot before smp_init.
@@ -462,6 +466,17 @@ defer_init(int nid, unsigned long pfn, unsigned long end_pfn)
 	}
 	return false;
 }
+
+static int __init setup_deferred_mem_init(char *str)
+{
+	if (!str)
+		deferred_mem_init_enabled = true;
+
+	return 0;
+}
+
+early_param("deferred_meminit", setup_deferred_mem_init);
+
 #else
 #define kasan_free_nondeferred_pages(p, o)	kasan_free_pages(p, o)
 
