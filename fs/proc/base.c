@@ -1446,13 +1446,12 @@ static const struct file_operations proc_fail_nth_operations = {
 static int sched_show(struct seq_file *m, void *v)
 {
 	struct inode *inode = m->private;
-	struct pid_namespace *ns = proc_pid_ns(inode->i_sb);
 	struct task_struct *p;
 
 	p = get_proc_task(inode);
 	if (!p)
 		return -ESRCH;
-	proc_sched_show_task(p, ns, m);
+	proc_sched_show_task(p, m);
 
 	put_task_struct(p);
 
