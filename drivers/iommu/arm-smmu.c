@@ -117,6 +117,14 @@ module_param(disable_bypass, bool, S_IRUGO);
 MODULE_PARM_DESC(disable_bypass,
 	"Disable bypass streams such that incoming transactions from devices that are not attached to an iommu domain will report an abort back to the device and will not be allowed to pass through the SMMU.");
 
+static bool ft2000_iommu_hwfix;
+static int __init ft2000_iommu_hwfix_hwfix(char *str)
+{
+	ft2000_iommu_hwfix = true;
+	return 0;
+}
+__setup("ft2000_iommu_hwfix", ft2000_iommu_hwfix_hwfix);
+
 enum arm_smmu_arch_version {
 	ARM_SMMU_V1,
 	ARM_SMMU_V1_64K,
@@ -1083,9 +1091,18 @@ static int arm_smmu_find_sme(struct arm_smmu_device *smmu, u16 id, u16 mask)
 		 * expect simply identical entries for this case, but there's
 		 * no harm in accommodating the generalisation.
 		 */
-		if ((mask & smrs[i].mask) == mask &&
-		    !((id ^ smrs[i].id) & ~smrs[i].mask))
-			return i;
+
+		if (ft2000_iommu_hwfix) {
+			if (((mask & smrs[i].mask & ~0x7000)
+					== (mask & ~0x7000)) &&
+				!((id ^ smrs[i].id) & ~smrs[i].mask))
+				return i;
+		} else {
+			if (((mask & smrs[i].mask) == (mask)) &&
+				!((id ^ smrs[i].id) & ~smrs[i].mask))
+				return i;
+		}
+
 		/*
 		 * If the new entry has any other overlap with an existing one,
 		 * though, then there always exists at least one stream ID
@@ -1385,12 +1402,42 @@ struct arm_smmu_device *arm_smmu_get_by_fwnode(struct fwnode_handle *fwnode)
 	return dev ? dev_get_drvdata(dev) : NULL;
 }
 
+#include <asm/cputype.h>
+static const struct pci_device_id hw_blacklist_pci_ids[] = {
+	/* skip any PCI-Express port */
+	{PCI_DEVICE_CLASS(((PCI_CLASS_BRIDGE_PCI << 8) | 0x00), ~0),},
+	{ /* end: all zeroes */ }
+};
+
+static int arm_smmu_quirk_add_device(struct device *dev)
+{
+	/* 1. Judgment cpu type, FT2000+/64 */
+	if (read_cpuid_implementor() != 0x70 ||
+			read_cpuid_part_number() != 0x662)
+		return 0;
+
+	/* 2. remove unimportant/unsupported device, avoid streamid conflict */
+	if (dev_is_pci(dev) &&
+			pci_match_id(hw_blacklist_pci_ids, to_pci_dev(dev)))
+		return -ENODEV;
+
+	if (to_pci_dev(dev)->vendor == 0x1b4b)
+		return -ENODEV;
+
+	return 0;
+}
+
+/* calc read stream id */
+#define FWID_READ(id) (((u16)(id) >> 3) | \
+			(((id) >> SMR_MASK_SHIFT | 0x7000) << SMR_MASK_SHIFT))
+
 static int arm_smmu_add_device(struct device *dev)
 {
 	struct arm_smmu_device *smmu;
 	struct arm_smmu_master_cfg *cfg;
 	struct iommu_fwspec *fwspec = dev->iommu_fwspec;
-	int i, ret;
+	int i, num, ret;
+	u32 fwid;
 
 	if (using_legacy_binding) {
 		ret = arm_smmu_register_legacy_master(dev, &smmu);
@@ -1407,6 +1454,25 @@ static int arm_smmu_add_device(struct device *dev)
 		smmu = arm_smmu_get_by_fwnode(fwspec->iommu_fwnode);
 	} else {
 		return -ENODEV;
+	}
+
+	if (ft2000_iommu_hwfix) {
+		ret = arm_smmu_quirk_add_device(dev);
+		if (ret)
+			goto out_free;
+
+		/*
+		 * add by qiuwenbo, yanzhiwei
+		 * 2020/3/18
+		 * The read id is added to the device table to
+		 * make the device a multi-id device, and the subsequent
+		 * logic is handled by the iommu driver itself.
+		 */
+		num = fwspec->num_ids;
+		for (i = 0; i < num; i++) {
+			fwid = FWID_READ(fwspec->ids[i]);
+			iommu_fwspec_add_ids(dev, &fwid, 1);
+		}
 	}
 
 	ret = -EINVAL;
@@ -1481,10 +1547,18 @@ static struct iommu_group *arm_smmu_device_group(struct device *dev)
 
 	for_each_cfg_sme(fwspec, i, idx) {
 		if (group && smmu->s2crs[idx].group &&
-		    group != smmu->s2crs[idx].group)
+		    group != smmu->s2crs[idx].group) {
+			dev_warn(smmu->dev, "unable handle %s stream conflict\n"
+					, dev_name(dev));
 			return ERR_PTR(-EINVAL);
+		}
 
-		group = smmu->s2crs[idx].group;
+		if (ft2000_iommu_hwfix) {
+			if (smmu->s2crs[idx].group)
+				group = smmu->s2crs[idx].group;
+			} else {
+				group = smmu->s2crs[idx].group;
+			}
 	}
 
 	if (group)
