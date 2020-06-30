@@ -3187,13 +3187,15 @@
 	panic_on_warn	panic() instead of WARN().  Useful to cause kdump
 			on a WARN().
 
-	crash_kexec_post_notifiers
+	crash_kexec_post_notifiers=
 			Run kdump after running panic-notifiers and dumping
 			kmsg. This only for the users who doubt kdump always
 			succeeds in any situation.
 			Note that this also increases risks of kdump failure,
 			because some panic notifiers can make the crashed
 			kernel more unstable.
+			Format: <bool>  (1/Y/y=enable, 0/N/n=disable)
+			default: enabled
 
 	parkbd.port=	[HW] Parallel port number the keyboard adapter is
 			connected to, default is 0.
