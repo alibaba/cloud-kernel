@@ -568,8 +568,10 @@ static bool cec_add_mce(struct mce *m)
 	if (mce_is_memory_error(m) &&
 	    mce_is_correctable(m)  &&
 	    mce_usable_address(m))
-		if (!cec_add_elem(m->addr >> PAGE_SHIFT))
+		if (!cec_add_elem(m->addr >> PAGE_SHIFT)) {
+			m->kflags |= MCE_HANDLED_CEC;
 			return true;
+		}
 
 	return false;
 }
@@ -611,8 +613,10 @@ static int srao_decode_notifier(struct notifier_block *nb, unsigned long val,
 
 	if (mce_usable_address(mce) && (mce->severity == MCE_AO_SEVERITY)) {
 		pfn = mce->addr >> PAGE_SHIFT;
-		if (!memory_failure(pfn, 0))
+		if (!memory_failure(pfn, 0)) {
 			set_mce_nospec(pfn, whole_page(mce));
+			mce->kflags |= MCE_HANDLED_UC;
+		}
 	}
 
 	return NOTIFY_OK;
