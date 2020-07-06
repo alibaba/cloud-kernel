@@ -1246,7 +1246,14 @@ struct task_struct {
 		struct bio	*wait_bio;
 	};
 	unsigned long wait_moment;
+#ifdef CONFIG_X86_MCE
+	u64				mce_addr;
+	__u64				mce_ripv : 1,
+					mce_whole_page : 1,
+					__mce_reserved : 62;
 
+	struct callback_head		mce_kill_me;
+#endif
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
 	ALI_HOTFIX_RESERVE(3)
