@@ -2762,6 +2762,13 @@ int udp_lib_setsockopt(struct sock *sk, int level, int optname,
 			up->uhash4 = 1;
 		break;
 
+	case UDP_USE_WRITE_QUEUE:
+		if (val == 0)
+			sock_reset_flag(sk, SOCK_USE_WRITE_QUEUE);
+		else
+			sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
+		break;
+
 	/*
 	 * 	UDP-Lite's partial checksum coverage (RFC 3828).
 	 */
@@ -2854,6 +2861,10 @@ int udp_lib_getsockopt(struct sock *sk, int level, int optname,
 		if (!uhash4_enable)
 			return -EOPNOTSUPP;
 		val = up->uhash4;
+		break;
+
+	case UDP_USE_WRITE_QUEUE:
+		val = sock_flag(sk, SOCK_USE_WRITE_QUEUE) ? 1 : 0;
 		break;
 
 	/* The following two cannot be changed on UDP sockets, the return is
