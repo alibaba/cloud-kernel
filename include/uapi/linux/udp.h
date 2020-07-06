@@ -36,6 +36,7 @@ struct udphdr {
 #define UDP_GRO		104	/* This socket can receive UDP GRO packets */
 
 #define UDP_HASH4      200     /* Enable UDP hash4 */
+#define UDP_USE_WRITE_QUEUE    201     /* Ignore writable event */
 
 /* UDP encapsulation types */
 #define UDP_ENCAP_ESPINUDP_NON_IKE	1 /* draft-ietf-ipsec-nat-t-ike-00/01 */
