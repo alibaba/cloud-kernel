@@ -69,6 +69,7 @@ static void tcp_rt_sk_send_data_peer(const struct sock *sk, struct tcp_rt *rt,
 
 	case TCPRT_STAGE_PEER_NONE:
 		ktime_get_real_ts64(&rt->start_time);
+		rt->end_time = rt->start_time;
 		rt->request_num += 1;
 		rt->upload_data = 0;
 		rt->stage_peer = TCPRT_STAGE_PEER_REQUEST;
@@ -119,6 +120,13 @@ static void tcp_rt_sk_recv_data_peer(const struct sock *sk, struct tcp_rt *rt,
 		rt->stage_peer = TCPRT_STAGE_PEER_RESPONSE;
 		rt->upload_data = tp->snd_nxt - rt->start_seq;
 		rt->start_seq = tp->snd_nxt;
+		ktime_get_real_ts64(&rt->end_time);
+		return;
+
+	case TCPRT_STAGE_PEER_RESPONSE:
+		ktime_get_real_ts64(&rt->end_time);
+		if (!RB_EMPTY_ROOT(&tp->out_of_order_queue))
+			rt->rcv_reorder = 1;
 		return;
 
 	default:
