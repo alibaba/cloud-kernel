@@ -202,6 +202,8 @@ tcp.txt
 	- short blurb on how TCP output takes place.
 tcp-thin.txt
 	- kernel tuning options for low rate 'thin' TCP streams.
+tcprt.txt
+	- collect the request information on tcp and output by relay.
 team.txt
 	- pointer to information for ethernet teaming devices.
 tlan.txt

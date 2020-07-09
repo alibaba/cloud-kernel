@@ -1,0 +1,305 @@
+TCP-RT
+======
+
+Last updated: 9 July 2020
+
+1. Description
+==============
+TCP-RT is a kernel module for monitoring services at the tcp level.
+
+TCP-RT is essentially a trace method. By burying points in advance in the
+corresponding position in the kernel tcp protocol stack, we can identify
+the request and response from the scenario where there is only one concurrent
+request for a single connection, then collect the time when the request is
+received in the protocol stack and the time-consuming information on the
+processing of the service process and so on.
+
+In addition, TCP-RT also supports some statistical analysis in the kernel
+and periodically outputs statistical information about the specified connection.
+
+The assumed service scenario of TCP is the following single concurrent
+request/response scenario. tcprt will automatically identify each stage in this,
+and count the time spent in each stage and the status of the TCP connection.
+
+
+      client                           server
+        +            ......               +
+        |                                 |
+        |                                 |
+        |              ReqN-1             |
+        +-------------------------------->+TO    +---------+
+        |                                 |           ^
+        +<----------ACK-------------------+           |
+        |                                 |      recv_time
+        +---------------ReqN-2----------->+           |
+        |                                 |           v
+        +<----------ACK-------------------+T1    +---------+
+        |                                 |           ^
+        |                                 |           |
+        |                                 |      process_time
+        |                                 |           |
+        |                                 |           v
+        +<----------------RspN-1----------+T2    +---------+
+        |                                 |           ^
+        +-------ACK---------------------->+           |
+        |                                 |      send_time
+        +<----------------RspN-2----------+           |
+        |                                 |           v
+        +------ACK------------------------>T3    +---------+
+        |                                 |
+        |                                 |
+        |            ......               |
+
+In the figure, the client sends the Nth request to the server as ReqN. This
+request consists of two packets ReqN-1 and ReqN-2. When the server receives the
+first packet, the record is T0, and the time of the second packet or the last
+packet is T1. The server processes the request after receiving it, and sends a
+response to the client after the processing is completed. It is also composed of
+two packets. The first packet RspN-1 has a sending time record of T2, and the
+last Ack response record received from the client is T3.
+
+Based on the above time records, we can calculate the following meaningful
+information:
+
+* recv_time:     Time to receive data on the side where tcprt is located.
+* process_time:  The time used by the server for processing. From the receipt
+                 of the last request packet, to the end of the server to send a
+                 response to the client. This off time is recorded as the
+                 server's processing time.
+* send_time:     The server starts to send a response to the client, and the
+                 ack ends when it receives the confirmation of the most data
+                 packet. For the response of downloading relatively large data,
+                 the statistics of this field will be very meaningful.
+
+2. Achieve
+==========
+The implementation of the new version TCP-RT is divided into two parts.
+One part is TCP-RT framework: insert hooks into the kernel tcp code.
+The other part is the TCP-RT module, which is based on the TCP-RT kernel
+module implemented by the previous framework, analyzes the tcp data stream,
+determines the request and response phases of the request, collects
+the data of the request and response, and outputs it through relayfs.
+If necessary, customers can implement their own data analysis module
+based on TCP-RT framekwork.
+
+In the implementation before V5 version, the default setting of relay
+(no-overwrite mode) is used. In this mode, the data is lost from the back,
+which means that the new data cannot be written in. The old data is
+stored in the buffer, unless The data is consumed.
+
+In fact, regardless of the size of the buffer, as long as the consumer is
+slower than the producer, the data will definitely be lost, just the
+difference between the beginning and the end. V6 considers using the
+overwrite module, the data is lost from the beginning, that is, the new
+data is written in, and the old data is discarded first, so that the data
+in the buffer is always the data of the latest break time.
+
+3. Output File
+==============
+TCP-RT collects TCP related parameters in the kernel state and outputs them
+to the rt-network-log* file in the /sys/kernel/debug/tcp-rt directory as
+debugfs. The characteristics of this output file are as follows:
+
+* The suffix of the name is the CPU core number. For example, 32-core
+  machines, the output files are rt-network-log0 to rt-network-log31.
+
+* The maximum size of the file is 2MB. (Configurable)
+
+* The debugfs log file is one-time. The data is gone after every reading.
+
+The stats data is output based on the port (local port or peer port) after
+data aggregation. rt-network-stats located in the /sys/kernel/debug/tcp-rt
+directory.
+
+4. Output Timing
+================
+
+The log file is usually output to the relay mechanism when the next task
+starts after the tcp task is completed, or when the connection is closed.
+At the same time, the application layer can read the data.
+
+The stats file is output regularly. By default, it is output once a minute.
+
+
+5. Log Format
+=============
+Depending on the scene, there are records with five prefixes of R, E, W, N, P.
+
+* R: In the case of R request to the local, complete a request in a TCP +
+     response to generate a record, select the connection through the ports
+     parameter.
+* E: When the E connection is closed, a record is generated
+* W: connection generates a record when it is closed during sending data.
+* N: connection generates a record when it is closed during data reception.
+* P: In the case of a P local request peer, completing a request + response
+     generates a record and selects the connection through the ports_peer
+     parameter.
+
+One request and response is called 'TASK'.
+
+5.1 Common field
+----------------
+Each record starts with the following parameter list:
+
+1. Version number. Now V6
+2. Record the scene identification. There are five types: R, E, W, N, and P.
+3. TASK start time in seconds
+4. TASK start time in microseconds
+5. Peer IP
+6. Peer Port
+7. Local IP
+8. Local Port
+
+5.2 R prefix record specific parameters
+---------------------------------------
+This kind of record is the record that TASK starts and shuts down normally. Each
+TCP can have multiple R records.
+
+With the following parameters:
+
+* The amount of data sent by TASK. Unit: Byte
+* TASK takes the total time. The total time from the TCP layer receiving the
+  client request to receiving the client's confirmation of the sent data packet.
+  Unit: us
+* The min rtt. Unit: us
+* The number of TCP segments sent by TASK retransmission.
+* TASK sequence number, the sequence number of the first TASK after TCP
+  establishment is 1.
+* TASK service delay: The time difference between the last request segment received
+  to the first response segment sent. Unit: us
+* TASK recv delay: The time difference between the first request segment and
+  the last request segment. Unit: us
+* The amount of data received by TASK. Unit: Byte
+* Whether out-of-sequence reception occurs in the TASK process: 1 indicates that
+  it has occurred; 0 indicates that it has not occurred.
+* The sending MSS used by TCP during the TASK process. Unit Byte
+
+5.3 P prefix record specific parameters
+---------------------------------------
+This kind of record is the record that TASK starts and shuts down normally. Each
+TCP can have multiple P records. This is newly added in V6. It expresses the
+information when the machine requests the peer machine.
+
+* The amount of data sent by TASK. Unit: Byte
+* TASK takes the total time. The time from the start of sending data to the last
+  time the peer response is received. Unit: us
+* The min rtt. Unit: us
+* The number of TCP segments sent by TASK retransmission.
+* TASK sequence number: The sequence number of the first TASK after TCP
+  establishment is 1.
+* TASK service time: The time from when the request is sent to when the first
+  response is received. Unit: us
+* TASK response acceptance time: The time from receiving the first response
+  packet to the last response packet. Unit: us
+* TASK response size: The total size of the received response. Unit: byte
+* Whether out-of-sequence reception occurs in the TASK process: 1 indicates that
+  it has occurred; 0 indicates that it has not occurred.
+* The sending MSS used by TCP during the TASK process. Unit Byte
+
+5.4 E prefix record specific parameters
+---------------------------------------
+This kind of record is the record that TCP is closed. Each TCP connection has an
+E record, and connections that include ports peer also have an E record.
+With the following parameters:
+
+* The serial number of the last TASK.
+* The amount of data sent in TCP life cycle. Unit: Byte
+* The amount of data sent by TCP but not ACKed, 0 if not. Unit: Byte
+* The amount of data received in TCP life cycle. Unit: Byte
+* The number of TCP segments retransmitted during the TCP life cycle.
+* The min rtt. Unit: us
+
+5.5 N prefix record specific parameters
+---------------------------------------
+This kind of record is a scene record of TCP being closed during the TASK
+request reception segment.
+
+There may be 1 or no E record per TCP connection.
+
+With the following parameters:
+
+* The serial number of the last TASK.
+* Time spent in the last TASK: only the receiving time, the sending time is
+  not. Unit: us
+* The amount of data received in TCP life cycle. Unit: Byte
+* Whether the reception disorder occurred in the last TASK process: 1 means it
+  happened; 0 means it did not happen.
+* The sending MSS used by TCP during the last TASK process. Unit Byte
+
+5.6 W prefix record specific parameters
+---------------------------------------
+This kind of record is a scene record of TCP being closed during the process of
+sending a TASK response segment.
+
+There may be 1 or no W records per TCP connection.
+With the following parameters:
+
+* The amount of data that the last TASK response has sent. Unit: Byte
+* Time spent in the last TASK: The sending time is incomplete. Unit: us
+* The min rtt. Unit: us
+* The number of TCP segments sent by the last TASK retransmission.
+* The last TASK number.
+* The last TASK service delay. Unit: us
+* The last TASK transmission delay. Unit: us
+* The amount of data that was sent by the last TASK but was not
+  ACKed: 0 if not. Unit Byte
+* Whether the process is out of order: 1 means it happened; 0 means it didn't
+  happen.
+* The sending MSS used by TCP during the last TASK process. Unit Byte
+
+6. Stats Format
+===============
+
+* timestamp
+* flag: currently has only one "all" for all domain names
+* Port: peer port is denoted as Pxxx such as P8080. It should be noted that if
+  the statistics are peer ports, there may be data from the same port of
+  different peer machines
+* the average of TASK total time spent in R record
+* the average of TASK service delay in the R record
+* thousands of packet loss
+* rtt average, unit us
+* thousands of tasks requested to be closed in the sent data
+* the average amount of data sent
+* the average value of recv time
+* the average amount of data received
+* number of record statistics
+
+7. Use And Configuration
+========================
+7.1 insmod
+----------
+The module can be loaded directly or with parameters.
+
+Most of the parameters can be changed by files under
+/sys/module/tcp_rt/parameters.
+
+7.2 rmmod
+---------
+First execute the following command to set the module to be disabled, so that
+there will be no new connections using tcp-rt.
+
+$ echo 1> /sys/kernel/debug/tcp-rt/deactivate
+
+After waiting for no connections using tcp-rt, you can execute 'rmmod tcp_rt'.
+
+7.3 parameter
+-------------
+You can get the parameters info by modinfo.
+
+8. Thanks
+======
+TCP-RT was initially written by tianlan, wujiang.
+
+Thanks to ku.lik, moji.zy, ming.tang, cambda, zhaoya.zhaoya for their
+contributions to the subsequent development, expansion and optimization of
+TCP-RT.
+
+Thanks to mingsong.cw, jianchuan.gys, louxiao.lx, xiangzhong.wxd, bingchen.lbc,
+xiaojie.fxj, qianqing.xy, shengxun.lsx for their contributions and support and
+promotion to TCP-RT.
+
+Thanks to xijun.rxj for his extensive and meticulous testing work for this new
+version TCP-RT.
+
+New version is developed by Xuan Zhuo, dust.li.
