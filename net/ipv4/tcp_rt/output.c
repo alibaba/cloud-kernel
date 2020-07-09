@@ -265,21 +265,26 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 		break;
 
 	case LOG_STATUS_P:
+		t_rt =	timespec64_dec(rt->end_time, rt->start_time);
+
 		t_seq = rt->upload_data;
 		t_retrans = tp->total_retrans - rt->last_total_retrans;
 
 		size = bufheader(buf, size, flag, sk);
 
 		size += bufappend(buf, size, t_seq);
+		size += bufappend(buf, size, t_rt);
 		size += bufappend(buf, size, t_retrans);
 		size += bufappend(buf, size, rt->request_num);
 		size += bufappend(buf, size, mrtt);
+		size += bufappend(buf, size, rt->rcv_reorder);
 		size += bufappend(buf, size, tp->mss_cache);
 		buf[size++] = '\n';
 
 		if (stats) {
 			stats_peer_inc(rt, number);
 			stats_peer_add(rt, bytes, t_seq);
+			stats_peer_add(rt, rt, t_rt);
 			stats_peer_add(rt, packets, t_seq / tp->mss_cache + 1);
 			stats_peer_add(rt, drop, t_retrans);
 		}
