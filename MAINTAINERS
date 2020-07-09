@@ -147,6 +147,7 @@ TCP RT
 M:	Cambda Zhu <cambda@linux.alibaba.com>
 M:	Xuan Zhuo <xuanzhuo@linux.alibaba.com>
 S:	Maintained
+F:	Documentation/networking/tcprt.rst
 F:	net/ipv4/tcp_rt.c
 F:	net/ipv4/tcp_rt/
 
