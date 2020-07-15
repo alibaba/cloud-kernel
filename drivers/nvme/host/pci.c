@@ -830,11 +830,13 @@ static blk_status_t nvme_setup_sgl_simple(struct nvme_dev *dev,
 		struct bio_vec *bv)
 {
 	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
+	unsigned int length = blk_rq_bytes(req);
 
-	iod->first_dma = dma_map_bvec(dev->dev, bv, rq_dma_dir(req), 0);
+	iod->first_dma = dma_map_page(dev->dev, bv->bv_page, bv->bv_offset,
+				      length, rq_dma_dir(req));
 	if (dma_mapping_error(dev->dev, iod->first_dma))
 		return BLK_STS_RESOURCE;
-	iod->dma_len = bv->bv_len;
+	iod->dma_len = length;
 
 	cmnd->flags = NVME_CMD_SGL_METABUF;
 	cmnd->dptr.sgl.addr = cpu_to_le64(iod->first_dma);
