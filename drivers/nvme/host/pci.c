@@ -852,8 +852,9 @@ static blk_status_t nvme_map_data(struct nvme_dev *dev, struct request *req,
 
 	if (blk_rq_nr_phys_segments(req) == 1) {
 		struct bio_vec bv = req_bvec(req);
+		unsigned int bio_pages = bio_pages_all(req->bio);
 
-		if (bv.bv_offset + bv.bv_len <= dev->ctrl.page_size * 2)
+		if (bio_pages == 1 && bv.bv_offset + bv.bv_len <= dev->ctrl.page_size * 2)
 			return nvme_setup_prp_simple(dev, req,
 						     &cmnd->rw, &bv);
 
