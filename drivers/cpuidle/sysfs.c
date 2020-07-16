@@ -292,6 +292,14 @@ static ssize_t show_state_##_name(struct cpuidle_state *state, \
 	return sprintf(buf, "%s\n", state->_name);\
 }
 
+static ssize_t show_state_default_status(struct cpuidle_state *state,
+					struct cpuidle_state_usage *state_usage,
+					char *buf)
+{
+	return sprintf(buf, "%s\n",
+		state->flags & CPUIDLE_FLAG_OFF ? "disabled" : "enabled");
+}
+
 define_show_state_function(exit_latency)
 define_show_state_function(target_residency)
 define_show_state_function(power_usage)
@@ -310,6 +318,7 @@ define_one_state_ro(power, show_state_power_usage);
 define_one_state_ro(usage, show_state_usage);
 define_one_state_ro(time, show_state_time);
 define_one_state_rw(disable, show_state_disable, store_state_disable);
+define_one_state_ro(default_status, show_state_default_status);
 
 static struct attribute *cpuidle_state_default_attrs[] = {
 	&attr_name.attr,
@@ -320,6 +329,7 @@ static struct attribute *cpuidle_state_default_attrs[] = {
 	&attr_usage.attr,
 	&attr_time.attr,
 	&attr_disable.attr,
+	&attr_default_status.attr,
 	NULL
 };
 
