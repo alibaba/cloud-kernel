@@ -143,7 +143,7 @@ static struct cpuidle_state nehalem_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -180,7 +180,7 @@ static struct cpuidle_state snb_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -315,7 +315,7 @@ static struct cpuidle_state ivb_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -360,7 +360,7 @@ static struct cpuidle_state ivt_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 80,
 		.enter = &intel_idle,
@@ -397,7 +397,7 @@ static struct cpuidle_state ivt_cstates_4s[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 250,
 		.enter = &intel_idle,
@@ -434,7 +434,7 @@ static struct cpuidle_state ivt_cstates_8s[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 500,
 		.enter = &intel_idle,
@@ -471,7 +471,7 @@ static struct cpuidle_state hsw_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -539,7 +539,7 @@ static struct cpuidle_state bdw_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -608,7 +608,7 @@ static struct cpuidle_state skl_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -677,7 +677,7 @@ static struct cpuidle_state skx_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -827,7 +827,7 @@ static struct cpuidle_state bxt_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -888,7 +888,7 @@ static struct cpuidle_state dnv_cstates[] = {
 	{
 		.name = "C1E",
 		.desc = "MWAIT 0x01",
-		.flags = MWAIT2flg(0x01),
+		.flags = MWAIT2flg(0x01) | CPUIDLE_FLAG_ALWAYS_ENABLE,
 		.exit_latency = 10,
 		.target_residency = 20,
 		.enter = &intel_idle,
@@ -1010,6 +1010,13 @@ static const struct idle_cpu idle_cpu_nehalem = {
 	.disable_promotion_to_c1e = true,
 };
 
+static const struct idle_cpu idle_cpu_nhx = {
+	.state_table = nehalem_cstates,
+	.auto_demotion_disable_flags = NHM_C1_AUTO_DEMOTE | NHM_C3_AUTO_DEMOTE,
+	.disable_promotion_to_c1e = true,
+	.use_acpi = true,
+};
+
 static const struct idle_cpu idle_cpu_atom = {
 	.state_table = atom_cstates,
 };
@@ -1026,6 +1033,12 @@ static const struct idle_cpu idle_cpu_lincroft = {
 static const struct idle_cpu idle_cpu_snb = {
 	.state_table = snb_cstates,
 	.disable_promotion_to_c1e = true,
+};
+
+static const struct idle_cpu idle_cpu_snx = {
+	.state_table = snb_cstates,
+	.disable_promotion_to_c1e = true,
+	.use_acpi = true,
 };
 
 static const struct idle_cpu idle_cpu_byt = {
@@ -1048,6 +1061,7 @@ static const struct idle_cpu idle_cpu_ivb = {
 static const struct idle_cpu idle_cpu_ivt = {
 	.state_table = ivt_cstates,
 	.disable_promotion_to_c1e = true,
+	.use_acpi = true,
 };
 
 static const struct idle_cpu idle_cpu_hsw = {
@@ -1055,9 +1069,21 @@ static const struct idle_cpu idle_cpu_hsw = {
 	.disable_promotion_to_c1e = true,
 };
 
+static const struct idle_cpu idle_cpu_hsx = {
+	.state_table = hsw_cstates,
+	.disable_promotion_to_c1e = true,
+	.use_acpi = true,
+};
+
 static const struct idle_cpu idle_cpu_bdw = {
 	.state_table = bdw_cstates,
 	.disable_promotion_to_c1e = true,
+};
+
+static const struct idle_cpu idle_cpu_bdx = {
+	.state_table = bdw_cstates,
+	.disable_promotion_to_c1e = true,
+	.use_acpi = true,
 };
 
 static const struct idle_cpu idle_cpu_skl = {
@@ -1068,15 +1094,18 @@ static const struct idle_cpu idle_cpu_skl = {
 static const struct idle_cpu idle_cpu_skx = {
 	.state_table = skx_cstates,
 	.disable_promotion_to_c1e = true,
+	.use_acpi = true,
 };
 
 static const struct idle_cpu idle_cpu_avn = {
 	.state_table = avn_cstates,
 	.disable_promotion_to_c1e = true,
+	.use_acpi = true,
 };
 
 static const struct idle_cpu idle_cpu_knl = {
 	.state_table = knl_cstates,
+	.use_acpi = true,
 };
 
 static const struct idle_cpu idle_cpu_bxt = {
@@ -1087,23 +1116,24 @@ static const struct idle_cpu idle_cpu_bxt = {
 static const struct idle_cpu idle_cpu_dnv = {
 	.state_table = dnv_cstates,
 	.disable_promotion_to_c1e = true,
+	.use_acpi = true,
 };
 
 #define ICPU(model, cpu) \
 	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)&cpu }
 
 static const struct x86_cpu_id intel_idle_ids[] __initconst = {
-	ICPU(INTEL_FAM6_NEHALEM_EP,		idle_cpu_nehalem),
+	ICPU(INTEL_FAM6_NEHALEM_EP,		idle_cpu_nhx),
 	ICPU(INTEL_FAM6_NEHALEM,		idle_cpu_nehalem),
 	ICPU(INTEL_FAM6_NEHALEM_G,		idle_cpu_nehalem),
 	ICPU(INTEL_FAM6_WESTMERE,		idle_cpu_nehalem),
-	ICPU(INTEL_FAM6_WESTMERE_EP,		idle_cpu_nehalem),
-	ICPU(INTEL_FAM6_NEHALEM_EX,		idle_cpu_nehalem),
+	ICPU(INTEL_FAM6_WESTMERE_EP,		idle_cpu_nhx),
+	ICPU(INTEL_FAM6_NEHALEM_EX,		idle_cpu_nhx),
 	ICPU(INTEL_FAM6_ATOM_BONNELL,		idle_cpu_atom),
 	ICPU(INTEL_FAM6_ATOM_BONNELL_MID,		idle_cpu_lincroft),
-	ICPU(INTEL_FAM6_WESTMERE_EX,		idle_cpu_nehalem),
+	ICPU(INTEL_FAM6_WESTMERE_EX,		idle_cpu_nhx),
 	ICPU(INTEL_FAM6_SANDYBRIDGE,		idle_cpu_snb),
-	ICPU(INTEL_FAM6_SANDYBRIDGE_X,		idle_cpu_snb),
+	ICPU(INTEL_FAM6_SANDYBRIDGE_X,		idle_cpu_snx),
 	ICPU(INTEL_FAM6_ATOM_SALTWELL,		idle_cpu_atom),
 	ICPU(INTEL_FAM6_ATOM_SILVERMONT,	idle_cpu_byt),
 	ICPU(INTEL_FAM6_ATOM_SILVERMONT_MID,	idle_cpu_tangier),
@@ -1111,14 +1141,14 @@ static const struct x86_cpu_id intel_idle_ids[] __initconst = {
 	ICPU(INTEL_FAM6_IVYBRIDGE,		idle_cpu_ivb),
 	ICPU(INTEL_FAM6_IVYBRIDGE_X,		idle_cpu_ivt),
 	ICPU(INTEL_FAM6_HASWELL_CORE,		idle_cpu_hsw),
-	ICPU(INTEL_FAM6_HASWELL_X,		idle_cpu_hsw),
+	ICPU(INTEL_FAM6_HASWELL_X,		idle_cpu_hsx),
 	ICPU(INTEL_FAM6_HASWELL_ULT,		idle_cpu_hsw),
 	ICPU(INTEL_FAM6_HASWELL_GT3E,		idle_cpu_hsw),
 	ICPU(INTEL_FAM6_ATOM_SILVERMONT_X,	idle_cpu_avn),
 	ICPU(INTEL_FAM6_BROADWELL_CORE,		idle_cpu_bdw),
 	ICPU(INTEL_FAM6_BROADWELL_GT3E,		idle_cpu_bdw),
-	ICPU(INTEL_FAM6_BROADWELL_X,		idle_cpu_bdw),
-	ICPU(INTEL_FAM6_BROADWELL_XEON_D,	idle_cpu_bdw),
+	ICPU(INTEL_FAM6_BROADWELL_X,		idle_cpu_bdx),
+	ICPU(INTEL_FAM6_BROADWELL_XEON_D,	idle_cpu_bdx),
 	ICPU(INTEL_FAM6_SKYLAKE_MOBILE,		idle_cpu_skl),
 	ICPU(INTEL_FAM6_SKYLAKE_DESKTOP,	idle_cpu_skl),
 	ICPU(INTEL_FAM6_KABYLAKE_MOBILE,	idle_cpu_skl),
