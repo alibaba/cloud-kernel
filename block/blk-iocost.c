@@ -1709,6 +1709,10 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 	u32 hw_active, hw_inuse;
 	u64 abs_cost, cost, vtime;
 
+	/* bypass IOs if disabled */
+	if (!ioc->enabled)
+		return;
+
 	rcu_read_lock();
 	blkcg = bio_blkcg(bio);
 	bio_associate_blkcg(bio, &blkcg->css);
@@ -1731,8 +1735,8 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 	rcu_read_unlock();
 
 	iocg = blkg_to_iocg(blkg);
-	/* bypass IOs if disabled or for root cgroup */
-	if (!ioc->enabled || !iocg->level)
+	/* bypass IOs for root cgroup */
+	if (!iocg->level)
 		return;
 
 	/* always activate so that even 0 cost IOs get protected to some level */
@@ -1858,6 +1862,10 @@ static void ioc_rqos_merge(struct rq_qos *rqos, struct request *rq,
 	u32 hw_inuse;
 	u64 abs_cost, cost;
 
+	/* bypass if disabled */
+	if (!ioc->enabled)
+		return;
+
 	rcu_read_lock();
 	blkcg = bio_blkcg(bio);
 	bio_associate_blkcg(bio, &blkcg->css);
@@ -1870,8 +1878,8 @@ static void ioc_rqos_merge(struct rq_qos *rqos, struct request *rq,
 	rcu_read_unlock();
 
 	iocg = blkg_to_iocg(blkg);
-	/* bypass if disabled or for root cgroup */
-	if (!ioc->enabled || !iocg->level)
+	/* bypass for root cgroup */
+	if (!iocg->level)
 		return;
 
 	abs_cost = calc_vtime_cost(bio, iocg, true);
