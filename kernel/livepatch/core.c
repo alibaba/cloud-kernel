@@ -36,6 +36,10 @@
 #include "patch.h"
 #include "transition.h"
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_MODEL
+#include <linux/stop_machine.h>
+#endif
+
 /*
  * klp_mutex is a coarse lock which serializes access to klp data.  All
  * accesses to klp-related variables and structures must have mutex protection,
@@ -739,6 +743,7 @@ static int klp_init_patch(struct klp_patch *patch)
 	return 0;
 }
 
+#ifdef CONFIG_LIVEPATCH_PER_TASK_MODEL
 static int __klp_disable_patch(struct klp_patch *patch)
 {
 	struct klp_object *obj;
@@ -825,6 +830,168 @@ err:
 	klp_cancel_transition();
 	return ret;
 }
+
+#elif CONFIG_LIVEPATCH_STOP_MACHINE_MODEL
+static int klp_try_disable_patch(void *data)
+{
+        int ret = 0;
+	struct klp_func *func;
+	struct klp_object *obj;
+        struct klp_patch *patch = (struct klp_patch *)data;
+
+	/* stack check */
+	ret = klp_check_all_stack();
+	if (ret)
+		return ret;
+
+	klp_for_each_object(patch, obj)
+		if (obj->patched)
+			klp_pre_unpatch_callback(obj);
+
+	/* disable patch */
+	klp_for_each_object(patch, obj)
+		klp_for_each_func(obj, func)
+			func->transition = true;
+
+	patch->enabled = false;
+
+	smp_wmb();
+
+	klp_for_each_object(patch, obj)
+		klp_post_unpatch_callback(obj);
+
+        return ret;
+}
+
+static int __klp_disable_patch(struct klp_patch *patch)
+{
+	int ret;
+
+	if (WARN_ON(!patch->enabled))
+		return -EINVAL;
+
+	if (klp_transition_patch)
+		return -EBUSY;
+
+	pr_notice("disabling patch '%s'\n", patch->mod->name);
+	klp_transition_patch = patch;
+
+	/*
+	 * Enforce the order of the func->transition writes in
+	 * klp_init_transition() and the TIF_PATCH_PENDING writes in
+	 * klp_start_transition().  In the rare case where klp_ftrace_handler()
+	 * is called shortly after klp_update_patch_state() switches the task,
+	 * this ensures the handler sees that func->transition is set.
+	 */
+	smp_wmb();
+
+	ret = stop_machine(klp_try_disable_patch, patch, NULL);
+	if (ret) {
+		pr_warn("failed to disable patch '%s'\n", patch->mod->name);
+	}
+
+	klp_unpatch_objects(patch);
+	klp_free_patch_start(patch);
+	schedule_work(&patch->free_work);
+	klp_transition_patch = NULL;
+
+	return ret;
+}
+
+static int klp_try_enable_patch(void *data)
+{
+        int ret;
+	struct klp_func *func;
+	struct klp_object *obj;
+        struct klp_patch *patch = (struct klp_patch *)data;
+
+	/* stack check */
+	ret = klp_check_all_stack();
+	if (ret)
+		return ret;
+
+	klp_for_each_object(patch, obj) {
+		ret = klp_pre_patch_callback(obj);
+		if (ret) {
+			pr_warn("pre-patch callback failed for object '%s'\n",
+				klp_is_module(obj) ? obj->name : "vmlinux");
+			return ret;
+		}
+	}
+
+	/* enable patch */
+	klp_for_each_object(patch, obj)
+		klp_for_each_func(obj, func)
+			func->transition = false;
+
+	patch->enabled = true;
+
+	smp_wmb();
+
+	klp_for_each_object(patch, obj)
+		klp_post_patch_callback(obj);
+
+        return ret;
+}
+
+static int __klp_enable_patch(struct klp_patch *patch)
+{
+	struct klp_func *func;
+	struct klp_object *obj;
+	int ret;
+
+	if (klp_transition_patch)
+		return -EBUSY;
+
+	if (WARN_ON(patch->enabled))
+		return -EINVAL;
+
+	pr_notice("enabling patch '%s'\n", patch->mod->name);
+
+	klp_transition_patch = patch;
+	patch->enabled = false;
+
+	klp_for_each_object(patch, obj)
+		klp_for_each_func(obj, func)
+			func->transition = true;
+
+	/*
+	 * Enforce the order of the func->transition writes in
+	 * klp_init_transition() and the ops->func_stack writes in
+	 * klp_patch_object(), so that klp_ftrace_handler() will see the
+	 * func->transition updates before the handler is registered and the
+	 * new funcs become visible to the handler.
+	 */
+	smp_wmb();
+
+	klp_for_each_object(patch, obj) {
+		if (!klp_is_object_loaded(obj))
+			continue;
+
+		ret = klp_patch_object(obj);
+		if (ret) {
+			pr_warn("failed to patch object '%s'\n",
+				klp_is_module(obj) ? obj->name : "vmlinux");
+			goto err;
+		}
+	}
+
+	ret = stop_machine(klp_try_enable_patch, patch, NULL);
+	if (ret) {
+		klp_unpatch_objects(patch);
+		goto err;
+	}
+
+	klp_transition_patch = NULL;
+	return 0;
+
+err:
+	pr_warn("failed to enable patch '%s'\n", patch->mod->name);
+	klp_transition_patch = NULL;
+
+	return ret;
+}
+#endif
 
 /**
  * klp_enable_patch() - enable the livepatch

@@ -254,6 +254,8 @@ static int klp_check_stack(struct task_struct *task, char *err_buf)
 	trace.nr_entries = 0;
 	trace.max_entries = MAX_STACK_ENTRIES;
 	trace.entries = entries;
+
+#ifdef CONFIG_LIVEPATCH_PER_TASK_MODEL
 	ret = save_stack_trace_tsk_reliable(task, &trace);
 	WARN_ON_ONCE(ret == -ENOSYS);
 	if (ret) {
@@ -262,6 +264,18 @@ static int klp_check_stack(struct task_struct *task, char *err_buf)
 			 __func__, task->comm, task->pid);
 		return ret;
 	}
+
+#elif CONFIG_LIVEPATCH_STOP_MACHINE_MODEL
+	/*
+	 * When using stop machine model, irq is disabled and
+	 * all tasks are inactive, stack is reliable now.
+	 *
+	 * BTW, if any 32-bit ELF run on 64-bit kernel, compat
+	 * syscall can't be handled correctly by function
+	 * save_stack_trace_tsk_reliable().
+	 */
+	save_stack_trace_tsk(task, &trace);
+#endif
 
 	klp_for_each_object(klp_transition_patch, obj) {
 		if (!obj->patched)
@@ -280,6 +294,28 @@ static int klp_check_stack(struct task_struct *task, char *err_buf)
 
 	return 0;
 }
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_MODEL
+/*
+ * Verify activeness safety for all thread
+ */
+int klp_check_all_stack(void)
+{
+	int ret = 0;
+	struct task_struct *g, *task;
+	char err_buf[STACK_ERR_BUF_SIZE];
+
+	for_each_process_thread(g, task) {
+		ret = klp_check_stack(task, err_buf);
+		if (ret) {
+			pr_warn("%s", err_buf);
+			goto out;
+		}
+	}
+out:
+	return ret;
+}
+#endif
 
 /*
  * Try to safely switch a task to the target patch state.  If it's currently

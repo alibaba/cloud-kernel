@@ -13,5 +13,8 @@ void klp_try_complete_transition(void);
 void klp_reverse_transition(void);
 void klp_send_signals(void);
 void klp_force_transition(void);
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_MODEL
+int klp_check_all_stack(void);
+#endif
 
 #endif /* _LIVEPATCH_TRANSITION_H */

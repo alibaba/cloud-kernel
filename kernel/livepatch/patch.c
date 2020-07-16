@@ -56,7 +56,6 @@ static void notrace klp_ftrace_handler(unsigned long ip,
 {
 	struct klp_ops *ops;
 	struct klp_func *func;
-	int patch_state;
 
 	ops = container_of(fops, struct klp_ops, fops);
 
@@ -90,7 +89,9 @@ static void notrace klp_ftrace_handler(unsigned long ip,
 	 */
 	smp_rmb();
 
+#ifdef CONFIG_LIVEPATCH_PER_TASK_MODEL
 	if (unlikely(func->transition)) {
+		int patch_state;
 
 		/*
 		 * Enforce the order of the func->transition and
@@ -117,7 +118,10 @@ static void notrace klp_ftrace_handler(unsigned long ip,
 				goto unlock;
 		}
 	}
-
+#else
+	if (unlikely(func->transition))
+		goto unlock;
+#endif
 	klp_arch_set_pc(regs, (unsigned long)func->new_func);
 unlock:
 	preempt_enable_notrace();
