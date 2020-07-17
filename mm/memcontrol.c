@@ -367,6 +367,10 @@ int memcg_nr_cache_ids;
 
 /* Protects memcg_nr_cache_ids */
 static DECLARE_RWSEM(memcg_cache_ids_sem);
+static int swap_high_show(struct seq_file *m, void *v);
+static ssize_t swap_high_write(struct kernfs_open_file *of,
+					char *buf, size_t nbytes, loff_t off);
+static int swap_events_show(struct seq_file *m, void *v);
 
 void memcg_get_cache_ids(void)
 {
@@ -2568,6 +2572,21 @@ static void high_work_func(struct work_struct *work)
  #define MEMCG_DELAY_PRECISION_SHIFT 20
  #define MEMCG_DELAY_SCALING_SHIFT 14
 
+static inline unsigned long mem_cgroup_v1_swap_usage(struct mem_cgroup *memcg)
+{
+	unsigned long swap_usage = 0;
+
+	if (do_memsw_account()) {
+		unsigned long memsw_usage = page_counter_read(&memcg->memsw);
+		unsigned long memcg_usage = page_counter_read(&memcg->memory);
+
+		if (memsw_usage > memcg_usage)
+			swap_usage = memsw_usage - memcg_usage;
+	}
+
+	return swap_usage;
+}
+
 static u64 calculate_overage(unsigned long usage, unsigned long high)
 {
 	u64 overage;
@@ -2605,8 +2624,17 @@ static u64 swap_find_max_overage(struct mem_cgroup *memcg)
 	u64 overage, max_overage = 0;
 
 	do {
-		overage = calculate_overage(page_counter_read(&memcg->swap),
-					    READ_ONCE(memcg->swap.high));
+		if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+			overage = calculate_overage(page_counter_read(&memcg->swap),
+						READ_ONCE(memcg->swap.high));
+		else {
+			unsigned long swap_usage;
+
+			swap_usage = mem_cgroup_v1_swap_usage(memcg);
+			overage = calculate_overage(swap_usage,
+						READ_ONCE(memcg->memsw.high));
+		}
+
 		if (overage)
 			memcg_memory_event(memcg, MEMCG_SWAP_HIGH);
 		max_overage = max(overage, max_overage);
@@ -2901,8 +2929,15 @@ done_restock:
 
 		mem_high = page_counter_read(&memcg->memory) >
 			READ_ONCE(memcg->memory.high);
-		swap_high = page_counter_read(&memcg->swap) >
-			READ_ONCE(memcg->swap.high);
+		if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+			swap_high = page_counter_read(&memcg->swap) >
+						READ_ONCE(memcg->swap.high);
+		else {
+			unsigned long swap_usage;
+
+			swap_usage = mem_cgroup_v1_swap_usage(memcg);
+			swap_high = swap_usage > READ_ONCE(memcg->memsw.high);
+		}
 
 		/* Don't bother a random interrupted task */
 		if (in_interrupt()) {
@@ -5622,6 +5657,18 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write = mem_cgroup_reset,
 		.read_u64 = mem_cgroup_read_u64,
 	},
+	{
+		.name = "swap.high",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = swap_high_show,
+		.write = swap_high_write,
+	},
+	{
+		.name = "swap.events",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.file_offset = offsetof(struct mem_cgroup, swap_events_file),
+		.seq_show = swap_events_show,
+	},
 	{ },	/* terminate */
 };
 
@@ -5875,6 +5922,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	page_counter_set_high(&memcg->memory, PAGE_COUNTER_MAX);
 	memcg->soft_limit = PAGE_COUNTER_MAX;
 	page_counter_set_high(&memcg->swap, PAGE_COUNTER_MAX);
+	page_counter_set_high(&memcg->memsw, PAGE_COUNTER_MAX);
 	if (parent) {
 		memcg->swappiness = mem_cgroup_swappiness(parent);
 		memcg->oom_kill_disable = parent->oom_kill_disable;
@@ -6039,7 +6087,10 @@ static void mem_cgroup_css_reset(struct cgroup_subsys_state *css)
 	page_counter_set_wmark_high(&memcg->memory, PAGE_COUNTER_MAX);
 	page_counter_set_high(&memcg->memory, PAGE_COUNTER_MAX);
 	memcg->soft_limit = PAGE_COUNTER_MAX;
-	page_counter_set_high(&memcg->swap, PAGE_COUNTER_MAX);
+	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		page_counter_set_high(&memcg->swap, PAGE_COUNTER_MAX);
+	else
+		page_counter_set_high(&memcg->memsw, PAGE_COUNTER_MAX);
 	memcg_wb_domain_size_changed(memcg);
 }
 
@@ -8054,8 +8105,13 @@ static u64 swap_current_read(struct cgroup_subsys_state *css,
 
 static int swap_high_show(struct seq_file *m, void *v)
 {
-	return seq_puts_memcg_tunable(m,
-		READ_ONCE(mem_cgroup_from_seq(m)->swap.high));
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+	unsigned long high = READ_ONCE(memcg->swap.high);
+
+	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		high = READ_ONCE(memcg->memsw.high);
+
+	return seq_puts_memcg_tunable(m, high);
 }
 
 static ssize_t swap_high_write(struct kernfs_open_file *of,
@@ -8070,7 +8126,10 @@ static ssize_t swap_high_write(struct kernfs_open_file *of,
 	if (err)
 		return err;
 
-	page_counter_set_high(&memcg->swap, high);
+	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		page_counter_set_high(&memcg->swap, high);
+	else
+		page_counter_set_high(&memcg->memsw, high);
 
 	return nbytes;
 }
