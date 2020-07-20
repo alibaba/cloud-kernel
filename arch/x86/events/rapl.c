@@ -777,7 +777,8 @@ static const struct x86_cpu_id rapl_model_match[] __initconst = {
 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_ICELAKE_MOBILE,		model_skl),
 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_ICELAKE_XEON_D,		model_hsx),
 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_ICELAKE_X,		model_hsx),
-	X86_MATCH_VENDOR_FAM(AMD, 0x17, &model_amd_fam17h),
+	X86_MATCH_VENDOR_FAM(AMD,	0x17,		&model_amd_fam17h),
+	X86_MATCH_VENDOR_FAM(HYGON,	0x18,		&model_amd_fam17h),
 	{},
 };
 
