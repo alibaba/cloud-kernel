@@ -29,6 +29,7 @@
 #include <linux/mem_encrypt.h>
 
 static bool vring_force_dma_api = false;
+static bool vring_weak_barriers;
 
 #ifdef DEBUG
 /* For development, we want to crash whenever the ring is screwed. */
@@ -121,6 +122,7 @@ struct vring_virtqueue {
 
 #ifdef MODULE
 module_param(vring_force_dma_api, bool, 0640);
+module_param(vring_weak_barriers, bool, 0640);
 #else
 static int __init vring_dma_api_setup(char *str)
 {
@@ -130,6 +132,15 @@ static int __init vring_dma_api_setup(char *str)
 	return 0;
 }
 __setup("vring_force_dma_api", vring_dma_api_setup);
+
+static int __init vring_weak_barriers_setup(char *str)
+{
+	vring_weak_barriers = true;
+	printk(KERN_INFO "Force vring weak barrier true\n");
+
+	return 0;
+}
+__setup("vring_weak_barriers", vring_weak_barriers_setup);
 #endif
 
 /*
@@ -1010,7 +1021,11 @@ struct virtqueue *__vring_new_virtqueue(unsigned int index,
 	vq->queue_dma_addr = 0;
 	vq->queue_size_in_bytes = 0;
 	vq->notify = notify;
+#ifdef CONFIG_ARM64
+	vq->weak_barriers = vring_weak_barriers;
+#else
 	vq->weak_barriers = weak_barriers;
+#endif
 	vq->broken = false;
 	vq->last_used_idx = 0;
 	vq->avail_flags_shadow = 0;
