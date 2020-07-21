@@ -102,6 +102,7 @@ static void blk_in_hang_rw(struct request_queue *q, struct hd_struct *part,
 	struct request *rq, *tmp;
 
 	now = ktime_get_ns();
+	hang[0] = hang[1] = 0;
 	spin_lock_irqsave(q->queue_lock, flags);
 
 	list_for_each_entry_safe(rq, tmp, &q->timeout_list, timeout_list) {
