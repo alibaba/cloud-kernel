@@ -89,6 +89,7 @@ static bool cgroup_memory_nosocket;
 
 /* Kernel memory accounting disabled? */
 static bool cgroup_memory_nokmem;
+unsigned long sysctl_penalty_extra_delay_jiffies;
 
 #ifdef CONFIG_MEMSLI
 /* Cgroup memory SLI disabled? */
@@ -2585,6 +2586,7 @@ void mem_cgroup_handle_over_high(void)
 	 * extremely slowly.
 	 */
 	penalty_jiffies = min(penalty_jiffies, MEMCG_MAX_HIGH_DELAY_JIFFIES);
+	penalty_jiffies += sysctl_penalty_extra_delay_jiffies;
 
 	/*
 	 * Don't sleep if the amount of jiffies this memcg owes us is so low

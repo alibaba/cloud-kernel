@@ -116,6 +116,7 @@ extern unsigned int sysctl_nr_open_min, sysctl_nr_open_max;
 extern int sysctl_nr_trim_pages;
 #endif
 
+static unsigned long penalty_extra_delay_max = HZ;
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -1463,6 +1464,17 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= lowmem_reserve_ratio_sysctl_handler,
 	},
+#ifdef CONFIG_MEMCG
+	{
+		.procname	= "memcg_high_extra_delay_ms",
+		.data		= &sysctl_penalty_extra_delay_jiffies,
+		.maxlen		= sizeof(sysctl_penalty_extra_delay_jiffies),
+		.proc_handler   = proc_doulongvec_ms_jiffies_minmax,
+		.mode		= 0644,
+		.extra1		= &zero,
+		.extra2		= &penalty_extra_delay_max,
+	},
+#endif
 	{
 		.procname	= "drop_caches",
 		.data		= &sysctl_drop_caches,

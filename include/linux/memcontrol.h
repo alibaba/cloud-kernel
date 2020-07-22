@@ -405,6 +405,7 @@ struct mem_cgroup {
 #define MEMCG_CHARGE_BATCH 32U
 
 extern struct mem_cgroup *root_mem_cgroup;
+extern unsigned long sysctl_penalty_extra_delay_jiffies;
 
 static inline bool mem_cgroup_is_root(struct mem_cgroup *memcg)
 {
