@@ -397,6 +397,7 @@ struct mem_cgroup {
 #define MEMCG_CHARGE_BATCH 32U
 
 extern struct mem_cgroup *root_mem_cgroup;
+extern unsigned long sysctl_penalty_extra_delay_jiffies;
 
 static __always_inline bool memcg_stat_item_in_bytes(int idx)
 {
