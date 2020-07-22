@@ -1567,7 +1567,7 @@ unsigned long mem_cgroup_get_max(struct mem_cgroup *memcg)
 	unsigned long max;
 
 	max = memcg->memory.max;
-	if (mem_cgroup_swappiness(memcg)) {
+	if (mem_cgroup_swappiness(memcg) > 0) {
 		unsigned long memsw_max;
 		unsigned long swap_max;
 
@@ -4236,7 +4236,7 @@ static int memcg_exstat_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static u64 mem_cgroup_swappiness_read(struct cgroup_subsys_state *css,
+static s64 mem_cgroup_swappiness_read(struct cgroup_subsys_state *css,
 				      struct cftype *cft)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
@@ -4245,11 +4245,11 @@ static u64 mem_cgroup_swappiness_read(struct cgroup_subsys_state *css,
 }
 
 static int mem_cgroup_swappiness_write(struct cgroup_subsys_state *css,
-				       struct cftype *cft, u64 val)
+				       struct cftype *cft, s64 val)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
-	if (val > 100)
+	if (val > 100 || val < -1 || (css->parent && val < 0))
 		return -EINVAL;
 
 	if (css->parent)
@@ -5619,8 +5619,8 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	},
 	{
 		.name = "swappiness",
-		.read_u64 = mem_cgroup_swappiness_read,
-		.write_u64 = mem_cgroup_swappiness_write,
+		.read_s64 = mem_cgroup_swappiness_read,
+		.write_s64 = mem_cgroup_swappiness_write,
 	},
 	{
 		.name = "priority",
@@ -5967,7 +5967,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	memcg->high = PAGE_COUNTER_MAX;
 	memcg->soft_limit = PAGE_COUNTER_MAX;
 	if (parent) {
-		memcg->swappiness = mem_cgroup_swappiness(parent);
+		memcg->swappiness = max(mem_cgroup_swappiness(parent), 0);
 		memcg->oom_kill_disable = parent->oom_kill_disable;
 		memcg->wmark_ratio = parent->wmark_ratio;
 		/* Default gap is 0.5% max limit */
