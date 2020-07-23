@@ -5992,6 +5992,21 @@ fail_req:
 	return submitted;
 }
 
+static inline void io_ring_set_wakeup_flag(struct io_ring_ctx *ctx)
+{
+	/* Tell userspace we may need a wakeup call */
+	spin_lock_irq(&ctx->completion_lock);
+	ctx->rings->sq_flags |= IORING_SQ_NEED_WAKEUP;
+	spin_unlock_irq(&ctx->completion_lock);
+}
+
+static inline void io_ring_clear_wakeup_flag(struct io_ring_ctx *ctx)
+{
+	spin_lock_irq(&ctx->completion_lock);
+	ctx->rings->sq_flags &= ~IORING_SQ_NEED_WAKEUP;
+	spin_unlock_irq(&ctx->completion_lock);
+}
+
 static int io_sq_thread(void *data)
 {
 	struct io_ring_ctx *ctx = data;
@@ -6068,10 +6083,7 @@ static int io_sq_thread(void *data)
 				continue;
 			}
 
-			/* Tell userspace we may need a wakeup call */
-			spin_lock_irq(&ctx->completion_lock);
-			ctx->rings->sq_flags |= IORING_SQ_NEED_WAKEUP;
-			spin_unlock_irq(&ctx->completion_lock);
+			io_ring_set_wakeup_flag(ctx);
 
 			to_submit = io_sqring_entries(ctx);
 			if (!to_submit || ret == -EBUSY) {
@@ -6082,6 +6094,7 @@ static int io_sq_thread(void *data)
 				if (current->task_works) {
 					task_work_run();
 					finish_wait(&ctx->sqo_wait, &wait);
+					io_ring_clear_wakeup_flag(ctx);
 					continue;
 				}
 				if (signal_pending(current))
@@ -6089,17 +6102,13 @@ static int io_sq_thread(void *data)
 				schedule();
 				finish_wait(&ctx->sqo_wait, &wait);
 
-				spin_lock_irq(&ctx->completion_lock);
-				ctx->rings->sq_flags &= ~IORING_SQ_NEED_WAKEUP;
-				spin_unlock_irq(&ctx->completion_lock);
+				io_ring_clear_wakeup_flag(ctx);
 				ret = 0;
 				continue;
 			}
 			finish_wait(&ctx->sqo_wait, &wait);
 
-			spin_lock_irq(&ctx->completion_lock);
-			ctx->rings->sq_flags &= ~IORING_SQ_NEED_WAKEUP;
-			spin_unlock_irq(&ctx->completion_lock);
+			io_ring_clear_wakeup_flag(ctx);
 		}
 
 		mutex_lock(&ctx->uring_lock);
