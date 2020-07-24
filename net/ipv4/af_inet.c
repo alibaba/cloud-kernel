@@ -351,6 +351,9 @@ lookup_protocol:
 	sk->sk_protocol	   = protocol;
 	sk->sk_backlog_rcv = sk->sk_prot->backlog_rcv;
 
+	if (!kern)
+		sk->sk_pid = task_pid_vnr(current);
+
 	inet->uc_ttl	= -1;
 	inet->mc_loop	= 1;
 	inet->mc_ttl	= 1;
