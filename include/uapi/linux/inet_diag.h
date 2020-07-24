@@ -161,6 +161,7 @@ enum {
 	INET_DIAG_SK_BPF_STORAGES,
 	INET_DIAG_CGROUP_ID,
 	INET_DIAG_SOCKOPT,
+	INET_DIAG_PID = 30,	/* response attribute only for sk_pid */
 	__INET_DIAG_MAX,
 };
 

@@ -361,6 +361,12 @@ int inet_sk_diag_fill(struct sock *sk, struct inet_connection_sock *icsk,
 			goto errout;
 	}
 
+	if ((ext & (1 << (INET_DIAG_PID - 1)) ||
+	     ext & (1 << (INET_DIAG_INFO - 1))) &&
+	    net_admin && sk->sk_pid)
+		if (nla_put_u32(skb, INET_DIAG_PID, sk->sk_pid))
+			goto errout;
+
 	/* Keep it at the end for potential retry with a larger skb,
 	 * or else do best-effort fitting, which is only done for the
 	 * first_nlmsg.

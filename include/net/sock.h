@@ -344,6 +344,7 @@ struct bpf_local_storage;
   *	@sk_txtime_report_errors: set report errors mode for SO_TXTIME
   *	@sk_txtime_unused: unused txtime flags
   *	@sk_toa_data: tcp option address (toa) data
+  *	@sk_pid: for which process created this sock
   */
 struct sock {
 	/*
@@ -524,6 +525,8 @@ struct sock {
 	struct bpf_local_storage __rcu	*sk_bpf_storage;
 #endif
 	struct rcu_head		sk_rcu;
+
+	pid_t			sk_pid;
 
 	CK_HOTFIX_RESERVE(1)
 	CK_HOTFIX_RESERVE(2)
