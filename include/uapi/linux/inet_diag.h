@@ -153,6 +153,7 @@ enum {
 	INET_DIAG_BBRINFO,	/* request as INET_DIAG_VEGASINFO */
 	INET_DIAG_CLASS_ID,	/* request as INET_DIAG_TCLASS */
 	INET_DIAG_MD5SIG,
+	INET_DIAG_PID = 30,	/* response attribute only for sk_pid */
 	__INET_DIAG_MAX,
 };
 

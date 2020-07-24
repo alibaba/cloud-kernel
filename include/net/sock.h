@@ -324,6 +324,7 @@ struct sock_common {
   *	@sk_txtime_deadline_mode: set deadline mode for SO_TXTIME
   *	@sk_txtime_unused: unused txtime flags
   *	@sk_toa_data: tcp option address (toa) data
+  *	@sk_pid: for which process created this sock
   */
 struct sock {
 	/*
@@ -511,6 +512,8 @@ struct sock {
 	struct sock_reuseport __rcu	*sk_reuseport_cb;
 	__be32			sk_toa_data[16];
 	struct rcu_head		sk_rcu;
+
+	pid_t			sk_pid;
 
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)

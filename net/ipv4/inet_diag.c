@@ -109,6 +109,7 @@ static size_t inet_sk_attr_size(struct sock *sk,
 		+ nla_total_size(1) /* INET_DIAG_TCLASS */
 		+ nla_total_size(4) /* INET_DIAG_MARK */
 		+ nla_total_size(4) /* INET_DIAG_CLASS_ID */
+		+ nla_total_size(4) /* INET_DIAG_PID */
 		+ nla_total_size(sizeof(struct inet_diag_meminfo))
 		+ nla_total_size(sizeof(struct inet_diag_msg))
 		+ nla_total_size(SK_MEMINFO_VARS * sizeof(u32))
@@ -305,6 +306,12 @@ int inet_sk_diag_fill(struct sock *sk, struct inet_connection_sock *icsk,
 		if (nla_put_u32(skb, INET_DIAG_CLASS_ID, classid))
 			goto errout;
 	}
+
+	if ((ext & (1 << (INET_DIAG_PID - 1)) ||
+	     ext & (1 << (INET_DIAG_INFO - 1))) &&
+	    net_admin && sk->sk_pid)
+		if (nla_put_u32(skb, INET_DIAG_PID, sk->sk_pid))
+			goto errout;
 
 out:
 	nlmsg_end(skb, nlh);
