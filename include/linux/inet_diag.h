@@ -72,6 +72,7 @@ static inline size_t inet_diag_msg_attrs_size(void)
 #endif
 		+ nla_total_size(4)  /* INET_DIAG_MARK */
 		+ nla_total_size(4)  /* INET_DIAG_CLASS_ID */
+		+ nla_total_size(4)  /* INET_DIAG_PID */
 #ifdef CONFIG_SOCK_CGROUP_DATA
 		+ nla_total_size_64bit(sizeof(u64))  /* INET_DIAG_CGROUP_ID */
 #endif
