@@ -103,6 +103,7 @@ void fuse_request_free(struct fuse_req *req)
 	}
 	kmem_cache_free(fuse_req_cachep, req);
 }
+EXPORT_SYMBOL_GPL(fuse_request_free);
 
 void __fuse_get_request(struct fuse_req *req)
 {
