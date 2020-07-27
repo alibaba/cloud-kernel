@@ -36,7 +36,7 @@ config PCIEAER
 config PCIEAER_INJECT
 	tristate "PCI Express error injection support"
 	depends on PCIEAER
-	default n
+	select GENERIC_IRQ_INJECTION
 	help
 	  This enables PCI Express Root Port Advanced Error Reporting
 	  (AER) software error injector.
