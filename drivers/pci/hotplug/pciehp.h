@@ -96,11 +96,6 @@ struct slot {
  *	interrupt (PCIe r4.0, sec 6.7.3.2)
  * @cmd_busy: flag set on Slot Control register write, cleared by IRQ handler
  *	on reception of a Command Completed event
- * @link_active_reporting: cached copy of Data Link Layer Link Active Reporting
- *	Capable bit in Link Capabilities register; if this bit is zero, the
- *	Data Link Layer Link Active bit in the Link Status register will never
- *	be set and the driver is thus confined to wait 1 second before assuming
- *	the link to a hotplugged device is up and accessing it
  * @notification_enabled: whether the IRQ was requested successfully
  * @power_fault_detected: whether a power fault was detected by the hardware
  *	that has not yet been cleared by the user
@@ -122,7 +117,6 @@ struct controller {
 	struct task_struct *poll_thread;
 	unsigned long cmd_started;	/* jiffies */
 	unsigned int cmd_busy:1;
-	unsigned int link_active_reporting:1;
 	unsigned int notification_enabled:1;
 	unsigned int power_fault_detected;
 	atomic_t pending_events;
