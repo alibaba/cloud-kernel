@@ -1448,6 +1448,7 @@ static int aer_probe(struct pcie_device *dev)
 	}
 
 	rpc->rpd = port;
+	INIT_KFIFO(rpc->aer_fifo);
 	set_service_data(dev, rpc);
 
 	status = devm_request_threaded_irq(device, dev->irq, aer_irq, aer_isr,
