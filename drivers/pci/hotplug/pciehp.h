@@ -109,6 +109,7 @@ struct slot {
 struct controller {
 	struct mutex ctrl_lock;
 	struct pcie_device *pcie;
+	unsigned int inband_presence_disabled:1;
 	struct rw_semaphore reset_lock;
 	struct slot *slot;
 	wait_queue_head_t queue;
