@@ -6261,8 +6261,7 @@ static int __init pci_setup(char *str)
 			} else if (!strncmp(str, "disable_acs_redir=", 18)) {
 				disable_acs_redir_param = str + 18;
 			} else {
-				printk(KERN_ERR "PCI: Unknown option `%s'\n",
-						str);
+				pr_err("PCI: Unknown option `%s'\n", str);
 			}
 		}
 		str = k;
