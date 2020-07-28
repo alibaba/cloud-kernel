@@ -81,7 +81,7 @@ static void klp_complete_transition(void)
 	struct task_struct *g, *task;
 	unsigned int cpu;
 
-	pr_debug("'%s': completing %s transition\n",
+	pr_info("'%s': completing %s transition\n",
 		 klp_transition_patch->mod->name,
 		 klp_target_state == KLP_PATCHED ? "patching" : "unpatching");
 
@@ -149,7 +149,7 @@ void klp_cancel_transition(void)
 	if (WARN_ON_ONCE(klp_target_state != KLP_PATCHED))
 		return;
 
-	pr_debug("'%s': canceling patching transition, going to unpatch\n",
+	pr_info("'%s': canceling patching transition, going to unpatch\n",
 		 klp_transition_patch->mod->name);
 
 	klp_target_state = KLP_UNPATCHED;
@@ -512,7 +512,7 @@ void klp_init_transition(struct klp_patch *patch, int state)
 	 */
 	klp_target_state = state;
 
-	pr_debug("'%s': initializing %s transition\n", patch->mod->name,
+	pr_info("'%s': initializing %s transition\n", patch->mod->name,
 		 klp_target_state == KLP_PATCHED ? "patching" : "unpatching");
 
 	/*
@@ -573,7 +573,7 @@ void klp_reverse_transition(void)
 	unsigned int cpu;
 	struct task_struct *g, *task;
 
-	pr_debug("'%s': reversing transition from %s\n",
+	pr_info("'%s': reversing transition from %s\n",
 		 klp_transition_patch->mod->name,
 		 klp_target_state == KLP_PATCHED ? "patching to unpatching" :
 						   "unpatching to patching");
