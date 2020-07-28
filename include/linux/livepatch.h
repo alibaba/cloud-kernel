@@ -86,6 +86,7 @@ struct klp_func {
 	unsigned long old_size, new_size;
 	bool patched;
 	bool transition;
+	int force;
 };
 
 struct klp_object;

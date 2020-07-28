@@ -281,6 +281,8 @@ static int klp_check_stack(struct task_struct *task, char *err_buf)
 		if (!obj->patched)
 			continue;
 		klp_for_each_func(obj, func) {
+			if (func->force)
+				continue;
 			ret = klp_check_stack_func(func, &trace);
 			if (ret) {
 				snprintf(err_buf, STACK_ERR_BUF_SIZE,
