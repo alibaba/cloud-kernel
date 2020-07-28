@@ -1090,9 +1090,9 @@ static int __nvme_poll(struct nvme_queue *nvmeq, unsigned int tag)
 
 	spin_lock_irq(&nvmeq->cq_lock);
 	found = nvme_process_cq(nvmeq, &start, &end, tag);
+	nvme_complete_cqes(nvmeq, start, end);
 	spin_unlock_irq(&nvmeq->cq_lock);
 
-	nvme_complete_cqes(nvmeq, start, end);
 	return found;
 }
 
