@@ -218,6 +218,10 @@ static int arm_spe_walk_trace(struct arm_spe_decoder *decoder)
 				decoder->state.type |= ARM_SPE_LLC_MISS;
 				decoder->state.is_llc_miss = true;
 			}
+			if (idx > 1 && (payload & BIT(EV_LLC_ACCESS))) {
+				decoder->state.type |= ARM_SPE_LLC_ACCESS;
+				decoder->state.is_llc_access = true;
+			}
 			if (idx > 1 && (payload & BIT(EV_REMOTE_ACCESS))) {
 				decoder->state.type |= ARM_SPE_REMOTE_ACCESS;
 				decoder->state.is_remote = true;

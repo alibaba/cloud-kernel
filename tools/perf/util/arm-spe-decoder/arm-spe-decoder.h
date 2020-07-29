@@ -29,6 +29,7 @@ enum arm_spe_sample_type {
 	ARM_SPE_TLB_MISS= 1 << 1,
 	ARM_SPE_BRANCH_MISS= 1 << 2,
 	ARM_SPE_REMOTE_ACCESS= 1 << 3,
+	ARM_SPE_LLC_ACCESS  = 1 << 4,
 	ARM_SPE_EX_STOP= 1 << 6,
 };
 
@@ -40,6 +41,7 @@ struct arm_spe_state {
 	bool is_l1d_miss;	/* Is l1d miss ? */
 	bool is_l2d_miss;	/* Is l2d miss ? */
 	bool is_llc_miss;	/* Is llc miss ? */
+	bool is_llc_access;	/* Is llc access ? */
 	bool is_tlb_miss;	/* Is tlb miss ? */
 	bool is_remote;		/* Is remote access ? */
 	uint64_t ts;		/* timestamp */
