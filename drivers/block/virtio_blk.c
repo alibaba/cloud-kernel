@@ -208,10 +208,17 @@ static int virtblk_setup_discard_write_zeroes(struct request *req, bool unmap)
 		u64 sector = bio->bi_iter.bi_sector;
 		u32 num_sectors = bio->bi_iter.bi_size >> SECTOR_SHIFT;
 
-		range[n].flags = cpu_to_le32(flags);
-		range[n].num_sectors = cpu_to_le32(num_sectors);
-		range[n].sector = cpu_to_le64(sector);
+		if (n < segments) {
+			range[n].flags = cpu_to_le32(flags);
+			range[n].num_sectors = cpu_to_le32(num_sectors);
+			range[n].sector = cpu_to_le64(sector);
+		}
 		n++;
+	}
+
+	if (WARN_ON_ONCE(n != segments)) {
+		kfree(range);
+		return -EIO;
 	}
 
 	req->special_vec.bv_page = virt_to_page(range);
@@ -335,8 +342,14 @@ static blk_status_t virtio_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	if (type == VIRTIO_BLK_T_DISCARD || type == VIRTIO_BLK_T_WRITE_ZEROES) {
 		err = virtblk_setup_discard_write_zeroes(req, unmap);
-		if (err)
-			return BLK_STS_RESOURCE;
+		if (err) {
+			switch (err) {
+			case -ENOMEM:
+				return BLK_STS_RESOURCE;
+			default:
+				return BLK_STS_IOERR;
+			}
+		}
 	}
 
 	num = blk_rq_map_sg(hctx->queue, req, vbr->sg);
