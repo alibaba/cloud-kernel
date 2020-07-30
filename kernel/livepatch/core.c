@@ -990,6 +990,9 @@ static int __klp_enable_patch(struct klp_patch *patch)
 
 	ret = stop_machine(klp_try_enable_patch, patch, NULL);
 	if (ret) {
+		klp_for_each_object(patch, obj)
+			klp_post_unpatch_callback(obj);
+
 		klp_unpatch_objects(patch);
 		goto err;
 	}
