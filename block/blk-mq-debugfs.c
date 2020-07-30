@@ -442,22 +442,20 @@ static void blk_mq_debugfs_rq_hang_show(struct seq_file *m, struct request *rq)
 	seq_printf(m, ", .current_time=%llu", ktime_get_ns());
 
 	bio = rq->bio;
-	if (bio) {
-		while (1) {
-			seq_printf(m, ", .bio = %px", bio);
-			seq_puts(m, ", .bio_pages = { ");
-			bio_for_each_segment_all(bvec, bio, i) {
-				struct page *page = bvec->bv_page;
+	while (bio) {
+		seq_printf(m, ", .bio = %px", bio);
+		seq_printf(m, ", .sector = %lu, .len=%u",
+				bio->bi_iter.bi_sector, bio->bi_iter.bi_size);
+		seq_puts(m, ", .bio_pages = { ");
+		bio_for_each_segment_all(bvec, bio, i) {
+			struct page *page = bvec->bv_page;
 
-				if (!page)
-					continue;
-				seq_printf(m, "%px ", page);
-			}
-			seq_puts(m, "}");
-			bio = bio->bi_next;
-			if (bio == NULL)
-				break;
+			if (!page)
+				continue;
+			seq_printf(m, "%px ", page);
 		}
+		seq_puts(m, "}");
+		bio = bio->bi_next;
 	}
 	if (mq_ops->show_rq)
 		mq_ops->show_rq(m, rq);
