@@ -247,7 +247,8 @@ void task_ca_increase_nr_migrations(struct task_struct *tsk)
 
 	rcu_read_lock();
 	ca = task_ca(tsk);
-	this_cpu_ptr(ca->alistats)->nr_migrations++;
+	if (ca)
+		this_cpu_ptr(ca->alistats)->nr_migrations++;
 	rcu_read_unlock();
 }
 
@@ -263,6 +264,10 @@ void task_ca_update_block(struct task_struct *tsk, u64 runtime)
 
 	rcu_read_lock();
 	ca = task_ca(tsk);
+	if (!ca) {
+		rcu_read_unlock();
+		return;
+	}
 	if (tsk->in_iowait)
 		s = SCHED_LAT_IOBLOCK;
 	else
@@ -290,6 +295,10 @@ void cpuacct_update_latency(struct sched_entity *se, u64 delta)
 	rcu_read_lock();
 	tg = se->cfs_rq->tg;
 	ca = cgroup_ca(tg->css.cgroup);
+	if (!ca) {
+		rcu_read_unlock();
+		return;
+	}
 	if (entity_is_task(se))
 		s = SCHED_LAT_WAIT;
 	else
