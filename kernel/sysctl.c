@@ -513,6 +513,15 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one,
 	},
 #endif
+#ifdef CONFIG_GROUP_IDENTITY
+	{
+		.procname	= "sched_bvt_place_epsilon",
+		.data		= &sysctl_sched_bvt_place_epsilon,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
 #ifdef CONFIG_PROVE_LOCKING
 	{
 		.procname	= "prove_locking",

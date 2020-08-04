@@ -2129,6 +2129,10 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->se.cfs_rq			= NULL;
 #endif
 
+#ifdef CONFIG_GROUP_IDENTITY
+	p->se.id_flags			= 0;
+#endif
+
 #ifdef CONFIG_SCHEDSTATS
 	/* Even if schedstat is disabled, there should not be garbage */
 	memset(&p->se.statistics, 0, sizeof(p->se.statistics));
@@ -6963,6 +6967,40 @@ static u64 cpu_rt_period_read_uint(struct cgroup_subsys_state *css,
 }
 #endif /* CONFIG_RT_GROUP_SCHED */
 
+#ifdef CONFIG_GROUP_IDENTITY
+static int cpu_bvt_warp_ns_write_s64(struct cgroup_subsys_state *css,
+				struct cftype *cftype, s64 val)
+{
+	struct task_group *tg = css_tg(css);
+
+	return update_bvt_warp_ns(tg, val);
+}
+
+static s64 cpu_bvt_warp_ns_read_s64(struct cgroup_subsys_state *css,
+			       struct cftype *cft)
+{
+	struct task_group *tg = css_tg(css);
+
+	return tg->bvt_warp_ns;
+}
+
+static int cpu_identity_write_s64(struct cgroup_subsys_state *css,
+				struct cftype *cftype, s64 val)
+{
+	struct task_group *tg = css_tg(css);
+
+	return update_identity(tg, val);
+}
+
+static s64 cpu_identity_read_s64(struct cgroup_subsys_state *css,
+			       struct cftype *cft)
+{
+	struct task_group *tg = css_tg(css);
+
+	return tg->id_flags;
+}
+#endif
+
 static struct cftype cpu_legacy_files[] = {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	{
@@ -7007,6 +7045,19 @@ static struct cftype cpu_legacy_files[] = {
 		.name = "rt_period_us",
 		.read_u64 = cpu_rt_period_read_uint,
 		.write_u64 = cpu_rt_period_write_uint,
+	},
+#endif
+#ifdef CONFIG_GROUP_IDENTITY
+	/* legacy bvt interface */
+	{
+		.name = "bvt_warp_ns",
+		.read_s64 = cpu_bvt_warp_ns_read_s64,
+		.write_s64 = cpu_bvt_warp_ns_write_s64,
+	},
+	{
+		.name = "identity",
+		.read_s64 = cpu_identity_read_s64,
+		.write_s64 = cpu_identity_write_s64,
 	},
 #endif
 	{ }	/* Terminate */
