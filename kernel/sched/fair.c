@@ -129,6 +129,16 @@ int __weak arch_asym_cpu_priority(int cpu)
 unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
 #endif
 
+#ifdef CONFIG_GROUP_IDENTITY
+/*
+ * Waking batch tasks are placed sched_bvt_place_epsilon
+ * nanoseconds relative to min_vruntime.
+ *
+ * Default: 1 msec in the future, units: nanoseconds
+ */
+unsigned int sysctl_sched_bvt_place_epsilon = 1000000UL;
+#endif
+
 static inline void update_load_add(struct load_weight *lw, unsigned long inc)
 {
 	lw->weight += inc;
@@ -537,6 +547,477 @@ static inline bool entity_before(struct sched_entity *a,
 	return (s64)(a->vruntime - b->vruntime) < 0;
 }
 
+#ifdef CONFIG_GROUP_IDENTITY
+
+/* legacy bvt type */
+enum {
+	TYPE_IDLE = -2,
+	TYPE_BATCH,
+	TYPE_NORMAL,
+	TYPE_LS,
+	TYPE_STRICT,
+};
+
+#define ID_NORMAL		0x0000
+#define ID_UNDERCLASS		0x0001
+#define ID_HIGHCLASS		0x0002
+#define IDENTITY_FLAGS_MASK	0x00ff
+
+static DEFINE_MUTEX(identity_mutex);
+/*
+ * When we talking about identity, there are two viewpoint, that is
+ * level-view and top-view.
+ *
+ * Helpers like is_xxx() is for level-view, usually for the comparison
+ * of two se from the same level, their identity depends on the task
+ * group they standing for, and normal task will never got identity.
+ *
+ * Helpers like is_xxx_task() is for top-view, usually for the task
+ * scheduling decisions, to estimate the cpu situation for tasks.
+ *
+ * To be noticed, identity of task on top-view depends on the identity
+ * of it's group, for example we consider a task from the underclass
+ * group as a underclass task, depite of the fact that it may be the
+ * descendant of a highclass group.
+ */
+static inline bool test_identity(struct sched_entity *se, int flags)
+{
+	return se->id_flags & flags;
+}
+
+static inline bool is_underclass(struct sched_entity *se)
+{
+	return test_identity(se, ID_UNDERCLASS);
+}
+
+static inline bool is_highclass(struct sched_entity *se)
+{
+	return test_identity(se, ID_HIGHCLASS);
+}
+
+static inline bool underclass_only(int cpu)
+{
+	struct rq *rq = cpu_rq(cpu);
+
+	return rq->cfs.h_nr_running &&
+	       rq->cfs.h_nr_running == rq->nr_under_running;
+}
+
+static inline bool is_highclass_task(struct task_struct *p)
+{
+	bool ret;
+
+	rcu_read_lock();
+	ret = p->se.parent ? is_highclass(p->se.parent) : false;
+	rcu_read_unlock();
+
+	return ret;
+}
+
+static inline bool is_underclass_task(struct task_struct *p)
+{
+	bool ret;
+
+	rcu_read_lock();
+	ret = p->se.parent ? is_underclass(p->se.parent) : false;
+	rcu_read_unlock();
+	return ret;
+}
+
+static noinline bool
+id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
+{
+	/* Do not migrate the last highclass, try someone else */
+	if (is_highclass_task(p) && src_rq->nr_high_running < 2)
+		goto bad_dst;
+
+	return true;
+
+bad_dst:
+	schedstat_inc(p->se.statistics.nr_failed_migrations_id);
+	return false;
+}
+
+static noinline bool
+id_wake_affine(struct task_struct *p, int this_cpu, int prev_cpu)
+{
+	struct rq *prev_rq = cpu_rq(prev_cpu);
+
+	/* Last highclass should stay */
+	if (is_highclass_task(p) && prev_rq->nr_high_running < 1)
+		return false;
+
+	return true;
+}
+
+static noinline bool id_idle_cpu(struct task_struct *p, int cpu)
+{
+	if (available_idle_cpu(cpu))
+		return true;
+	/* CPU full of underclass is idle for highclass */
+	return is_highclass_task(p) && underclass_only(cpu);
+}
+
+static __always_inline void
+id_update_nr_running(struct task_group *tg, struct rq *rq, long delta)
+{
+	struct sched_entity *se;
+
+	if (!tg || tg == &root_task_group)
+		return;
+
+	se = tg->se[rq->cpu];
+
+	if (is_highclass(se))
+		rq->nr_high_running += delta;
+
+	if (is_underclass(se))
+		rq->nr_under_running += delta;
+}
+
+static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se);
+static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se);
+
+static void __update_identity(struct task_group *tg, int flags)
+{
+	int cpu;
+	struct rq_flags rf;
+
+	tg->id_flags = flags;
+
+	for_each_online_cpu(cpu) {
+		bool on_rq;
+		unsigned int delta;
+		struct cfs_rq *cfs_rq;
+		struct sched_entity *se;
+		struct rq *rq = cpu_rq(cpu);
+
+		rq_lock_irq(rq, &rf);
+
+		se = tg->se[cpu];
+		cfs_rq = cfs_rq_of(se);
+		delta = se->my_q->nr_tasks;
+		on_rq = se->on_rq;
+
+		if (on_rq) {
+			if (se != cfs_rq->curr)
+				__dequeue_entity(cfs_rq, se);
+			id_update_nr_running(tg, rq, -delta);
+		}
+
+		se->id_flags = flags;
+
+		if (on_rq) {
+			if (se != cfs_rq->curr)
+				__enqueue_entity(cfs_rq, se);
+			id_update_nr_running(tg, rq, delta);
+		}
+
+		rq_unlock_irq(rq, &rf);
+	}
+}
+
+int update_bvt_warp_ns(struct task_group *tg, s64 val)
+{
+	int flags = 0;
+
+	/*
+	 * We can't change the bvt type of the root cgroup.
+	 */
+	if (!tg->se[0])
+		return -EINVAL;
+
+	switch (val) {
+	case TYPE_IDLE:
+		flags = ID_UNDERCLASS;
+		break;
+	case TYPE_BATCH:
+		flags = ID_UNDERCLASS;
+		break;
+	case TYPE_NORMAL:
+		break;
+	case TYPE_LS:
+		flags = ID_HIGHCLASS;
+		break;
+	case TYPE_STRICT:
+		flags = ID_HIGHCLASS;
+		break;
+	default:
+		return -ERANGE;
+	}
+
+	mutex_lock(&identity_mutex);
+	if (tg->bvt_warp_ns != val) {
+		__update_identity(tg, flags);
+		tg->bvt_warp_ns = val;
+	}
+	mutex_unlock(&identity_mutex);
+
+	return 0;
+}
+
+int update_identity(struct task_group *tg, s64 val)
+{
+	/*
+	 * We can't change the flags of the root cgroup.
+	 */
+	if (!tg->se[0])
+		return -EINVAL;
+
+	if (val & ~IDENTITY_FLAGS_MASK)
+		return -ERANGE;
+
+	if (val & ID_HIGHCLASS && val & ID_UNDERCLASS)
+		return -EINVAL;
+
+	mutex_lock(&identity_mutex);
+	if (tg->id_flags != val)
+		__update_identity(tg, val);
+	mutex_unlock(&identity_mutex);
+
+	return 0;
+}
+
+static inline void identity_init_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	cfs_rq->under_timeline = RB_ROOT_CACHED;
+	cfs_rq->min_under_vruntime = (u64)(-(1LL << 20));
+}
+
+static inline struct rb_root_cached *
+id_rb_root(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+	if (is_underclass(se))
+		return &cfs_rq->under_timeline;
+
+	return &cfs_rq->tasks_timeline;
+}
+
+static inline struct rb_node *
+id_rb_first_cached(struct cfs_rq *cfs_rq)
+{
+	int i;
+	struct rb_node *left;
+
+	struct rb_root_cached *roots[2] = {
+		&cfs_rq->tasks_timeline,
+		&cfs_rq->under_timeline,
+	};
+
+	if (cfs_rq->min_under_vruntime < cfs_rq->min_vruntime) {
+		roots[0] = &cfs_rq->under_timeline;
+		roots[1] = &cfs_rq->tasks_timeline;
+	}
+
+	for (i = 0; i < 2; i++) {
+		left = rb_first_cached(roots[i]);
+		if (left)
+			return left;
+	}
+
+	return NULL;
+}
+
+static inline u64
+id_min_vruntime(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+	return is_underclass(se) ?
+		cfs_rq->min_under_vruntime : cfs_rq->min_vruntime;
+}
+
+/*
+ * id_preempt_xxx() help to check if preempt should happen for identity
+ * reason, return value are consist with wakeup_preempt_entity().
+ *
+ * -1 -- curr should preempt se for higher identity
+ *  1 -- se should preempt curr for higher identity
+ *  0 -- no preempt for same identity
+ *
+ *  id_preempt_underclass()
+ *      others will preempt underclass, called with no respect to the
+ *      vruntime.
+ *
+ *  id_preempt_highclass()
+ *      highclass will preempt normal, called with the respect to the
+ *      vruntime.
+ *
+ *  id_preempt_all()
+ *      higher identity will preempt lower, called with the respect to
+ *      the vruntime.
+ */
+static inline int
+id_preempt_underclass(struct sched_entity *curr, struct sched_entity *se)
+{
+	bool under_curr = is_underclass(curr);
+	bool under_se = is_underclass(se);
+
+	if (under_curr == under_se)
+		return 0;
+
+	return under_se ? -1 : 1;
+}
+
+static inline int
+id_preempt_highclass(struct sched_entity *curr, struct sched_entity *se)
+{
+	bool high_curr = is_highclass(curr);
+	bool high_se = is_highclass(se);
+
+	if (high_curr == high_se)
+		return 0;
+
+	return high_curr ? -1 : 1;
+}
+
+static inline int
+id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
+{
+	int ret = id_preempt_highclass(curr, se);
+
+	return ret == 0 ? id_preempt_underclass(curr, se) : ret;
+}
+
+/*
+ * We must sync the empty tree's min vruntime up, otherwise it
+ * gain vruntime bonus just for being idle.
+ */
+static inline void sync_min_vruntime(struct cfs_rq *cfs_rq)
+{
+	u64 effect_vruntime = max_vruntime(cfs_rq->min_vruntime,
+					   cfs_rq->min_under_vruntime);
+	bool no_curr = (!cfs_rq->curr || !cfs_rq->curr->on_rq);
+
+	if (!rb_first_cached(&cfs_rq->tasks_timeline) &&
+	    (no_curr || is_underclass(cfs_rq->curr)))
+		cfs_rq->min_vruntime = effect_vruntime;
+
+	if (!rb_first_cached(&cfs_rq->under_timeline) &&
+	    (no_curr || !is_underclass(cfs_rq->curr)))
+		cfs_rq->min_under_vruntime = effect_vruntime;
+}
+
+static inline void update_under_min_vruntime(struct cfs_rq *cfs_rq)
+{
+	struct sched_entity *curr = cfs_rq->curr;
+	struct rb_node *leftmost = rb_first_cached(&cfs_rq->under_timeline);
+
+	u64 vruntime = cfs_rq->min_under_vruntime;
+
+	if (curr) {
+		if (curr->on_rq && is_underclass(curr))
+			vruntime = curr->vruntime;
+		else
+			curr = NULL;
+	}
+
+	if (leftmost) { /* non-empty tree */
+		struct sched_entity *se;
+
+		se = rb_entry(leftmost, struct sched_entity, run_node);
+
+		if (!curr)
+			vruntime = se->vruntime;
+		else
+			vruntime = min_vruntime(vruntime, se->vruntime);
+	}
+
+	/* ensure we never gain time by being placed backwards. */
+	cfs_rq->min_under_vruntime =
+		max_vruntime(cfs_rq->min_under_vruntime, vruntime);
+
+	sync_min_vruntime(cfs_rq);
+}
+
+#else
+
+static inline bool is_underclass(struct sched_entity *curr)
+{
+	return false;
+}
+
+static inline bool is_highclass(struct sched_entity *se)
+{
+	return false;
+}
+
+static inline bool underclass_only(int cpu)
+{
+	return false;
+}
+
+static inline bool is_highclass_task(struct task_struct *p)
+{
+	return false;
+}
+
+static bool
+id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
+{
+	return true;
+}
+
+static inline bool
+id_wake_affine(struct task_struct *p, int this_cpu, int prev_cpu)
+{
+	return true;
+}
+
+static inline bool id_idle_cpu(struct task_struct *p, int cpu)
+{
+	return available_idle_cpu(cpu);
+}
+
+static inline void identity_init_cfs_rq(struct cfs_rq *cfs_rq)
+{
+}
+
+static inline struct rb_root_cached *
+id_rb_root(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+	return &cfs_rq->tasks_timeline;
+}
+
+static inline struct rb_node *
+id_rb_first_cached(struct cfs_rq *cfs_rq)
+{
+	return rb_first_cached(&cfs_rq->tasks_timeline);
+}
+
+static inline u64
+id_min_vruntime(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+	return cfs_rq->min_vruntime;
+}
+
+static inline int
+id_preempt_underclass(struct sched_entity *curr, struct sched_entity *se)
+{
+	return 0;
+}
+
+static inline int
+id_preempt_highclass(struct sched_entity *curr, struct sched_entity *se)
+{
+	return 0;
+}
+
+static inline int
+id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
+{
+	return 0;
+}
+
+static __always_inline void
+id_update_nr_running(struct task_group *tg, struct rq *rq, long delta)
+{
+}
+
+static inline void update_under_min_vruntime(struct cfs_rq *cfs_rq)
+{
+}
+
+#endif
+
 #define __node_2_se(node) \
 	rb_entry((node), struct sched_entity, run_node)
 
@@ -548,7 +1029,7 @@ static void update_min_vruntime(struct cfs_rq *cfs_rq)
 	u64 vruntime = cfs_rq->min_vruntime;
 
 	if (curr) {
-		if (curr->on_rq)
+		if (curr->on_rq && !is_underclass(curr))
 			vruntime = curr->vruntime;
 		else
 			curr = NULL;
@@ -569,6 +1050,8 @@ static void update_min_vruntime(struct cfs_rq *cfs_rq)
 	smp_wmb();
 	cfs_rq->min_vruntime_copy = cfs_rq->min_vruntime;
 #endif
+
+	update_under_min_vruntime(cfs_rq);
 }
 
 static inline bool __entity_less(struct rb_node *a, const struct rb_node *b)
@@ -581,17 +1064,21 @@ static inline bool __entity_less(struct rb_node *a, const struct rb_node *b)
  */
 static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-	rb_add_cached(&se->run_node, &cfs_rq->tasks_timeline, __entity_less);
+	struct rb_root_cached *root = id_rb_root(cfs_rq, se);
+
+	rb_add_cached(&se->run_node, root, __entity_less);
 }
 
 static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-	rb_erase_cached(&se->run_node, &cfs_rq->tasks_timeline);
+	struct rb_root_cached *root = id_rb_root(cfs_rq, se);
+
+	rb_erase_cached(&se->run_node, root);
 }
 
 struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq)
 {
-	struct rb_node *left = rb_first_cached(&cfs_rq->tasks_timeline);
+	struct rb_node *left = id_rb_first_cached(cfs_rq);
 
 	if (!left)
 		return NULL;
@@ -3027,6 +3514,9 @@ account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 		account_numa_enqueue(rq, task_of(se));
 		list_add(&se->group_node, &rq->cfs_tasks);
+#ifdef CONFIG_GROUP_IDENTITY
+		cfs_rq->nr_tasks++;
+#endif
 	}
 #endif
 	cfs_rq->nr_running++;
@@ -4165,7 +4655,7 @@ static void check_spread(struct cfs_rq *cfs_rq, struct sched_entity *se)
 static void
 place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 {
-	u64 vruntime = cfs_rq->min_vruntime;
+	u64 vruntime = id_min_vruntime(cfs_rq, se);
 
 	/*
 	 * The 'current' period is already promised to the current tasks,
@@ -4189,6 +4679,16 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 
 		vruntime -= thresh;
 	}
+
+#ifdef CONFIG_GROUP_ENTITY
+	/*
+	 * The runtime penalty for underclass wakee to make sure
+	 * they won't interrupt other's execution too much.
+	 */
+	if (!initial && is_underclass(se))
+		vruntime = cfs_rq->min_vruntime +
+				sysctl_sched_bvt_place_epsilon;
+#endif
 
 	/* ensure we never gain time by being placed backwards. */
 	se->vruntime = max_vruntime(se->vruntime, vruntime);
@@ -4259,7 +4759,7 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 * update_curr().
 	 */
 	if (renorm && curr)
-		se->vruntime += cfs_rq->min_vruntime;
+		se->vruntime += id_min_vruntime(cfs_rq, se);
 
 	update_curr(cfs_rq);
 
@@ -4270,7 +4770,7 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 * fairness detriment of existing tasks.
 	 */
 	if (renorm && !curr)
-		se->vruntime += cfs_rq->min_vruntime;
+		se->vruntime += id_min_vruntime(cfs_rq, se);
 
 	/*
 	 * When enqueuing a sched_entity, we must:
@@ -4389,7 +4889,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 * can move min_vruntime forward still more.
 	 */
 	if (!(flags & DEQUEUE_SLEEP))
-		se->vruntime -= cfs_rq->min_vruntime;
+		se->vruntime -= id_min_vruntime(cfs_rq, se);
 
 	/* return excess runtime on last dequeue */
 	return_cfs_rq_runtime(cfs_rq);
@@ -4433,7 +4933,7 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	 * narrow margin doesn't have to wait for a full slice.
 	 * This also mitigates buddy induced latencies under load.
 	 */
-	if (delta_exec < sysctl_sched_min_granularity)
+	if (is_highclass(curr) && delta_exec < sysctl_sched_min_granularity)
 		return;
 
 	se = __pick_first_entity(cfs_rq);
@@ -4442,7 +4942,7 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	if (delta < 0)
 		return;
 
-	if (delta > ideal_runtime)
+	if (delta > ideal_runtime || id_preempt_all(curr, se) == 1)
 		resched_curr(rq_of(cfs_rq));
 }
 
@@ -4822,8 +5322,9 @@ static int tg_throttle_down(struct task_group *tg, void *data)
 
 static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	struct task_group *tg = cfs_rq->tg;
 	struct rq *rq = rq_of(cfs_rq);
-	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
+	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(tg);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta, dequeue = 1;
 
@@ -4848,11 +5349,11 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	if (!dequeue)
 		return false;  /* Throttle no longer required. */
 
-	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
+	se = tg->se[cpu_of(rq_of(cfs_rq))];
 
 	/* freeze hierarchy runnable averages while throttled */
 	rcu_read_lock();
-	walk_tg_tree_from(cfs_rq->tg, tg_throttle_down, tg_nop, (void *)rq);
+	walk_tg_tree_from(tg, tg_throttle_down, tg_nop, (void *)rq);
 	rcu_read_unlock();
 
 	task_delta = cfs_rq->h_nr_running;
@@ -4879,8 +5380,8 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 			dequeue = 0;
 	}
 
-	if (!se)
-		sub_nr_running(rq, task_delta);
+	sub_nr_running(rq, task_delta);
+	id_update_nr_running(tg, rq, -task_delta);
 
 	/*
 	 * Note: distribution will already see us throttled via the
@@ -4893,13 +5394,14 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	struct task_group *tg = cfs_rq->tg;
 	struct cfs_rq *bottom_cfs_rq = cfs_rq;
 	struct rq *rq = rq_of(cfs_rq);
-	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
+	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(tg);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta;
 
-	se = cfs_rq->tg->se[cpu_of(rq)];
+	se = tg->se[cpu_of(rq)];
 
 	cfs_rq->throttled = 0;
 
@@ -4911,7 +5413,7 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 	raw_spin_unlock(&cfs_b->lock);
 
 	/* update hierarchical throttle state */
-	walk_tg_tree_from(cfs_rq->tg, tg_nop, tg_unthrottle_up, (void *)rq);
+	walk_tg_tree_from(tg, tg_nop, tg_unthrottle_up, (void *)rq);
 
 	if (!cfs_rq->load.weight)
 		return;
@@ -4959,6 +5461,7 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	/* At this point se is NULL and we are at root level*/
 	add_nr_running(rq, task_delta);
+	id_update_nr_running(tg, rq, task_delta);
 
 unthrottle_throttle:
 	/*
@@ -5651,6 +6154,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	/* At this point se is NULL and we are at root level*/
 	add_nr_running(rq, 1);
+	id_update_nr_running(task_group(p), rq, 1);
 
 	/*
 	 * Since new tasks are assigned an initial util_avg equal to
@@ -5759,6 +6263,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	/* At this point se is NULL and we are at root level*/
 	sub_nr_running(rq, 1);
+	id_update_nr_running(task_group(p), rq, -1);
 
 	/* balance early to pull high priority tasks */
 	if (unlikely(!was_sched_idle && sched_idle_rq(rq)))
@@ -6184,7 +6689,7 @@ static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int 
 		bool idle = true;
 
 		for_each_cpu(cpu, cpu_smt_mask(core)) {
-			if (!available_idle_cpu(cpu)) {
+			if (!id_idle_cpu(p, cpu)) {
 				idle = false;
 				break;
 			}
@@ -6217,7 +6722,7 @@ static int select_idle_smt(struct task_struct *p, struct sched_domain *sd, int t
 		if (!cpumask_test_cpu(cpu, p->cpus_ptr) ||
 		    !cpumask_test_cpu(cpu, sched_domain_span(sd)))
 			continue;
-		if (available_idle_cpu(cpu) || sched_idle_cpu(cpu))
+		if (id_idle_cpu(p, cpu) || sched_idle_cpu(cpu))
 			return cpu;
 	}
 
@@ -6281,7 +6786,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	for_each_cpu_wrap(cpu, cpus, target) {
 		if (!--nr)
 			return -1;
-		if (available_idle_cpu(cpu) || sched_idle_cpu(cpu))
+		if (id_idle_cpu(p, cpu) || sched_idle_cpu(cpu))
 			break;
 	}
 
@@ -6351,7 +6856,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 		task_util = uclamp_task_util(p);
 	}
 
-	if ((available_idle_cpu(target) || sched_idle_cpu(target)) &&
+	if ((id_idle_cpu(p, target) || sched_idle_cpu(target)) &&
 	    asym_fits_capacity(task_util, target))
 		return target;
 
@@ -6359,7 +6864,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	 * If the previous CPU is cache affine and idle, don't be stupid:
 	 */
 	if (prev != target && cpus_share_cache(prev, target) &&
-	    (available_idle_cpu(prev) || sched_idle_cpu(prev)) &&
+	    (id_idle_cpu(p, prev) || sched_idle_cpu(prev)) &&
 	    asym_fits_capacity(task_util, prev))
 		return prev;
 
@@ -6382,7 +6887,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	if (recent_used_cpu != prev &&
 	    recent_used_cpu != target &&
 	    cpus_share_cache(recent_used_cpu, target) &&
-	    (available_idle_cpu(recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
+	    (id_idle_cpu(p, recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
 	    cpumask_test_cpu(p->recent_used_cpu, p->cpus_ptr) &&
 	    asym_fits_capacity(task_util, recent_used_cpu)) {
 		/*
@@ -6828,6 +7333,10 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int want_affine = 0;
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
 
+	/* Endow LS task the ability to balance at fork */
+	if ((sd_flag & SD_BALANCE_FORK) && is_highclass_task(p))
+		sd_flag |= SD_BALANCE_WAKE;
+
 	if (sd_flag & SD_BALANCE_WAKE) {
 		record_wakee(p);
 
@@ -6838,7 +7347,8 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 			new_cpu = prev_cpu;
 		}
 
-		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->cpus_ptr);
+		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->cpus_ptr)
+			      && id_wake_affine(p, cpu, prev_cpu);
 	}
 
 	rcu_read_lock();
@@ -6910,7 +7420,7 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 		min_vruntime = cfs_rq->min_vruntime;
 #endif
 
-		se->vruntime -= min_vruntime;
+		se->vruntime -= id_min_vruntime(cfs_rq, se);
 	}
 
 	if (p->on_rq == TASK_ON_RQ_MIGRATING) {
@@ -6994,10 +7504,23 @@ static unsigned long wakeup_gran(struct sched_entity *se)
 static int
 wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se)
 {
+	int ret;
 	s64 gran, vdiff = curr->vruntime - se->vruntime;
+
+	/*
+	 * Others always preempt underclass on wakeup, no
+	 * respect to vruntime.
+	 */
+	ret = id_preempt_underclass(curr, se);
+	if (ret)
+		return ret;
 
 	if (vdiff <= 0)
 		return -1;
+
+	ret = id_preempt_highclass(curr, se);
+	if (ret)
+		return ret;
 
 	gran = wakeup_gran(se);
 	if (vdiff > gran)
@@ -7697,6 +8220,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		schedstat_inc(p->se.statistics.nr_failed_migrations_running);
 		return 0;
 	}
+
+	if (!id_can_migrate_task(p, env->src_rq, env->dst_rq))
+		return 0;
 
 	/*
 	 * Aggressive migration if:
@@ -10868,7 +11394,7 @@ static void task_fork_fair(struct task_struct *p)
 		resched_curr(rq);
 	}
 
-	se->vruntime -= cfs_rq->min_vruntime;
+	se->vruntime -= id_min_vruntime(cfs_rq, se);
 	rq_unlock(rq, &rf);
 }
 
@@ -10997,7 +11523,7 @@ static void detach_task_cfs_rq(struct task_struct *p)
 		 * cause 'unlimited' sleep bonus.
 		 */
 		place_entity(cfs_rq, se, 0);
-		se->vruntime -= cfs_rq->min_vruntime;
+		se->vruntime -= id_min_vruntime(cfs_rq, se);
 	}
 
 	detach_entity_cfs_rq(se);
@@ -11011,7 +11537,7 @@ static void attach_task_cfs_rq(struct task_struct *p)
 	attach_entity_cfs_rq(se);
 
 	if (!vruntime_normalized(p))
-		se->vruntime += cfs_rq->min_vruntime;
+		se->vruntime += id_min_vruntime(cfs_rq, se);
 }
 
 static void switched_from_fair(struct rq *rq, struct task_struct *p)
@@ -11074,6 +11600,7 @@ void init_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_SMP
 	raw_spin_lock_init(&cfs_rq->removed.lock);
 #endif
+	identity_init_cfs_rq(cfs_rq);
 }
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -11184,6 +11711,11 @@ int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
 
 	tg->shares = NICE_0_LOAD;
 
+#ifdef CONFIG_GROUP_IDENTITY
+	tg->bvt_warp_ns = parent->bvt_warp_ns;
+	tg->id_flags = parent->id_flags;
+#endif
+
 	init_cfs_bandwidth(tg_cfs_bandwidth(tg));
 
 	for_each_possible_cpu(i) {
@@ -11276,6 +11808,9 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 	} else {
 		se->cfs_rq = parent->my_q;
 		se->depth = parent->depth + 1;
+#ifdef CONFIG_GROUP_IDENTITY
+		se->id_flags = parent->id_flags;
+#endif
 	}
 
 	se->my_q = cfs_rq;

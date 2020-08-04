@@ -76,6 +76,10 @@ extern unsigned int sysctl_sched_cfs_bw_burst_onset_percent;
 extern unsigned int sysctl_sched_cfs_bw_burst_enabled;
 #endif
 
+#ifdef CONFIG_GROUP_IDENTITY
+extern unsigned int sysctl_sched_bvt_place_epsilon;
+#endif
+
 #ifdef CONFIG_SCHED_AUTOGROUP
 extern unsigned int sysctl_sched_autogroup_enabled;
 #endif

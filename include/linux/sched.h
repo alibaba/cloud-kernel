@@ -449,6 +449,9 @@ struct sched_statistics {
 	u64				nr_migrations_cold;
 	u64				nr_failed_migrations_affine;
 	u64				nr_failed_migrations_running;
+#ifdef CONFIG_GROUP_IDENTITY
+	u64				nr_failed_migrations_id;
+#endif
 	u64				nr_failed_migrations_hot;
 	u64				nr_forced_migrations;
 
@@ -506,6 +509,10 @@ struct sched_entity {
 	struct cfs_rq			*my_q;
 	/* cached value of my_q->h_nr_running */
 	unsigned long			runnable_weight;
+#endif
+
+#ifdef CONFIG_GROUP_IDENTITY
+	int				id_flags;
 #endif
 
 #ifdef CONFIG_SMP

@@ -595,6 +595,10 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 	SEQ_printf(m, "  .%-30s: %d\n", "nr_spread_over",
 			cfs_rq->nr_spread_over);
 	SEQ_printf(m, "  .%-30s: %d\n", "nr_running", cfs_rq->nr_running);
+#ifdef CONFIG_GROUP_IDENTITY
+	SEQ_printf(m, "  .%-30s: %lld.%06lu\n", "min_under_vruntime",
+			SPLIT_NS(cfs_rq->min_under_vruntime));
+#endif
 	SEQ_printf(m, "  .%-30s: %ld\n", "load", cfs_rq->load.weight);
 #ifdef CONFIG_SMP
 	SEQ_printf(m, "  .%-30s: %lu\n", "load_avg",
@@ -710,6 +714,10 @@ do {									\
 	SEQ_printf(m, "  .%-30s: %Ld.%06ld\n", #x, SPLIT_NS(rq->x))
 
 	P(nr_running);
+#ifdef CONFIG_GROUP_IDENTITY
+	P(nr_high_running);
+	P(nr_under_running);
+#endif
 	P(nr_switches);
 	P(nr_uninterruptible);
 	PN(next_balance);
@@ -972,6 +980,9 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 		P_SCHEDSTAT(se.statistics.nr_migrations_cold);
 		P_SCHEDSTAT(se.statistics.nr_failed_migrations_affine);
 		P_SCHEDSTAT(se.statistics.nr_failed_migrations_running);
+#ifdef CONFIG_GROUP_IDENTITY
+		P_SCHEDSTAT(se.statistics.nr_failed_migrations_id);
+#endif
 		P_SCHEDSTAT(se.statistics.nr_failed_migrations_hot);
 		P_SCHEDSTAT(se.statistics.nr_forced_migrations);
 		P_SCHEDSTAT(se.statistics.nr_wakeups);

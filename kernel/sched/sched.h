@@ -426,6 +426,11 @@ struct task_group {
 #endif
 #endif
 
+#ifdef CONFIG_GROUP_IDENTITY
+	int			bvt_warp_ns;
+	int			id_flags;
+#endif
+
 #ifdef CONFIG_RT_GROUP_SCHED
 	struct sched_rt_entity	**rt_se;
 	struct rt_rq		**rt_rq;
@@ -541,6 +546,11 @@ struct cfs_bandwidth { };
 
 #endif	/* CONFIG_CGROUP_SCHED */
 
+#ifdef CONFIG_GROUP_IDENTITY
+extern int update_identity(struct task_group *tg, s64 val);
+extern int update_bvt_warp_ns(struct task_group *tg, s64 val);
+#endif
+
 /* CFS-related fields in a runqueue */
 struct cfs_rq {
 	struct load_weight	load;
@@ -555,6 +565,12 @@ struct cfs_rq {
 #endif
 
 	struct rb_root_cached	tasks_timeline;
+
+#ifdef CONFIG_GROUP_IDENTITY
+	unsigned int		nr_tasks;
+	u64			min_under_vruntime;
+	struct rb_root_cached	under_timeline;
+#endif
 
 	/*
 	 * 'curr' points to currently running entity on this cfs_rq.
@@ -972,6 +988,11 @@ struct rq {
 	struct list_head	leaf_cfs_rq_list;
 	struct list_head	*tmp_alone_branch;
 #endif /* CONFIG_FAIR_GROUP_SCHED */
+
+#ifdef CONFIG_GROUP_IDENTITY
+	unsigned int		nr_high_running;
+	unsigned int		nr_under_running;
+#endif
 
 	/*
 	 * This is part of a global counter where only the total sum

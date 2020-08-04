@@ -954,6 +954,22 @@ config FAIR_GROUP_SCHED
 	depends on CGROUP_SCHED
 	default CGROUP_SCHED
 
+config GROUP_IDENTITY
+	bool "Group identity for SCHED_OTHER"
+	depends on (CGROUP_SCHED && 64BIT && SMP)
+	default CGROUP_SCHED
+	help
+	  This feature introduced identity for cgroup, including:
+	    ID_NORMAL
+		Normal CFS tasks.
+	    ID_HIGHCLASS
+		Tasks preempt normal & underclass tasks on wakeup,
+		also consider underclass only cpu as idle.
+	    ID_UNDERCLASS
+		Tasks take penalty on wakeup.
+	  These identity allow the tasks of cgroup to perform special
+	  schedule behaviour.
+
 config CFS_BANDWIDTH
 	bool "CPU bandwidth provisioning for FAIR_GROUP_SCHED"
 	depends on FAIR_GROUP_SCHED
