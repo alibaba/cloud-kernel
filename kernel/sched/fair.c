@@ -587,6 +587,7 @@ enum {
 #define ID_HIGHCLASS		0x0002
 #define ID_SMT_EXPELLER		0x0004
 #define ID_IDLE_SAVER		0x0008
+#define ID_IDLE_SEEKER		0x0010
 #define IDENTITY_FLAGS_MASK	0x00ff
 
 static DEFINE_MUTEX(identity_mutex);
@@ -629,6 +630,11 @@ static inline bool is_expeller(struct sched_entity *se)
 static inline bool is_idle_saver(struct sched_entity *se)
 {
 	return test_identity(se, ID_IDLE_SAVER);
+}
+
+static inline bool is_idle_seeker(struct sched_entity *se)
+{
+	return test_identity(se, ID_IDLE_SEEKER);
 }
 
 static inline bool underclass_only(int cpu)
@@ -826,6 +832,17 @@ static inline bool is_idle_saver_task(struct task_struct *p)
 	return ret;
 }
 
+static inline bool is_idle_seeker_task(struct task_struct *p)
+{
+	bool ret;
+
+	rcu_read_lock();
+	ret = p->se.parent ? is_idle_seeker(p->se.parent) : false;
+	rcu_read_unlock();
+
+	return ret;
+}
+
 static noinline bool
 id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 {
@@ -868,6 +885,7 @@ id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 	bool need_expel = rq_on_expel(rq) && expellee;
 	bool is_saver = is_idle_saver_task(p);
 	bool is_idle = available_idle_cpu(cpu);
+	u64 avg_idle = rq->avg_idle;
 
 	if (idle)
 		*idle = is_idle;
@@ -882,8 +900,11 @@ id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 	if (!is_saver)
 		return true;
 
+	if (sched_feat(ID_IDLE_AVG))
+		avg_idle = rq->avg_id_idle;
+
 	/* Save idle CPU for others unless above watermark */
-	return rq->avg_idle >= sysctl_sched_idle_saver_wmark;
+	return avg_idle >= sysctl_sched_idle_saver_wmark;
 }
 
 static __always_inline void
@@ -1039,10 +1060,10 @@ int update_bvt_warp_ns(struct task_group *tg, s64 val)
 	case TYPE_NORMAL:
 		break;
 	case TYPE_LS:
-		flags = ID_HIGHCLASS;
+		flags = ID_HIGHCLASS | ID_IDLE_SEEKER;
 		break;
 	case TYPE_STRICT:
-		flags = ID_HIGHCLASS;
+		flags = ID_HIGHCLASS | ID_IDLE_SEEKER | ID_SMT_EXPELLER;
 		break;
 	default:
 		return -ERANGE;
@@ -1410,6 +1431,36 @@ static inline void update_under_min_vruntime(struct cfs_rq *cfs_rq)
 	sync_min_vruntime(cfs_rq);
 }
 
+/*
+ * Here we maintain the knob for idle saver, which is the
+ * average of idle + underclass execution time.
+ *
+ * Thus more the underclass running, higher the knob, more
+ * chance for underclass to get the idle CPU.
+ */
+void update_id_idle_avg(struct rq *rq, u64 delta)
+{
+	s64 diff;
+	u64 max = sysctl_sched_idle_saver_wmark;
+
+	delta += rq->under_exec_sum - rq->under_exec_stamp;
+	diff = delta - rq->avg_id_idle;
+	rq->avg_id_idle += diff >> 3;
+
+	if (rq->avg_id_idle > max)
+		rq->avg_id_idle = max;
+
+	rq->under_exec_stamp = rq->under_exec_sum;
+}
+
+static inline void id_update_exec(struct rq *rq, u64 delta_exec)
+{
+	if (is_underclass_task(rq->curr))
+		rq->under_exec_sum += delta_exec;
+	else if (is_highclass_task(rq->curr))
+		rq->high_exec_sum += delta_exec;
+}
+
 #ifdef CONFIG_SCHED_SMT
 void notify_smt_expeller(struct rq *rq, struct task_struct *p)
 {
@@ -1504,6 +1555,11 @@ static inline bool underclass_only(int cpu)
 }
 
 static inline bool is_highclass_task(struct task_struct *p)
+{
+	return false;
+}
+
+static inline bool is_idle_seeker_task(struct task_struct *p)
 {
 	return false;
 }
@@ -1636,6 +1692,9 @@ static inline void update_under_min_vruntime(struct cfs_rq *cfs_rq)
 {
 }
 
+static inline void id_update_exec(struct rq *rq, u64 delta_exec)
+{
+}
 #endif
 
 #define __node_2_se(node) \
@@ -1995,6 +2054,7 @@ static void update_curr(struct cfs_rq *cfs_rq)
 		trace_sched_stat_runtime(curtask, delta_exec, curr->vruntime);
 		cgroup_account_cputime(curtask, delta_exec);
 		account_group_exec_runtime(curtask, delta_exec);
+		id_update_exec(rq_of(cfs_rq), delta_exec);
 	}
 
 	account_cfs_rq_runtime(cfs_rq, delta_exec);
@@ -7440,8 +7500,8 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	u64 avg_cost, avg_idle;
 	u64 time;
 	int this = smp_processor_id();
-	int cpu, nr = INT_MAX;
-	bool is_expellee;
+	int cpu, nr = INT_MAX, id_backup = -1;
+	bool is_seeker, is_expellee;
 
 	this_sd = rcu_dereference(*this_cpu_ptr(&sd_llc));
 	if (!this_sd)
@@ -7457,7 +7517,8 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	if (sched_feat(SIS_AVG_CPU) && avg_idle < avg_cost)
 		return -1;
 
-	if (sched_feat(SIS_PROP)) {
+	is_seeker = is_idle_seeker_task(p);
+	if (!is_seeker && sched_feat(SIS_PROP)) {
 		u64 span_avg = sd->span_weight * avg_idle;
 		if (span_avg > 4*avg_cost)
 			nr = div_u64(span_avg, avg_cost);
@@ -7471,16 +7532,28 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 
 	is_expellee = is_expellee_task(p);
 	for_each_cpu_wrap(cpu, cpus, target) {
+		bool idle;
+
 		if (!--nr)
 			return -1;
-		if (id_idle_cpu(p, cpu, is_expellee, NULL) || sched_idle_cpu(cpu))
-			break;
+
+		/*
+		 * Here is the best opportunity to locate a real
+		 * idle CPU for seeker, so consider id idle cpu as
+		 * a backup option, which will be pick only when
+		 * failed to locate a real idle one.
+		 */
+		if (id_idle_cpu(p, cpu, is_expellee, &idle) || sched_idle_cpu(cpu)) {
+			if (idle || !is_seeker)
+				break;
+			id_backup = cpu;
+		}
 	}
 
 	time = cpu_clock(this) - time;
 	update_avg(&this_sd->avg_scan_cost, time);
 
-	return cpu;
+	return (unsigned int)cpu < nr_cpumask_bits ? cpu : id_backup;
 }
 
 /*

@@ -730,6 +730,8 @@ do {									\
 	P(smt_expeller);
 	P(on_expel);
 #endif
+	PN(high_exec_sum);
+	PN(under_exec_sum);
 #endif
 	P(nr_switches);
 	P(nr_uninterruptible);
@@ -742,6 +744,9 @@ do {									\
 
 #ifdef CONFIG_SMP
 #define P64(n) SEQ_printf(m, "  .%-30s: %Ld\n", #n, rq->n);
+#ifdef CONFIG_GROUP_IDENTITY
+	P64(avg_id_idle);
+#endif
 	P64(avg_idle);
 	P64(max_idle_balance_cost);
 #undef P64

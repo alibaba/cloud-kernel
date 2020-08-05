@@ -2509,6 +2509,8 @@ static void ttwu_do_wakeup(struct rq *rq, struct task_struct *p, int wake_flags,
 			rq->avg_idle = max;
 
 		rq->idle_stamp = 0;
+
+		update_id_idle_avg(rq, delta);
 	}
 #endif
 }

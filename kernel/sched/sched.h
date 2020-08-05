@@ -551,9 +551,11 @@ extern int update_identity(struct task_group *tg, s64 val);
 extern int update_bvt_warp_ns(struct task_group *tg, s64 val);
 extern void notify_smt_expeller(struct rq *rq, struct task_struct *p);
 extern unsigned int id_nr_invalid(struct rq *rq);
+extern void update_id_idle_avg(struct rq *rq, u64 delta);
 #else
 static inline void notify_smt_expeller(struct rq *rq, struct task_struct *p) {}
 static inline unsigned int id_nr_invalid(struct rq *rq) { return 0; }
+static inline void update_id_idle_avg(struct rq *rq, u64 delta) {}
 #endif
 
 /* CFS-related fields in a runqueue */
@@ -1007,6 +1009,10 @@ struct rq {
 	bool			smt_expeller;
 	bool			smt_expellee;
 	bool			on_expel;
+	u64			high_exec_sum;
+	u64			under_exec_sum;
+	u64			under_exec_stamp;
+	u64			avg_id_idle;
 #ifdef CONFIG_SCHED_SMT
 	unsigned long		next_expel_ib;
 #endif
