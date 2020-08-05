@@ -494,6 +494,9 @@ struct sched_entity {
 
 #ifdef CONFIG_GROUP_IDENTITY
 	int				id_flags;
+#ifdef CONFIG_SCHED_SMT
+	struct list_head		expel_node;
+#endif
 #endif
 
 #ifdef CONFIG_SMP
