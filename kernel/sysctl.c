@@ -1471,7 +1471,7 @@ static struct ctl_table vm_table[] = {
 		.maxlen		= sizeof(sysctl_penalty_extra_delay_jiffies),
 		.proc_handler   = proc_doulongvec_ms_jiffies_minmax,
 		.mode		= 0644,
-		.extra1		= &zero,
+		.extra1		= &zero_ul,
 		.extra2		= &penalty_extra_delay_max,
 	},
 #endif
