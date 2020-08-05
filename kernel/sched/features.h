@@ -90,3 +90,7 @@ SCHED_FEAT(WA_STATIC_WEIGHT, false)
  * UtilEstimation. Use estimated CPU utilization.
  */
 SCHED_FEAT(UTIL_EST, true)
+
+#ifdef CONFIG_GROUP_IDENTITY
+SCHED_FEAT(ID_IDLE_AVG, true)
+#endif
