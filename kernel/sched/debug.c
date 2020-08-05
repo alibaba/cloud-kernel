@@ -573,7 +573,7 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 
 	raw_spin_lock_irqsave(&rq->lock, flags);
 	if (rb_first_cached(&cfs_rq->tasks_timeline))
-		MIN_vruntime = (__pick_first_entity(cfs_rq))->vruntime;
+		MIN_vruntime = (debug_pick_first_entity(cfs_rq))->vruntime;
 	last = __pick_last_entity(cfs_rq);
 	if (last)
 		max_vruntime = last->vruntime;
@@ -596,6 +596,14 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 			cfs_rq->nr_spread_over);
 	SEQ_printf(m, "  .%-30s: %d\n", "nr_running", cfs_rq->nr_running);
 #ifdef CONFIG_GROUP_IDENTITY
+#ifdef CONFIG_SCHED_SMT
+	SEQ_printf(m, "  .%-30s: %d\n", "h_nr_expel_immune",
+			cfs_rq->h_nr_expel_immune);
+	SEQ_printf(m, "  .%-30s: %lld.%06lu\n", "expel_start",
+			SPLIT_NS(cfs_rq->expel_start));
+	SEQ_printf(m, "  .%-30s: %lld.%06lu\n", "expel_spread",
+			SPLIT_NS(cfs_rq->expel_spread));
+#endif
 	SEQ_printf(m, "  .%-30s: %lld.%06lu\n", "min_under_vruntime",
 			SPLIT_NS(cfs_rq->min_under_vruntime));
 #endif
@@ -717,6 +725,11 @@ do {									\
 #ifdef CONFIG_GROUP_IDENTITY
 	P(nr_high_running);
 	P(nr_under_running);
+#ifdef CONFIG_SCHED_SMT
+	P(nr_expel_immune);
+	P(smt_expeller);
+	P(on_expel);
+#endif
 #endif
 	P(nr_switches);
 	P(nr_uninterruptible);

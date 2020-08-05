@@ -137,6 +137,22 @@ unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
  * Default: 1 msec in the future, units: nanoseconds
  */
 unsigned int sysctl_sched_bvt_place_epsilon = 1000000UL;
+
+#ifdef CONFIG_SCHED_SMT
+/*
+ * When CPU is full of expellee and on expel, it actually can
+ * execute nothing, just like an idle CPU.
+ *
+ * Thus do idle balance in such cases may improve load balance,
+ * but will cause more damage to the expellee.
+ *
+ * This knob help to control the minimum interval of expel idle
+ * balance, -1 means disallow.
+ *
+ * Default: 5 msec, units: ms
+ */
+int sysctl_sched_expel_idle_balance_delay = 5;
+#endif
 #endif
 
 static inline void update_load_add(struct load_weight *lw, unsigned long inc)
@@ -561,6 +577,7 @@ enum {
 #define ID_NORMAL		0x0000
 #define ID_UNDERCLASS		0x0001
 #define ID_HIGHCLASS		0x0002
+#define ID_SMT_EXPELLER		0x0004
 #define IDENTITY_FLAGS_MASK	0x00ff
 
 static DEFINE_MUTEX(identity_mutex);
@@ -595,6 +612,11 @@ static inline bool is_highclass(struct sched_entity *se)
 	return test_identity(se, ID_HIGHCLASS);
 }
 
+static inline bool is_expeller(struct sched_entity *se)
+{
+	return test_identity(se, ID_SMT_EXPELLER);
+}
+
 static inline bool underclass_only(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
@@ -603,12 +625,167 @@ static inline bool underclass_only(int cpu)
 	       rq->cfs.h_nr_running == rq->nr_under_running;
 }
 
+#ifdef CONFIG_SCHED_SMT
+/*
+ * This helper tell us if the cpu is on expel and full of expellee tasks.
+ *
+ * Such cpu may become idle with underclass enqueued for long time,
+ * thus we need to trigger nohz load balance for it when it's possible.
+ */
+static inline bool expellee_only(struct rq *rq)
+{
+	return rq->on_expel && !rq->nr_expel_immune && rq->cfs.h_nr_running;
+}
+
+static inline bool need_expel(int this_cpu)
+{
+	int cpu;
+
+	/* Not yet booted up */
+	if (!cpu_smt_mask(this_cpu))
+		return false;
+
+	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
+		if (cpu == this_cpu)
+			continue;
+
+		if (cpu_rq(cpu)->smt_expeller)
+			return true;
+	}
+
+	return false;
+}
+
+static inline void update_rq_on_expel(struct rq *rq)
+{
+	rq->on_expel = need_expel(rq->cpu);
+}
+
+static inline bool rq_on_expel(struct rq *rq)
+{
+	return rq->on_expel;
+}
+
+static inline bool expel_ib_disallow(struct rq *rq)
+{
+	if (sysctl_sched_expel_idle_balance_delay < 0)
+		return true;
+
+	if (time_before(jiffies, rq->next_expel_ib))
+		return true;
+
+	rq->next_expel_ib = jiffies +
+		msecs_to_jiffies(sysctl_sched_expel_idle_balance_delay);
+
+	return false;
+}
+
+static inline bool expellee_se(struct sched_entity *se)
+{
+	return se->my_q && !se->my_q->h_nr_expel_immune;
+}
+
+/*
+ * The check on wakeup should not consider the case that
+ * highclass group full of underclass tasks, the wakee
+ * may change the situation.
+ */
+static inline bool __is_expel_immune(struct sched_entity *se, bool wakeup)
+{
+	bool ret = true;
+
+	/* To expel if hierarchy contain underclass identity */
+	rcu_read_lock();
+	for_each_sched_entity(se) {
+		if (is_underclass(se) ||
+		   (!wakeup && expellee_se(se))) {
+			ret = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return ret;
+}
+
+static inline bool is_expel_immune(struct sched_entity *se)
+{
+	return __is_expel_immune(se, false);
+}
+
+static inline bool is_expellee_task(struct task_struct *p)
+{
+	return !__is_expel_immune(&p->se, true);
+}
+#else
+static inline bool expellee_only(struct rq *rq)
+{
+	return false;
+}
+
+static inline bool need_expel(int this_cpu)
+{
+	return false;
+}
+
+static inline void update_rq_on_expel(struct rq *rq)
+{
+}
+
+static inline bool rq_on_expel(struct rq *rq)
+{
+	return false;
+}
+
+static inline bool expel_ib_disallow(struct rq *rq)
+{
+	return false;
+}
+
+static inline bool expellee_se(struct sched_entity *se)
+{
+	return false;
+}
+
+static inline bool is_expel_immune(struct sched_entity *se)
+{
+	return true;
+}
+
+static inline bool is_expellee_task(struct task_struct *p)
+{
+	return false;
+}
+#endif
+
 static inline bool is_highclass_task(struct task_struct *p)
 {
 	bool ret;
 
 	rcu_read_lock();
 	ret = p->se.parent ? is_highclass(p->se.parent) : false;
+	rcu_read_unlock();
+
+	return ret;
+}
+
+/*
+ * Underclass tasks should be hidden from the rq when cpu is on
+ * expel, this helper return true when se need expel on rq.
+ */
+static inline bool should_expel_se(struct rq *rq, struct sched_entity *se)
+{
+	return rq_on_expel(rq) && !is_expel_immune(se);
+}
+
+static inline bool task_is_expeller(struct task_struct *p)
+{
+	bool ret = false;
+
+	/* Check the identity of task group it belonged */
+	rcu_read_lock();
+	if (p->se.parent)
+		ret = is_expeller(p->se.parent);
 	rcu_read_unlock();
 
 	return ret;
@@ -631,6 +808,10 @@ id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 	if (is_highclass_task(p) && src_rq->nr_high_running < 2)
 		goto bad_dst;
 
+	/* Do not migrate expellee task to CPU on expel */
+	if (is_expellee_task(p) && rq_on_expel(dst_rq))
+		goto bad_dst;
+
 	return true;
 
 bad_dst:
@@ -641,18 +822,31 @@ bad_dst:
 static noinline bool
 id_wake_affine(struct task_struct *p, int this_cpu, int prev_cpu)
 {
+	struct rq *this_rq = cpu_rq(this_cpu);
 	struct rq *prev_rq = cpu_rq(prev_cpu);
 
 	/* Last highclass should stay */
 	if (is_highclass_task(p) && prev_rq->nr_high_running < 1)
 		return false;
 
+	/* Do not pull underclass to the cpu on expel */
+	if (is_expellee_task(p) && rq_on_expel(this_rq))
+		return false;
+
 	return true;
 }
 
-static noinline bool id_idle_cpu(struct task_struct *p, int cpu)
+static noinline bool
+id_idle_cpu(struct task_struct *p, int cpu, bool expellee)
 {
-	if (available_idle_cpu(cpu))
+	struct rq *rq = cpu_rq(cpu);
+	bool need_expel = rq_on_expel(rq) && expellee;
+	bool is_idle = available_idle_cpu(cpu);
+
+	if (need_expel)
+		return false;
+
+	if (is_idle)
 		return true;
 	/* CPU full of underclass is idle for highclass */
 	return is_highclass_task(p) && underclass_only(cpu);
@@ -675,8 +869,69 @@ id_update_nr_running(struct task_group *tg, struct rq *rq, long delta)
 		rq->nr_under_running += delta;
 }
 
+#ifdef CONFIG_SCHED_SMT
+static inline u64 get_expel_spread(struct cfs_rq *cfs_rq)
+{
+	return cfs_rq->expel_spread;
+}
+
+static inline unsigned int get_h_nr_expel_immune(struct sched_entity *se)
+{
+	return se->my_q->h_nr_expel_immune;
+}
+
+static inline void
+update_nr_expel_immune(struct cfs_rq *cfs_rq, struct sched_entity *se,
+		       bool *immune, long delta)
+{
+	if (!(*immune))
+		return;
+
+	*immune = !is_underclass(se);
+	if (*immune) {
+		cfs_rq->h_nr_expel_immune += delta;
+		if (!se->parent)
+			cfs_rq->rq->nr_expel_immune += delta;
+	}
+}
+
+static inline void
+hierarchy_update_nr_expel_immune(struct sched_entity *se, long delta)
+{
+	bool immune = true;
+
+	for_each_sched_entity(se)
+		update_nr_expel_immune(cfs_rq_of(se), se, &immune, delta);
+}
+#else
+static inline u64 get_expel_spread(struct cfs_rq *cfs_rq)
+{
+	return 0;
+}
+
+static inline unsigned int get_h_nr_expel_immune(struct sched_entity *se)
+{
+	return 0;
+}
+
+static inline void
+update_nr_expel_immune(struct cfs_rq *cfs_rq, struct sched_entity *se,
+		       bool *immune, long delta)
+{
+}
+
+static inline void
+hierarchy_update_nr_expel_immune(struct sched_entity *se, long delta)
+{
+}
+#endif
+
 static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se);
 static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se);
+static void update_min_vruntime(struct cfs_rq *cfs_rq);
+static void update_curr(struct cfs_rq *cfs_rq);
+static inline u64
+id_min_vruntime(struct cfs_rq *cfs_rq, struct sched_entity *se);
 
 static void __update_identity(struct task_group *tg, int flags)
 {
@@ -687,31 +942,44 @@ static void __update_identity(struct task_group *tg, int flags)
 
 	for_each_online_cpu(cpu) {
 		bool on_rq;
-		unsigned int delta;
+		unsigned int delta, ei_delta;
 		struct cfs_rq *cfs_rq;
 		struct sched_entity *se;
 		struct rq *rq = cpu_rq(cpu);
 
 		rq_lock_irq(rq, &rf);
+		update_rq_clock(rq);
 
 		se = tg->se[cpu];
 		cfs_rq = cfs_rq_of(se);
 		delta = se->my_q->nr_tasks;
+		ei_delta = get_h_nr_expel_immune(se);
 		on_rq = se->on_rq;
 
 		if (on_rq) {
 			if (se != cfs_rq->curr)
 				__dequeue_entity(cfs_rq, se);
+			hierarchy_update_nr_expel_immune(se, -ei_delta);
 			id_update_nr_running(tg, rq, -delta);
+
+			update_curr(cfs_rq);
+			se->vruntime -= id_min_vruntime(cfs_rq, se);
 		}
 
 		se->id_flags = flags;
 
 		if (on_rq) {
+			se->vruntime += id_min_vruntime(cfs_rq, se);
+
 			if (se != cfs_rq->curr)
 				__enqueue_entity(cfs_rq, se);
+			hierarchy_update_nr_expel_immune(se, ei_delta);
 			id_update_nr_running(tg, rq, delta);
+
+			update_min_vruntime(cfs_rq);
 		}
+
+		notify_smt_expeller(rq, rq->curr);
 
 		rq_unlock_irq(rq, &rf);
 	}
@@ -782,6 +1050,9 @@ static inline void identity_init_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	cfs_rq->under_timeline = RB_ROOT_CACHED;
 	cfs_rq->min_under_vruntime = (u64)(-(1LL << 20));
+#ifdef CONFIG_SCHED_SMT
+	INIT_LIST_HEAD(&cfs_rq->expel_list);
+#endif
 }
 
 static inline struct rb_root_cached *
@@ -792,6 +1063,102 @@ id_rb_root(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 	return &cfs_rq->tasks_timeline;
 }
+
+#ifdef CONFIG_SCHED_SMT
+static inline void
+update_expel_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+	u64 min_under_vruntime;
+
+	if (cfs_rq->expel_start)
+		return;
+
+	/*
+	 * Consider underclass as dequeued on expel,
+	 * 'expel_start' record the penalty which will
+	 * be applied to 'expel_spread' later.
+	 */
+	cfs_rq->expel_start = sysctl_sched_bvt_place_epsilon;
+
+	min_under_vruntime = cfs_rq->min_under_vruntime + cfs_rq->expel_spread;
+	if (min_under_vruntime <= cfs_rq->min_vruntime)
+		return;
+
+	cfs_rq->expel_start += min_under_vruntime - cfs_rq->min_vruntime;
+}
+
+static inline void update_expel_spread(struct cfs_rq *cfs_rq)
+{
+	if (!cfs_rq->expel_start)
+		return;
+
+	/*
+	 * Consider underclass as enqueue after expel,
+	 * 'expel_spread' record the vruntime lost on
+	 * expel which applied to all the undercalss
+	 * until min vruntime sync up.
+	 */
+	cfs_rq->expel_spread = cfs_rq->min_vruntime -
+				cfs_rq->min_under_vruntime +
+				cfs_rq->expel_start;
+	cfs_rq->expel_start = 0;
+}
+
+static void
+place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial);
+
+static inline void check_expellee_se(struct cfs_rq *cfs_rq)
+{
+	struct sched_entity *se, *tmp;
+
+	list_for_each_entry_safe(se, tmp, &cfs_rq->expel_list, expel_node) {
+		if (rq_on_expel(rq_of(cfs_rq)) && expellee_se(se))
+			continue;
+
+		list_del_init(&se->expel_node);
+		place_entity(cfs_rq, se, 0);
+		__enqueue_entity(cfs_rq, se);
+	}
+}
+
+static inline struct rb_node *skip_expellee_se(struct cfs_rq *cfs_rq)
+{
+	struct rb_node *left = rb_first_cached(&cfs_rq->tasks_timeline);
+
+	while (left) {
+		struct sched_entity *se =
+			rb_entry(left, struct sched_entity, run_node);
+
+		if (!expellee_se(se))
+			break;
+
+		left = rb_next(&se->run_node);
+
+		__dequeue_entity(cfs_rq, se);
+		list_add_tail(&se->expel_node, &cfs_rq->expel_list);
+	}
+
+	return left;
+}
+#else
+static inline void
+update_expel_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+}
+
+static inline void update_expel_spread(struct cfs_rq *cfs_rq)
+{
+}
+
+static inline void check_expellee_se(struct cfs_rq *cfs_rq)
+{
+}
+
+static inline struct rb_node *skip_expellee_se(struct cfs_rq *cfs_rq)
+{
+	return rb_first_cached(&cfs_rq->tasks_timeline);
+}
+#endif
 
 static inline struct rb_node *
 id_rb_first_cached(struct cfs_rq *cfs_rq)
@@ -804,7 +1171,45 @@ id_rb_first_cached(struct cfs_rq *cfs_rq)
 		&cfs_rq->under_timeline,
 	};
 
-	if (cfs_rq->min_under_vruntime < cfs_rq->min_vruntime) {
+	/*
+	 * Usually only tasks on under tree need expel, but there
+	 * is one special case, non-underclass cgroup with the
+	 * underclass descendant.
+	 *
+	 * In this case, the non underclass se could contain only
+	 * expellee, we should not pick such se, otherwise we endup
+	 * to pick expellee and expel failed.
+	 *
+	 * So the tricky here is to skip such se and isolate them
+	 * from the rb-tree, this is similar to throttle but cost
+	 * far more less.
+	 *
+	 * So these se will be hidden just like underclass, but we
+	 * still need to check them on each pick since any of them
+	 * may become non-expellee when there is a non-expellee task
+	 * enqueued, in such case we put them back to the rb-tree so
+	 * they are no longer hidden.
+	 */
+	check_expellee_se(cfs_rq);
+	if (rq_on_expel(rq_of(cfs_rq)))
+		return skip_expellee_se(cfs_rq);
+
+	/*
+	 * When cpu is on expel, underclass tasks will be hidden
+	 * from picking, however since they are still on runqueue,
+	 * after expel they gain vruntime bonus if the min vruntime
+	 * are not yet sync up.
+	 *
+	 * We address this by recording 'expel_spread' after expel,
+	 * which is the vruntime penalty applied to all the underclass
+	 * until sync up.
+	 *
+	 * Check update_expel_xxx() for more details.
+	 */
+	update_expel_spread(cfs_rq);
+
+	if (cfs_rq->min_under_vruntime + get_expel_spread(cfs_rq) <
+	    cfs_rq->min_vruntime) {
 		roots[0] = &cfs_rq->under_timeline;
 		roots[1] = &cfs_rq->tasks_timeline;
 	}
@@ -816,6 +1221,22 @@ id_rb_first_cached(struct cfs_rq *cfs_rq)
 	}
 
 	return NULL;
+}
+
+/*
+ * Consider the 'expel_spread' when checking priority according
+ * to vruntime.
+ */
+static inline u64 id_vruntime(struct sched_entity *se)
+{
+	return is_underclass(se) ?
+		se->vruntime + get_expel_spread(cfs_rq_of(se)) : se->vruntime;
+}
+
+static inline int
+id_entity_before(struct sched_entity *a, struct sched_entity *b)
+{
+	return (s64)(id_vruntime(a) - id_vruntime(b)) < 0;
 }
 
 static inline u64
@@ -851,8 +1272,19 @@ id_preempt_underclass(struct sched_entity *curr, struct sched_entity *se)
 	bool under_curr = is_underclass(curr);
 	bool under_se = is_underclass(se);
 
-	if (under_curr == under_se)
+	if (under_curr == under_se) {
+#ifdef CONFIG_SCHED_SMT
+		/* Full of expellee is also underclass when on expel */
+		if (rq_on_expel(rq_of(cfs_rq_of(curr)))) {
+			bool expel_curr = expellee_se(curr);
+			bool expel_se = expellee_se(se);
+
+			if (expel_curr != expel_se)
+				return expel_se ? -1 : 1;
+		}
+#endif
 		return 0;
+	}
 
 	return under_se ? -1 : 1;
 }
@@ -883,17 +1315,33 @@ id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
  */
 static inline void sync_min_vruntime(struct cfs_rq *cfs_rq)
 {
+	bool sync_up = false;
 	u64 effect_vruntime = max_vruntime(cfs_rq->min_vruntime,
 					   cfs_rq->min_under_vruntime);
 	bool no_curr = (!cfs_rq->curr || !cfs_rq->curr->on_rq);
 
 	if (!rb_first_cached(&cfs_rq->tasks_timeline) &&
-	    (no_curr || is_underclass(cfs_rq->curr)))
+	    (no_curr || is_underclass(cfs_rq->curr))) {
 		cfs_rq->min_vruntime = effect_vruntime;
+		sync_up = true;
+	}
 
 	if (!rb_first_cached(&cfs_rq->under_timeline) &&
-	    (no_curr || !is_underclass(cfs_rq->curr)))
+	    (no_curr || !is_underclass(cfs_rq->curr))) {
 		cfs_rq->min_under_vruntime = effect_vruntime;
+		sync_up = true;
+	}
+
+#ifdef CONFIG_SCHED_SMT
+	/*
+	 * Once min vruntime sync up, the expel penalty will be
+	 * included, just clear it.
+	 */
+	if (sync_up) {
+		cfs_rq->expel_start = 0;
+		cfs_rq->expel_spread = 0;
+	}
+#endif
 }
 
 static inline void update_under_min_vruntime(struct cfs_rq *cfs_rq)
@@ -928,6 +1376,82 @@ static inline void update_under_min_vruntime(struct cfs_rq *cfs_rq)
 	sync_min_vruntime(cfs_rq);
 }
 
+#ifdef CONFIG_SCHED_SMT
+void notify_smt_expeller(struct rq *rq, struct task_struct *p)
+{
+	int cpu, this_cpu = rq->cpu;
+	bool expeller = false;
+	bool expellee = false;
+
+	if (p->sched_class == &fair_sched_class) {
+		expeller = task_is_expeller(p);
+		expellee = !is_expel_immune(&p->se);
+	}
+
+	rq->smt_expellee = expellee;
+
+	if (expeller == rq->smt_expeller)
+		return;
+
+	rq->smt_expeller = expeller;
+
+	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
+		if (cpu == this_cpu)
+			continue;
+
+		smp_send_reschedule(cpu);
+	}
+}
+
+static inline bool expel_resched(struct rq *rq)
+{
+	/* Nothing to do for expeller */
+	if (rq->smt_expeller)
+		return false;
+
+	/* Stop the expel when started */
+	if (rq->curr == rq->idle)
+		return !rq_on_expel(rq) && rq->cfs.nr_running;
+
+	/* Start the expel when stopped */
+	return rq_on_expel(rq) && rq->smt_expellee;
+}
+
+void handle_smt_expeller(void)
+{
+	struct rq *rq = this_rq();
+
+	update_rq_on_expel(rq);
+
+	/* Safe since 'current' can't be changed during IPI */
+	if (expel_resched(rq) && !test_tsk_need_resched(rq->curr)) {
+		set_tsk_need_resched(rq->curr);
+		set_preempt_need_resched();
+	}
+}
+
+unsigned int id_nr_invalid(struct rq *rq)
+{
+	if (rq_on_expel(rq))
+		return rq->cfs.h_nr_running - rq->nr_expel_immune;
+
+	return 0;
+}
+#else
+void notify_smt_expeller(struct rq *rq, struct task_struct *p)
+{
+}
+
+void handle_smt_expeller(void)
+{
+}
+
+unsigned int id_nr_invalid(struct rq *rq)
+{
+	return 0;
+}
+#endif
+
 #else
 
 static inline bool is_underclass(struct sched_entity *curr)
@@ -950,6 +1474,35 @@ static inline bool is_highclass_task(struct task_struct *p)
 	return false;
 }
 
+static inline bool is_expellee_task(struct task_struct *p)
+{
+	return false;
+}
+
+static inline bool should_expel_se(struct rq *rq, struct sched_entity *se)
+{
+	return false;
+}
+
+static inline bool expellee_only(struct rq *rq)
+{
+	return false;
+}
+
+static inline void update_rq_on_expel(struct rq *rq)
+{
+}
+
+static inline bool rq_on_expel(struct rq *rq)
+{
+	return false;
+}
+
+static inline bool expel_ib_disallow(struct rq *rq)
+{
+	return false;
+}
+
 static bool
 id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 {
@@ -962,12 +1515,19 @@ id_wake_affine(struct task_struct *p, int this_cpu, int prev_cpu)
 	return true;
 }
 
-static inline bool id_idle_cpu(struct task_struct *p, int cpu)
+static inline bool
+id_idle_cpu(struct task_struct *p, int cpu, bool expellee)
 {
-	return available_idle_cpu(cpu);
+	bool is_idle = available_idle_cpu(cpu);
+	return is_idle;
 }
 
 static inline void identity_init_cfs_rq(struct cfs_rq *cfs_rq)
+{
+}
+
+static inline void
+update_expel_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 }
 
@@ -981,6 +1541,17 @@ static inline struct rb_node *
 id_rb_first_cached(struct cfs_rq *cfs_rq)
 {
 	return rb_first_cached(&cfs_rq->tasks_timeline);
+}
+
+static inline u64 id_vruntime(struct sched_entity *se)
+{
+	return se->vruntime;
+}
+
+static inline int
+id_entity_before(struct sched_entity *a, struct sched_entity *b)
+{
+	return entity_before(a, b);
 }
 
 static inline u64
@@ -1010,6 +1581,17 @@ id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
 static __always_inline void
 id_update_nr_running(struct task_group *tg, struct rq *rq, long delta)
 {
+}
+
+static inline void
+update_nr_expel_immune(struct cfs_rq *cfs_rq, struct sched_entity *se,
+			bool *immune, long delta)
+{
+}
+
+static inline unsigned int get_h_nr_expel_immune(struct sched_entity *se)
+{
+	return 0;
 }
 
 static inline void update_under_min_vruntime(struct cfs_rq *cfs_rq)
@@ -1073,7 +1655,25 @@ static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	struct rb_root_cached *root = id_rb_root(cfs_rq, se);
 
+#if defined(CONFIG_GROUP_IDENTITY) && defined(CONFIG_SCHED_SMT)
+	/* Either on list or on rb-tree */
+	if (!list_empty(&se->expel_node)) {
+		list_del_init(&se->expel_node);
+		return;
+	}
+#endif
 	rb_erase_cached(&se->run_node, root);
+}
+
+/* No tricy here */
+struct sched_entity *debug_pick_first_entity(struct cfs_rq *cfs_rq)
+{
+	struct rb_node *left = rb_first_cached(&cfs_rq->tasks_timeline);
+
+	if (!left)
+		return NULL;
+
+	return rb_entry(left, struct sched_entity, run_node);
 }
 
 struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq)
@@ -4928,6 +5528,11 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 		return;
 	}
 
+	if (should_expel_se(rq_of(cfs_rq), curr)) {
+		resched_curr(rq_of(cfs_rq));
+		return;
+	}
+
 	/*
 	 * Ensure that a task that missed wakeup preemption by a
 	 * narrow margin doesn't have to wait for a full slice.
@@ -4936,8 +5541,12 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	if (is_highclass(curr) && delta_exec < sysctl_sched_min_granularity)
 		return;
 
+	/* Must be on expel if no next se, and curr won't be expellee */
 	se = __pick_first_entity(cfs_rq);
-	delta = curr->vruntime - se->vruntime;
+	if (!se)
+		return;
+
+	delta = id_vruntime(curr) - id_vruntime(se);
 
 	if (delta < 0)
 		return;
@@ -4999,8 +5608,8 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	 * If curr is set we have to see if its left of the leftmost entity
 	 * still in the tree, provided there was anything in the tree at all.
 	 */
-	if (!left || (curr && entity_before(curr, left)))
-		left = curr;
+	if (!left || (curr && id_entity_before(curr, left)))
+		left = should_expel_se(rq_of(cfs_rq), curr) ? left : curr;
 
 	se = left; /* ideally we run the leftmost entity */
 
@@ -5015,7 +5624,7 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 			second = __pick_first_entity(cfs_rq);
 		} else {
 			second = __pick_next_entity(se);
-			if (!second || (curr && entity_before(curr, second)))
+			if (!second || (curr && id_entity_before(curr, second)))
 				second = curr;
 		}
 
@@ -5036,6 +5645,9 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	}
 
 	clear_buddies(cfs_rq, se);
+
+	if (rq_on_expel(rq_of(cfs_rq)))
+		update_expel_start(cfs_rq, se);
 
 	return se;
 }
@@ -5326,7 +5938,8 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	struct rq *rq = rq_of(cfs_rq);
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(tg);
 	struct sched_entity *se;
-	long task_delta, idle_task_delta, dequeue = 1;
+	long task_delta, idle_task_delta, dequeue = 1, ei_delta;
+	bool immune = true;
 
 	raw_spin_lock(&cfs_b->lock);
 	/* This will start the period timer if necessary */
@@ -5350,6 +5963,7 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 		return false;  /* Throttle no longer required. */
 
 	se = tg->se[cpu_of(rq_of(cfs_rq))];
+	ei_delta = get_h_nr_expel_immune(se);
 
 	/* freeze hierarchy runnable averages while throttled */
 	rcu_read_lock();
@@ -5375,6 +5989,7 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 		qcfs_rq->h_nr_running -= task_delta;
 		qcfs_rq->idle_h_nr_running -= idle_task_delta;
+		update_nr_expel_immune(qcfs_rq, se, &immune, -ei_delta);
 
 		if (qcfs_rq->load.weight)
 			dequeue = 0;
@@ -5394,14 +6009,16 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	bool immune = true;
 	struct task_group *tg = cfs_rq->tg;
 	struct cfs_rq *bottom_cfs_rq = cfs_rq;
 	struct rq *rq = rq_of(cfs_rq);
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(tg);
 	struct sched_entity *se;
-	long task_delta, idle_task_delta;
+	long task_delta, idle_task_delta, ei_delta;
 
 	se = tg->se[cpu_of(rq)];
+	ei_delta = get_h_nr_expel_immune(se);
 
 	cfs_rq->throttled = 0;
 
@@ -5431,6 +6048,7 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 		cfs_rq->h_nr_running += task_delta;
 		cfs_rq->idle_h_nr_running += idle_task_delta;
+		update_nr_expel_immune(cfs_rq, se, &immune, ei_delta);
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
@@ -6085,6 +6703,7 @@ static int sched_idle_cpu(int cpu)
 static void
 enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
+	bool immune = true;
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 	int idle_h_nr_running = task_has_idle_policy(p);
@@ -6117,6 +6736,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		cfs_rq->h_nr_running++;
 		cfs_rq->idle_h_nr_running += idle_h_nr_running;
+		update_nr_expel_immune(cfs_rq, se, &immune, 1);
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq)) {
@@ -6139,6 +6759,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		cfs_rq->h_nr_running++;
 		cfs_rq->idle_h_nr_running += idle_h_nr_running;
+		update_nr_expel_immune(cfs_rq, se, &immune, 1);
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
@@ -6203,6 +6824,7 @@ static void set_next_buddy(struct sched_entity *se);
  */
 static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
+	bool immune = true;
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 	int task_sleep = flags & DEQUEUE_SLEEP;
@@ -6220,6 +6842,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		cfs_rq->h_nr_running--;
 		cfs_rq->idle_h_nr_running -= idle_h_nr_running;
+		update_nr_expel_immune(cfs_rq, se, &immune, -1);
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq)) {
@@ -6254,6 +6877,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		cfs_rq->h_nr_running--;
 		cfs_rq->idle_h_nr_running -= idle_h_nr_running;
+		update_nr_expel_immune(cfs_rq, se, &immune, -1);
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
@@ -6676,6 +7300,7 @@ static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int 
 {
 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
 	int core, cpu;
+	bool is_expellee;
 
 	if (!static_branch_likely(&sched_smt_present))
 		return -1;
@@ -6685,11 +7310,12 @@ static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int 
 
 	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
 
+	is_expellee = is_expellee_task(p);
 	for_each_cpu_wrap(core, cpus, target) {
 		bool idle = true;
 
 		for_each_cpu(cpu, cpu_smt_mask(core)) {
-			if (!id_idle_cpu(p, cpu)) {
+			if (!id_idle_cpu(p, cpu, is_expellee)) {
 				idle = false;
 				break;
 			}
@@ -6714,15 +7340,17 @@ static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int 
 static int select_idle_smt(struct task_struct *p, struct sched_domain *sd, int target)
 {
 	int cpu;
+	bool is_expellee;
 
 	if (!static_branch_likely(&sched_smt_present))
 		return -1;
 
+	is_expellee = is_expellee_task(p);
 	for_each_cpu(cpu, cpu_smt_mask(target)) {
 		if (!cpumask_test_cpu(cpu, p->cpus_ptr) ||
 		    !cpumask_test_cpu(cpu, sched_domain_span(sd)))
 			continue;
-		if (id_idle_cpu(p, cpu) || sched_idle_cpu(cpu))
+		if (id_idle_cpu(p, cpu, is_expellee) || sched_idle_cpu(cpu))
 			return cpu;
 	}
 
@@ -6756,6 +7384,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	u64 time;
 	int this = smp_processor_id();
 	int cpu, nr = INT_MAX;
+	bool is_expellee;
 
 	this_sd = rcu_dereference(*this_cpu_ptr(&sd_llc));
 	if (!this_sd)
@@ -6783,10 +7412,11 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 
 	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
 
+	is_expellee = is_expellee_task(p);
 	for_each_cpu_wrap(cpu, cpus, target) {
 		if (!--nr)
 			return -1;
-		if (id_idle_cpu(p, cpu) || sched_idle_cpu(cpu))
+		if (id_idle_cpu(p, cpu, is_expellee) || sched_idle_cpu(cpu))
 			break;
 	}
 
@@ -6846,6 +7476,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	struct sched_domain *sd;
 	unsigned long task_util;
 	int i, recent_used_cpu;
+	bool is_expellee = is_expellee_task(p);
 
 	/*
 	 * On asymmetric system, update task utilization because we will check
@@ -6856,7 +7487,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 		task_util = uclamp_task_util(p);
 	}
 
-	if ((id_idle_cpu(p, target) || sched_idle_cpu(target)) &&
+	if ((id_idle_cpu(p, target, is_expellee) || sched_idle_cpu(target)) &&
 	    asym_fits_capacity(task_util, target))
 		return target;
 
@@ -6864,7 +7495,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	 * If the previous CPU is cache affine and idle, don't be stupid:
 	 */
 	if (prev != target && cpus_share_cache(prev, target) &&
-	    (id_idle_cpu(p, prev) || sched_idle_cpu(prev)) &&
+	    (id_idle_cpu(p, prev, is_expellee) || sched_idle_cpu(prev)) &&
 	    asym_fits_capacity(task_util, prev))
 		return prev;
 
@@ -6887,7 +7518,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	if (recent_used_cpu != prev &&
 	    recent_used_cpu != target &&
 	    cpus_share_cache(recent_used_cpu, target) &&
-	    (id_idle_cpu(p, recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
+	    (id_idle_cpu(p, recent_used_cpu, is_expellee) || sched_idle_cpu(recent_used_cpu)) &&
 	    cpumask_test_cpu(p->recent_used_cpu, p->cpus_ptr) &&
 	    asym_fits_capacity(task_util, recent_used_cpu)) {
 		/*
@@ -7652,10 +8283,26 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 	struct sched_entity *se;
 	struct task_struct *p;
 	int new_tasks;
+	bool expel_pulled = false;
 
 again:
 	if (!sched_fair_runnable(rq))
 		goto idle;
+
+	update_rq_on_expel(rq);
+	if (expellee_only(rq)) {
+		/*
+		 * In order to mark CPU as IDLE, we need to call
+		 * idle_balance(), while since we still have
+		 * expellee on rq, we may pulled nothing and come
+		 * back to here again, check to avoid deadloop.
+		 */
+		if (expel_ib_disallow(rq) || expel_pulled)
+			return NULL;
+
+		expel_pulled = true;
+		goto idle;
+	}
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	if (!prev || prev->sched_class != &fair_sched_class)
@@ -7695,6 +8342,14 @@ again:
 
 				if (!cfs_rq->nr_running)
 					goto idle;
+
+				if (expellee_only(rq)) {
+					if (expel_ib_disallow(rq))
+						return NULL;
+
+					expel_pulled = true;
+					goto idle;
+				}
 
 				goto simple;
 			}
@@ -10719,15 +11374,21 @@ static inline int on_null_domain(struct rq *rq)
 
 static inline int find_new_ilb(void)
 {
-	int ilb;
+	int ilb, ret = nr_cpu_ids;
 
 	for_each_cpu_and(ilb, nohz.idle_cpus_mask,
 			      housekeeping_cpumask(HK_FLAG_MISC)) {
 		if (idle_cpu(ilb))
 			return ilb;
+		/*
+		 * The expellee only cpu is also some kind of idle,
+		 * pick it if no other choice.
+		 */
+		if (expellee_only(cpu_rq(ilb)))
+			ret = ilb;
 	}
 
-	return nr_cpu_ids;
+	return ret;
 }
 
 /*
@@ -10801,7 +11462,7 @@ static void nohz_balancer_kick(struct rq *rq)
 	if (time_before(now, nohz.next_balance))
 		goto out;
 
-	if (rq->nr_running >= 2) {
+	if (rq->nr_running >= 2 || expellee_only(rq)) {
 		flags = NOHZ_KICK_MASK;
 		goto out;
 	}
@@ -11026,7 +11687,10 @@ static bool _nohz_idle_balance(struct rq *this_rq, unsigned int flags,
 	smp_mb();
 
 	for_each_cpu(balance_cpu, nohz.idle_cpus_mask) {
-		if (balance_cpu == this_cpu || !idle_cpu(balance_cpu))
+		rq = cpu_rq(balance_cpu);
+
+		if (balance_cpu == this_cpu ||
+		   (!idle_cpu(balance_cpu) && !expellee_only(rq)))
 			continue;
 
 		/*
@@ -11038,8 +11702,6 @@ static bool _nohz_idle_balance(struct rq *this_rq, unsigned int flags,
 			has_blocked_load = true;
 			goto abort;
 		}
-
-		rq = cpu_rq(balance_cpu);
 
 		has_blocked_load |= update_nohz_stats(rq, true);
 
@@ -11812,6 +12474,10 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 		se->id_flags = parent->id_flags;
 #endif
 	}
+
+#if defined(CONFIG_GROUP_IDENTITY) && defined(CONFIG_SCHED_SMT)
+	INIT_LIST_HEAD(&se->expel_node);
+#endif
 
 	se->my_q = cfs_rq;
 	/* guarantee group entities always have weight */

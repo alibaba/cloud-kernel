@@ -549,6 +549,11 @@ struct cfs_bandwidth { };
 #ifdef CONFIG_GROUP_IDENTITY
 extern int update_identity(struct task_group *tg, s64 val);
 extern int update_bvt_warp_ns(struct task_group *tg, s64 val);
+extern void notify_smt_expeller(struct rq *rq, struct task_struct *p);
+extern unsigned int id_nr_invalid(struct rq *rq);
+#else
+static inline void notify_smt_expeller(struct rq *rq, struct task_struct *p) {}
+static inline unsigned int id_nr_invalid(struct rq *rq) { return 0; }
 #endif
 
 /* CFS-related fields in a runqueue */
@@ -569,6 +574,12 @@ struct cfs_rq {
 #ifdef CONFIG_GROUP_IDENTITY
 	unsigned int		nr_tasks;
 	u64			min_under_vruntime;
+#ifdef CONFIG_SCHED_SMT
+	u64			expel_spread;
+	u64			expel_start;
+	unsigned int		h_nr_expel_immune;
+	struct list_head	expel_list;
+#endif
 	struct rb_root_cached	under_timeline;
 #endif
 
@@ -992,6 +1003,13 @@ struct rq {
 #ifdef CONFIG_GROUP_IDENTITY
 	unsigned int		nr_high_running;
 	unsigned int		nr_under_running;
+	unsigned int		nr_expel_immune;
+	bool			smt_expeller;
+	bool			smt_expellee;
+	bool			on_expel;
+#ifdef CONFIG_SCHED_SMT
+	unsigned long		next_expel_ib;
+#endif
 #endif
 
 	/*
@@ -2342,7 +2360,7 @@ static inline void double_rq_unlock(struct rq *rq1, struct rq *rq2)
 
 #endif
 
-extern struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq);
+extern struct sched_entity *debug_pick_first_entity(struct cfs_rq *cfs_rq);
 extern struct sched_entity *__pick_last_entity(struct cfs_rq *cfs_rq);
 
 #ifdef	CONFIG_SCHED_DEBUG

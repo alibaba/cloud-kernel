@@ -3111,6 +3111,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 
 #ifdef CONFIG_GROUP_IDENTITY
 	p->se.id_flags			= 0;
+#ifdef CONFIG_SCHED_SMT
+	INIT_LIST_HEAD(&p->se.expel_node);
+#endif
 #endif
 
 #ifdef CONFIG_SCHEDSTATS
@@ -4539,6 +4542,9 @@ static void __sched notrace __schedule(bool preempt)
 	}
 
 	next = pick_next_task(rq, prev, &rf);
+
+	notify_smt_expeller(rq, next);
+
 	clear_tsk_need_resched(prev);
 	clear_preempt_need_resched();
 

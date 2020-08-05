@@ -235,6 +235,11 @@ extern int __must_check io_schedule_prepare(void);
 extern void io_schedule_finish(int token);
 extern long io_schedule_timeout(long timeout);
 extern void io_schedule(void);
+#ifdef CONFIG_GROUP_IDENTITY
+extern void handle_smt_expeller(void);
+#else
+static inline void handle_smt_expeller(void) {}
+#endif
 
 /**
  * struct prev_cputime - snapshot of system and user cputime
@@ -513,6 +518,9 @@ struct sched_entity {
 
 #ifdef CONFIG_GROUP_IDENTITY
 	int				id_flags;
+#ifdef CONFIG_SCHED_SMT
+	struct list_head		expel_node;
+#endif
 #endif
 
 #ifdef CONFIG_SMP
@@ -1862,6 +1870,7 @@ extern char *__get_task_comm(char *to, size_t len, struct task_struct *tsk);
 #ifdef CONFIG_SMP
 static __always_inline void scheduler_ipi(void)
 {
+	handle_smt_expeller();
 	/*
 	 * Fold TIF_NEED_RESCHED into the preempt_count; anybody setting
 	 * TIF_NEED_RESCHED remotely (for the first time) will also send

@@ -967,6 +967,8 @@ config GROUP_IDENTITY
 		also consider underclass only cpu as idle.
 	    ID_UNDERCLASS
 		Tasks take penalty on wakeup.
+	    ID_SMT_EXPELLER
+		expel the underclass tasks on smt-cpus when executing
 	  These identity allow the tasks of cgroup to perform special
 	  schedule behaviour.
 
