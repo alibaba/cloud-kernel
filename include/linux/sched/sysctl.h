@@ -78,6 +78,7 @@ extern unsigned int sysctl_sched_cfs_bw_burst_enabled;
 
 #ifdef CONFIG_GROUP_IDENTITY
 extern unsigned int sysctl_sched_bvt_place_epsilon;
+extern unsigned int sysctl_sched_idle_saver_wmark;
 #ifdef CONFIG_SCHED_SMT
 extern int sysctl_sched_expel_idle_balance_delay;
 #endif

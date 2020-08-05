@@ -138,6 +138,14 @@ unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
  */
 unsigned int sysctl_sched_bvt_place_epsilon = 1000000UL;
 
+/*
+ * The idle saver tasks will try to save idle CPU for others
+ * unless the average idle of CPU above the watermark.
+ *
+ * Default: 0 msec, units: nanoseconds
+ */
+unsigned int sysctl_sched_idle_saver_wmark;
+
 #ifdef CONFIG_SCHED_SMT
 /*
  * When CPU is full of expellee and on expel, it actually can
@@ -578,6 +586,7 @@ enum {
 #define ID_UNDERCLASS		0x0001
 #define ID_HIGHCLASS		0x0002
 #define ID_SMT_EXPELLER		0x0004
+#define ID_IDLE_SAVER		0x0008
 #define IDENTITY_FLAGS_MASK	0x00ff
 
 static DEFINE_MUTEX(identity_mutex);
@@ -615,6 +624,11 @@ static inline bool is_highclass(struct sched_entity *se)
 static inline bool is_expeller(struct sched_entity *se)
 {
 	return test_identity(se, ID_SMT_EXPELLER);
+}
+
+static inline bool is_idle_saver(struct sched_entity *se)
+{
+	return test_identity(se, ID_IDLE_SAVER);
 }
 
 static inline bool underclass_only(int cpu)
@@ -801,6 +815,17 @@ static inline bool is_underclass_task(struct task_struct *p)
 	return ret;
 }
 
+static inline bool is_idle_saver_task(struct task_struct *p)
+{
+	bool ret;
+
+	rcu_read_lock();
+	ret = p->se.parent ? is_idle_saver(p->se.parent) : false;
+	rcu_read_unlock();
+
+	return ret;
+}
+
 static noinline bool
 id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 {
@@ -837,19 +862,28 @@ id_wake_affine(struct task_struct *p, int this_cpu, int prev_cpu)
 }
 
 static noinline bool
-id_idle_cpu(struct task_struct *p, int cpu, bool expellee)
+id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 {
 	struct rq *rq = cpu_rq(cpu);
 	bool need_expel = rq_on_expel(rq) && expellee;
+	bool is_saver = is_idle_saver_task(p);
 	bool is_idle = available_idle_cpu(cpu);
+
+	if (idle)
+		*idle = is_idle;
 
 	if (need_expel)
 		return false;
 
-	if (is_idle)
-		return true;
 	/* CPU full of underclass is idle for highclass */
-	return is_highclass_task(p) && underclass_only(cpu);
+	if (!is_idle)
+		return is_highclass_task(p) && underclass_only(cpu);
+
+	if (!is_saver)
+		return true;
+
+	/* Save idle CPU for others unless above watermark */
+	return rq->avg_idle >= sysctl_sched_idle_saver_wmark;
 }
 
 static __always_inline void
@@ -997,10 +1031,10 @@ int update_bvt_warp_ns(struct task_group *tg, s64 val)
 
 	switch (val) {
 	case TYPE_IDLE:
-		flags = ID_UNDERCLASS;
+		flags = ID_UNDERCLASS | ID_IDLE_SAVER;
 		break;
 	case TYPE_BATCH:
-		flags = ID_UNDERCLASS;
+		flags = ID_UNDERCLASS | ID_IDLE_SAVER;
 		break;
 	case TYPE_NORMAL:
 		break;
@@ -1516,9 +1550,13 @@ id_wake_affine(struct task_struct *p, int this_cpu, int prev_cpu)
 }
 
 static inline bool
-id_idle_cpu(struct task_struct *p, int cpu, bool expellee)
+id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 {
 	bool is_idle = available_idle_cpu(cpu);
+
+	if (idle)
+		*idle = is_idle;
+
 	return is_idle;
 }
 
@@ -7299,8 +7337,8 @@ unlock:
 static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int target)
 {
 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
-	int core, cpu;
-	bool is_expellee;
+	int core, cpu, id_backup = -1;
+	bool is_expellee, do_clear = true;
 
 	if (!static_branch_likely(&sched_smt_present))
 		return -1;
@@ -7313,25 +7351,44 @@ static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int 
 	is_expellee = is_expellee_task(p);
 	for_each_cpu_wrap(core, cpus, target) {
 		bool idle = true;
+		bool id_idle = true;
 
 		for_each_cpu(cpu, cpu_smt_mask(core)) {
-			if (!id_idle_cpu(p, cpu, is_expellee)) {
-				idle = false;
+			bool is_idle = true;
+
+			if (!id_idle_cpu(p, cpu, is_expellee, &is_idle)) {
+				id_idle = false;
 				break;
 			}
+
+			if (!is_idle)
+				idle = false;
 		}
 		cpumask_andnot(cpus, cpus, cpu_smt_mask(core));
 
-		if (idle)
+		if (idle && id_idle)
 			return core;
+
+		if (id_idle)
+			id_backup = core;
+
+		/*
+		 * This only happens when a CPU is idle but
+		 * not suitable for underclass task, we
+		 * should not clear the idle info since this
+		 * is still a good idle core for others.
+		 */
+		if (idle)
+			do_clear = false;
 	}
 
 	/*
 	 * Failed to find an idle core; stop looking for one.
 	 */
-	set_idle_cores(target, 0);
+	if (do_clear)
+		set_idle_cores(target, 0);
 
-	return -1;
+	return id_backup;
 }
 
 /*
@@ -7350,7 +7407,7 @@ static int select_idle_smt(struct task_struct *p, struct sched_domain *sd, int t
 		if (!cpumask_test_cpu(cpu, p->cpus_ptr) ||
 		    !cpumask_test_cpu(cpu, sched_domain_span(sd)))
 			continue;
-		if (id_idle_cpu(p, cpu, is_expellee) || sched_idle_cpu(cpu))
+		if (id_idle_cpu(p, cpu, is_expellee, NULL) || sched_idle_cpu(cpu))
 			return cpu;
 	}
 
@@ -7416,7 +7473,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	for_each_cpu_wrap(cpu, cpus, target) {
 		if (!--nr)
 			return -1;
-		if (id_idle_cpu(p, cpu, is_expellee) || sched_idle_cpu(cpu))
+		if (id_idle_cpu(p, cpu, is_expellee, NULL) || sched_idle_cpu(cpu))
 			break;
 	}
 
@@ -7487,7 +7544,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 		task_util = uclamp_task_util(p);
 	}
 
-	if ((id_idle_cpu(p, target, is_expellee) || sched_idle_cpu(target)) &&
+	if ((id_idle_cpu(p, target, is_expellee, NULL) || sched_idle_cpu(target)) &&
 	    asym_fits_capacity(task_util, target))
 		return target;
 
@@ -7495,7 +7552,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	 * If the previous CPU is cache affine and idle, don't be stupid:
 	 */
 	if (prev != target && cpus_share_cache(prev, target) &&
-	    (id_idle_cpu(p, prev, is_expellee) || sched_idle_cpu(prev)) &&
+	    (id_idle_cpu(p, prev, is_expellee, NULL) || sched_idle_cpu(prev)) &&
 	    asym_fits_capacity(task_util, prev))
 		return prev;
 
@@ -7518,7 +7575,8 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	if (recent_used_cpu != prev &&
 	    recent_used_cpu != target &&
 	    cpus_share_cache(recent_used_cpu, target) &&
-	    (id_idle_cpu(p, recent_used_cpu, is_expellee) || sched_idle_cpu(recent_used_cpu)) &&
+	    (id_idle_cpu(p, recent_used_cpu, is_expellee, NULL) ||
+	    sched_idle_cpu(recent_used_cpu)) &&
 	    cpumask_test_cpu(p->recent_used_cpu, p->cpus_ptr) &&
 	    asym_fits_capacity(task_util, recent_used_cpu)) {
 		/*

@@ -1963,6 +1963,13 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler   = proc_dointvec,
 	},
+	{
+		.procname	= "sched_idle_saver_wmark",
+		.data		= &sysctl_sched_idle_saver_wmark,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 #endif
 #endif
 #ifdef CONFIG_PROVE_LOCKING
