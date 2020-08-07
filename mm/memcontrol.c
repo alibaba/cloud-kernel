@@ -5701,6 +5701,8 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
 	if (!is_wmark_ok(memcg, true))
 		queue_work(memcg_wmark_wq, &memcg->wmark_work);
 
+	memcg_wb_domain_size_changed(memcg);
+
 	return nbytes;
 }
 
