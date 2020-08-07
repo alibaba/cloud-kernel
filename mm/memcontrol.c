@@ -2445,6 +2445,7 @@ static void reclaim_wmark(struct mem_cgroup *memcg)
 	long nr_pages;
 	struct mem_cgroup *iter;
 	u64 start, duration;
+	unsigned long pflags;
 
 	if (is_wmark_ok(memcg, false))
 		return;
@@ -2463,7 +2464,9 @@ static void reclaim_wmark(struct mem_cgroup *memcg)
 	 * overhead-accuracy trade-off.
 	 */
 	start = ktime_get_ns();
+	psi_memstall_enter(&pflags);
 	try_to_free_mem_cgroup_pages(memcg, nr_pages, GFP_KERNEL, true);
+	psi_memstall_leave(&pflags);
 	duration = ktime_get_ns() - start;
 
 	css_get(&memcg->css);
@@ -2491,12 +2494,18 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 	unsigned long nr_reclaimed = 0;
 
 	do {
+		unsigned long pflags;
+
 		if (page_counter_read(&memcg->memory) <=
 		    READ_ONCE(memcg->memory.high))
 			continue;
+
 		memcg_memory_event(memcg, MEMCG_HIGH);
+
+		psi_memstall_enter(&pflags);
 		nr_reclaimed += try_to_free_mem_cgroup_pages(memcg, nr_pages,
 							     gfp_mask, true);
+		psi_memstall_leave(&pflags);
 	} while ((memcg = parent_mem_cgroup(memcg)) &&
 		 !mem_cgroup_is_root(memcg));
 
@@ -2765,11 +2774,12 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	int nr_retries = MAX_RECLAIM_RETRIES;
 	struct mem_cgroup *mem_over_limit;
 	struct page_counter *counter;
+	enum oom_status oom_status;
 	unsigned long nr_reclaimed;
 	bool may_swap = true;
 	bool drained = false;
 	bool oomed = false;
-	enum oom_status oom_status;
+	unsigned long pflags;
 	u64 start;
 
 	if (mem_cgroup_is_root(memcg))
@@ -2831,8 +2841,10 @@ retry:
 	memcg_memory_event(mem_over_limit, MEMCG_MAX);
 
 	memcg_lat_stat_start(&start);
+	psi_memstall_enter(&pflags);
 	nr_reclaimed = try_to_free_mem_cgroup_pages(mem_over_limit, nr_pages,
 						    gfp_mask, may_swap);
+	psi_memstall_leave(&pflags);
 	memcg_lat_stat_end(MEM_LAT_MEMCG_DIRECT_RECLAIM, start);
 
 	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
