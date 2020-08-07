@@ -5671,8 +5671,6 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
 	if (err)
 		return err;
 
-	page_counter_set_high(&memcg->memory, high);
-
 	for (;;) {
 		unsigned long nr_pages = page_counter_read(&memcg->memory);
 		unsigned long reclaimed;
@@ -5695,6 +5693,8 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
 		if (!reclaimed && !nr_retries--)
 			break;
 	}
+
+	page_counter_set_high(&memcg->memory, high);
 
 	setup_memcg_wmark(memcg);
 
