@@ -201,7 +201,9 @@ static int c_show(struct seq_file *m, void *v)
 		seq_printf(m, "CPU architecture: 8\n");
 		seq_printf(m, "CPU variant\t: 0x%x\n", MIDR_VARIANT(midr));
 		seq_printf(m, "CPU part\t: 0x%03x\n", MIDR_PARTNUM(midr));
-		seq_printf(m, "CPU revision\t: %d\n\n", MIDR_REVISION(midr));
+		seq_printf(m, "CPU revision\t: %d\n", MIDR_REVISION(midr));
+		seq_printf(m, "address sizes\t: %u bits physical, %u bits virtual\n\n",
+			   id_aa64mmfr0_pa_range_bits(), id_aa64mmfr2_va_range_bits());
 	}
 
 	return 0;
