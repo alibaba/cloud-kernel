@@ -1112,10 +1112,12 @@ static inline void io_req_work_grab_env(struct io_kiocb *req)
 	}
 }
 
-static inline void io_req_work_drop_env(struct io_kiocb *req)
+static bool io_req_clean_work(struct io_kiocb *req)
 {
 	if (!(req->flags & REQ_F_WORK_INITIALIZED))
-		return;
+		return false;
+
+	req->flags &= ~REQ_F_WORK_INITIALIZED;
 
 	if (req->work.mm) {
 		mmdrop(req->work.mm);
@@ -1128,6 +1130,9 @@ static inline void io_req_work_drop_env(struct io_kiocb *req)
 	if (req->work.fs) {
 		struct fs_struct *fs = req->work.fs;
 
+		if (req->flags & REQ_F_COMP_LOCKED)
+			return true;
+
 		spin_lock(&req->work.fs->lock);
 		if (--fs->users)
 			fs = NULL;
@@ -1135,6 +1140,8 @@ static inline void io_req_work_drop_env(struct io_kiocb *req)
 		if (fs)
 			free_fs_struct(fs);
 	}
+
+	return false;
 }
 
 static inline void io_prep_async_work(struct io_kiocb *req,
@@ -1474,7 +1481,7 @@ static inline void io_put_file(struct io_kiocb *req, struct file *file,
 	}
 }
 
-static void io_dismantle_req(struct io_kiocb *req)
+static bool io_dismantle_req(struct io_kiocb *req)
 {
 	if (req->flags & REQ_F_NEED_CLEANUP)
 		io_cleanup_req(req);
@@ -1482,8 +1489,6 @@ static void io_dismantle_req(struct io_kiocb *req)
 	kfree(req->io);
 	if (req->file)
 		io_put_file(req, req->file, (req->flags & REQ_F_FIXED_FILE));
-	__io_put_req_task(req);
-	io_req_work_drop_env(req);
 
 	if (req->flags & REQ_F_INFLIGHT) {
 		struct io_ring_ctx *ctx = req->ctx;
@@ -1495,11 +1500,13 @@ static void io_dismantle_req(struct io_kiocb *req)
 			wake_up(&ctx->inflight_wait);
 		spin_unlock_irqrestore(&ctx->inflight_lock, flags);
 	}
+
+	return io_req_clean_work(req);
 }
 
-static void __io_free_req(struct io_kiocb *req)
+static void __io_free_req_finish(struct io_kiocb *req)
 {
-	io_dismantle_req(req);
+	__io_put_req_task(req);
 	percpu_ref_put(&req->ctx->refs);
 	if (likely(!io_is_fallback_req(req)))
 		kmem_cache_free(req_cachep, req);
@@ -1526,6 +1533,39 @@ static void io_free_req_many(struct io_ring_ctx *ctx, struct req_batch *rb)
 	kmem_cache_free_bulk(req_cachep, rb->to_free, rb->reqs);
 	percpu_ref_put_many(&ctx->refs, rb->to_free);
 	rb->to_free = rb->need_iter = 0;
+}
+
+static void io_req_task_file_table_put(struct callback_head *cb)
+{
+	struct io_kiocb *req = container_of(cb, struct io_kiocb, task_work);
+	struct fs_struct *fs = req->work.fs;
+
+	spin_lock(&req->work.fs->lock);
+	if (--fs->users)
+		fs = NULL;
+	spin_unlock(&req->work.fs->lock);
+	if (fs)
+		free_fs_struct(fs);
+	req->work.fs = NULL;
+	__io_free_req_finish(req);
+}
+
+static void __io_free_req(struct io_kiocb *req)
+{
+	if (!io_dismantle_req(req)) {
+		__io_free_req_finish(req);
+	} else {
+		int ret;
+
+		init_task_work(&req->task_work, io_req_task_file_table_put);
+		ret = task_work_add(req->task, &req->task_work, TWA_RESUME);
+		if (unlikely(ret)) {
+			struct task_struct *tsk;
+
+			tsk = io_wq_get_task(req->ctx->io_wq);
+			task_work_add(tsk, &req->task_work, 0);
+		}
+	}
 }
 
 static bool io_link_cancel_timeout(struct io_kiocb *req)
@@ -4953,7 +4993,7 @@ static bool io_poll_remove_one(struct io_kiocb *req)
 			io_put_req(req);
 			/*
 			 * restore ->work because we will call
-			 * io_req_work_drop_env below when dropping the
+			 * io_req_clean_work below when dropping the
 			 * final reference.
 			 */
 			if (req->flags & REQ_F_WORK_INITIALIZED)
@@ -5093,7 +5133,7 @@ static int io_poll_add(struct io_kiocb *req)
 	__poll_t mask;
 
 	/* ->work is in union with hash_node and others */
-	io_req_work_drop_env(req);
+	io_req_clean_work(req);
 	req->flags &= ~REQ_F_WORK_INITIALIZED;
 
 	INIT_HLIST_NODE(&req->hash_node);
