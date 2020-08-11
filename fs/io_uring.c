@@ -2088,6 +2088,8 @@ static void io_rw_resubmit(struct callback_head *cb)
 		refcount_inc(&req->refs);
 		io_queue_async_work(req);
 	}
+
+	percpu_ref_put(&ctx->refs);
 }
 #endif
 
@@ -2102,6 +2104,8 @@ static bool io_rw_reissue(struct io_kiocb *req, long res)
 
 	tsk = req->task;
 	init_task_work(&req->task_work, io_rw_resubmit);
+	percpu_ref_get(&req->ctx->refs);
+
 	ret = task_work_add(tsk, &req->task_work, true);
 	if (!ret)
 		return true;
@@ -2814,6 +2818,8 @@ static void io_async_buf_retry(struct callback_head *cb)
 	} else {
 		__io_async_buf_error(req, -EFAULT);
 	}
+
+	percpu_ref_put(&ctx->refs);
 }
 
 static int io_async_buf_func(struct wait_queue_entry *wait, unsigned mode,
@@ -2835,6 +2841,8 @@ static int io_async_buf_func(struct wait_queue_entry *wait, unsigned mode,
 	list_del_init(&wait->entry);
 
 	init_task_work(&rw->task_work, io_async_buf_retry);
+	percpu_ref_get(&req->ctx->refs);
+
 	/* submit ref gets dropped, acquire a new one */
 	refcount_inc(&req->refs);
 	tsk = req->task;
