@@ -117,7 +117,7 @@ module_param(disable_bypass, bool, S_IRUGO);
 MODULE_PARM_DESC(disable_bypass,
 	"Disable bypass streams such that incoming transactions from devices that are not attached to an iommu domain will report an abort back to the device and will not be allowed to pass through the SMMU.");
 
-static bool ft2000_iommu_hwfix;
+bool ft2000_iommu_hwfix;
 static int __init ft2000_iommu_hwfix_hwfix(char *str)
 {
 	ft2000_iommu_hwfix = true;
