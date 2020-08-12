@@ -182,7 +182,7 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 
 	get_page(new_page);
 	page_add_new_anon_rmap(new_page, vma, addr, false);
-	lru_cache_add_active_or_unevictable(new_page, vma);
+	lru_cache_add_inactive_or_unevictable(new_page, vma);
 
 	if (!PageAnon(old_page)) {
 		dec_mm_counter(mm, mm_counter_file(old_page));
