@@ -90,4 +90,7 @@ extern unsigned long perf_misc_flags(struct pt_regs *regs);
 	(regs)->pstate = PSR_MODE_EL1h;	\
 }
 
+void register_kvm_pmu_events_handler(void *set, void *clr);
+void unregister_kvm_pmu_events_handler(void);
+
 #endif

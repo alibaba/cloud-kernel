@@ -1475,6 +1475,7 @@ static int init_subsystems(void)
 	if (err)
 		goto out;
 
+	register_kvm_pmu_events_handler(kvm_set_pmu_events, kvm_clr_pmu_events);
 	kvm_perf_init();
 	kvm_coproc_table_init();
 
@@ -1710,6 +1711,7 @@ out_err:
 /* NOP: Compiling as a module not supported */
 void kvm_arch_exit(void)
 {
+	unregister_kvm_pmu_events_handler();
 	kvm_perf_teardown();
 }
 
