@@ -1563,9 +1563,12 @@ static const unsigned int memcg1_stats[] = {
 	NR_FILE_DIRTY,
 	NR_WRITEBACK,
 	MEMCG_SWAP,
-	WORKINGSET_REFAULT,
-	WORKINGSET_ACTIVATE,
-	WORKINGSET_RESTORE,
+	WORKINGSET_REFAULT_ANON,
+	WORKINGSET_REFAULT_FILE,
+	WORKINGSET_ACTIVATE_ANON,
+	WORKINGSET_ACTIVATE_FILE,
+	WORKINGSET_RESTORE_ANON,
+	WORKINGSET_RESTORE_FILE,
 	WORKINGSET_NODERECLAIM,
 };
 
@@ -1580,9 +1583,12 @@ static const char *const memcg1_stat_names[] = {
 	"dirty",
 	"writeback",
 	"swap",
-	"workingset_refault",
-	"workingset_activate",
-	"workingset_restore",
+	"workingset_refault_anon",
+	"workingset_refault_file",
+	"workingset_activate_anon",
+	"workingset_activate_file",
+	"workingset_restore_anon",
+	"workingset_restore_file",
 	"workingset_nodereclaim",
 };
 
@@ -7302,12 +7308,18 @@ static int memory_stat_show(struct seq_file *m, void *v)
 	seq_printf(m, "pglazyfree %lu\n", memcg_events(memcg, PGLAZYFREE));
 	seq_printf(m, "pglazyfreed %lu\n", memcg_events(memcg, PGLAZYFREED));
 
-	seq_printf(m, "workingset_refault %lu\n",
-		   memcg_page_state(memcg, WORKINGSET_REFAULT));
-	seq_printf(m, "workingset_activate %lu\n",
-		   memcg_page_state(memcg, WORKINGSET_ACTIVATE));
+	seq_printf(m, "workingset_refault_anon %lu\n",
+		   memcg_page_state(memcg, WORKINGSET_REFAULT_ANON));
+	seq_printf(m, "workingset_refault_file %lu\n",
+		   memcg_page_state(memcg, WORKINGSET_REFAULT_FILE));
+	seq_printf(m, "workingset_activate_anon %lu\n",
+		   memcg_page_state(memcg, WORKINGSET_ACTIVATE_ANON));
+	seq_printf(m, "workingset_activate_file %lu\n",
+		   memcg_page_state(memcg, WORKINGSET_ACTIVATE_FILE));
 	seq_printf(m, "workingset_restore %lu\n",
-		   memcg_page_state(memcg, WORKINGSET_RESTORE));
+		   memcg_page_state(memcg, WORKINGSET_RESTORE_ANON));
+	seq_printf(m, "workingset_restore %lu\n",
+		   memcg_page_state(memcg, WORKINGSET_RESTORE_FILE));
 	seq_printf(m, "workingset_nodereclaim %lu\n",
 		   memcg_page_state(memcg, WORKINGSET_NODERECLAIM));
 
