@@ -86,6 +86,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	INIT_LIST_HEAD(&fi->writepages);
 	init_waitqueue_head(&fi->page_waitq);
 	mutex_init(&fi->mutex);
+	init_rwsem(&fi->i_mmap_sem);
 	spin_lock_init(&fi->lock);
 	fi->forget = fuse_alloc_forget();
 	if (!fi->forget)

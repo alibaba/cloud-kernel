@@ -1400,6 +1400,7 @@ int fuse_do_setattr(struct dentry *dentry, struct iattr *attr,
 	loff_t oldsize;
 	int err;
 	bool trust_local_cmtime = is_wb && S_ISREG(inode->i_mode);
+	bool fault_blocked = false;
 
 	if (!fc->default_permissions)
 		attr->ia_valid |= ATTR_FORCE;
@@ -1407,6 +1408,19 @@ int fuse_do_setattr(struct dentry *dentry, struct iattr *attr,
 	err = setattr_prepare(dentry, attr);
 	if (err)
 		return err;
+
+	if (attr->ia_valid & ATTR_SIZE)
+		is_truncate = true;
+
+	if (FUSE_IS_DAX(inode) && is_truncate) {
+		down_write(&fi->i_mmap_sem);
+		fault_blocked = true;
+		err = fuse_dax_break_layouts(inode, 0, 0);
+		if (err) {
+			up_write(&fi->i_mmap_sem);
+			return err;
+		}
+	}
 
 	if (attr->ia_valid & ATTR_OPEN) {
 		/* This is coming from open(..., ... | O_TRUNC); */
@@ -1420,13 +1434,10 @@ int fuse_do_setattr(struct dentry *dentry, struct iattr *attr,
 			 */
 			i_size_write(inode, 0);
 			truncate_pagecache(inode, 0);
-			return 0;
+			goto out;
 		}
 		file = NULL;
 	}
-
-	if (attr->ia_valid & ATTR_SIZE)
-		is_truncate = true;
 
 	/* Flush dirty data/metadata before non-truncate SETATTR */
 	if (is_wb && S_ISREG(inode->i_mode) &&
@@ -1510,6 +1521,10 @@ int fuse_do_setattr(struct dentry *dentry, struct iattr *attr,
 	}
 
 	clear_bit(FUSE_I_SIZE_UNSTABLE, &fi->state);
+out:
+	if (fault_blocked)
+		up_write(&fi->i_mmap_sem);
+
 	return 0;
 
 error:
@@ -1517,6 +1532,9 @@ error:
 		fuse_release_nowrite(inode);
 
 	clear_bit(FUSE_I_SIZE_UNSTABLE, &fi->state);
+
+	if (fault_blocked)
+		up_write(&fi->i_mmap_sem);
 	return err;
 }
 
