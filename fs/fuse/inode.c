@@ -88,12 +88,19 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	mutex_init(&fi->mutex);
 	spin_lock_init(&fi->lock);
 	fi->forget = fuse_alloc_forget();
-	if (!fi->forget) {
-		kmem_cache_free(fuse_inode_cachep, inode);
-		return NULL;
-	}
+	if (!fi->forget)
+		goto out_free;
+
+	if (IS_ENABLED(CONFIG_FUSE_DAX) && !fuse_dax_inode_alloc(sb, fi))
+		goto out_free_forget;
 
 	return inode;
+
+out_free_forget:
+	kfree(fi->forget);
+out_free:
+	kmem_cache_free(fuse_inode_cachep, inode);
+	return NULL;
 }
 
 static void fuse_i_callback(struct rcu_head *head)
@@ -109,6 +116,9 @@ static void fuse_destroy_inode(struct inode *inode)
 	BUG_ON(!list_empty(&fi->queued_writes));
 	mutex_destroy(&fi->mutex);
 	kfree(fi->forget);
+#ifdef CONFIG_FUSE_DAX
+	kfree(fi->dax);
+#endif
 	call_rcu(&inode->i_rcu, fuse_i_callback);
 }
 
@@ -119,6 +129,9 @@ static void fuse_evict_inode(struct inode *inode)
 	if (inode->i_sb->s_flags & SB_ACTIVE) {
 		struct fuse_conn *fc = get_fuse_conn(inode);
 		struct fuse_inode *fi = get_fuse_inode(inode);
+
+		if (FUSE_IS_DAX(inode))
+			fuse_dax_inode_cleanup(inode);
 		fuse_queue_forget(fc, fi->forget, fi->nodeid, fi->nlookup);
 		fi->forget = NULL;
 	}
