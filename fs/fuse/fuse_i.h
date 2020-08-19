@@ -778,6 +778,11 @@ struct fuse_conn {
 
 	/** List of device instances belonging to this connection */
 	struct list_head devices;
+
+#ifdef CONFIG_FUSE_DAX
+	/* Dax specific conn data, non-NULL if DAX is enabled */
+	struct fuse_conn_dax *dax;
+#endif
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -1157,5 +1162,10 @@ unsigned fuse_len_args(unsigned numargs, struct fuse_arg *args);
  * Get the next unique ID for a request
  */
 u64 fuse_get_unique(struct fuse_iqueue *fiq);
+
+/* dax.c */
+
+int fuse_dax_conn_alloc(struct fuse_conn *fc, struct dax_device *dax_dev);
+void fuse_dax_conn_free(struct fuse_conn *fc);
 
 #endif /* _FS_FUSE_I_H */

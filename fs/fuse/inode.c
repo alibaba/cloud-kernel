@@ -443,6 +443,7 @@ enum {
 	OPT_ALLOW_OTHER,
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
+	OPT_DAX,
 	OPT_ERR
 };
 
@@ -456,6 +457,7 @@ static const match_table_t tokens = {
 	{OPT_ALLOW_OTHER,		"allow_other"},
 	{OPT_MAX_READ,			"max_read=%u"},
 	{OPT_BLKSIZE,			"blksize=%u"},
+	{OPT_DAX,			"dax"},
 	{OPT_ERR,			NULL}
 };
 
@@ -553,6 +555,10 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 			d->blksize = value;
 			break;
 
+		case OPT_DAX:
+			d->dax = 1;
+			break;
+
 		default:
 			return 0;
 		}
@@ -585,6 +591,11 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_printf(m, ",max_read=%u", fc->max_read);
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
 		seq_printf(m, ",blksize=%lu", sb->s_blocksize);
+#ifdef CONFIG_FUSE_DAX
+	if (fc->dax)
+		seq_puts(m, ",dax");
+#endif
+
 	return 0;
 }
 
@@ -646,6 +657,10 @@ void fuse_conn_put(struct fuse_conn *fc)
 {
 	if (refcount_dec_and_test(&fc->count)) {
 		struct fuse_iqueue *fiq = &fc->iq;
+
+		if (IS_ENABLED(CONFIG_FUSE_DAX))
+			fuse_dax_conn_free(fc);
+
 		if (fc->destroy_req)
 			fuse_request_free(fc->destroy_req);
 
@@ -1140,9 +1155,15 @@ int fuse_fill_super_common(struct super_block *sb,
 		       mount_data->fiq_priv);
 	fc->release = fuse_free_conn;
 
+	if (IS_ENABLED(CONFIG_FUSE_DAX)) {
+		err = fuse_dax_conn_alloc(fc, mount_data->dax_dev);
+		if (err)
+			goto err_put_conn;
+	}
+
 	fud = fuse_dev_alloc_install(fc);
 	if (!fud)
-		goto err_put_conn;
+		goto err_free_dax;
 
 	fc->dev = sb->s_dev;
 	fc->sb = sb;
@@ -1200,6 +1221,9 @@ int fuse_fill_super_common(struct super_block *sb,
 	dput(root_dentry);
  err_dev_free:
 	fuse_dev_free(fud);
+ err_free_dax:
+	if (IS_ENABLED(CONFIG_FUSE_DAX))
+		fuse_dax_conn_free(fc);
  err_put_conn:
 	fuse_conn_put(fc);
 	sb->s_fs_info = NULL;
