@@ -1149,7 +1149,12 @@ int __dax_zero_page_range(struct block_device *bdev,
 		struct dax_device *dax_dev, sector_t sector,
 		unsigned int offset, unsigned int size)
 {
-	if (dax_range_is_aligned(bdev, offset, size)) {
+	/*
+	 * After virtiofs supports DAX, @bdev can be NULL here. And if it is
+	 * the case, as a workaround, skip the following blkdev zero page
+	 * optimization and zero the requested area by memset() directly.
+	 */
+	if (bdev && dax_range_is_aligned(bdev, offset, size)) {
 		sector_t start_sector = sector + (offset >> 9);
 
 		return blkdev_issue_zeroout(bdev, start_sector,
