@@ -157,9 +157,9 @@ unsigned int sysctl_sched_idle_saver_wmark;
  * This knob help to control the minimum interval of expel idle
  * balance, -1 means disallow.
  *
- * Default: 5 msec, units: ms
+ * Default: -1, units: ms
  */
-int sysctl_sched_expel_idle_balance_delay = 5;
+int sysctl_sched_expel_idle_balance_delay = -1;
 #endif
 #endif
 
@@ -678,7 +678,14 @@ static inline bool need_expel(int this_cpu)
 
 static inline void update_rq_on_expel(struct rq *rq)
 {
-	rq->on_expel = need_expel(rq->cpu);
+	bool ret = need_expel(rq->cpu);
+
+	/*
+	 * Write 'on_expel' as less as possible since
+	 * it's really hot.
+	 */
+	if (ret != rq->on_expel)
+		rq->on_expel = ret;
 }
 
 static inline bool rq_on_expel(struct rq *rq)
@@ -737,6 +744,14 @@ static inline bool is_expellee_task(struct task_struct *p)
 {
 	return !__is_expel_immune(&p->se, true);
 }
+
+static inline unsigned long expel_score(struct rq *rq)
+{
+	if (!sched_feat(ID_RESCUE_EXPELLEE))
+		return 0;
+
+	return rq->cfs.nr_running - rq->nr_expel_immune;
+}
 #else
 static inline bool expellee_only(struct rq *rq)
 {
@@ -775,6 +790,11 @@ static inline bool is_expel_immune(struct sched_entity *se)
 static inline bool is_expellee_task(struct task_struct *p)
 {
 	return false;
+}
+
+static inline unsigned long expel_score(struct rq *rq)
+{
+	return 0;
 }
 #endif
 
@@ -843,22 +863,38 @@ static inline bool is_idle_seeker_task(struct task_struct *p)
 	return ret;
 }
 
-static noinline bool
+static noinline int
 id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 {
 	/* Do not migrate the last highclass, try someone else */
 	if (is_highclass_task(p) && src_rq->nr_high_running < 2)
 		goto bad_dst;
 
+	if (!is_expellee_task(p))
+		return -1;
+
 	/* Do not migrate expellee task to CPU on expel */
-	if (is_expellee_task(p) && rq_on_expel(dst_rq))
+	if (rq_on_expel(dst_rq))
 		goto bad_dst;
 
-	return true;
+	if (sched_feat(ID_EXPELLEE_NEVER_HOT))
+		goto good_dst;
+
+	/* Pass if both are not on expel */
+	if (!rq_on_expel(src_rq))
+		return -1;
+
+	if (!sched_feat(ID_RESCUE_EXPELLEE))
+		return -1;
+
+good_dst:
+	/* Now take the rescue chance */
+	schedstat_inc(p->se.statistics.nr_forced_migrations);
+	return 1;
 
 bad_dst:
 	schedstat_inc(p->se.statistics.nr_failed_migrations_id);
-	return false;
+	return 0;
 }
 
 static noinline bool
@@ -1593,10 +1629,15 @@ static inline bool expel_ib_disallow(struct rq *rq)
 	return false;
 }
 
-static bool
+static inline unsigned long expel_score(struct rq *rq)
+{
+	return 0;
+}
+
+static int
 id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 {
-	return true;
+	return -1;
 }
 
 static inline bool
@@ -8951,6 +8992,7 @@ static inline int migrate_degrades_locality(struct task_struct *p,
 static
 int can_migrate_task(struct task_struct *p, struct lb_env *env)
 {
+	int ret;
 	int tsk_cache_hot;
 
 	lockdep_assert_held(&env->src_rq->lock);
@@ -9007,8 +9049,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		return 0;
 	}
 
-	if (!id_can_migrate_task(p, env->src_rq, env->dst_rq))
-		return 0;
+	ret = id_can_migrate_task(p, env->src_rq, env->dst_rq);
+	if (ret != -1)
+		return ret;
 
 	/*
 	 * Aggressive migration if:
@@ -9100,8 +9143,10 @@ static int detach_tasks(struct lb_env *env)
 		 * We don't want to steal all, otherwise we may be treated likewise,
 		 * which could at worst lead to a livelock crash.
 		 */
-		if (env->idle != CPU_NOT_IDLE && env->src_rq->nr_running <= 1)
-			break;
+		if (env->idle != CPU_NOT_IDLE && env->src_rq->nr_running <= 1) {
+			if (!expellee_only(env->src_rq))
+				break;
+		}
 
 		p = list_last_entry(tasks, struct task_struct, se.group_node);
 
@@ -10755,12 +10800,14 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 				     struct sched_group *group)
 {
 	struct rq *busiest = NULL, *rq;
+	struct rq *backup = NULL;
+	unsigned long max_backup_score = 0;
 	unsigned long busiest_util = 0, busiest_load = 0, busiest_capacity = 1;
 	unsigned int busiest_nr = 0;
 	int i;
 
 	for_each_cpu_and(i, sched_group_span(group), env->cpus) {
-		unsigned long capacity, load, util;
+		unsigned long capacity, load, util, backup_score;
 		unsigned int nr_running;
 		enum fbq_type rt;
 
@@ -10805,6 +10852,18 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 
 		switch (env->migration_type) {
 		case migrate_load:
+			/*
+			 * A CPU on expel is a good source for CPU not on,
+			 * in case if we can't find candidate by compare
+			 * load, find the backup by compare expel score.
+			 */
+			backup_score = expel_score(rq);
+			if (backup_score > max_backup_score &&
+			    rq_on_expel(rq) && !rq_on_expel(env->dst_rq)) {
+				backup = rq;
+				max_backup_score = backup_score;
+			}
+
 			/*
 			 * When comparing with load imbalance, use cpu_load()
 			 * which is not scaled with the CPU capacity.
@@ -10874,7 +10933,7 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 		}
 	}
 
-	return busiest;
+	return busiest ? busiest : backup;
 }
 
 /*
@@ -11023,7 +11082,7 @@ redo:
 	env.src_rq = busiest;
 
 	ld_moved = 0;
-	if (busiest->nr_running > 1) {
+	if (busiest->nr_running > 1 || expellee_only(busiest)) {
 		/*
 		 * Attempt to move tasks. If find_busiest_group has found
 		 * an imbalance but busiest->nr_running <= 1, the group is
@@ -11901,7 +11960,7 @@ static bool nohz_idle_balance(struct rq *this_rq, enum cpu_idle_type idle)
 
 	this_rq->nohz_idle_balance = 0;
 
-	if (idle != CPU_IDLE)
+	if (idle != CPU_IDLE && !expellee_only(this_rq))
 		return false;
 
 	_nohz_idle_balance(this_rq, flags, idle);
