@@ -82,38 +82,20 @@ struct sched_cgroup_lat_stat_cpu {
 
 static inline enum sched_lat_count_t get_sched_lat_count_idx(u64 msecs)
 {
-	enum sched_lat_count_t idx;
-
 	if (msecs < 1)
-		idx = SCHED_LAT_0_1;
-	else if (msecs < 4)
-		idx = SCHED_LAT_1_4;
-	else if (msecs < 7)
-		idx = SCHED_LAT_4_7;
-	else if (msecs < 10)
-		idx = SCHED_LAT_7_10;
-	else if (msecs < 20)
-		idx = SCHED_LAT_10_20;
-	else if (msecs < 30)
-		idx = SCHED_LAT_20_30;
-	else if (msecs < 40)
-		idx = SCHED_LAT_30_40;
-	else if (msecs < 50)
-		idx = SCHED_LAT_40_50;
-	else if (msecs < 100)
-		idx = SCHED_LAT_50_100;
-	else if (msecs < 500)
-		idx = SCHED_LAT_100_500;
-	else if (msecs < 1000)
-		idx = SCHED_LAT_500_1000;
-	else if (msecs < 5000)
-		idx = SCHED_LAT_1000_5000;
-	else if (msecs < 10000)
-		idx = SCHED_LAT_5000_10000;
-	else
-		idx = SCHED_LAT_10000_INF;
+		return SCHED_LAT_0_1;
+	if (msecs < 10)
+		return SCHED_LAT_0_1 + (msecs + 2) / 3;
+	if (msecs < 50)
+		return SCHED_LAT_7_10 + msecs / 10;
+	if (msecs < 100)
+		return SCHED_LAT_50_100;
+	if (msecs < 1000)
+		return SCHED_LAT_100_500 + (msecs / 500);
+	if (msecs < 10000)
+		return SCHED_LAT_1000_5000 + (msecs / 5000);
 
-	return idx;
+	return SCHED_LAT_10000_INF;
 }
 
 /* track CPU usage of a group of tasks and its child groups */
