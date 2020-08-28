@@ -66,6 +66,9 @@ struct c2c_stats {
 	u32	rmt_dram;            /* count of loads miss to remote DRAM */
 	u32	nomap;               /* count of load/stores with no phys adrs */
 	u32	noparse;             /* count of unparsable data sources */
+	u64	tot_lat;             /* Cycle count to complete operation */
+	u64	issue_lat;           /* Cycle count to issue operation */
+	u64	trans_lat;           /* Cycle count to do translation for virtual address */
 };
 
 struct hist_entry;

@@ -196,6 +196,19 @@ static int arm_spe_walk_trace(struct arm_spe_decoder *decoder)
 			}
 			break;
 		case ARM_SPE_COUNTER:
+			switch (idx) {
+			case 0:
+				decoder->state.tot_lat = payload;
+				break;
+			case 1:
+				decoder->state.issue_lat = payload;
+				break;
+			case 2:
+				decoder->state.trans_lat = payload;
+				break;
+			default:
+				break;
+			}
 			break;
 		case ARM_SPE_CONTEXT:
 			break;
@@ -212,6 +225,10 @@ static int arm_spe_walk_trace(struct arm_spe_decoder *decoder)
 				decoder->state.type |= ARM_SPE_TLB_MISS;
 				decoder->state.is_tlb_miss = true;
 			}
+			if (payload & BIT(EV_L1D_ACCESS))
+				decoder->state.is_l1d_access = true;
+			if (payload & BIT(EV_L1D_REFILL))
+				decoder->state.is_l1d_miss = true;
 			if (payload & BIT(EV_MISPRED))
 				decoder->state.type |= ARM_SPE_BRANCH_MISS;
 			if (idx > 1 && (payload & BIT(EV_LLC_REFILL))) {

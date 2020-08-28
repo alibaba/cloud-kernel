@@ -311,7 +311,9 @@ int perf_script__meminfo_scnprintf(char *out, size_t sz, struct mem_info *mem_in
 
 int c2c_decode_stats(struct c2c_stats *stats, struct mem_info *mi)
 {
-	union perf_mem_data_src *data_src = &mi->data_src;
+	union perf_mem_data_src *data_src = !arm_spe ? &mi->data_src :
+					(union perf_mem_data_src *)mi->data_src.val;
+
 	u64 daddr  = mi->daddr.addr;
 	u64 op     = data_src->mem_op;
 	u64 lvl    = data_src->mem_lvl;
@@ -333,6 +335,12 @@ do {				\
 #define P(a, b) PERF_MEM_##a##_##b
 
 	stats->nr_entries++;
+
+	if (arm_spe) {
+		stats->tot_lat += data_src[1].val;
+		stats->issue_lat += data_src[2].val;
+		stats->trans_lat += data_src[3].val;
+	}
 
 	if (lock & P(LOCK, LOCKED)) stats->locks++;
 
@@ -449,4 +457,7 @@ void c2c_add_stats(struct c2c_stats *stats, struct c2c_stats *add)
 	stats->rmt_dram		+= add->rmt_dram;
 	stats->nomap		+= add->nomap;
 	stats->noparse		+= add->noparse;
+	stats->tot_lat		+= add->tot_lat;
+	stats->issue_lat	+= add->issue_lat;
+	stats->trans_lat	+= add->trans_lat;
 }

@@ -726,11 +726,12 @@ static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
 	struct arm_spe_queue *speq = c2c_queues->speq;
 	union perf_event *event = speq->event_buf;
 	struct perf_sample sample = { .ip = 0, };
-	union perf_mem_data_src src;
+	union perf_mem_data_src src, *srcp;
 	int ret;
 	if (c2c_sample->accessed)
 		return;
 
+	srcp = malloc(sizeof(union perf_mem_data_src) * 4);
 	c2c_sample->accessed = true;
 	memset(&src, 0, sizeof(src));
 
@@ -752,6 +753,12 @@ static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
 			} else if (c2c_sample->state.is_llc_access) {
 				src.mem_snoop = PERF_MEM_SNOOP_HIT;
 				src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L3;
+			} else if (!c2c_sample->state.is_l1d_access) {
+				src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_LFB;
+			} else if (!c2c_sample->state.is_l1d_miss) {
+				src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L1;
+			} else {
+				src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L2;
 			}
 		}
 	} else if (c2c_sample->state.is_st) {
@@ -768,7 +775,11 @@ static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
 	sample.pid = c2c_sample->pid;
 	sample.tid = c2c_sample->tid;
 	sample.addr = c2c_sample->state.addr;
-	sample.data_src = src.val;
+	srcp[0] = src;
+	srcp[1].val = c2c_sample->state.tot_lat;
+	srcp[2].val = c2c_sample->state.issue_lat;
+	srcp[3].val = c2c_sample->state.trans_lat;
+	sample.data_src = (u64)srcp;
 	sample.phys_addr = c2c_sample->state.phys_addr;
 	sample.period = 1;
 	sample.cpu = c2c_queues->cpu;
@@ -941,7 +952,6 @@ static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
 				pr_info("ARM SPE: c2c process thread[st->ld] create failed! ret=%d\n", ret);
 				return ret;
 			}
-
 			if (store) {
 				k++;
 				c2c_lists[k].listA = &(spe_c2c_sample_list[i].st_list);

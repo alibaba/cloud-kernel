@@ -149,6 +149,7 @@ struct symbol_conf {
 };
 
 extern struct symbol_conf symbol_conf;
+extern bool arm_spe;
 
 struct symbol_name_rb_node {
 	struct rb_node	rb_node;

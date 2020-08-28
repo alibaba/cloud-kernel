@@ -38,6 +38,7 @@ struct arm_spe_state {
 	int err;
 	bool is_ld;		/* Is load ? */
 	bool is_st;		/* Is store ? */
+	bool is_l1d_access;	/* Is l1d access ? */
 	bool is_l1d_miss;	/* Is l1d miss ? */
 	bool is_l2d_miss;	/* Is l2d miss ? */
 	bool is_llc_miss;	/* Is llc miss ? */
@@ -51,6 +52,9 @@ struct arm_spe_state {
 	uint64_t addr;
 	uint64_t phys_addr;
 	uint64_t timestamp;
+	uint64_t tot_lat;
+	uint64_t issue_lat;
+	uint64_t trans_lat;
 };
 
 struct arm_spe_insn;
