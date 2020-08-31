@@ -264,6 +264,8 @@ static int ovl_sync_fs(struct super_block *sb, int wait)
 	if (!ofs->upper_mnt)
 		return 0;
 
+	if (!ovl_should_sync(ofs))
+		return 0;
 	/*
 	 * If this is a sync(2) call or an emergency sync, all the super blocks
 	 * will be iterated, including upper_sb, so no need to do anything.
@@ -368,6 +370,8 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	if (ofs->config.metacopy != ovl_metacopy_def)
 		seq_printf(m, ",metacopy=%s",
 			   ofs->config.metacopy ? "on" : "off");
+	if (ofs->config.ovl_volatile)
+		seq_puts(m, ",volatile");
 	return 0;
 }
 
@@ -407,6 +411,7 @@ enum {
 	OPT_XINO_AUTO,
 	OPT_METACOPY_ON,
 	OPT_METACOPY_OFF,
+	OPT_VOLATILE,
 	OPT_ERR,
 };
 
@@ -425,6 +430,7 @@ static const match_table_t ovl_tokens = {
 	{OPT_XINO_AUTO,			"xino=auto"},
 	{OPT_METACOPY_ON,		"metacopy=on"},
 	{OPT_METACOPY_OFF,		"metacopy=off"},
+	{OPT_VOLATILE,			"volatile"},
 	{OPT_ERR,			NULL}
 };
 
@@ -563,6 +569,10 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->metacopy = false;
 			break;
 
+		case OPT_VOLATILE:
+			config->ovl_volatile = true;
+			break;
+
 		default:
 			pr_err("overlayfs: unrecognized mount option \"%s\" or missing value\n", p);
 			return -EINVAL;
@@ -575,6 +585,11 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->workdir);
 		kfree(config->workdir);
 		config->workdir = NULL;
+	}
+
+	if (!config->upperdir && config->ovl_volatile) {
+		pr_info("option \"volatile\" is meaningless in a non-upper mount, ignoring it.\n");
+		config->ovl_volatile = false;
 	}
 
 	err = ovl_parse_redirect_mode(config, config->redirect_mode);
@@ -1089,6 +1104,45 @@ out:
 	return err;
 }
 
+static struct dentry *ovl_lookup_or_create(struct dentry *parent,
+					   const char *name, umode_t mode)
+{
+	size_t len = strlen(name);
+	struct dentry *child;
+
+	inode_lock_nested(parent->d_inode, I_MUTEX_PARENT);
+	child = lookup_one_len(name, parent, len);
+	if (!IS_ERR(child) && !child->d_inode)
+		child = ovl_create_real(parent->d_inode, child,
+					OVL_CATTR(mode));
+	inode_unlock(parent->d_inode);
+	dput(parent);
+
+	return child;
+}
+
+/*
+ * Creates $workdir/work/incompat/volatile/dirty file if it is not already
+ * present.
+ */
+static int ovl_create_volatile_dirty(struct ovl_fs *ofs)
+{
+	unsigned int ctr;
+	struct dentry *d = dget(ofs->workbasedir);
+	static const char *const volatile_path[] = {
+		OVL_WORKDIR_NAME, "incompat", "volatile", "dirty"
+	};
+	const char *const *name = volatile_path;
+
+	for (ctr = ARRAY_SIZE(volatile_path); ctr; ctr--, name++) {
+		d = ovl_lookup_or_create(d, *name, ctr > 1 ? S_IFDIR : S_IFREG);
+		if (IS_ERR(d))
+			return PTR_ERR(d);
+	}
+	dput(d);
+	return 0;
+}
+
 static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
 			    struct path *workpath)
 {
@@ -1146,6 +1200,18 @@ static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
 		err = 0;
 	} else {
 		vfs_removexattr(ofs->workdir, OVL_XATTR_OPAQUE);
+	}
+
+	/*
+	 * For volatile mount, create a incompat/volatile/dirty file to keep
+	 * track of it.
+	 */
+	if (ofs->config.ovl_volatile) {
+		err = ovl_create_volatile_dirty(ofs);
+		if (err < 0) {
+			pr_err("Failed to create volatile/dirty file.\n");
+			goto out;
+		}
 	}
 
 	/* Check if upper/work fs supports file handles */
