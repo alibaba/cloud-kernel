@@ -363,6 +363,7 @@ static struct ctl_table kern_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+#ifdef CONFIG_FAIR_GROUP_SCHED
 	{
 		.procname	= "sched_blocked_averages",
 		.data		= NULL,
@@ -372,6 +373,7 @@ static struct ctl_table kern_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+#endif /* CONFIG_FAIR_GROUP_SCHED */
 	{
 		.procname	= "sched_tunable_scaling",
 		.data		= &sysctl_sched_tunable_scaling,

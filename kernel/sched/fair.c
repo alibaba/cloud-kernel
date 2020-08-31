@@ -7234,9 +7234,8 @@ static bool __update_blocked_others(struct rq *rq, bool *done)
 	return decayed;
 }
 
-#ifdef CONFIG_FAIR_GROUP_SCHED
 DEFINE_STATIC_KEY_TRUE(sched_blocked_averages);
-
+#ifdef CONFIG_FAIR_GROUP_SCHED
 static void set_blocked_averages(bool enabled)
 {
 	if (enabled)
@@ -7419,8 +7418,8 @@ static bool __update_blocked_fair(struct rq *rq, bool *done)
 	struct cfs_rq *cfs_rq = &rq->cfs;
 	bool decayed;
 
-	if (!static_key_true(&sched_blocked_averages))
-		return;
+	if (!static_branch_likely(&sched_blocked_averages))
+		return false;
 
 	decayed = update_cfs_rq_load_avg(cfs_rq_clock_task(cfs_rq), cfs_rq);
 	if (cfs_rq_has_blocked(cfs_rq))
