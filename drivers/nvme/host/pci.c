@@ -830,7 +830,7 @@ static blk_status_t nvme_setup_sgl_simple(struct nvme_dev *dev,
 		struct bio_vec *bv)
 {
 	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
-	unsigned int length = blk_rq_bytes(req);
+	unsigned int length = blk_rq_payload_bytes(req);
 
 	iod->first_dma = dma_map_page(dev->dev, bv->bv_page, bv->bv_offset,
 				      length, rq_dma_dir(req));
