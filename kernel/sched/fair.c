@@ -7287,7 +7287,7 @@ static bool __update_blocked_fair(struct rq *rq, bool *done)
 	bool decayed = false;
 	int cpu = cpu_of(rq);
 
-	if (!static_branch_unlikely(&sched_blocked_averages))
+	if (!static_branch_likely(&sched_blocked_averages))
 		return false;
 
 	/*
