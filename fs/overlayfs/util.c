@@ -565,7 +565,7 @@ int ovl_check_setxattr(struct dentry *dentry, struct dentry *upperdentry,
 	if (ofs->noxattr)
 		return xerr;
 
-	err = ovl_do_setxattr(upperdentry, name, value, size, 0);
+	err = ovl_do_setxattr(upperdentry, name, value, size);
 
 	if (err == -EOPNOTSUPP) {
 		pr_warn("overlayfs: cannot set %s xattr on upper\n", name);
