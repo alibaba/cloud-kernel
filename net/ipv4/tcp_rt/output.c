@@ -96,7 +96,7 @@ static struct tcp_rt_stats *tcp_rt_get_stats(struct tcp_rt_stats **stats,
 		memset(p, 0, CHUNK_SIZE);
 
 		if (cmpxchg(&stats[chunkid], NULL, p)) {
-			vfree(p);
+			kfree(p);
 			p = READ_ONCE(stats[chunkid]);
 		}
 	}
@@ -141,11 +141,9 @@ void tcp_rt_log_printk(const struct sock *sk, char flag, bool fin, bool stats)
 	u32 t_rt;
 	u32 t_seq, t_retrans, recv;
 	struct timespec64 now;
-	u32 start_time, mrtt;
+	u32 mrtt;
 
 	mrtt = tcp_min_rtt(tp);
-
-	start_time = rt->start_time.tv_sec;
 
 	switch (flag) {
 	case LOG_STATUS_R:
