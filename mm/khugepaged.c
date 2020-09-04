@@ -1520,8 +1520,8 @@ static void collapse_file(struct mm_struct *mm,
 				xa_unlock_irq(&mapping->i_pages);
 				/* page charge is handled by the way */
 				page_cache_sync_readahead(mapping, &file->f_ra,
-							file, index, PAGE_SIZE);
-
+							  file, index,
+							  end - index);
 				/* drain pagevecs to help isolate_lru_page() */
 				lru_add_drain();
 				page = find_lock_page(mapping, index);
