@@ -8181,6 +8181,28 @@ static bool io_wq_files_match(struct io_wq_work *work, void *data)
 	return work->files == files;
 }
 
+static inline bool io_match_files(struct io_kiocb *req,
+				       struct files_struct *files)
+{
+	return (req->flags & REQ_F_WORK_INITIALIZED) && req->work.files == files;
+}
+
+static bool io_match_link_files(struct io_kiocb *req,
+				struct files_struct *files)
+{
+	struct io_kiocb *link;
+
+	if (io_match_files(req, files))
+		return true;
+	if (req->flags & REQ_F_LINK_HEAD) {
+		list_for_each_entry(link, &req->link_list, link_list) {
+			if (io_match_files(link, files))
+				return true;
+		}
+	}
+	return false;
+}
+
 static void io_cancel_defer_files(struct io_ring_ctx *ctx,
 				  struct files_struct *files)
 {
@@ -8189,8 +8211,7 @@ static void io_cancel_defer_files(struct io_ring_ctx *ctx,
 
 	spin_lock_irq(&ctx->completion_lock);
 	list_for_each_entry_reverse(req, &ctx->defer_list, list) {
-		if ((req->flags & REQ_F_WORK_INITIALIZED)
-			&& req->work.files == files) {
+		if (io_match_link_files(req, files)) {
 			list_cut_position(&list, &ctx->defer_list, &req->list);
 			break;
 		}
