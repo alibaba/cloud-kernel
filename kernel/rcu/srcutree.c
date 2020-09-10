@@ -184,11 +184,13 @@ static int init_srcu_struct_fields(struct srcu_struct *sp, bool is_static)
 	INIT_DELAYED_WORK(&sp->work, process_srcu);
 	if (!is_static)
 		sp->sda = alloc_percpu(struct srcu_data);
+	if (!sp->sda)
+		return -ENOMEM;
 	init_srcu_struct_nodes(sp, is_static);
 	sp->srcu_gp_seq_needed_exp = 0;
 	sp->srcu_last_gp_end = ktime_get_mono_fast_ns();
 	smp_store_release(&sp->srcu_gp_seq_needed, 0); /* Init done. */
-	return sp->sda ? 0 : -ENOMEM;
+	return 0;
 }
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
