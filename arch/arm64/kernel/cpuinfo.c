@@ -14,6 +14,7 @@
 #include <linux/bitops.h>
 #include <linux/bug.h>
 #include <linux/compat.h>
+#include <linux/cpufreq.h>
 #include <linux/elf.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -137,7 +138,7 @@ static int c_show(struct seq_file *m, void *v)
 {
 	int i, j;
 	bool compat = personality(current->personality) == PER_LINUX32;
-	unsigned int cpu, index, total;
+	unsigned int cpu, index, total, freq;
 	bool rich_container = false;
 
 	for_each_online_cpu(i) {
@@ -202,8 +203,11 @@ static int c_show(struct seq_file *m, void *v)
 		seq_printf(m, "CPU variant\t: 0x%x\n", MIDR_VARIANT(midr));
 		seq_printf(m, "CPU part\t: 0x%03x\n", MIDR_PARTNUM(midr));
 		seq_printf(m, "CPU revision\t: %d\n", MIDR_REVISION(midr));
-		seq_printf(m, "address sizes\t: %u bits physical, %u bits virtual\n\n",
+		seq_printf(m, "address sizes\t: %u bits physical, %u bits virtual\n",
 			   id_aa64mmfr0_pa_range_bits(), id_aa64mmfr2_va_range_bits());
+
+		freq = cpufreq_get(cpu);
+		seq_printf(m, "CPU MHz\t\t: %u.%03u\n\n", freq / 1000, freq % 1000);
 	}
 
 	return 0;
