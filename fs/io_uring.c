@@ -2956,6 +2956,7 @@ static int io_read(struct io_kiocb *req, bool force_nonblock)
 	struct iov_iter iter;
 	size_t iov_count;
 	ssize_t io_size, ret;
+	bool no_async;
 
 	ret = io_import_iovec(READ, req, &iovec, &iter, !force_nonblock);
 	if (ret < 0)
@@ -2974,7 +2975,8 @@ static int io_read(struct io_kiocb *req, bool force_nonblock)
 	 * If the file doesn't support async, mark it as REQ_F_MUST_PUNT so
 	 * we know to async punt it even if it was opened O_NONBLOCK
 	 */
-	if (force_nonblock && !io_file_supports_async(req->file, READ))
+	no_async = force_nonblock && !io_file_supports_async(req->file, READ);
+	if (no_async)
 		goto copy_iov;
 
 	iov_count = iov_iter_count(&iter);
@@ -3000,6 +3002,8 @@ copy_iov:
 			if (!(req->flags & REQ_F_NOWAIT) &&
 			    !file_can_poll(req->file))
 				req->flags |= REQ_F_MUST_PUNT;
+			if (no_async)
+				return -EAGAIN;
 			/* if we can retry, do so with the callbacks armed */
 			if (io_rw_should_retry(req)) {
 				ret2 = io_iter_do_read(req, &iter);
