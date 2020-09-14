@@ -4,6 +4,7 @@
 
 #include <linux/rculist.h>
 #include <linux/wait.h>
+#include <linux/signal.h>
 
 enum pid_type
 {
@@ -63,6 +64,7 @@ struct pid
 	struct hlist_head tasks[PIDTYPE_MAX];
 	/* wait queue for pidfd notifications */
 	wait_queue_head_t wait_pidfd;
+	siginfo_t siginfo;
 	struct rcu_head rcu;
 	struct upid numbers[1];
 };

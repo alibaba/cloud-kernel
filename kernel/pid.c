@@ -217,6 +217,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		INIT_HLIST_HEAD(&pid->tasks[type]);
 
 	init_waitqueue_head(&pid->wait_pidfd);
+	clear_siginfo(&pid->siginfo);
 
 	upid = pid->numbers + ns->level;
 	spin_lock_irq(&pidmap_lock);

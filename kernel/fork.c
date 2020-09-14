@@ -1669,9 +1669,25 @@ static unsigned int pidfd_poll(struct file *file, struct poll_table_struct *pts)
 	return poll_flags;
 }
 
+static ssize_t pidfd_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
+{
+	struct pid *pid = file->private_data;
+	struct siginfo __user *infop = (struct siginfo __user *)buf;
+
+	if (count != sizeof(struct siginfo))
+		return -EINVAL;
+
+	if (copy_siginfo_to_user(infop, &pid->siginfo))
+		return -EFAULT;
+
+	return sizeof(*infop);
+}
+
 const struct file_operations pidfd_fops = {
 	.release = pidfd_release,
 	.poll = pidfd_poll,
+	.read = pidfd_read,
+	.llseek = noop_llseek,
 #ifdef CONFIG_PROC_FS
 	.show_fdinfo = pidfd_show_fdinfo,
 #endif

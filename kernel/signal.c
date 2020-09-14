@@ -1799,11 +1799,13 @@ ret:
 	return ret;
 }
 
-static void do_notify_pidfd(struct task_struct *task)
+static void do_notify_pidfd(struct task_struct *task, siginfo_t *info, int signo)
 {
 	struct pid *pid;
 
 	pid = task_pid(task);
+	info->si_signo = signo;
+	copy_siginfo(&pid->siginfo, info);
 	wake_up_all(&pid->wait_pidfd);
 }
 
@@ -1829,9 +1831,6 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 
 	BUG_ON(!tsk->ptrace &&
 	       (tsk->group_leader != tsk || !thread_group_empty(tsk)));
-
-	/* Wake up all pidfd waiters */
-	do_notify_pidfd(tsk);
 
 	if (sig != SIGCHLD) {
 		/*
@@ -1900,6 +1899,8 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 		if (psig->action[SIGCHLD-1].sa.sa_handler == SIG_IGN)
 			sig = 0;
 	}
+	/* Wake up all pidfd waiters */
+	do_notify_pidfd(tsk, &info, sig);
 	if (valid_signal(sig) && sig)
 		__group_send_sig_info(sig, &info, tsk->parent);
 	__wake_up_parent(tsk, tsk->parent);
