@@ -14,6 +14,8 @@
 #ifndef _LINUX_PUBLIC_KEY_H
 #define _LINUX_PUBLIC_KEY_H
 
+#include <crypto/akcipher.h>
+
 /*
  * Cryptographic data for the public-key subtype of the asymmetric key type.
  *
@@ -40,6 +42,8 @@ struct public_key_signature {
 	u8 digest_size;		/* Number of bytes in digest */
 	const char *pkey_algo;
 	const char *hash_algo;
+	const void *data;
+	unsigned int data_size;
 };
 
 extern void public_key_signature_free(struct public_key_signature *sig);
@@ -70,5 +74,17 @@ extern int verify_signature(const struct key *key,
 
 int public_key_verify_signature(const struct public_key *pkey,
 				const struct public_key_signature *sig);
+
+#if IS_REACHABLE(CONFIG_CRYPTO_SM2)
+int cert_sig_digest_update(const struct public_key_signature *sig,
+				struct crypto_akcipher *tfm_pkey);
+#else
+static inline
+int cert_sig_digest_update(const struct public_key_signature *sig,
+				struct crypto_akcipher *tfm_pkey)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 #endif /* _LINUX_PUBLIC_KEY_H */

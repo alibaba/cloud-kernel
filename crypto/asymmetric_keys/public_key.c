@@ -109,6 +109,12 @@ int public_key_verify_signature(const struct public_key *pkey,
 	if (ret)
 		goto error_free_req;
 
+	if (strcmp(sig->pkey_algo, "sm2") == 0 && sig->data_size) {
+		ret = cert_sig_digest_update(sig, tfm);
+		if (ret)
+			goto error_free_req;
+	}
+
 	ret = -ENOMEM;
 	digest = kmemdup(sig->digest, sig->digest_size, GFP_KERNEL);
 	if (!digest)

@@ -34,6 +34,9 @@ int x509_get_sig_params(struct x509_certificate *cert)
 
 	pr_devel("==>%s()\n", __func__);
 
+	sig->data = cert->tbs;
+	sig->data_size = cert->tbs_size;
+
 	if (!cert->pub->pkey_algo)
 		cert->unsupported_key = true;
 
