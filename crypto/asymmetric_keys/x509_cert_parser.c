@@ -226,6 +226,11 @@ int x509_note_pkey_algo(void *context, size_t hdrlen,
 		ctx->cert->sig->hash_algo = "sha224";
 		ctx->cert->sig->pkey_algo = "rsa";
 		break;
+
+	case OID_SM2_with_SM3:
+		ctx->cert->sig->hash_algo = "sm3";
+		ctx->cert->sig->pkey_algo = "sm2";
+		break;
 	}
 
 	ctx->algo_oid = ctx->last_oid;
@@ -249,7 +254,8 @@ int x509_note_signature(void *context, size_t hdrlen,
 		return -EINVAL;
 	}
 
-	if (strcmp(ctx->cert->sig->pkey_algo, "rsa") == 0) {
+	if (strcmp(ctx->cert->sig->pkey_algo, "rsa") == 0 ||
+	    strcmp(ctx->cert->sig->pkey_algo, "sm2") == 0) {
 		/* Discard the BIT STRING metadata */
 		if (vlen < 1 || *(const u8 *)value != 0)
 			return -EBADMSG;
@@ -412,10 +418,16 @@ int x509_extract_key_data(void *context, size_t hdrlen,
 {
 	struct x509_parse_context *ctx = context;
 
-	if (ctx->last_oid != OID_rsaEncryption)
+	switch (ctx->last_oid) {
+	case OID_rsaEncryption:
+		ctx->cert->pub->pkey_algo = "rsa";
+		break;
+	case OID_id_ecPublicKey:
+		ctx->cert->pub->pkey_algo = "sm2";
+		break;
+	default:
 		return -ENOPKG;
-
-	ctx->cert->pub->pkey_algo = "rsa";
+	}
 
 	/* Discard the BIT STRING metadata */
 	if (vlen < 1 || *(const u8 *)value != 0)
