@@ -6091,9 +6091,6 @@ static void io_submit_state_start(struct io_submit_state *state,
 				  unsigned int max_ios)
 {
 	blk_start_plug(&state->plug);
-#ifdef CONFIG_BLOCK
-	state->plug.nowait = true;
-#endif
 	state->free_reqs = 0;
 	state->file = NULL;
 	state->ios_left = max_ios;
