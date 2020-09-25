@@ -150,4 +150,5 @@ extern atomic_t dm_global_event_nr;
 extern wait_queue_head_t dm_global_eventq;
 void dm_issue_global_event(void);
 
+int dm_io_poll(struct request_queue *q, blk_qc_t cookie, bool spin);
 #endif

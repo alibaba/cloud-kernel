@@ -1932,6 +1932,31 @@ static bool dm_table_requires_stable_pages(struct dm_table *t)
 	return false;
 }
 
+static int device_supports_poll(struct dm_target *ti, struct dm_dev *dev,
+				sector_t start, sector_t len, void *data)
+{
+	struct request_queue *q = bdev_get_queue(dev->bdev);
+
+	return q && test_bit(QUEUE_FLAG_POLL, &q->queue_flags);
+}
+
+static bool dm_table_supports_poll(struct dm_table *t)
+{
+	struct dm_target *ti;
+	unsigned int i;
+
+	/* Ensure that all targets support iopoll. */
+	for (i = 0; i < dm_table_get_num_targets(t); i++) {
+		ti = dm_table_get_target(t, i);
+
+		if (!ti->type->iterate_devices ||
+		    !ti->type->iterate_devices(ti, device_supports_poll, NULL))
+			return false;
+	}
+
+	return true;
+}
+
 void dm_table_set_restrictions(struct dm_table *t, struct request_queue *q,
 			       struct queue_limits *limits)
 {
@@ -2011,6 +2036,12 @@ void dm_table_set_restrictions(struct dm_table *t, struct request_queue *q,
 	 */
 	if (blk_queue_add_random(q) && dm_table_all_devices_attribute(t, device_is_not_random))
 		blk_queue_flag_clear(QUEUE_FLAG_ADD_RANDOM, q);
+
+	if (dm_table_supports_poll(t)) {
+		q->poll_fn = dm_io_poll;
+		blk_queue_flag_set(QUEUE_FLAG_POLL, q);
+	}
+
 }
 
 unsigned int dm_table_get_num_targets(struct dm_table *t)

@@ -1765,6 +1765,88 @@ static int dm_any_congested(void *congested_data, int bdi_bits)
 	return r;
 }
 
+static int do_dm_io_poll(struct request_queue *q, blk_qc_t cookie);
+
+static int dm_poll_one_dev(struct request_queue *q, blk_qc_t cookie)
+{
+	/*
+	 * Iterate polling on all polling queues for mq device, while
+	 * calling .poll_fn() recursively if the underlying device is
+	 * actually another dm device on the next level of the device
+	 * stack.
+	 * Be noted that @q can't be a single-queue (sq) device here.
+	 * q->queue_flags will not be set QUEUE_FLAG_POLL during device
+	 * initialization, and thus dm_io_poll() won't be called if one
+	 * of the underlying devices is actually a sq device.
+	 */
+	if (q->mq_ops) {
+		struct blk_mq_hw_ctx *hctx;
+		int i, ret = 0;
+
+		if (!percpu_ref_tryget(&q->q_usage_counter))
+			return 0;
+
+		queue_for_each_poll_hw_ctx(q, hctx, i)
+			ret += q->mq_ops->poll(hctx, -1);
+
+		percpu_ref_put(&q->q_usage_counter);
+		return ret;
+	} else
+		return do_dm_io_poll(q, cookie);
+}
+
+static int do_dm_io_poll(struct request_queue *q, blk_qc_t cookie)
+{
+	struct mapped_device *md = q->queuedata;
+	struct dm_table *table;
+	struct dm_dev_internal *dd;
+	int srcu_idx;
+	int ret = 0;
+
+	table = dm_get_live_table(md, &srcu_idx);
+	if (!table)
+		goto out;
+
+	list_for_each_entry(dd, dm_table_get_devices(table), list)
+		ret += dm_poll_one_dev(bdev_get_queue(dd->dm_dev->bdev), cookie);
+out:
+	dm_put_live_table(md, srcu_idx);
+	return ret;
+}
+
+int dm_io_poll(struct request_queue *q, blk_qc_t cookie, bool spin)
+{
+	long state;
+
+	/*
+	 * Hybrid polling is not supported for dm device currently.
+	 * And the following code is just a duplicate copy from
+	 * blk_mq_poll().
+	 */
+	state = current->state;
+	while (!need_resched()) {
+		int ret;
+
+		ret = do_dm_io_poll(q, cookie);
+		if (ret > 0) {
+			set_current_state(TASK_RUNNING);
+			return ret;
+		}
+
+		if (signal_pending_state(state, current))
+			set_current_state(TASK_RUNNING);
+
+		if (current->state == TASK_RUNNING)
+			return 1;
+		if (ret < 0 || !spin)
+			break;
+		cpu_relax();
+	}
+
+	__set_current_state(TASK_RUNNING);
+	return 0;
+}
+
 /*-----------------------------------------------------------------
  * An IDR is used to keep track of allocated minor numbers.
  *---------------------------------------------------------------*/
