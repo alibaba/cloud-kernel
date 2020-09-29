@@ -2842,6 +2842,7 @@ static int io_async_buf_func(struct wait_queue_entry *wait, unsigned mode,
 	if (ret != 1)
 		return ret;
 
+	req->rw.kiocb.ki_flags &= ~IOCB_WAITQ;
 	list_del_init(&wait->entry);
 
 	init_task_work(&rw->task_work, io_async_buf_retry);

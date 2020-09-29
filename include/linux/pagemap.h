@@ -513,6 +513,7 @@ static inline int kiocb_wait_page_queue_init(struct kiocb *kiocb,
 		wait->wait.flags = 0;
 		INIT_LIST_HEAD(&wait->wait.entry);
 		kiocb->ki_flags |= IOCB_WAITQ;
+		kiocb->ki_flags &= ~IOCB_NOWAIT;
 		kiocb->ki_waitq = wait;
 		return 0;
 	}
