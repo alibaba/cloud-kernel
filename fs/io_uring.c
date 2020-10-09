@@ -7931,6 +7931,7 @@ static int io_uring_show_cred(int id, void *p, void *data)
 
 static void __io_uring_show_fdinfo(struct io_ring_ctx *ctx, struct seq_file *m)
 {
+	bool sqthread = false;
 	bool has_lock;
 	int i;
 
@@ -7942,6 +7943,13 @@ static void __io_uring_show_fdinfo(struct io_ring_ctx *ctx, struct seq_file *m)
 	 */
 	has_lock = mutex_trylock(&ctx->uring_lock);
 
+	if (has_lock && (ctx->flags & IORING_SETUP_SQPOLL))
+		sqthread = true;
+
+	seq_printf(m, "SqThread:\t%d\n",
+		   sqthread ? task_pid_nr(ctx->sqo_thread) : -1);
+	seq_printf(m, "SqThreadCpu:\t%d\n",
+		   sqthread ? task_cpu(ctx->sqo_thread) : -1);
 	seq_printf(m, "UserFiles:\t%u\n", ctx->nr_user_files);
 	for (i = 0; has_lock && i < ctx->nr_user_files; i++) {
 		struct fixed_file_table *table;
