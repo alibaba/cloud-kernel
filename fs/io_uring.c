@@ -6978,13 +6978,13 @@ static int io_sqe_files_scm(struct io_ring_ctx *ctx)
 }
 #endif
 
-static int io_sqe_alloc_file_tables(struct io_ring_ctx *ctx, unsigned nr_tables,
-				    unsigned nr_files)
+static int io_sqe_alloc_file_tables(struct fixed_file_data *file_data,
+				    unsigned nr_tables, unsigned nr_files)
 {
 	int i;
 
 	for (i = 0; i < nr_tables; i++) {
-		struct fixed_file_table *table = &ctx->file_data->table[i];
+		struct fixed_file_table *table = &file_data->table[i];
 		unsigned this_files;
 
 		this_files = min(nr_files, IORING_MAX_FILES_TABLE);
@@ -6999,7 +6999,7 @@ static int io_sqe_alloc_file_tables(struct io_ring_ctx *ctx, unsigned nr_tables,
 		return 0;
 
 	for (i = 0; i < nr_tables; i++) {
-		struct fixed_file_table *table = &ctx->file_data->table[i];
+		struct fixed_file_table *table = &file_data->table[i];
 		kfree(table->files);
 	}
 	return 1;
@@ -7144,6 +7144,7 @@ static int io_sqe_files_register(struct io_ring_ctx *ctx, void __user *arg,
 	int fd, ret = 0;
 	unsigned i;
 	struct fixed_file_ref_node *ref_node;
+	struct fixed_file_data *file_data;
 
 	if (ctx->file_data)
 		return -EBUSY;
@@ -7152,37 +7153,33 @@ static int io_sqe_files_register(struct io_ring_ctx *ctx, void __user *arg,
 	if (nr_args > IORING_MAX_FIXED_FILES)
 		return -EMFILE;
 
-	ctx->file_data = kzalloc(sizeof(*ctx->file_data), GFP_KERNEL);
-	if (!ctx->file_data)
+	file_data = kzalloc(sizeof(*ctx->file_data), GFP_KERNEL);
+	if (!file_data)
 		return -ENOMEM;
-	ctx->file_data->ctx = ctx;
-	init_completion(&ctx->file_data->done);
-	INIT_LIST_HEAD(&ctx->file_data->ref_list);
-	spin_lock_init(&ctx->file_data->lock);
+	file_data->ctx = ctx;
+	init_completion(&file_data->done);
+	INIT_LIST_HEAD(&file_data->ref_list);
+	spin_lock_init(&file_data->lock);
 
 	nr_tables = DIV_ROUND_UP(nr_args, IORING_MAX_FILES_TABLE);
-	ctx->file_data->table = kcalloc(nr_tables,
-					sizeof(struct fixed_file_table),
-					GFP_KERNEL);
-	if (!ctx->file_data->table) {
-		kfree(ctx->file_data);
-		ctx->file_data = NULL;
+	file_data->table = kcalloc(nr_tables, sizeof(file_data->table),
+				   GFP_KERNEL);
+	if (!file_data->table) {
+		kfree(file_data);
 		return -ENOMEM;
 	}
 
-	if (percpu_ref_init(&ctx->file_data->refs, io_file_ref_kill,
+	if (percpu_ref_init(&file_data->refs, io_file_ref_kill,
 				PERCPU_REF_ALLOW_REINIT, GFP_KERNEL)) {
-		kfree(ctx->file_data->table);
-		kfree(ctx->file_data);
-		ctx->file_data = NULL;
+		kfree(file_data->table);
+		kfree(file_data);
 		return -ENOMEM;
 	}
 
-	if (io_sqe_alloc_file_tables(ctx, nr_tables, nr_args)) {
-		percpu_ref_exit(&ctx->file_data->refs);
-		kfree(ctx->file_data->table);
-		kfree(ctx->file_data);
-		ctx->file_data = NULL;
+	if (io_sqe_alloc_file_tables(file_data, nr_tables, nr_args)) {
+		percpu_ref_exit(&file_data->refs);
+		kfree(file_data->table);
+		kfree(file_data);
 		return -ENOMEM;
 	}
 
@@ -7199,7 +7196,7 @@ static int io_sqe_files_register(struct io_ring_ctx *ctx, void __user *arg,
 			continue;
 		}
 
-		table = &ctx->file_data->table[i >> IORING_FILE_TABLE_SHIFT];
+		table = &file_data->table[i >> IORING_FILE_TABLE_SHIFT];
 		index = i & IORING_FILE_TABLE_MASK;
 		file = fget(fd);
 
@@ -7229,16 +7226,16 @@ static int io_sqe_files_register(struct io_ring_ctx *ctx, void __user *arg,
 				fput(file);
 		}
 		for (i = 0; i < nr_tables; i++)
-			kfree(ctx->file_data->table[i].files);
+			kfree(file_data->table[i].files);
 
-		percpu_ref_exit(&ctx->file_data->refs);
-		kfree(ctx->file_data->table);
-		kfree(ctx->file_data);
-		ctx->file_data = NULL;
+		percpu_ref_exit(&file_data->refs);
+		kfree(file_data->table);
+		kfree(file_data);
 		ctx->nr_user_files = 0;
 		return ret;
 	}
 
+	ctx->file_data = file_data;
 	ret = io_sqe_files_scm(ctx);
 	if (ret) {
 		io_sqe_files_unregister(ctx);
@@ -7251,11 +7248,11 @@ static int io_sqe_files_register(struct io_ring_ctx *ctx, void __user *arg,
 		return PTR_ERR(ref_node);
 	}
 
-	ctx->file_data->cur_refs = &ref_node->refs;
-	spin_lock(&ctx->file_data->lock);
-	list_add(&ref_node->node, &ctx->file_data->ref_list);
-	spin_unlock(&ctx->file_data->lock);
-	percpu_ref_get(&ctx->file_data->refs);
+	file_data->cur_refs = &ref_node->refs;
+	spin_lock(&file_data->lock);
+	list_add(&ref_node->node, &file_data->ref_list);
+	spin_unlock(&file_data->lock);
+	percpu_ref_get(&file_data->refs);
 	return ret;
 }
 
