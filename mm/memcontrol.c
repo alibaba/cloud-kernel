@@ -128,6 +128,7 @@ static struct mem_cgroup_tree soft_limit_tree __read_mostly;
 /* for OOM and MEMSLI */
 struct mem_cgroup_eventfd_list {
 	struct list_head list;
+	struct rcu_head	rcu;
 	struct eventfd_ctx *eventfd;
 };
 
@@ -4295,7 +4296,7 @@ static int __memcg_lat_stat_register_event(struct mem_cgroup *memcg,
 	mutex_lock(&memcg->lat_stat_notify_lock);
 
 	evt->eventfd = eventfd;
-	list_add(&evt->list, &memcg->lat_stat_notify[sidx]);
+	list_add_rcu(&evt->list, &memcg->lat_stat_notify[sidx]);
 
 	mutex_unlock(&memcg->lat_stat_notify_lock);
 
@@ -4312,8 +4313,8 @@ static void __memcg_lat_stat_unregister_event(struct mem_cgroup *memcg,
 	list_for_each_entry_safe(evt, tmp, &memcg->lat_stat_notify[sidx],
 				 list) {
 		if (evt->eventfd == eventfd) {
-			list_del(&evt->list);
-			kfree(evt);
+			list_del_rcu(&evt->list);
+			kfree_rcu(evt, rcu);
 		}
 	}
 
@@ -4350,12 +4351,12 @@ static void memcg_lat_stat_notify_event(struct mem_cgroup *memcg,
 {
 	struct mem_cgroup_eventfd_list *evt;
 
-	mutex_lock(&memcg->lat_stat_notify_lock);
+	rcu_read_lock();
 
-	list_for_each_entry(evt, &memcg->lat_stat_notify[sidx], list)
+	list_for_each_entry_rcu(evt, &memcg->lat_stat_notify[sidx], list)
 		eventfd_signal(evt->eventfd, 1);
 
-	mutex_unlock(&memcg->lat_stat_notify_lock);
+	rcu_read_unlock();
 }
 
 static enum mem_lat_count_t get_mem_lat_count_idx(u64 duration)
