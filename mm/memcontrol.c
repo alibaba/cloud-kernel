@@ -4803,15 +4803,15 @@ static void smp_write_##name(void *info)				\
 									\
 	for (i = MEM_LAT_0_1; i < MEM_LAT_NR_COUNT; i++)		\
 		this_cpu_write(memcg->lat_stat_cpu->item[sidx][i], 0);	\
-}									\
+}
 
-MEMCG_LAT_STAT_SMP_WRITE(global_direct_reclaim, MEM_LAT_GLOBAL_DIRECT_RECLAIM);
-MEMCG_LAT_STAT_SMP_WRITE(memcg_direct_reclaim, MEM_LAT_MEMCG_DIRECT_RECLAIM);
-MEMCG_LAT_STAT_SMP_WRITE(direct_compact, MEM_LAT_DIRECT_COMPACT);
-MEMCG_LAT_STAT_SMP_WRITE(global_direct_swapout, MEM_LAT_GLOBAL_DIRECT_SWAPOUT);
-MEMCG_LAT_STAT_SMP_WRITE(memcg_direct_swapout, MEM_LAT_MEMCG_DIRECT_SWAPOUT);
-MEMCG_LAT_STAT_SMP_WRITE(direct_swapin, MEM_LAT_DIRECT_SWAPIN);
-MEMCG_LAT_STAT_SMP_WRITE(dirty_throttle, MEM_LAT_DIRTY_THROTTLE);
+MEMCG_LAT_STAT_SMP_WRITE(global_direct_reclaim, MEM_LAT_GLOBAL_DIRECT_RECLAIM)
+MEMCG_LAT_STAT_SMP_WRITE(memcg_direct_reclaim, MEM_LAT_MEMCG_DIRECT_RECLAIM)
+MEMCG_LAT_STAT_SMP_WRITE(direct_compact, MEM_LAT_DIRECT_COMPACT)
+MEMCG_LAT_STAT_SMP_WRITE(global_direct_swapout, MEM_LAT_GLOBAL_DIRECT_SWAPOUT)
+MEMCG_LAT_STAT_SMP_WRITE(memcg_direct_swapout, MEM_LAT_MEMCG_DIRECT_SWAPOUT)
+MEMCG_LAT_STAT_SMP_WRITE(direct_swapin, MEM_LAT_DIRECT_SWAPIN)
+MEMCG_LAT_STAT_SMP_WRITE(dirty_throttle, MEM_LAT_DIRTY_THROTTLE)
 
 smp_call_func_t smp_memcg_lat_write_funcs[] = {
 	smp_write_global_direct_reclaim,
@@ -6475,7 +6475,9 @@ static void __mem_cgroup_free(void **ptr)
 	free_percpu(memcg->vmstats_percpu);
 	free_percpu(memcg->vmstats_local);
 	free_percpu(memcg->exstat_cpu);
+#ifdef CONFIG_MEMSLI
 	free_percpu(memcg->lat_stat_cpu);
+#endif
 	kfree(memcg);
 }
 
@@ -6536,9 +6538,11 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	if (!memcg->exstat_cpu)
 		goto fail;
 
+#ifdef CONFIG_MEMSLI
 	memcg->lat_stat_cpu = alloc_percpu(struct mem_cgroup_lat_stat_cpu);
 	if (!memcg->lat_stat_cpu)
 		goto fail;
+#endif
 
 	for_each_node(node)
 		if (alloc_mem_cgroup_per_node_info(memcg, node))

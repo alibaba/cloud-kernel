@@ -400,8 +400,10 @@ struct mem_cgroup {
 
 	unsigned long offline_jiffies;
 
+#ifdef CONFIG_MEMSLI
 	/* memory latency stat */
 	struct mem_cgroup_lat_stat_cpu __percpu *lat_stat_cpu;
+#endif
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	int thp_reclaim;
