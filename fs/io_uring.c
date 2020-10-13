@@ -1112,10 +1112,10 @@ static void io_req_work_grab_env(struct io_kiocb *req)
 	}
 }
 
-static bool io_req_clean_work(struct io_kiocb *req)
+static void io_req_clean_work(struct io_kiocb *req)
 {
 	if (!(req->flags & REQ_F_WORK_INITIALIZED))
-		return false;
+		return;
 
 	req->flags &= ~REQ_F_WORK_INITIALIZED;
 
@@ -1130,9 +1130,6 @@ static bool io_req_clean_work(struct io_kiocb *req)
 	if (req->work.fs) {
 		struct fs_struct *fs = req->work.fs;
 
-		if (req->flags & REQ_F_COMP_LOCKED)
-			return true;
-
 		spin_lock(&req->work.fs->lock);
 		if (--fs->users)
 			fs = NULL;
@@ -1140,8 +1137,6 @@ static bool io_req_clean_work(struct io_kiocb *req)
 		if (fs)
 			free_fs_struct(fs);
 	}
-
-	return false;
 }
 
 static void io_prep_async_work(struct io_kiocb *req)
@@ -1504,7 +1499,7 @@ static inline void io_put_file(struct io_kiocb *req, struct file *file,
 	}
 }
 
-static bool io_dismantle_req(struct io_kiocb *req)
+static void io_dismantle_req(struct io_kiocb *req)
 {
 	if (req->flags & REQ_F_NEED_CLEANUP)
 		io_cleanup_req(req);
@@ -1524,7 +1519,7 @@ static bool io_dismantle_req(struct io_kiocb *req)
 		spin_unlock_irqrestore(&ctx->inflight_lock, flags);
 	}
 
-	return io_req_clean_work(req);
+	io_req_clean_work(req);
 }
 
 static void __io_free_req_finish(struct io_kiocb *req)
@@ -1561,21 +1556,15 @@ static void io_free_req_many(struct io_ring_ctx *ctx, struct req_batch *rb)
 static void io_req_task_file_table_put(struct callback_head *cb)
 {
 	struct io_kiocb *req = container_of(cb, struct io_kiocb, task_work);
-	struct fs_struct *fs = req->work.fs;
 
-	spin_lock(&req->work.fs->lock);
-	if (--fs->users)
-		fs = NULL;
-	spin_unlock(&req->work.fs->lock);
-	if (fs)
-		free_fs_struct(fs);
-	req->work.fs = NULL;
+	io_dismantle_req(req);
 	__io_free_req_finish(req);
 }
 
 static void __io_free_req(struct io_kiocb *req)
 {
-	if (!io_dismantle_req(req)) {
+	if (!(req->flags & REQ_F_COMP_LOCKED)) {
+		io_dismantle_req(req);
 		__io_free_req_finish(req);
 	} else {
 		int ret;
