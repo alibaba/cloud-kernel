@@ -7172,6 +7172,7 @@ static int io_sqe_files_register(struct io_ring_ctx *ctx, void __user *arg,
 
 	if (io_sqe_alloc_file_tables(file_data, nr_tables, nr_args))
 		goto out_ref;
+	ctx->file_data = file_data;
 
 	for (i = 0; i < nr_args; i++, ctx->nr_user_files++) {
 		struct fixed_file_table *table;
@@ -7206,7 +7207,6 @@ static int io_sqe_files_register(struct io_ring_ctx *ctx, void __user *arg,
 		table->files[index] = file;
 	}
 
-	ctx->file_data = file_data;
 	ret = io_sqe_files_scm(ctx);
 	if (ret) {
 		io_sqe_files_unregister(ctx);
@@ -7239,6 +7239,7 @@ out_ref:
 out_free:
 	kfree(file_data->table);
 	kfree(file_data);
+	ctx->file_data = NULL;
 	return ret;
 }
 
