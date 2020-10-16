@@ -1353,7 +1353,7 @@ void do_machine_check(struct pt_regs *regs, long error_code)
 		current->mce_kill_me.func = kill_me_maybe;
 		if (kill_it)
 			current->mce_kill_me.func = kill_me_now;
-		task_work_add(current, &current->mce_kill_me, true);
+		task_work_add(current, &current->mce_kill_me, TWA_RESUME);
 	} else {
 		/*
 		 * Handle an MCE which has happened in kernel space but from

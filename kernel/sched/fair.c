@@ -2737,7 +2737,7 @@ void task_tick_numa(struct rq *rq, struct task_struct *curr)
 
 		if (!time_before(jiffies, curr->mm->numa_next_scan)) {
 			init_task_work(work, task_numa_work); /* TODO: move this into sched_fork() */
-			task_work_add(curr, work, true);
+			task_work_add(curr, work, TWA_RESUME);
 		}
 	}
 }

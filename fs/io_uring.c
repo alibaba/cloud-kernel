@@ -2119,7 +2119,7 @@ static bool io_rw_reissue(struct io_kiocb *req, long res)
 	init_task_work(&req->task_work, io_rw_resubmit);
 	percpu_ref_get(&req->ctx->refs);
 
-	ret = task_work_add(tsk, &req->task_work, true);
+	ret = task_work_add(tsk, &req->task_work, TWA_RESUME);
 	if (!ret)
 		return true;
 #endif
@@ -2860,12 +2860,12 @@ static int io_async_buf_func(struct wait_queue_entry *wait, unsigned mode,
 	/* submit ref gets dropped, acquire a new one */
 	refcount_inc(&req->refs);
 	tsk = req->task;
-	ret = task_work_add(tsk, &rw->task_work, true);
+	ret = task_work_add(tsk, &rw->task_work, TWA_RESUME);
 	if (unlikely(ret)) {
 		/* queue just for cancelation */
 		init_task_work(&rw->task_work, io_async_buf_cancel);
 		tsk = io_wq_get_task(req->ctx->io_wq);
-		task_work_add(tsk, &rw->task_work, true);
+		task_work_add(tsk, &rw->task_work, TWA_RESUME);
 	}
 	wake_up_process(tsk);
 	return 1;
@@ -4393,7 +4393,8 @@ static int io_req_task_work_add(struct io_kiocb *req, struct callback_head *cb)
 {
 	struct task_struct *tsk = req->task;
 	struct io_ring_ctx *ctx = req->ctx;
-	int ret, notify;
+	enum task_work_notify_mode notify;
+	int ret;
 
 	/*
 	 * SQPOLL kernel thread doesn't need notification, just a wakeup. For
@@ -4401,7 +4402,7 @@ static int io_req_task_work_add(struct io_kiocb *req, struct callback_head *cb)
 	 * processing task_work. There's no reliable way to tell if TWA_RESUME
 	 * will do the job.
 	 */
-	notify = 0;
+	notify = TWA_NONE;
 	if (!(ctx->flags & IORING_SETUP_SQPOLL))
 		notify = TWA_SIGNAL;
 
@@ -4440,7 +4441,7 @@ static int __io_async_wake(struct io_kiocb *req, struct io_poll_iocb *poll,
 	if (unlikely(ret)) {
 		WRITE_ONCE(poll->canceled, true);
 		tsk = io_wq_get_task(req->ctx->io_wq);
-		task_work_add(tsk, &req->task_work, 0);
+		task_work_add(tsk, &req->task_work, TWA_NONE);
 		wake_up_process(tsk);
 	}
 	return 1;
