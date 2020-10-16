@@ -23,7 +23,7 @@
 
 ### 1.1 报告安全漏洞
 
-我们欢迎来自安全领域的研究专家向我们提交内核及操作系统方面的漏洞报告，然而我们不鼓励任何人**直接**公开安全漏洞细节。如需报告安全漏洞，烦请发送相关报告至我们的服务邮箱 [alicloud-linux-os@service.alibaba.com](mailto:alibaba-linux-os@service.alibaba.com), 我们会第一时间查收并仔细审阅。
+我们欢迎来自安全领域的研究专家向我们提交内核及操作系统方面的漏洞报告，然而我们不鼓励任何人**直接**公开安全漏洞细节。如需报告安全漏洞，烦请发送相关报告至我们的服务邮箱 [security@OpenAnolis.org](mailto:security@openanolis.org), 我们会第一时间查收并仔细审阅。
 
 ### 1.2 报告崩溃事件
 
@@ -152,5 +152,5 @@ Cloud Kernel 的开发和 Linux 内核社区开发模式基本一致，您可以
 
 当您的补丁完成后，可以提交给我们审核。当前我们接受下列两种方式进行审核：
 
-+ 使用传统的内核开发者的方式，发送补丁到[开发者邮件列表: aliyunlinux2-dev@linux.alibaba.com](mailto:aliyunlinux2-dev@linux.alibaba.com)，或者：
++ 使用传统的内核开发者的方式，发送补丁到[Cloud Kernel 邮件列表: cloud-kernel@lists.OpenAnolis.org](mailto:cloud-kernel@lists.openanolis.org)，或者：
 + 在 [GitHub 页面](https://github.com/alibaba/cloud-kernel/pulls) 上给我们发送 pull request.

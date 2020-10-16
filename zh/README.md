@@ -100,10 +100,12 @@ Cloud Kernel 和 Alibaba Cloud Linux OS 项目是“站在巨人的肩膀上”�
 
 您可以通过下列方式与我们取得联系：
 
-+ 加入[邮件列表](MAILLIST.md)参与讨论；
-+ 加入[开发者论坛](https://bbs.aliyun.com/thread/450.html)参与讨论；
-+ 或者可以给我们发邮件：[alicloud-linux-os@service.alibaba.com](mailto:alicloud-linux-os@service.alibaba.com).
++ 可以加入[邮件列表](MAILLIST.md)参与讨论；
++ 可以加入 FreeNode 上的 IRC 频道： `#anolis-linux`;
++ 可以加入钉钉群：`Alibaba Cloud Linux OS 开发者&用户群`，群号：`23149462`;
++ 或者可以给我们发邮件：[os@openanolis.org](mailto:os@openanolis.org).
 
 --------------------------------
 
+> Alibaba Cloud Linux OS and Cloud Kernel are sub-projects maintained by [OpenAnolis](http://openanolis.org) community, an open source operating system community and innovation platform.
 > The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.

@@ -47,10 +47,11 @@ sudo yumdownloader --source <包名>
 
 + 如果您是阿里云 ECS 用户，可以提交[工单](https://selfservice.console.aliyun.com/ticket/createIndex)；
 + 可以加入[邮件列表](MAILLIST.md)参与讨论；
-+ 可以加入[开发者论坛](https://bbs.aliyun.com/thread/450.html)参与讨论；
++ 可以加入 FreeNode 上的 IRC 频道： `#anolis-linux`;
 + 可以加入钉钉群：`Alibaba Cloud Linux OS 开发者&用户群`，群号：`23149462`;
-+ 或者可以给我们发邮件：[alicloud-linux-os@service.alibaba.com](mailto:alicloud-linux-os@service.alibaba.com).
++ 或者可以给我们发邮件：[os@OpenAnolis.org](mailto:os@openanolis.org).
 
 --------------------------------
 
+> Alibaba Cloud Linux OS and Cloud Kernel are sub-projects maintained by [OpenAnolis](http://openanolis.org) community, an open source operating system community and innovation platform.
 > The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.

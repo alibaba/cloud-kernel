@@ -23,7 +23,7 @@ The easiest way to participate in contributing to the project is just use Cloud 
 
 ### 1.1 Report security issues
 
-We welcome reports from security researchers and experts about possible security vulnerabilities with our kernel and operating system, however we discourage anyone to spread security issue details. To report a security issue, please send a private email to [alicloud-linux-os@service.alibaba.com](mailto:alibaba-linux-os@service.alibaba.com), we do appreciate it and will review it carefully at one.
+We welcome reports from security researchers and experts about possible security vulnerabilities with our kernel and operating system, however we discourage anyone to spread security issue details. To report a security issue, please send a private email to [security@OpenAnolis.org](mailto:security@openanolis), we do appreciate it and will review it carefully at one.
 
 ### 1.2 Report crash issues
 
@@ -152,5 +152,5 @@ Other rules include:
 
 Once your patches are ready, you can submit your patches in the follow ways:
 
-+ Send your patch to the [mailing list: aliyunlinux2-dev@linux.alibaba.com](mailto:aliyunlinux2-dev@linux.alibaba.com) for review, which is a traditional way, or:
++ Send your patch to the [mailing list: cloud-kernel@lists.OpenAnolis.org](mailto:cloud-kernel@lists.openanolis.org) for review, which is a traditional way, or:
 + Send us a pull request in [GitHub pages](https://github.com/alibaba/cloud-kernel/pulls).

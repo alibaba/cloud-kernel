@@ -98,9 +98,11 @@ We use the same license as the upstream does, so please refer to the [COPYING](C
 ## 6. Contact Us
 
 + Join the [mailing list discussions](MAILLIST.md);
-+ Join the [forum discussions](https://bbs.aliyun.com/thread/450.html);
-+ Send us an E-mail to [alicloud-linux-os@service.alibaba.com](mailto:alicloud-linux-os@service.alibaba.com) is always a good idea.
++ Join the IRC channel `#anolis-linux` on FreeNode;
++ Join the DingTalk chat group: `23149462`;
++ Send us an E-mail to [os@openanolis.org](mailto:os@openanolis.org).
 
---------------------------------
+------------------------
 
+> Alibaba Cloud Linux OS and Cloud Kernel are sub-projects maintained by [OpenAnolis](http://openanolis.org) community, an open source operating system community and innovation platform.
 > The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.

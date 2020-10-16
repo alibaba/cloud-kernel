@@ -1,13 +1,9 @@
 邮件列表
 ========
 
-## Alibaba Cloud Linux 操作系统 & 内核用户组
+> Alibaba Cloud Linux 操作系统发行版和 Cloud Kernel 是 [OpenAnolis](http://openanolis.org) 社区的子项目，OpenAnolis 社区是一个开源操作系统社区及系统软件创新平台。如需浏览或订阅更多 OpenAnolis 社区相关的邮件列表，请访问: [https://lists.openanolis.org/](https://lists.openanolis.org/).
 
-+ 点击[订阅](mailto:alibabacloud-linux-users+subscribe@googlegroups.com?subject=subscribe)列表；
-+ 点击[退订](mailto:alibabacloud-linux-users+unsubscribe@googlegroups.com?subject=subscribe)列表;
-+ 发送邮件至 [alibabacloud-linux-users@googlegroups.com](mailto:alibabacloud-linux-users@googlegroups.com) 参与讨论。
-
-## Alibaba Cloud Linux 操作系统 & 内核开发者列表
-
-+ 请发送补丁到 [aliyunlinux2-dev@linux.alibaba.com](mailto:aliyunlinux2-dev@linux.alibaba.com) 邮件列表;
-+ 该邮件列表暂时不接受自主订阅。
+| 邮件列表名称 | 列表地址 | 描述 | 订阅 | 归档讨论 |
+|-----------|--------------|-------------|-----------|--------------|
+|Cloud Kernel|cloud-kernel@lists.OpenAnolis.org | Cloud Kernel 开发邮件列表，接受内核补丁投递|[订阅](https://lists.openanolis.org/postorius/lists/cloud-kernel.lists.openanolis.org/) | [归档讨论](https://lists.openanolis.org/hyperkitty/list/cloud-kernel@lists.openanolis.org/)|
+|Alibaba Cloud Linux OS|os@lists.OpenAnolis.org | Alibaba Cloud Linux 操作系统讨论邮件列表| [订阅](https://lists.openanolis.org/postorius/lists/os.lists.openanolis.org/) | [归档讨论](https://lists.openanolis.org/hyperkitty/list/os@lists.openanolis.org/) |
