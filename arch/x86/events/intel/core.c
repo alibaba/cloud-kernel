@@ -3855,6 +3855,17 @@ static void intel_pmu_cpu_starting(int cpu)
 	if (x86_pmu.version > 1)
 		flip_smm_bit(&x86_pmu.attr_freeze_on_smi);
 
+	/* Disable perf metrics if any added CPU doesn't support it. */
+	if (x86_pmu.intel_cap.perf_metrics) {
+		union perf_capabilities perf_cap;
+
+		rdmsrl(MSR_IA32_PERF_CAPABILITIES, perf_cap.capabilities);
+		if (!perf_cap.perf_metrics) {
+			x86_pmu.intel_cap.perf_metrics = 0;
+			x86_pmu.intel_ctrl &= ~(1ULL << GLOBAL_CTRL_EN_PERF_METRICS);
+		}
+	}
+
 	if (!cpuc->shared_regs)
 		return;
 
