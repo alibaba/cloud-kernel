@@ -1846,6 +1846,7 @@ static __init void x2apic_enable(void)
 
 static __init void try_to_enable_x2apic(int remap_mode)
 {
+	pr_info("try_to_enable_x2apic: remap_mode: %d\n", remap_mode);
 	if (x2apic_state == X2APIC_DISABLED)
 		return;
 
@@ -1868,6 +1869,7 @@ static __init void try_to_enable_x2apic(int remap_mode)
 		 * used for non-remapped IRQ domains.
 		 */
 		if (x86_init.hyper.msi_ext_dest_id()) {
+			pr_info("x2apic: support extended destination ID\n");
 			virt_ext_dest_id = 1;
 			apic_limit = 32767;
 		}
