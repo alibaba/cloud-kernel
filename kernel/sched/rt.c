@@ -134,22 +134,87 @@ static inline struct rq *rq_of_rt_se(struct sched_rt_entity *rt_se)
 	return rt_rq->rq;
 }
 
-void free_rt_sched_group(struct task_group *tg)
+static void rt_sched_clean_up(void **ptr)
+{
+	struct rt_rq **rt_rq = ptr[0];
+	struct sched_rt_entity **rt_se = ptr[1];
+	int i;
+
+	for_each_possible_cpu(i) {
+		memset(rt_rq[i], 0, sizeof(struct rt_rq));
+		memset(rt_se[i], 0, sizeof(struct sched_rt_entity));
+		init_rt_rq(rt_rq[i]);
+	}
+}
+
+static bool rt_sched_check_integrity(struct task_group *tg)
 {
 	int i;
+
+	if (!tg->rt_rq || !tg->rt_se)
+		return false;
+
+	for_each_possible_cpu(i) {
+		if (!tg->rt_rq[i] || !tg->rt_se[i])
+			return false;
+	}
+
+	return true;
+}
+
+static void rt_sched_cache_init(struct task_group *tg, struct task_group *parent)
+{
+	int i;
+
+	init_rt_bandwidth(&tg->rt_bandwidth,
+			ktime_to_ns(def_rt_bandwidth.rt_period), 0);
+
+	for_each_possible_cpu(i) {
+		tg->rt_rq[i]->rt_runtime = tg->rt_bandwidth.rt_runtime;
+		init_tg_rt_entry(tg, tg->rt_rq[i], tg->rt_se[i], i, parent->rt_se[i]);
+	}
+}
+
+static void __free_rt_sched_group(void **ptr)
+{
+	struct rt_rq **rt_rq = ptr[0];
+	struct sched_rt_entity **rt_se = ptr[1];
+	int i;
+
+	for_each_possible_cpu(i) {
+		if (rt_rq)
+			kfree(rt_rq[i]);
+		if (rt_se)
+			kfree(rt_se[i]);
+	}
+
+	kfree(rt_rq);
+	kfree(rt_se);
+}
+
+CACHE_HEADER(rt_sched_cache_header, DEFAULT_CACHE_SIZE,
+		rt_sched_clean_up, __free_rt_sched_group);
+
+void free_rt_sched_group(struct task_group *tg)
+{
+	void *tmp[2];
 
 	if (tg->rt_se)
 		destroy_rt_bandwidth(&tg->rt_bandwidth);
 
-	for_each_possible_cpu(i) {
-		if (tg->rt_rq)
-			kfree(tg->rt_rq[i]);
-		if (tg->rt_se)
-			kfree(tg->rt_se[i]);
+	tmp[0] = (void *)tg->rt_rq;
+	tmp[1] = (void *)tg->rt_se;
+
+	/*
+	 * alloc_rt_sched_group() may fail and free a broken task_group,
+	 * check integrity before putting to cache.
+	 */
+	if (rt_sched_check_integrity(tg)) {
+		if (put_to_cache(&rt_sched_cache_header, tmp, 2))
+			return;
 	}
 
-	kfree(tg->rt_rq);
-	kfree(tg->rt_se);
+	__free_rt_sched_group(tmp);
 }
 
 void init_tg_rt_entry(struct task_group *tg, struct rt_rq *rt_rq,
@@ -184,6 +249,14 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
 	struct rt_rq *rt_rq;
 	struct sched_rt_entity *rt_se;
 	int i;
+	void *tmp[2];
+
+	if (get_from_cache(&rt_sched_cache_header, tmp, 2)) {
+		tg->rt_rq = tmp[0];
+		tg->rt_se = tmp[1];
+		rt_sched_cache_init(tg, parent);
+		return 1;
+	}
 
 	tg->rt_rq = kcalloc(nr_cpu_ids, sizeof(rt_rq), GFP_KERNEL);
 	if (!tg->rt_rq)

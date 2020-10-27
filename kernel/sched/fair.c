@@ -9984,21 +9984,85 @@ static void task_change_group_fair(struct task_struct *p, int type)
 	}
 }
 
-void free_fair_sched_group(struct task_group *tg)
+static void fair_sched_clean_up(void **ptr)
+{
+	struct cfs_rq **cfs_rq = ptr[0];
+	struct sched_entity **se = ptr[1];
+	int i;
+
+	for_each_possible_cpu(i) {
+		memset(cfs_rq[i], 0, sizeof(struct cfs_rq));
+		memset(se[i], 0, sizeof(struct sched_entity));
+		init_cfs_rq(cfs_rq[i]);
+		init_entity_runnable_average(se[i]);
+	}
+
+}
+
+static bool fair_sched_check_integrity(struct task_group *tg)
 {
 	int i;
 
-	destroy_cfs_bandwidth(tg_cfs_bandwidth(tg));
+	if (!tg->cfs_rq || !tg->se)
+		return false;
+
+	for_each_possible_cpu(i)
+		if (!tg->cfs_rq[i] || !tg->se[i])
+			return false;
+
+	return true;
+}
+
+static void fair_sched_cache_init(struct task_group *tg, struct task_group *parent)
+{
+	int i;
+
+	tg->shares = NICE_0_LOAD;
+
+	init_cfs_bandwidth(tg_cfs_bandwidth(tg));
+
+	for_each_possible_cpu(i)
+		init_tg_cfs_entry(tg, tg->cfs_rq[i], tg->se[i], i, parent->se[i]);
+}
+
+static void __free_fair_sched_group(void **ptr)
+{
+	struct cfs_rq **cfs_rq = ptr[0];
+	struct sched_entity **se = ptr[1];
+	int i;
 
 	for_each_possible_cpu(i) {
-		if (tg->cfs_rq)
-			kfree(tg->cfs_rq[i]);
-		if (tg->se)
-			kfree(tg->se[i]);
+		if (cfs_rq)
+			kfree(cfs_rq[i]);
+		if (se)
+			kfree(se[i]);
+	}
+	kfree(cfs_rq);
+	kfree(se);
+}
+
+CACHE_HEADER(fair_sched_cache_header, DEFAULT_CACHE_SIZE,
+		fair_sched_clean_up, __free_fair_sched_group);
+
+void free_fair_sched_group(struct task_group *tg)
+{
+	void *tmp[2];
+
+	destroy_cfs_bandwidth(tg_cfs_bandwidth(tg));
+
+	tmp[0] = (void *)tg->cfs_rq;
+	tmp[1] = (void *)tg->se;
+
+	/*
+	 * alloc_fair_sched_group() may fail and free a broken task_group,
+	 * check integrity before putting to cache.
+	 */
+	if (fair_sched_check_integrity(tg)) {
+		if (put_to_cache(&fair_sched_cache_header, tmp, 2))
+			return;
 	}
 
-	kfree(tg->cfs_rq);
-	kfree(tg->se);
+	__free_fair_sched_group(tmp);
 }
 
 int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
@@ -10006,6 +10070,14 @@ int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
 	struct sched_entity *se;
 	struct cfs_rq *cfs_rq;
 	int i;
+	void *tmp[2];
+
+	if (get_from_cache(&fair_sched_cache_header, tmp, 2)) {
+		tg->cfs_rq = tmp[0];
+		tg->se = tmp[1];
+		fair_sched_cache_init(tg, parent);
+		return 1;
+	}
 
 	tg->cfs_rq = kcalloc(nr_cpu_ids, sizeof(cfs_rq), GFP_KERNEL);
 	if (!tg->cfs_rq)
