@@ -220,7 +220,7 @@ static int cgroup_destroy_locked(struct cgroup *cgrp);
 static struct cgroup_subsys_state *css_create(struct cgroup *cgrp,
 					      struct cgroup_subsys *ss);
 static void css_release(struct percpu_ref *ref);
-static void kill_css(struct cgroup_subsys_state *css);
+static void kill_css(struct cgroup_subsys_state *css, bool kn_to_cache);
 static int cgroup_addrm_files(struct cgroup_subsys_state *css,
 			      struct cgroup *cgrp, struct cftype cfts[],
 			      bool is_add);
@@ -1928,6 +1928,16 @@ void init_cgroup_root(struct cgroup_root *root, struct cgroup_sb_opts *opts)
 		set_bit(CGRP_CPUSET_CLONE_CHILDREN, &root->cgrp.flags);
 }
 
+static void cgroup_clean_cache(void **ptr) {}
+
+static void cgroup_release_cache(void **ptr)
+{
+	struct kernfs_node *kn = *ptr;
+
+	kernfs_remove(kn);
+}
+
+
 int cgroup_setup_root(struct cgroup_root *root, u16 ss_mask, int ref_flags)
 {
 	LIST_HEAD(tmp_links);
@@ -1971,6 +1981,11 @@ int cgroup_setup_root(struct cgroup_root *root, u16 ss_mask, int ref_flags)
 					   KERNFS_ROOT_CREATE_DEACTIVATED |
 					   KERNFS_ROOT_SUPPORT_EXPORTOP,
 					   root_cgrp);
+
+	root->orphanage = kernfs_create_root(NULL, 0, NULL);
+	init_cache_header(&root->orphan_header, DEFAULT_CACHE_SIZE,
+			cgroup_clean_cache, cgroup_release_cache);
+
 	if (IS_ERR(root->kf_root)) {
 		ret = PTR_ERR(root->kf_root);
 		goto exit_root_id;
@@ -2997,9 +3012,11 @@ static int cgroup_apply_control_enable(struct cgroup *cgrp)
 			}
 
 			if (css_visible(css)) {
-				ret = css_populate_dir(css);
-				if (ret)
-					return ret;
+				if (!cgrp->kn_from_cache) {
+					ret = css_populate_dir(css);
+					if (ret)
+						return ret;
+				}
 			}
 		}
 	}
@@ -3038,7 +3055,8 @@ static void cgroup_apply_control_disable(struct cgroup *cgrp)
 
 			if (css->parent &&
 			    !(cgroup_ss_mask(dsct) & (1 << ss->id))) {
-				kill_css(css);
+				/* remove files directly in v2 mode */
+				kill_css(css, false);
 			} else if (!css_visible(css)) {
 				css_clear_dir(css);
 				if (ss->css_reset)
@@ -4833,7 +4851,6 @@ static void css_free_rwork_fn(struct work_struct *work)
 		/* cgroup free path */
 		atomic_dec(&cgrp->root->nr_cgrps);
 		cgroup1_pidlist_destroy_all(cgrp);
-		cancel_work_sync(&cgrp->release_agent_work);
 
 		if (cgroup_parent(cgrp)) {
 			/*
@@ -4847,6 +4864,9 @@ static void css_free_rwork_fn(struct work_struct *work)
 			psi_cgroup_free(cgrp);
 			if (cgroup_on_dfl(cgrp))
 				cgroup_rstat_exit(cgrp);
+			if (cgrp->kn_to_cache)
+				put_to_cache(&cgrp->root->orphan_header,
+						(void **)&cgrp->kn, 1);
 			kfree(cgrp);
 		} else {
 			/*
@@ -5188,6 +5208,27 @@ fail:
 	return ret;
 }
 
+static struct kernfs_node *
+cgroup_create_kernfs(struct kernfs_node *parent, const char *name, umode_t mode,
+		  struct cgroup *cgrp)
+{
+	struct kernfs_node *kn;
+	struct cgroup_root *root = cgrp->root;
+
+	if (get_from_cache(&root->orphan_header, (void **)&kn, 1)) {
+		kernfs_rename(kn, parent, name);
+		kn->priv = (void *)cgrp;
+		cgrp->kn_from_cache = true;
+		return kn;
+	}
+
+	kn = kernfs_create_dir(parent, name, mode, cgrp);
+	cgrp->kn_from_cache = false;
+
+	return kn;
+
+}
+
 int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name, umode_t mode)
 {
 	struct cgroup *parent, *cgrp;
@@ -5214,7 +5255,7 @@ int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name, umode_t mode)
 	}
 
 	/* create the directory */
-	kn = kernfs_create_dir(parent->kn, name, mode, cgrp);
+	kn = cgroup_create_kernfs(parent->kn, name, mode, cgrp);
 	if (IS_ERR(kn)) {
 		ret = PTR_ERR(kn);
 		goto out_destroy;
@@ -5231,7 +5272,8 @@ int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name, umode_t mode)
 	if (ret)
 		goto out_destroy;
 
-	ret = css_populate_dir(&cgrp->self);
+	if (!cgrp->kn_from_cache)
+		ret = css_populate_dir(&cgrp->self);
 	if (ret)
 		goto out_destroy;
 
@@ -5297,7 +5339,7 @@ static void css_killed_ref_fn(struct percpu_ref *ref)
  * asynchronously once css_tryget_online() is guaranteed to fail and when
  * the reference count reaches zero, @css will be released.
  */
-static void kill_css(struct cgroup_subsys_state *css)
+static void kill_css(struct cgroup_subsys_state *css, bool kn_to_cache)
 {
 	lockdep_assert_held(&cgroup_mutex);
 
@@ -5310,7 +5352,10 @@ static void kill_css(struct cgroup_subsys_state *css)
 	 * This must happen before css is disassociated with its cgroup.
 	 * See seq_css() for details.
 	 */
-	css_clear_dir(css);
+	if (!kn_to_cache)
+		css_clear_dir(css);
+	else
+		css->flags &= ~CSS_VISIBLE;
 
 	/*
 	 * Killing would put the base ref, but we need to keep it alive
@@ -5329,6 +5374,26 @@ static void kill_css(struct cgroup_subsys_state *css)
 	 * css is confirmed to be seen as killed on all CPUs.
 	 */
 	percpu_ref_kill_and_confirm(&css->refcnt, css_killed_ref_fn);
+}
+
+/*
+ * Moving kernfs_node to dummy parent require an unique name to guarantee
+ * success
+ */
+static int unique_id;
+
+static bool kn_to_cache_check(struct cgroup *cgrp)
+{
+	if (cgroup_on_dfl(cgrp))
+		return false;
+
+	if (IS_ERR(cgrp->kn) || !cgrp->kn)
+		return false;
+
+	if (!cache_not_full(&cgrp->root->orphan_header))
+		return false;
+
+	return true;
 }
 
 /**
@@ -5361,6 +5426,7 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	struct cgroup *tcgrp, *parent = cgroup_parent(cgrp);
 	struct cgroup_subsys_state *css;
 	struct cgrp_cset_link *link;
+	char unique_name[16];
 	int ssid;
 
 	lockdep_assert_held(&cgroup_mutex);
@@ -5393,13 +5459,33 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 		link->cset->dead = true;
 	spin_unlock_irq(&css_set_lock);
 
+	/* try to put kernfs_node to cache */
+	if (kn_to_cache_check(cgrp))
+		cgrp->kn_to_cache = true;
+	else
+		cgrp->kn_to_cache = false;
+
 	/* initiate massacre of all css's */
 	for_each_css(css, ssid, cgrp)
-		kill_css(css);
+		kill_css(css, cgrp->kn_to_cache);
 
-	/* clear and remove @cgrp dir, @cgrp has an extra ref on its kn */
-	css_clear_dir(&cgrp->self);
-	kernfs_remove(cgrp->kn);
+	/*
+	 * release_agent_work need path of kn, cancel it before moving kn. work
+	 * may be running and waiting for cgroup_mutex. to avoid dead lock,
+	 * release cgroup_mutex and acquire it later.
+	 */
+	mutex_unlock(&cgroup_mutex);
+	cancel_work_sync(&cgrp->release_agent_work);
+	mutex_lock(&cgroup_mutex);
+
+	if (!cgrp->kn_to_cache) {
+		css_clear_dir(&cgrp->self);
+		kernfs_remove(cgrp->kn);
+	} else {
+		cgrp->self.flags &= ~CSS_VISIBLE;
+		snprintf(unique_name, sizeof(unique_name), "%d", unique_id++);
+		kernfs_rename(cgrp->kn, cgrp->root->orphanage->kn, unique_name);
+	}
 
 	if (parent && cgroup_is_threaded(cgrp))
 		parent->nr_threaded_children--;

@@ -463,6 +463,15 @@ struct cgroup {
 	struct cgroup_file events_file;	/* handle for "cgroup.events" */
 
 	/*
+	 * When creating a new cgroup, kn may be allocated from cache with
+	 * kernfs_nodes already exist for cgroup control files. If true, there
+	 * is no need to call css_populate_dir to generate cgroup basic control
+	 * files and subsys control files.
+	 */
+	bool kn_from_cache;
+	bool kn_to_cache;
+
+	/*
 	 * The bitmask of subsystems enabled on the child cgroups.
 	 * ->subtree_control is the one configured through
 	 * "cgroup.subtree_control" while ->child_ss_mask is the effective
@@ -546,6 +555,11 @@ struct cgroup {
  */
 struct cgroup_root {
 	struct kernfs_root *kf_root;
+
+	/* Dummy parent for kernfs_node */
+	struct kernfs_root *orphanage;
+
+	struct cache_header orphan_header;
 
 	/* The bitmask of subsystems attached to this hierarchy */
 	unsigned int subsys_mask;
