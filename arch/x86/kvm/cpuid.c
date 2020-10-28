@@ -584,7 +584,9 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 
 		edx.split.num_counters_fixed = cap.num_counters_fixed;
 		edx.split.bit_width_fixed = cap.bit_width_fixed;
-		edx.split.reserved = 0;
+		edx.split.anythread_deprecated = 1;
+		edx.split.reserved1 = 0;
+		edx.split.reserved2 = 0;
 
 		entry->eax = eax.full;
 		entry->ebx = cap.events_mask;

@@ -562,6 +562,7 @@ union perf_capabilities {
 		u64	full_width_write:1;
 		u64     pebs_baseline:1;
 		u64     perf_metrics:1;
+		u64	anythread_deprecated:1;
 	};
 	u64	capabilities;
 };
