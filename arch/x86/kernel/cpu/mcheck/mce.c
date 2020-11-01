@@ -735,7 +735,6 @@ bool machine_check_poll(enum mcp_flags flags, mce_banks_t *b)
 		 * for do_machine_check() to deal with it.
 		 */
 		continue;
-
 log_it:
 		error_seen = true;
 
@@ -1191,6 +1190,21 @@ static void kill_me_maybe(struct callback_head *cb)
 	kill_me_now(cb);
 }
 
+static void queue_task_work(struct mce *m, int kill_it)
+{
+	current->mce_addr = m->addr;
+	current->mce_kflags = m->kflags;
+	current->mce_ripv = !!(m->mcgstatus & MCG_STATUS_RIPV);
+	current->mce_whole_page = whole_page(m);
+
+	if (kill_it)
+		current->mce_kill_me.func = kill_me_now;
+	else
+		current->mce_kill_me.func = kill_me_maybe;
+
+	task_work_add(current, &current->mce_kill_me, true);
+}
+
 /*
  * The actual machine check handler. This only handles real
  * exceptions when something got corrupted coming in through int 18.
@@ -1325,15 +1339,8 @@ void do_machine_check(struct pt_regs *regs, long error_code)
 
 	/* Fault was in user mode and we need to take some action */
 	if ((m.cs & 3) == 3) {
-		/* If this triggers there is no way to recover. Die hard. */
-		BUG_ON(!on_thread_stack() || !user_mode(regs));
-		current->mce_addr = m.addr;
-		current->mce_ripv = !!(m.mcgstatus & MCG_STATUS_RIPV);
-		current->mce_whole_page = whole_page(&m);
-		current->mce_kill_me.func = kill_me_maybe;
-		if (kill_it)
-			current->mce_kill_me.func = kill_me_now;
-		task_work_add(current, &current->mce_kill_me, TWA_RESUME);
+		queue_task_work(&m, kill_it);
+
 	} else {
 		/*
 		 * Handle an MCE which has happened in kernel space but from
@@ -1348,6 +1355,9 @@ void do_machine_check(struct pt_regs *regs, long error_code)
 			if (!fixup_exception(regs, X86_TRAP_MC))
 				mce_panic("Failed kernel mode recovery", &m, msg);
 		}
+
+		if (m.kflags & MCE_IN_KERNEL_COPYIN)
+			queue_task_work(&m, kill_it);
 	}
 
 }
