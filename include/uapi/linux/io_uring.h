@@ -226,6 +226,7 @@ struct io_cqring_offsets {
  */
 #define IORING_ENTER_GETEVENTS	(1U << 0)
 #define IORING_ENTER_SQ_WAKEUP	(1U << 1)
+#define IORING_ENTER_EXT_ARG	(1U << 3)
 
 /*
  * Passed in for io_uring_setup(2). Copied back with updated info on success
@@ -253,6 +254,7 @@ struct io_uring_params {
 #define IORING_FEAT_CUR_PERSONALITY	(1U << 4)
 #define IORING_FEAT_FAST_POLL		(1U << 5)
 #define IORING_FEAT_POLL_32BITS 	(1U << 6)
+#define IORING_FEAT_EXT_ARG		(1U << 8)
 
 /*
  * io_uring_register(2) opcodes and arguments
@@ -290,6 +292,13 @@ struct io_uring_probe {
 	__u16 resv;
 	__u32 resv2[3];
 	struct io_uring_probe_op ops[0];
+};
+
+struct io_uring_getevents_arg {
+	__u64	sigmask;
+	__u32	sigmask_sz;
+	__u32	pad;
+	__u64	ts;
 };
 
 #endif

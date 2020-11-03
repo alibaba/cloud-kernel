@@ -6743,7 +6743,8 @@ static int io_wake_function(struct wait_queue_entry *curr, unsigned int mode,
  * application must reap them itself, as they reside on the shared cq ring.
  */
 static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events,
-			  const sigset_t __user *sig, size_t sigsz)
+			  const sigset_t __user *sig, size_t sigsz,
+			  struct __kernel_timespec __user *uts)
 {
 	struct io_wait_queue iowq = {
 		.wq = {
@@ -6755,6 +6756,8 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events,
 		.to_wait	= min_events,
 	};
 	struct io_rings *rings = ctx->rings;
+	struct timespec64 ts;
+	signed long timeout = 0;
 	int ret = 0;
 
 	do {
@@ -6778,6 +6781,12 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events,
 			return ret;
 	}
 
+	if (uts) {
+		if (get_timespec64(&ts, uts))
+			return -EFAULT;
+		timeout = timespec64_to_jiffies(&ts);
+	}
+
 	iowq.nr_timeouts = atomic_read(&ctx->cq_timeouts);
 	trace_io_uring_cqring_wait(ctx, min_events);
 	do {
@@ -6799,7 +6808,15 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events,
 		}
 		if (io_should_wake(&iowq, false))
 			break;
-		schedule();
+		if (uts) {
+			timeout = schedule_timeout(timeout);
+			if (timeout == 0) {
+				ret = -ETIME;
+				break;
+			}
+		} else {
+			schedule();
+		}
 	} while (1);
 	finish_wait(&ctx->wait, &iowq.wq);
 
@@ -8221,9 +8238,40 @@ static unsigned long io_uring_nommu_get_unmapped_area(struct file *file,
 
 #endif /* !CONFIG_MMU */
 
+static int io_get_ext_arg(unsigned flags, const void __user *argp, size_t *argsz,
+			  struct __kernel_timespec __user **ts,
+			  const sigset_t __user **sig)
+{
+	struct io_uring_getevents_arg arg;
+
+	/*
+	 * If EXT_ARG isn't set, then we have no timespec and the argp pointer
+	 * is just a pointer to the sigset_t.
+	 */
+	if (!(flags & IORING_ENTER_EXT_ARG)) {
+		*sig = (const sigset_t __user *) argp;
+		*ts = NULL;
+		return 0;
+	}
+
+	/*
+	 * EXT_ARG is set - ensure we agree on the size of it and copy in our
+	 * timespec and sigset_t pointers if good.
+	 */
+	if (*argsz != sizeof(arg))
+		return -EINVAL;
+	if (copy_from_user(&arg, argp, sizeof(arg)))
+		return -EFAULT;
+	*sig = u64_to_user_ptr(arg.sigmask);
+	*argsz = arg.sigmask_sz;
+	*ts = u64_to_user_ptr(arg.ts);
+	return 0;
+}
+
 SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
-		u32, min_complete, u32, flags, const sigset_t __user *, sig,
-		size_t, sigsz)
+		u32, min_complete, u32, flags, const void __user *, argp,
+		size_t, argsz)
+
 {
 	struct io_ring_ctx *ctx;
 	long ret = -EBADF;
@@ -8233,7 +8281,7 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	if (current->task_works)
 		task_work_run();
 
-	if (flags & ~(IORING_ENTER_GETEVENTS | IORING_ENTER_SQ_WAKEUP))
+	if (flags & ~(IORING_ENTER_GETEVENTS | IORING_ENTER_SQ_WAKEUP | IORING_ENTER_EXT_ARG))
 		return -EINVAL;
 
 	f = fdget(fd);
@@ -8271,6 +8319,12 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	}
 	if (flags & IORING_ENTER_GETEVENTS) {
 		unsigned nr_events = 0;
+		const sigset_t __user *sig;
+		struct __kernel_timespec __user *ts;
+
+		ret = io_get_ext_arg(flags, argp, &argsz, &ts, &sig);
+		if (unlikely(ret))
+			goto out;
 
 		min_complete = min(min_complete, ctx->cq_entries);
 
@@ -8284,7 +8338,7 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 		    !(ctx->flags & IORING_SETUP_SQPOLL)) {
 			ret = io_iopoll_check(ctx, &nr_events, min_complete);
 		} else {
-			ret = io_cqring_wait(ctx, min_complete, sig, sigsz);
+			ret = io_cqring_wait(ctx, min_complete, sig, argsz, ts);
 		}
 	}
 
@@ -8596,7 +8650,7 @@ static int io_uring_create(unsigned entries, struct io_uring_params *p,
 	p->features = IORING_FEAT_SINGLE_MMAP | IORING_FEAT_NODROP |
 			IORING_FEAT_SUBMIT_STABLE | IORING_FEAT_RW_CUR_POS |
 			IORING_FEAT_CUR_PERSONALITY | IORING_FEAT_FAST_POLL |
-			IORING_FEAT_POLL_32BITS;
+			IORING_FEAT_POLL_32BITS | IORING_FEAT_EXT_ARG;
 
 	if (copy_to_user(params, p, sizeof(*p))) {
 		ret = -EFAULT;
