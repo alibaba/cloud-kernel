@@ -247,7 +247,11 @@ struct io_sq_data {
 	struct wait_queue_head	wait;
 
 	unsigned		sq_thread_idle;
+	unsigned                sq_thread_cpu;
 };
+
+static DEFINE_MUTEX(percpu_sqd_lock);
+static struct io_sq_data __percpu **percpu_sqd;
 
 struct io_ring_ctx {
 	struct {
@@ -7204,8 +7208,17 @@ static int io_sqe_files_unregister(struct io_ring_ctx *ctx)
 	return 0;
 }
 
-static void io_put_sq_data(struct io_sq_data *sqd)
+static void io_put_sq_data(struct io_ring_ctx *ctx, struct io_sq_data *sqd)
 {
+	int percpu = 0;
+
+	if ((ctx->flags & IORING_SETUP_SQ_AFF) &&
+	    (ctx->flags & IORING_SETUP_SQPOLL_PERCPU))
+		percpu = 1;
+
+	if (percpu)
+		mutex_lock(&percpu_sqd_lock);
+
 	if (refcount_dec_and_test(&sqd->refs)) {
 		/*
 		 * The park is a bit of a work-around, without it we get
@@ -7217,8 +7230,13 @@ static void io_put_sq_data(struct io_sq_data *sqd)
 			kthread_stop(sqd->thread);
 		}
 
+		if (percpu)
+			*per_cpu_ptr(percpu_sqd, sqd->sq_thread_cpu) = NULL;
 		kfree(sqd);
 	}
+
+	if (percpu)
+		mutex_unlock(&percpu_sqd_lock);
 }
 
 static struct io_sq_data *io_attach_sq_data(struct io_uring_params *p)
@@ -7247,12 +7265,9 @@ static struct io_sq_data *io_attach_sq_data(struct io_uring_params *p)
 	return sqd;
 }
 
-static struct io_sq_data *io_get_sq_data(struct io_uring_params *p)
+static struct io_sq_data *io_alloc_sq_data(struct io_uring_params *p)
 {
 	struct io_sq_data *sqd;
-
-	if (p->flags & IORING_SETUP_ATTACH_WQ)
-		return io_attach_sq_data(p);
 
 	sqd = kzalloc(sizeof(*sqd), GFP_KERNEL);
 	if (!sqd)
@@ -7285,6 +7300,49 @@ static void io_sq_thread_park(struct io_sq_data *sqd)
 	kthread_park(sqd->thread);
 }
 
+static void io_attach_ctx_to_sqd(struct io_sq_data *sqd, struct io_ring_ctx *ctx)
+{
+	ctx->sq_data = sqd;
+	io_sq_thread_park(sqd);
+	mutex_lock(&sqd->ctx_lock);
+	list_add(&ctx->sqd_list, &sqd->ctx_new_list);
+	mutex_unlock(&sqd->ctx_lock);
+	io_sq_thread_unpark(sqd);
+}
+
+static struct io_sq_data *io_find_or_create_percpu_sq_thread(struct io_ring_ctx *ctx,
+		struct io_uring_params *p)
+{
+	struct io_sq_data *sqd;
+	struct task_struct *tsk;
+	int cpu = p->sq_thread_cpu;
+
+	mutex_lock(&percpu_sqd_lock);
+	sqd = *per_cpu_ptr(percpu_sqd, cpu);
+	if (!sqd) {
+		sqd = io_alloc_sq_data(p);
+		if (IS_ERR(sqd)) {
+			mutex_unlock(&percpu_sqd_lock);
+			return sqd;
+		}
+
+		tsk = kthread_create_on_cpu(io_sq_thread, sqd, cpu, "io_uring-sq");
+		if (IS_ERR(tsk)) {
+			kfree(sqd);
+			sqd = ERR_PTR(PTR_ERR(tsk));
+			mutex_unlock(&percpu_sqd_lock);
+			return sqd;
+		}
+		sqd->sq_thread_cpu = cpu;
+		sqd->thread = tsk;
+		*per_cpu_ptr(percpu_sqd, cpu) = sqd;
+	} else {
+		refcount_inc(&sqd->refs);
+	}
+	mutex_unlock(&percpu_sqd_lock);
+	return sqd;
+}
+
 static void io_sq_thread_stop(struct io_ring_ctx *ctx)
 {
 	struct io_sq_data *sqd = ctx->sq_data;
@@ -7311,7 +7369,7 @@ static void io_sq_thread_stop(struct io_ring_ctx *ctx)
 		if (sqd->thread)
 			io_sq_thread_unpark(sqd);
 
-		io_put_sq_data(sqd);
+		io_put_sq_data(ctx, sqd);
 		ctx->sq_data = NULL;
 	}
 }
@@ -7986,25 +8044,19 @@ static int io_sq_offload_create(struct io_ring_ctx *ctx,
 		if (!capable(CAP_SYS_ADMIN))
 			goto err;
 
-		sqd = io_get_sq_data(p);
-		if (IS_ERR(sqd)) {
-			ret = PTR_ERR(sqd);
-			goto err;
-		}
-
-		ctx->sq_data = sqd;
-		io_sq_thread_park(sqd);
-		mutex_lock(&sqd->ctx_lock);
-		list_add(&ctx->sqd_list, &sqd->ctx_new_list);
-		mutex_unlock(&sqd->ctx_lock);
-		io_sq_thread_unpark(sqd);
-
 		ctx->sq_thread_idle = msecs_to_jiffies(p->sq_thread_idle);
 		if (!ctx->sq_thread_idle)
 			ctx->sq_thread_idle = HZ;
 
-		if (sqd->thread)
+		if (p->flags & IORING_SETUP_ATTACH_WQ) {
+			sqd = io_attach_sq_data(p);
+			if (IS_ERR(sqd)) {
+				ret = PTR_ERR(sqd);
+				goto err;
+			}
+			io_attach_ctx_to_sqd(sqd, ctx);
 			goto done;
+		}
 
 		if (p->flags & IORING_SETUP_SQ_AFF) {
 			int cpu = p->sq_thread_cpu;
@@ -8015,9 +8067,28 @@ static int io_sq_offload_create(struct io_ring_ctx *ctx,
 			if (!cpu_online(cpu))
 				goto err;
 
-			sqd->thread = kthread_create_on_cpu(io_sq_thread, sqd,
+			if (p->flags & IORING_SETUP_SQPOLL_PERCPU) {
+				sqd = io_find_or_create_percpu_sq_thread(ctx, p);
+				if (IS_ERR(sqd)) {
+					ret = PTR_ERR(sqd);
+					goto err;
+				}
+			} else {
+				sqd = io_alloc_sq_data(p);
+				if (IS_ERR(sqd)) {
+					ret = PTR_ERR(sqd);
+					goto err;
+				}
+				sqd->thread = kthread_create_on_cpu(io_sq_thread, sqd,
 							cpu, "io_uring-sq");
+			}
+
 		} else {
+			sqd = io_alloc_sq_data(p);
+			if (IS_ERR(sqd)) {
+				ret = PTR_ERR(sqd);
+				goto err;
+			}
 			sqd->thread = kthread_create(io_sq_thread, sqd,
 							"io_uring-sq");
 		}
@@ -8026,6 +8097,8 @@ static int io_sq_offload_create(struct io_ring_ctx *ctx,
 			sqd->thread = NULL;
 			goto err;
 		}
+		io_attach_ctx_to_sqd(sqd, ctx);
+
 		ret = io_uring_alloc_task_context(sqd->thread);
 		if (ret)
 			goto err;
@@ -9629,7 +9702,7 @@ static long io_uring_setup(u32 entries, struct io_uring_params __user *params)
 	if (p.flags & ~(IORING_SETUP_IOPOLL | IORING_SETUP_SQPOLL |
 			IORING_SETUP_SQ_AFF | IORING_SETUP_CQSIZE |
 			IORING_SETUP_CLAMP | IORING_SETUP_ATTACH_WQ |
-			IORING_SETUP_R_DISABLED))
+			IORING_SETUP_R_DISABLED | IORING_SETUP_SQPOLL_PERCPU))
 		return -EINVAL;
 
 	return  io_uring_create(entries, &p, params);
@@ -9967,6 +10040,8 @@ out_fput:
 
 static int __init io_uring_init(void)
 {
+	int cpu;
+
 #define __BUILD_BUG_VERIFY_ELEMENT(stype, eoffset, etype, ename) do { \
 	BUILD_BUG_ON(offsetof(stype, ename) != eoffset); \
 	BUILD_BUG_ON(sizeof(etype) != sizeof_field(stype, ename)); \
@@ -10007,6 +10082,11 @@ static int __init io_uring_init(void)
 	BUILD_BUG_ON(ARRAY_SIZE(io_op_defs) != IORING_OP_LAST);
 	BUILD_BUG_ON(__REQ_F_LAST_BIT >= 8 * sizeof(int));
 	req_cachep = KMEM_CACHE(io_kiocb, SLAB_HWCACHE_ALIGN | SLAB_PANIC);
+
+	percpu_sqd = alloc_percpu(struct io_sq_data *);
+	for_each_possible_cpu(cpu)
+		*per_cpu_ptr(percpu_sqd, cpu) = NULL;
+
 	return 0;
 };
 __initcall(io_uring_init);
