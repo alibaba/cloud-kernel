@@ -2231,7 +2231,7 @@ static struct file *__io_file_get(struct io_submit_state *state, int fd)
 static bool io_bdev_nowait(struct block_device *bdev)
 {
 #ifdef CONFIG_BLOCK
-	return !bdev || queue_is_mq(bdev_get_queue(bdev));
+	return !bdev || queue_is_rq_based(bdev_get_queue(bdev));
 #else
 	return true;
 #endif
