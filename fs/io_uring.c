@@ -685,7 +685,7 @@ struct io_kiocb {
 
 	struct list_head	inflight_entry;
 
-	struct percpu_ref	*fixed_file_refs;
+	struct fixed_file_ref_node	*ref_node;
 
 	union {
 		/*
@@ -1442,7 +1442,7 @@ static inline void io_put_file(struct io_kiocb *req, struct file *file,
 			  bool fixed)
 {
 	if (fixed)
-		percpu_ref_put(req->fixed_file_refs);
+		percpu_ref_put(&req->ref_node->refs);
 	else
 		fput(file);
 }
@@ -5867,8 +5867,8 @@ static int io_file_get(struct io_submit_state *state, struct io_kiocb *req,
 		fd = array_index_nospec(fd, ctx->nr_user_files);
 		file = io_file_from_index(ctx, fd);
 		if (file) {
-			req->fixed_file_refs = &ctx->file_data->node->refs;
-			percpu_ref_get(req->fixed_file_refs);
+			req->ref_node = ctx->file_data->node;
+			percpu_ref_get(&req->ref_node->refs);
 		}
 	} else {
 		trace_io_uring_file_get(ctx, fd);
