@@ -196,6 +196,11 @@ struct fixed_file_table {
 
 struct fixed_file_ref_node {
 	struct percpu_ref		refs;
+	/*
+	 * Track the number of reqs that reference this node, currently it's
+	 * only used in IOPOLL mode.
+	 */
+	u64				count;
 	struct list_head		node;
 	struct list_head		file_list;
 	struct fixed_file_data		*file_data;
@@ -1441,10 +1446,21 @@ fallback:
 static inline void io_put_file(struct io_kiocb *req, struct file *file,
 			  bool fixed)
 {
-	if (fixed)
-		percpu_ref_put(&req->ref_node->refs);
-	else
+	if (fixed) {
+		if (req->ctx->flags & IORING_SETUP_IOPOLL) {
+			/*
+			 * If ref_node->count reaches zero, that means unregister operation has
+			 * been done to this ref_node, we need to drop the initial per-cpu ref,
+			 * need to call percpu_ref_kill().
+			 */
+			if (!--req->ref_node->count)
+				percpu_ref_kill(&req->ref_node->refs);
+		} else {
+			percpu_ref_put(&req->ref_node->refs);
+		}
+	} else {
 		fput(file);
+	}
 }
 
 static void __io_req_aux_free(struct io_kiocb *req)
@@ -5867,8 +5883,16 @@ static int io_file_get(struct io_submit_state *state, struct io_kiocb *req,
 		fd = array_index_nospec(fd, ctx->nr_user_files);
 		file = io_file_from_index(ctx, fd);
 		if (file) {
+			/*
+			 * IOPOLL mode can always ensure get/put registered files under uring_lock,
+			 * so we can use a simple plain u64 counter to synchronize with registered
+			 * files update operations in __io_sqe_files_update.
+			 */
 			req->ref_node = ctx->file_data->node;
-			percpu_ref_get(&req->ref_node->refs);
+			if (ctx->flags & IORING_SETUP_IOPOLL)
+				req->ref_node->count++;
+			else
+				percpu_ref_get(&req->ref_node->refs);
 		}
 	} else {
 		trace_io_uring_file_get(ctx, fd);
@@ -6829,7 +6853,12 @@ static int io_sqe_files_unregister(struct io_ring_ctx *ctx)
 		ref_node = list_first_entry(&data->ref_list,
 				struct fixed_file_ref_node, node);
 	spin_unlock(&data->lock);
-	if (ref_node)
+	/*
+	 * If count is not zero, that means we're in IOPOLL mode, and there are
+	 * still reqs that reference this ref_node, let the final req do the
+	 * percpu_ref_kill job.
+	 */
+	if (ref_node && (!--ref_node->count))
 		percpu_ref_kill(&ref_node->refs);
 
 	percpu_ref_kill(&data->refs);
@@ -7125,6 +7154,7 @@ static struct fixed_file_ref_node *alloc_fixed_file_ref_node(
 	INIT_LIST_HEAD(&ref_node->file_list);
 	INIT_WORK(&ref_node->work, io_file_put_work);
 	ref_node->file_data = ctx->file_data;
+	ref_node->count = 1;
 	return ref_node;
 
 }
@@ -7378,7 +7408,9 @@ static int __io_sqe_files_update(struct io_ring_ctx *ctx,
 	}
 
 	if (needs_switch) {
-		percpu_ref_kill(&data->node->refs);
+		/* See same comments in io_sqe_files_unregister(). */
+		if (!--data->node->count)
+			percpu_ref_kill(&data->node->refs);
 		spin_lock(&data->lock);
 		list_add(&ref_node->node, &data->ref_list);
 		data->node = ref_node;
