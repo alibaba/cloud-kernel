@@ -219,6 +219,14 @@ enum res_type {
 	_TCP,
 };
 
+/* for encoding cft->private value on file related with kidled */
+#ifdef CONFIG_KIDLED
+enum kidled_stats_type {
+	KIDLED_LOCAL = 0,
+	KIDLED_HIERARCHY,
+};
+#endif
+
 #define MEMFILE_PRIVATE(x, val)	((x) << 16 | (val))
 #define MEMFILE_TYPE(val)	((val) >> 16 & 0xffff)
 #define MEMFILE_ATTR(val)	((val) & 0xffff)
@@ -4261,7 +4269,7 @@ static int mem_cgroup_idle_page_stats_show(struct seq_file *m, void *v)
 	struct kidled_scan_period scan_period, period;
 	struct idle_page_stats *stats, *cache;
 	unsigned long scans;
-	bool has_hierarchy = kidled_use_hierarchy();
+	bool has_hierarchy = !!seq_cft(m)->private;
 	bool no_buckets = false;
 	int i, j, t;
 
@@ -4291,7 +4299,7 @@ static int mem_cgroup_idle_page_stats_show(struct seq_file *m, void *v)
 		goto output;
 	}
 
-	if (mem_cgroup_is_root(memcg) || has_hierarchy) {
+	if (has_hierarchy) {
 		for_each_mem_cgroup_tree(iter, memcg) {
 			/* The root memcg was just accounted */
 			if (iter == memcg)
@@ -4337,7 +4345,6 @@ output:
 	seq_printf(m, "# version: %s\n", KIDLED_VERSION);
 	seq_printf(m, "# scans: %lu\n", scans);
 	seq_printf(m, "# scan_period_in_seconds: %u\n", scan_period.duration);
-	seq_printf(m, "# use_hierarchy: %u\n", kidled_use_hierarchy());
 	seq_puts(m, "# buckets: ");
 	if (no_buckets) {
 		seq_puts(m, "no valid bucket available\n");
@@ -7698,6 +7705,13 @@ static struct cftype memory_files[] = {
 #ifdef CONFIG_KIDLED
 	{
 		.name = "idle_page_stats",
+		.private = KIDLED_HIERARCHY,
+		.seq_show = mem_cgroup_idle_page_stats_show,
+		.write = mem_cgroup_idle_page_stats_write,
+	},
+	{
+		.name = "idle_page_stats.local",
+		.private = KIDLED_LOCAL,
 		.seq_show = mem_cgroup_idle_page_stats_show,
 		.write = mem_cgroup_idle_page_stats_write,
 	},
@@ -8721,6 +8735,13 @@ static struct cftype memsw_files[] = {
 #ifdef CONFIG_KIDLED
 	{
 		.name = "idle_page_stats",
+		.private = KIDLED_HIERARCHY,
+		.seq_show = mem_cgroup_idle_page_stats_show,
+		.write = mem_cgroup_idle_page_stats_write,
+	},
+	{
+		.name = "idle_page_stats.local",
+		.private = KIDLED_LOCAL,
 		.seq_show = mem_cgroup_idle_page_stats_show,
 		.write = mem_cgroup_idle_page_stats_write,
 	},

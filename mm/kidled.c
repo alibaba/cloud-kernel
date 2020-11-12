@@ -13,15 +13,6 @@
 #include <linux/kidled.h>
 #include <uapi/linux/sched/types.h>
 
-/*
- * Should the accounting be hierarchical? Hierarchical accounting only
- * works when memcg is in hierarchy mode. It's OK when kilded enables
- * hierarchical accounting while memcg is in non-hierarchy mode, kidled
- * will account to the memory cgroup page is charged to. No dependency
- * between these two settings.
- */
-static bool use_hierarchy __read_mostly;
-
 struct kidled_scan_period kidled_scan_period;
 const int kidled_default_buckets[NUM_KIDLED_BUCKETS] = {
 	1, 2, 5, 15, 30, 60, 120, 240 };
@@ -574,11 +565,6 @@ static int kidled(void *dummy)
 	return 0;
 }
 
-bool kidled_use_hierarchy(void)
-{
-	return use_hierarchy;
-}
-
 static ssize_t kidled_scan_period_show(struct kobject *kobj,
 				       struct kobj_attribute *attr,
 				       char *buf)
@@ -606,56 +592,12 @@ static ssize_t kidled_scan_period_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t kidled_use_hierarchy_show(struct kobject *kobj,
-					 struct kobj_attribute *attr,
-					 char *buf)
-{
-	return sprintf(buf, "%u\n", use_hierarchy);
-}
-
-static ssize_t kidled_use_hierarchy_store(struct kobject *kobj,
-					  struct kobj_attribute *attr,
-					  const char *buf, size_t count)
-{
-	unsigned long val;
-	int ret;
-
-	ret = kstrtoul(buf, 10, &val);
-	if (ret || val > 1)
-		return -EINVAL;
-
-	WRITE_ONCE(use_hierarchy, val);
-
-	/*
-	 * Always start a new period when user sets use_hierarchy,
-	 * kidled_inc_scan_seq() uses atomic_cmpxchg() which implies a
-	 * memory barrier. This will make sure readers will get new
-	 * statistics after the store returned. But there still exists
-	 * a rare race when storing:
-	 *
-	 *            writer               |         readers
-	 *                                 |
-	 *        update_use_hierarchy     |
-	 *           .....                 |       read_statistics    <-- race
-	 *        increase_scan_sequence   |
-	 *
-	 * readers may get new use_hierarchy value and old statistics,
-	 * ignore this..
-	 */
-	kidled_inc_scan_seq();
-	return count;
-}
-
 static struct kobj_attribute kidled_scan_period_attr =
 	__ATTR(scan_period_in_seconds, 0644,
 	       kidled_scan_period_show, kidled_scan_period_store);
-static struct kobj_attribute kidled_use_hierarchy_attr =
-	__ATTR(use_hierarchy, 0644,
-	       kidled_use_hierarchy_show, kidled_use_hierarchy_store);
 
 static struct attribute *kidled_attrs[] = {
 	&kidled_scan_period_attr.attr,
-	&kidled_use_hierarchy_attr.attr,
 	NULL
 };
 static struct attribute_group kidled_attr_group = {

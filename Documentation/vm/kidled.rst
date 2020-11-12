@@ -24,7 +24,7 @@ the working-set size of that memory cgroup or the hierarchy.
 Usage
 =====
 
-There are two sysfs files and one memory cgroup file, exported by kidled.
+There are two sysfs files and two memory cgroup file, exported by kidled.
 Here are their functions:
 
 * ``/sys/kernel/mm/kidled/scan_period_in_seconds``
@@ -60,25 +60,22 @@ Here are their functions:
    statistics, but it won't be very odd due to the duration are the same at
    least.
 
-* ``/sys/kernel/mm/kidled/use_hierarchy``
+* ``memory.idle_page_stats.local`` (memory cgroup v1/v2)
 
-  It controls if accumulated statistics is given by ``memory.idle_page_stats``.
-  When it's set to zero, the statistics corresponding to the memory cgroup
-  will be shown. However, the accumulated statistics will be given for
-  the root memory cgroup. When it's set to one, the accumulative statistics
-  is always shown.
+  It shows histogram of idle statistics for the corresponding memory cgroup.
 
 * ``memory.idle_page_stats`` (memory cgroup v1/v2)
 
-  It shows histogram of idle statistics for the corresponding memory cgroup.
-  It depends on the setting of ``use_hierarchy`` if the statistics is the
-  accumulated one or not.
+  It shows histogram of accumulated idle statistics for the corresponding
+  memory cgroup.
+
+  ``memory.idle_page_stats.local`` and ``memory.idle_page_stats`` share the
+  same output format, as shown below.
 
   ----------------------------- snapshot start -----------------------------
   # version: 1.0
   # scans: 1380
   # scan_period_in_seconds: 120
-  # use_hierarchy: 0
   # buckets: 1,2,5,15,30,60,120,240
   #
   #   _-----=> clean/dirty
@@ -107,10 +104,9 @@ Here are their functions:
 
   ``scans`` means how many rounds current cgroup has been scanned.
   ``scan_period_in_seconds`` means kidled will take how long to finish
-  one round. ``use_hierarchy`` shows current statistics whether does
-  hierarchical accounting, see above. ``buckets`` is to allow scripts
-  parsing easily. The table shows how many bytes are in idle state,
-  the row is indexed by idle type and column is indexed by idle ages.
+  one round. ``buckets`` is to allow scripts parsing easily. The table
+  shows how many bytes are in idle state, the row is indexed by idle
+  type and column is indexed by idle ages.
 
   e.g. it shows 331776 bytes are idle at column ``[2,5)`` and row ``csea``,
   ``csea`` means the pages are clean && swappable && evictable && active,
@@ -120,7 +116,8 @@ Here are their functions:
   seconds.
 
   Each memory cgroup can have its own histogram sampling different from
-  others by echo a monotonically increasing array to this file, each number
+  others by echo a monotonically increasing array to either
+  ``memory.idle_page_stats.local`` or ``memory.idle_page_stats``, each number
   should be less than 256 and the write operation will clear previous stats
   even buckets have not been changed. The number of bucket values must be
   less or equal than 8. The default setting is "1,2,5,15,30,60,120,240".
@@ -134,6 +131,5 @@ Here are their functions:
   # version: 1.0
   # scans: 0
   # scan_period_in_seconds: 1
-  # use_hierarchy: 1
   # buckets: no valid bucket available
   ----------------------------- snapshot end -----------------------------
