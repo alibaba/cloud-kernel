@@ -2457,6 +2457,21 @@ static void high_work_func(struct work_struct *work)
  #define MEMCG_DELAY_PRECISION_SHIFT 20
  #define MEMCG_DELAY_SCALING_SHIFT 14
 
+static inline unsigned long mem_cgroup_v1_swap_usage(struct mem_cgroup *memcg)
+{
+	unsigned long swap_usage = 0;
+
+	if (do_memsw_account()) {
+		unsigned long memsw_usage = page_counter_read(&memcg->memsw);
+		unsigned long memcg_usage = page_counter_read(&memcg->memory);
+
+		if (memsw_usage > memcg_usage)
+			swap_usage = memsw_usage - memcg_usage;
+	}
+
+	return swap_usage;
+}
+
 static u64 calculate_overage(unsigned long usage, unsigned long high)
 {
 	u64 overage;
@@ -2499,8 +2514,7 @@ static u64 swap_find_max_overage(struct mem_cgroup *memcg)
 		else {
 			unsigned long swap_usage;
 
-			swap_usage = page_counter_read(&memcg->memsw) -
-					page_counter_read(&memcg->memory);
+			swap_usage = mem_cgroup_v1_swap_usage(memcg);
 			overage = calculate_overage(swap_usage,
 						READ_ONCE(memcg->memsw.high));
 		}
@@ -2798,8 +2812,7 @@ done_restock:
 		else {
 			unsigned long swap_usage;
 
-			swap_usage = page_counter_read(&memcg->memsw) -
-					page_counter_read(&memcg->memory);
+			swap_usage = mem_cgroup_v1_swap_usage(memcg);
 			swap_high = swap_usage > READ_ONCE(memcg->memsw.high);
 		}
 
