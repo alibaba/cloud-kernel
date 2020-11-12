@@ -37,6 +37,7 @@
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
 
+static int blk_mq_poll(struct request_queue *q, blk_qc_t cookie, bool spin);
 static void blk_mq_poll_stats_start(struct request_queue *q);
 static void blk_mq_poll_stats_fn(struct blk_stat_callback *cb);
 
@@ -2845,8 +2846,10 @@ struct request_queue *blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
 	q->tag_set = set;
 
 	q->queue_flags |= QUEUE_FLAG_MQ_DEFAULT;
-	if (q->mq_ops->poll)
+	if (q->mq_ops->poll) {
+		q->poll_fn = blk_mq_poll;
 		queue_flag_set_unlocked(QUEUE_FLAG_POLL, q);
+	}
 
 	if (!(set->flags & BLK_MQ_F_SG_MERGE))
 		queue_flag_set_unlocked(QUEUE_FLAG_NO_SG_MERGE, q);
@@ -3447,15 +3450,21 @@ static bool blk_mq_poll_hybrid(struct request_queue *q,
  */
 int blk_poll(struct request_queue *q, blk_qc_t cookie, bool spin)
 {
-	struct blk_mq_hw_ctx *hctx;
-	long state;
-
 	if (!blk_qc_t_valid(cookie) ||
 	    !test_bit(QUEUE_FLAG_POLL, &q->queue_flags))
 		return 0;
 
 	if (current->plug)
 		blk_flush_plug_list(current->plug, false);
+
+	return q->poll_fn(q, cookie, spin);
+}
+EXPORT_SYMBOL_GPL(blk_poll);
+
+static int blk_mq_poll(struct request_queue *q, blk_qc_t cookie, bool spin)
+{
+	struct blk_mq_hw_ctx *hctx;
+	long state;
 
 	hctx = q->queue_hw_ctx[blk_qc_t_to_queue_num(cookie)];
 
@@ -3497,7 +3506,6 @@ int blk_poll(struct request_queue *q, blk_qc_t cookie, bool spin)
 	__set_current_state(TASK_RUNNING);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(blk_poll);
 
 static int __init blk_mq_init(void)
 {
