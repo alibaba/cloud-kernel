@@ -532,6 +532,13 @@ struct io_async_ctx {
 	};
 };
 
+struct io_ioctl {
+	struct file                     *file;
+	unsigned int                    fd;
+	unsigned int                    cmd;
+	unsigned long                   arg;
+};
+
 enum {
 	REQ_F_FIXED_FILE_BIT	= IOSQE_FIXED_FILE_BIT,
 	REQ_F_IO_DRAIN_BIT	= IOSQE_IO_DRAIN_BIT,
@@ -653,6 +660,7 @@ struct io_kiocb {
 		struct io_splice	splice;
 		struct io_provide_buf	pbuf;
 		struct io_statx		statx;
+		struct io_ioctl         ioctl;
 	};
 
 	struct io_async_ctx		*io;
@@ -895,6 +903,10 @@ static const struct io_op_def io_op_defs[] = {
 		.needs_file		= 1,
 		.hash_reg_file		= 1,
 		.unbound_nonreg_file	= 1,
+	},
+	[IORING_OP_IOCTL] = {
+		.needs_mm = 1,
+		.file_table = 1,
 	},
 };
 
@@ -4383,6 +4395,57 @@ static int io_connect(struct io_kiocb *req, bool force_nonblock)
 }
 #endif /* CONFIG_NET */
 
+static int io_ioctl_prep(struct io_kiocb *req,
+			 const struct io_uring_sqe *sqe)
+{
+	if (unlikely(sqe->ioprio || sqe->buf_index || sqe->rw_flags))
+		return -EINVAL;
+	if (unlikely(req->ctx->flags & IORING_SETUP_IOPOLL))
+		return -EINVAL;
+
+	req->ioctl.fd = READ_ONCE(sqe->fd);
+	req->ioctl.cmd = READ_ONCE(sqe->len);
+	req->ioctl.arg = READ_ONCE(sqe->addr);
+	return 0;
+}
+
+static int io_ioctl(struct io_kiocb *req, bool force_nonblock)
+{
+	int ret;
+	unsigned int fd;
+	unsigned int cmd;
+	unsigned long arg;
+
+	cmd = req->ioctl.cmd;
+	/*
+	 * currently we just support BLKDISCARD operation
+	 */
+	if (cmd != BLKDISCARD)
+		return -EINVAL;
+
+	if (force_nonblock)
+		return -EAGAIN;
+
+	fd = req->ioctl.fd;
+	arg = req->ioctl.arg;
+
+	struct fd f = fdget(fd);
+
+	if (!f.file)
+		return -EBADF;
+
+	ret = security_file_ioctl(f.file, cmd, arg);
+	if (!ret)
+		ret = do_vfs_ioctl(f.file, fd, cmd, arg);
+	fdput(f);
+
+	if (ret < 0)
+		req_set_fail_links(req);
+	io_cqring_add_event(req, ret);
+	io_put_req(req);
+	return 0;
+}
+
 struct io_poll_table {
 	struct poll_table_struct pt;
 	struct io_kiocb *req;
@@ -5381,6 +5444,9 @@ static int io_req_defer_prep(struct io_kiocb *req,
 	case IORING_OP_TEE:
 		ret = io_tee_prep(req, sqe);
 		break;
+	case IORING_OP_IOCTL:
+		ret = io_ioctl_prep(req, sqe);
+		break;
 	default:
 		printk_once(KERN_WARNING "io_uring: unhandled opcode %d\n",
 				req->opcode);
@@ -5691,6 +5757,14 @@ static int io_issue_sqe(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 				break;
 		}
 		ret = io_tee(req, force_nonblock);
+		break;
+	case IORING_OP_IOCTL:
+		if (sqe) {
+			ret = io_ioctl_prep(req, sqe);
+			if (ret < 0)
+				break;
+		}
+		ret = io_ioctl(req, force_nonblock);
 		break;
 	default:
 		ret = -EINVAL;
