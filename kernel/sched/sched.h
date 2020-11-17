@@ -1002,7 +1002,7 @@ struct rq {
 	int			cpu;
 	int			online;
 
-	struct list_head cfs_tasks;
+	struct list_head cfs_tasks ____cacheline_aligned;
 
 	struct sched_avg	avg_rt;
 	struct sched_avg	avg_dl;
