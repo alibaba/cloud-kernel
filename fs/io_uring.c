@@ -2171,7 +2171,7 @@ static void io_complete_rw_iopoll(struct kiocb *kiocb, long res, long res2)
  * find it from a io_iopoll_getevents() thread before the issuer is done
  * accessing the kiocb cookie.
  */
-static void io_iopoll_req_issued(struct io_kiocb *req)
+static void io_iopoll_req_issued(struct io_kiocb *req, bool in_async)
 {
 	struct io_ring_ctx *ctx = req->ctx;
 
@@ -2200,7 +2200,12 @@ static void io_iopoll_req_issued(struct io_kiocb *req)
 	else
 		list_add_tail(&req->list, &ctx->poll_list);
 
-	if ((ctx->flags & IORING_SETUP_SQPOLL) &&
+	/*
+	 * If IORING_SETUP_SQPOLL is enabled, sqes are either handled in sq thread
+	 * task context or in io worker task context. If current task context is
+	 * sq thread, we don't need to check whether should wake up sq thread.
+	 */
+	if (in_async && (ctx->flags & IORING_SETUP_SQPOLL) &&
 	    wq_has_sleeper(ctx->sqo_wait))
 		wake_up(ctx->sqo_wait);
 }
@@ -5782,7 +5787,7 @@ static int io_issue_sqe(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 		if (in_async)
 			mutex_lock(&ctx->uring_lock);
 
-		io_iopoll_req_issued(req);
+		io_iopoll_req_issued(req, in_async);
 
 		if (in_async)
 			mutex_unlock(&ctx->uring_lock);
