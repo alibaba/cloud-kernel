@@ -67,6 +67,8 @@ obj-$(CONFIG_NETLABEL) += cipso_ipv4.o
 obj-$(CONFIG_TCP_RT) += tcp_rt.o
 obj-$(CONFIG_TCP_RT_MODULE) += tcp_rt/
 
+obj-$(CONFIG_ICMP_PINGTRACE) += pingtrace.o
+
 obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
 		      xfrm4_output.o xfrm4_protocol.o
 

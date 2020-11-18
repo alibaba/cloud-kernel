@@ -775,3 +775,13 @@ config TCP_RT
 	  tcprt module support.
 
 source "net/ipv4/tcp_rt/Kconfig"
+
+config ICMP_PINGTRACE
+	bool "ICMP PingTrace support"
+	default n
+	help
+	  PingTrace is a protocol based on ICMP echo/echoreply packets, and
+	  is used for solving network problems.
+
+	  This is used for automatically identify and support PingTrace
+	  protocols, which is similar to kernel's native support of ping packet.

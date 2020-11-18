@@ -95,6 +95,7 @@ enum
 	ICMP_MIB_OUTADDRMASKS,			/* OutAddrMasks */
 	ICMP_MIB_OUTADDRMASKREPS,		/* OutAddrMaskReps */
 	ICMP_MIB_CSUMERRORS,			/* InCsumErrors */
+	ICMP_MIB_INPINGTRACEMSG,		/* PingTrace */
 	__ICMP_MIB_MAX
 };
 

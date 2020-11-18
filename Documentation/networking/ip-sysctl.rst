@@ -1245,6 +1245,28 @@ icmp_errors_use_inbound_ifaddr - BOOLEAN
 
 	Default: 0
 
+icmp_pingtrace - BOOLEAN
+	PingTrace is a protocol based on ICMP echo/echoreply types, which is
+	used to collect different position's timestamps of its transmission
+	link, and then calculates delays between these positions, to detemine
+	which transmission phase might the problem occur in.
+
+	If non-zero, kernel will enable native supporting for PingTrace
+	protocol. It will automatically detect and add some position's timestamp
+	infomations to PingTrace packet.
+
+	Default: 0
+
+icmp_pingtrace_user_id - INTEGER
+	PingTrace protocol uses user id to distinguish different hosts, which
+	could help PingTrace packet initiator to debug and solving networking
+	problems.
+
+	icmp_pingtrace_user_id is used to specific current host id. Note that
+	this is a 16-bit integer.
+
+	Default: 0
+
 igmp_max_memberships - INTEGER
 	Change the maximum number of multicast groups we can subscribe to.
 	Default: 20

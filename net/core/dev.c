@@ -146,6 +146,7 @@
 #include <net/devlink.h>
 #include <linux/pm_runtime.h>
 #include <linux/prandom.h>
+#include <net/pingtrace.h>
 
 #include "net-sysfs.h"
 
@@ -3592,9 +3593,21 @@ struct sk_buff *dev_hard_start_xmit(struct sk_buff *first, struct net_device *de
 {
 	struct sk_buff *skb = first;
 	int rc = NETDEV_TX_OK;
+#ifdef CONFIG_ICMP_PINGTRACE
+	struct net *net = dev_net(dev);
+#endif
 
 	while (skb) {
 		struct sk_buff *next = skb->next;
+
+#ifdef CONFIG_ICMP_PINGTRACE
+		if (static_branch_unlikely(&pingtrace_control) &&
+		    unlikely(skb->icmp_pingtrace) &&
+		    skb_pingtrace_check(skb, PINGTRACE_F_ECHOREPLY)) {
+			skb_pingtrace_add_ts(skb, net, P_R_TX_DEVOUT,
+					     PINGTRACE_F_CALCULATE_CHECKSUM);
+		}
+#endif
 
 		skb_mark_not_on_list(skb);
 		rc = xmit_one(skb, dev, txq, next != NULL);
