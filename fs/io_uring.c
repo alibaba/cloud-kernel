@@ -4420,6 +4420,7 @@ static int io_ioctl(struct io_kiocb *req, bool force_nonblock)
 	unsigned int fd;
 	unsigned int cmd;
 	unsigned long arg;
+	struct fd f;
 
 	cmd = req->ioctl.cmd;
 	/*
@@ -4434,8 +4435,7 @@ static int io_ioctl(struct io_kiocb *req, bool force_nonblock)
 	fd = req->ioctl.fd;
 	arg = req->ioctl.arg;
 
-	struct fd f = fdget(fd);
-
+	f = fdget(fd);
 	if (!f.file)
 		return -EBADF;
 
