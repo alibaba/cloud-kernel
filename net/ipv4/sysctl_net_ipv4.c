@@ -620,6 +620,15 @@ static struct ctl_table ipv4_net_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
 	},
+#ifdef CONFIG_ICMP_PINGTRACE
+	{
+		.procname       = "icmp_pingtrace_node_id",
+		.data           = &init_net.ipv4.sysctl_icmp_pingtrace_node_id,
+		.maxlen         = sizeof(u64),
+		.mode           = 0644,
+		.proc_handler   = proc_doulongvec_minmax,
+	},
+#endif
 	{
 		.procname	= "ping_group_range",
 		.data		= &init_net.ipv4.ping_group_range.range,

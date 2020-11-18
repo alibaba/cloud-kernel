@@ -349,6 +349,9 @@ static void icmp_put(struct seq_file *seq)
 	seq_puts(seq, " OutMsgs OutErrors");
 	for (i = 0; icmpmibmap[i].name; i++)
 		seq_printf(seq, " Out%s", icmpmibmap[i].name);
+#ifdef CONFIG_ICMP_PINGTRACE
+	seq_puts(seq, " InPingTraceMsgs");
+#endif
 	seq_printf(seq, "\nIcmp: %lu %lu %lu",
 		snmp_fold_field(net->mib.icmp_statistics, ICMP_MIB_INMSGS),
 		snmp_fold_field(net->mib.icmp_statistics, ICMP_MIB_INERRORS),
@@ -362,6 +365,10 @@ static void icmp_put(struct seq_file *seq)
 	for (i = 0; icmpmibmap[i].name; i++)
 		seq_printf(seq, " %lu",
 			   atomic_long_read(ptr + (icmpmibmap[i].index | 0x100)));
+#ifdef CONFIG_ICMP_PINGTRACE
+	seq_printf(seq, " %lu",
+		   snmp_fold_field(net->mib.icmp_statistics, ICMP_MIB_INPINGTRACEMSG));
+#endif
 }
 
 /*

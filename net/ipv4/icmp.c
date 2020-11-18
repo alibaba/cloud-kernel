@@ -97,6 +97,7 @@
 #include <net/inet_common.h>
 #include <net/ip_fib.h>
 #include <net/l3mdev.h>
+#include <net/pingtrace.h>
 
 /*
  *	Build xmit assembly blocks
@@ -356,6 +357,10 @@ static int icmp_glue_bits(void *from, char *to, int offset, int len, int odd,
 {
 	struct icmp_bxm *icmp_param = (struct icmp_bxm *)from;
 	__wsum csum;
+
+#ifdef CONFIG_ICMP_PINGTRACE
+	skb->icmp_pingtrace = icmp_param->skb->icmp_pingtrace;
+#endif
 
 	csum = skb_copy_and_csum_bits(icmp_param->skb,
 				      icmp_param->offset + offset,
@@ -1006,6 +1011,16 @@ int icmp_rcv(struct sk_buff *skb)
 	struct rtable *rt = skb_rtable(skb);
 	struct net *net = dev_net(rt->dst.dev);
 	bool success;
+
+#ifdef CONFIG_ICMP_PINGTRACE
+	if (static_branch_unlikely(&pingtrace_control) &&
+	    skb_pingtrace_check(skb, PINGTRACE_F_ECHO)) {
+		skb->icmp_pingtrace = 1;
+		__ICMP_INC_STATS(net, ICMP_MIB_INPINGTRACEMSG);
+		skb_pingtrace_add_ts(skb, net, P_R_RX_ICMPRCV,
+				     PINGTRACE_F_CALCULATE_CHECKSUM);
+	}
+#endif
 
 	if (!xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb)) {
 		struct sec_path *sp = skb_sec_path(skb);

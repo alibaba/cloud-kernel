@@ -91,6 +91,10 @@ struct netns_ipv4 {
 	int sysctl_icmp_ratemask;
 	int sysctl_icmp_errors_use_inbound_ifaddr;
 
+#ifdef CONFIG_ICMP_PINGTRACE
+	u64 sysctl_icmp_pingtrace_node_id;
+#endif
+
 	struct local_ports ip_local_ports;
 
 	int sysctl_tcp_ecn;
