@@ -2006,4 +2006,17 @@ struct cpuacct_usage_result {
 	u64 steal, iowait, idle, guest, guest_nice;
 };
 
+#ifdef CONFIG_RICH_CONTAINER
+bool child_cpuacct(struct task_struct *tsk);
+bool check_rich_container(unsigned int cpu, unsigned int *index,
+		bool *rich_container, unsigned int *total);
+
+#else
+static inline bool check_rich_container(unsigned int cpu, unsigned int *index,
+		bool *rich_container, unsigned int *total)
+{
+	return false;
+}
+#endif
+
 #endif
