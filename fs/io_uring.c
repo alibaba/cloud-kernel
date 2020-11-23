@@ -276,9 +276,8 @@ struct io_ring_ctx {
 	wait_queue_head_t	__sqo_wait;
 
 	/* Used for percpu io sq thread */
-	int			submit_status;
 	int			sq_thread_cpu;
-	struct list_head	node;
+	struct list_head	sqd_list;
 
 	/*
 	 * If used, fixed file set. Writers must ensure that ->refs is dead,
@@ -351,10 +350,10 @@ struct io_ring_ctx {
 
 struct sq_thread_percpu {
 	struct list_head ctx_list;
-	struct mutex lock;
 	wait_queue_head_t sqo_wait;
+	struct mutex lock;
+	struct list_head ctx_new_list;
 	struct task_struct *sqo_thread;
-	struct completion sq_thread_comp;
 	unsigned int sq_thread_idle;
 };
 
@@ -1034,7 +1033,7 @@ static struct io_ring_ctx *io_ring_ctx_alloc(struct io_uring_params *p)
 	ctx->sqo_wait = &ctx->__sqo_wait;
 	init_waitqueue_head(&ctx->cq_wait);
 	INIT_LIST_HEAD(&ctx->cq_overflow_list);
-	INIT_LIST_HEAD(&ctx->node);
+	INIT_LIST_HEAD(&ctx->sqd_list);
 	init_completion(&ctx->ref_comp);
 	init_completion(&ctx->sq_thread_comp);
 	idr_init(&ctx->io_buffer_idr);
@@ -6564,132 +6563,140 @@ static int io_sq_thread(void *data)
 	return 0;
 }
 
-static int process_ctx(struct sq_thread_percpu *t, struct io_ring_ctx *ctx)
+static int process_ctx(struct io_ring_ctx *ctx)
 {
 	int ret = 0;
 	unsigned int to_submit;
-	struct io_ring_ctx *ctx2;
-
-	list_for_each_entry(ctx2, &t->ctx_list, node) {
-		if (!list_empty(&ctx2->poll_list)) {
-			unsigned int nr_events = 0;
-
-			mutex_lock(&ctx2->uring_lock);
-			if (!list_empty(&ctx2->poll_list))
-				io_iopoll_getevents(ctx2, &nr_events, 0);
-			mutex_unlock(&ctx2->uring_lock);
-		}
-	}
 
 	to_submit = io_sqring_entries(ctx);
-	if (to_submit) {
+	if (!list_empty(&ctx->poll_list) || to_submit) {
+		unsigned int nr_events = 0;
+
 		mutex_lock(&ctx->uring_lock);
-		if (likely(!percpu_ref_is_dying(&ctx->refs)))
+		if (!list_empty(&ctx->poll_list))
+			io_iopoll_getevents(ctx, &nr_events, 0);
+
+		if (to_submit && likely(!percpu_ref_is_dying(&ctx->refs)))
 			ret = io_submit_sqes(ctx, to_submit, NULL, -1);
 		mutex_unlock(&ctx->uring_lock);
 	}
+
 	return ret;
+}
+
+static void io_sqd_update_thread_idle(struct sq_thread_percpu *t)
+{
+	struct io_ring_ctx *ctx;
+	unsigned int sq_thread_idle = 0;
+
+	list_for_each_entry(ctx, &t->ctx_list, sqd_list) {
+		if (sq_thread_idle < ctx->sq_thread_idle)
+			sq_thread_idle = ctx->sq_thread_idle;
+	}
+
+	t->sq_thread_idle = sq_thread_idle;
+}
+
+static void io_sqd_init_new(struct sq_thread_percpu *t)
+{
+	struct io_ring_ctx *ctx;
+
+	while (!list_empty(&t->ctx_new_list)) {
+		ctx = list_first_entry(&t->ctx_new_list, struct io_ring_ctx, sqd_list);
+		list_move_tail(&ctx->sqd_list, &t->ctx_list);
+		complete(&ctx->sq_thread_comp);
+	}
+
+	io_sqd_update_thread_idle(t);
 }
 
 static int io_sq_thread_percpu(void *data)
 {
 	struct sq_thread_percpu *t = data;
 	struct io_ring_ctx *ctx;
-	const struct cred *saved_creds, *cur_creds, *old_creds;
+	const struct cred *old_cred = NULL;
 	mm_segment_t old_fs;
 	DEFINE_WAIT(wait);
-	unsigned long timeout;
-	int iters = 0;
-
-	complete(&t->sq_thread_comp);
+	unsigned long timeout = 0;
 
 	old_fs = get_fs();
 	set_fs(USER_DS);
-	timeout = jiffies + t->sq_thread_idle;
-	saved_creds = cur_creds = NULL;
-	while (!kthread_should_park()) {
-		bool needs_run, needs_wait;
-		unsigned int to_submit;
+	while (!kthread_should_stop()) {
+		int ret;
+		bool sqt_spin, needs_sched;
 
-		mutex_lock(&t->lock);
-again:
-		needs_run = false;
-		list_for_each_entry(ctx, &t->ctx_list, node) {
-			if (cur_creds != ctx->creds) {
-				old_creds = override_creds(ctx->creds);
-				cur_creds = ctx->creds;
-				if (saved_creds)
-					put_cred(old_creds);
-				else
-					saved_creds = old_creds;
-			}
-
-			ctx->submit_status = process_ctx(t, ctx);
-
-			if (!needs_run)
-				to_submit = io_sqring_entries(ctx);
-			if (!needs_run &&
-			    ((to_submit && ctx->submit_status != -EBUSY) ||
-			    !list_empty(&ctx->poll_list)))
-				needs_run = true;
+		/*
+		 * Any changes to the sqd lists are synchronized through the
+		 * kthread parking. This synchronizes the thread vs users,
+		 * the users are synchronized on the sqd->ctx_lock.
+		 */
+		if (kthread_should_park()) {
+			kthread_parkme();
+			/*
+			 * When sq thread is unparked, in case the previous park operation
+			 * comes from io_put_sq_data(), which means that sq thread is going
+			 * to be stopped, so here needs to have a check.
+			 */
+			if (kthread_should_stop())
+				break;
 		}
-		if (needs_run && (++iters & 7)) {
-			if (current->task_works)
-				task_work_run();
+
+		if (unlikely(!list_empty(&t->ctx_new_list))) {
+			io_sqd_init_new(t);
 			timeout = jiffies + t->sq_thread_idle;
-			goto again;
 		}
-		mutex_unlock(&t->lock);
-		if (needs_run || !time_after(jiffies, timeout)) {
+
+		sqt_spin = false;
+		list_for_each_entry(ctx, &t->ctx_list, sqd_list) {
+			if (current->cred != ctx->creds) {
+				if (old_cred)
+					revert_creds(old_cred);
+				old_cred = override_creds(ctx->creds);
+			}
+
+			ret = process_ctx(ctx);
+			if (!sqt_spin && (ret > 0 || !list_empty(&ctx->poll_list)))
+				sqt_spin = true;
+		}
+
+		if (sqt_spin || !time_after(jiffies, timeout)) {
 			if (current->task_works)
 				task_work_run();
-			if (need_resched()) {
-				io_sq_thread_drop_mm(ctx);
-				cond_resched();
-			}
-			if (needs_run)
+			cond_resched();
+			/*
+			 * only drom mm while we're busy looping in sq_thred_idle periods.
+			 */
+			if (sqt_spin)
 				timeout = jiffies + t->sq_thread_idle;
+			else
+				io_sq_thread_drop_mm(ctx);
 			continue;
 		}
 
-		needs_wait = true;
+		if (kthread_should_park())
+			continue;
+
+		needs_sched = true;
 		prepare_to_wait(&t->sqo_wait, &wait, TASK_INTERRUPTIBLE);
-		mutex_lock(&t->lock);
-		list_for_each_entry(ctx, &t->ctx_list, node) {
+		list_for_each_entry(ctx, &t->ctx_list, sqd_list) {
 			if ((ctx->flags & IORING_SETUP_IOPOLL) &&
 			    !list_empty_careful(&ctx->poll_list)) {
-				needs_wait = false;
+				needs_sched = false;
 				break;
 			}
-			to_submit = io_sqring_entries(ctx);
-			if (to_submit && ctx->submit_status != -EBUSY) {
-				needs_wait = false;
+			if (io_sqring_entries(ctx)) {
+				needs_sched = false;
 				break;
 			}
 		}
-		if (needs_wait) {
-			list_for_each_entry(ctx, &t->ctx_list, node)
+		if (needs_sched) {
+			list_for_each_entry(ctx, &t->ctx_list, sqd_list)
 				io_ring_set_wakeup_flag(ctx);
-		}
-
-		mutex_unlock(&t->lock);
-
-		if (needs_wait) {
-			if (current->task_works)
-				task_work_run();
-			io_sq_thread_drop_mm(ctx);
-			if (kthread_should_park()) {
-				finish_wait(&t->sqo_wait, &wait);
-				break;
-			}
 			schedule();
-			mutex_lock(&t->lock);
-			list_for_each_entry(ctx, &t->ctx_list, node)
+			list_for_each_entry(ctx, &t->ctx_list, sqd_list)
 				io_ring_clear_wakeup_flag(ctx);
-			mutex_unlock(&t->lock);
-			finish_wait(&t->sqo_wait, &wait);
-		} else
-			finish_wait(&t->sqo_wait, &wait);
+		}
+		finish_wait(&t->sqo_wait, &wait);
 		timeout = jiffies + t->sq_thread_idle;
 	}
 
@@ -6698,13 +6705,13 @@ again:
 
 	set_fs(old_fs);
 	io_sq_thread_drop_mm(ctx);
-	if (saved_creds)
-		revert_creds(saved_creds);
+	if (old_cred)
+		revert_creds(old_cred);
 
 	kthread_parkme();
-
 	return 0;
 }
+
 struct io_wait_queue {
 	struct wait_queue_entry wq;
 	struct io_ring_ctx *ctx;
@@ -7511,6 +7518,16 @@ out_fput:
 	return ret;
 }
 
+static inline void io_sq_thread_unpark(struct sq_thread_percpu *t)
+{
+	kthread_unpark(t->sqo_thread);
+}
+
+static inline void io_sq_thread_park(struct sq_thread_percpu *t)
+{
+	kthread_park(t->sqo_thread);
+}
+
 static void create_sq_thread_percpu(struct io_ring_ctx *ctx, int cpu)
 {
 	struct sq_thread_percpu *t;
@@ -7528,11 +7545,12 @@ static void create_sq_thread_percpu(struct io_ring_ctx *ctx, int cpu)
 		}
 	}
 
-	if (t->sq_thread_idle < ctx->sq_thread_idle)
-		t->sq_thread_idle = ctx->sq_thread_idle;
+	io_sq_thread_park(t);
+	list_add(&ctx->sqd_list, &t->ctx_new_list);
+	io_sq_thread_unpark(t);
+
 	ctx->sqo_wait = &t->sqo_wait;
 	ctx->sq_thread_cpu = cpu;
-	list_add_tail(&ctx->node, &t->ctx_list);
 	ctx->sqo_thread = t->sqo_thread;
 	mutex_unlock(&t->lock);
 }
@@ -7544,15 +7562,26 @@ static void destroy_sq_thread_percpu(struct io_ring_ctx *ctx, int cpu)
 
 	t = per_cpu_ptr(percpu_threads, cpu);
 	mutex_lock(&t->lock);
-	list_del(&ctx->node);
-	if (list_empty(&t->ctx_list)) {
+	/*
+	 * We may arrive here from the error branch in io_sq_offload_create()
+	 * where the kthread is created without being waked up, thus wake it
+	 * up now to make sure the wait will complete.
+	 */
+	wake_up_process(t->sqo_thread);
+	wait_for_completion(&ctx->sq_thread_comp);
+
+	io_sq_thread_park(t);
+	list_del(&ctx->sqd_list);
+	io_sqd_update_thread_idle(t);
+	io_sq_thread_unpark(t);
+
+	if (list_empty(&t->ctx_list) && list_empty(&t->ctx_new_list)) {
 		sqo_thread = t->sqo_thread;
 		t->sqo_thread = NULL;
 	}
 	mutex_unlock(&t->lock);
 
 	if (sqo_thread) {
-		wait_for_completion(&t->sq_thread_comp);
 		kthread_park(sqo_thread);
 		kthread_stop(sqo_thread);
 	}
@@ -8976,8 +9005,8 @@ static int __init io_uring_init(void)
 
 		t = per_cpu_ptr(percpu_threads, cpu);
 		INIT_LIST_HEAD(&t->ctx_list);
+		INIT_LIST_HEAD(&t->ctx_new_list);
 		init_waitqueue_head(&t->sqo_wait);
-		init_completion(&t->sq_thread_comp);
 		mutex_init(&t->lock);
 		t->sqo_thread = NULL;
 		t->sq_thread_idle = 0;
