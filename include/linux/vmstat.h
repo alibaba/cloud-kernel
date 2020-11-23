@@ -32,6 +32,24 @@ struct reclaim_stat {
 	unsigned nr_unmap_fail;
 };
 
+struct sysinfo_ext {
+	unsigned long lrupages[NR_LRU_LISTS];
+	unsigned long cached;
+	unsigned long available;
+	unsigned long file_dirty;
+	unsigned long writeback;
+	unsigned long anon_mapped;
+	unsigned long file_mapped;
+	unsigned long slab_reclaimable;
+	unsigned long slab_unreclaimable;
+	unsigned long kernel_stack_kb;
+	unsigned long unstable_nfs;
+	unsigned long writeback_temp;
+	unsigned long anon_thps;
+	unsigned long shmem_thps;
+	unsigned long shmem_pmd_mapped;
+};
+
 #ifdef CONFIG_VM_EVENT_COUNTERS
 /*
  * Light weight per cpu counter implementation.

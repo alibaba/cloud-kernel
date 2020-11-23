@@ -890,6 +890,9 @@ mem_cgroup_idle_page_stats_switch(struct mem_cgroup *memcg)
 
 void drain_all_stock(struct mem_cgroup *root_memcg);
 
+void memcg_meminfo(struct mem_cgroup *memcg,
+		struct sysinfo *info, struct sysinfo_ext *ext);
+
 static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
 {
 	if (high)
@@ -1213,6 +1216,12 @@ static inline void count_memcg_page_event(struct page *page,
 
 static inline
 void count_memcg_event_mm(struct mm_struct *mm, enum vm_event_item idx)
+{
+}
+
+static inline void
+memcg_meminfo(struct mem_cgroup *memcg,
+		struct sysinfo *info, struct sysinfo_ext *ext)
 {
 }
 
