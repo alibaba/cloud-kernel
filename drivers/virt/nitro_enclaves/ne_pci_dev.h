@@ -25,6 +25,10 @@
  * PCI_BAR_NE - Nitro Enclaves PCI device MMIO BAR.
  */
 #define PCI_BAR_NE		(0x03)
+/**
+ * PCI_BAR_DE - Dragonfly Enclave PCI device additional MMIO BAR.
+ */
+#define PCI_BAR_DE		(PCI_BAR_NE + 1)
 
 /**
  * DOC: Device registers in the NE PCI device MMIO BAR
@@ -295,6 +299,7 @@ struct ne_pci_dev {
 	struct mutex		enclaves_list_mutex;
 	struct workqueue_struct	*event_wq;
 	void __iomem		*iomem_base;
+	void __iomem		*mem_base;
 	struct work_struct	notify_work;
 	struct mutex		pci_dev_mutex;
 	struct pci_dev		*pdev;
