@@ -962,7 +962,7 @@ static const struct x86_cpu_id rapl_ids[] __initconst = {
 	INTEL_CPU_FAM6(IVYBRIDGE_X, rapl_defaults_core),
 
 	INTEL_CPU_FAM6(HASWELL_CORE, rapl_defaults_core),
-	INTEL_CPU_FAM6(HASWELL_ULT, rapl_defaults_core),
+	INTEL_CPU_FAM6(HASWELL_L, rapl_defaults_core),
 	INTEL_CPU_FAM6(HASWELL_GT3E, rapl_defaults_core),
 	INTEL_CPU_FAM6(HASWELL_X, rapl_defaults_hsw_server),
 
@@ -972,12 +972,12 @@ static const struct x86_cpu_id rapl_ids[] __initconst = {
 	INTEL_CPU_FAM6(BROADWELL_X, rapl_defaults_hsw_server),
 
 	INTEL_CPU_FAM6(SKYLAKE_DESKTOP, rapl_defaults_core),
-	INTEL_CPU_FAM6(SKYLAKE_MOBILE, rapl_defaults_core),
+	INTEL_CPU_FAM6(SKYLAKE_L, rapl_defaults_core),
 	INTEL_CPU_FAM6(SKYLAKE_X, rapl_defaults_hsw_server),
-	INTEL_CPU_FAM6(KABYLAKE_MOBILE, rapl_defaults_core),
+	INTEL_CPU_FAM6(KABYLAKE_L, rapl_defaults_core),
 	INTEL_CPU_FAM6(KABYLAKE_DESKTOP, rapl_defaults_core),
-	INTEL_CPU_FAM6(CANNONLAKE_MOBILE, rapl_defaults_core),
-	INTEL_CPU_FAM6(ICELAKE_MOBILE, rapl_defaults_core),
+	INTEL_CPU_FAM6(CANNONLAKE_L, rapl_defaults_core),
+	INTEL_CPU_FAM6(ICELAKE_L, rapl_defaults_core),
 	INTEL_CPU_FAM6(ICELAKE_DESKTOP, rapl_defaults_core),
 	INTEL_CPU_FAM6(ICELAKE_X, rapl_defaults_hsw_server),
 	INTEL_CPU_FAM6(ICELAKE_XEON_D, rapl_defaults_hsw_server),
