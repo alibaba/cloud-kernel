@@ -20,6 +20,8 @@
 #include <linux/tick.h>
 #include <linux/pm_qos.h>
 #include <linux/sched/isolation.h>
+#include <linux/cpuset.h>
+#include <linux/pid_namespace.h>
 
 #include "base.h"
 
@@ -208,8 +210,31 @@ static ssize_t show_cpus_attr(struct device *dev,
 			      char *buf)
 {
 	struct cpu_attr *ca = container_of(attr, struct cpu_attr, attr);
+	struct cpumask cpuset_allowed;
+	struct task_struct *init_tsk;
+	bool rich_container;
 
-	return cpumap_print_to_pagebuf(true, buf, ca->map);
+	rcu_read_lock();
+	rich_container = in_rich_container(current);
+	if (rich_container) {
+		read_lock(&tasklist_lock);
+		init_tsk = task_active_pid_ns(current)->child_reaper;
+		get_task_struct(init_tsk);
+		read_unlock(&tasklist_lock);
+	} else {
+		init_tsk = NULL;
+	}
+	rcu_read_unlock();
+
+	if (rich_container && !strcmp(attr->attr.name, "online"))
+		cpuset_cpus_allowed(init_tsk, &cpuset_allowed);
+	else
+		cpumask_copy(&cpuset_allowed, ca->map);
+
+	if (init_tsk)
+		put_task_struct(init_tsk);
+
+	return cpumap_print_to_pagebuf(true, buf, &cpuset_allowed);
 }
 
 #define _CPU_ATTR(name, map) \
