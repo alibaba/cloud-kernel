@@ -1181,7 +1181,7 @@ bool check_rich_container(unsigned int cpu, unsigned int *index,
 	scenario = rich_container_get_scenario();
 	get_task_struct(scenario);
 	read_unlock(&tasklist_lock);
-	cpuset_cpus_allowed(scenario, &cpuset_allowed);
+	rich_container_get_cpus(scenario, &cpuset_allowed);
 	put_task_struct(scenario);
 
 	*total = cpumask_weight(&cpuset_allowed);
@@ -1197,5 +1197,75 @@ bool check_rich_container(unsigned int cpu, unsigned int *index,
 
 	/* Hide this cpu in the container */
 	return true;
+}
+
+/* 0 - cpu quota; 1 - cpuset.cpus; 2 - cpu.shares */
+int sysctl_rich_container_cpuinfo_source;
+/* when cpu.shares */
+unsigned int sysctl_rich_container_cpuinfo_sharesbase = 1024;
+
+static inline struct task_group *css_tg(struct cgroup_subsys_state *css)
+{
+	return css ? container_of(css, struct task_group, css) : NULL;
+}
+
+static inline struct task_group *task_tg(struct task_struct *tsk)
+{
+	return css_tg(task_css(tsk, cpu_cgrp_id));
+}
+
+void rich_container_get_cpus(struct task_struct *tsk, struct cpumask *pmask)
+{
+	struct task_group *tg;
+	int i, cpus;
+
+	/* cfs quota source */
+	if (sysctl_rich_container_cpuinfo_source == 0) {
+		long quota, period;
+
+		rcu_read_lock();
+		tg = task_tg(tsk);
+		quota = tg_get_cfs_quota(tg);
+		period = tg_get_cfs_period(tg);
+		rcu_read_unlock();
+
+		if (quota == -1) {
+			/* Fallback to use cpuset.cpus if quota not set */
+			goto cpuset_source;
+		} else {
+			/* period can't be 0 */
+			cpus = (quota + period - 1) / period;
+			cpus = clamp(cpus, 1, (int)num_online_cpus());
+			cpumask_clear(pmask);
+			for (i = 0; i < cpus; i++)
+				cpumask_set_cpu(i, pmask);
+		}
+
+		return;
+	}
+
+	/* cpu.shares source */
+	if (sysctl_rich_container_cpuinfo_source == 2) {
+		unsigned long shares;
+
+		rcu_read_lock();
+		tg = task_tg(tsk);
+		shares = scale_load_down(tg->shares);
+		rcu_read_unlock();
+
+		/* sysctl_rich_container_cpuinfo_sharesbase can't be 0 */
+		cpus = (shares + sysctl_rich_container_cpuinfo_sharesbase - 1) /
+			sysctl_rich_container_cpuinfo_sharesbase;
+		cpus = clamp(cpus, 1, (int)num_online_cpus());
+		cpumask_clear(pmask);
+		for (i = 0; i < cpus; i++)
+			cpumask_set_cpu(i, pmask);
+
+		return;
+	}
+
+cpuset_source:
+	/* cpuset.cpus source */
+	cpuset_cpus_allowed(tsk, pmask);
 }
 #endif

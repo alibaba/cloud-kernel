@@ -103,6 +103,9 @@ void pid_idr_init(void);
 #ifdef CONFIG_RICH_CONTAINER
 extern int sysctl_rich_container_enable;
 extern int sysctl_rich_container_source;
+extern int sysctl_rich_container_cpuinfo_source;
+extern unsigned int sysctl_rich_container_cpuinfo_sharesbase;
+
 static inline bool in_rich_container(struct task_struct *tsk)
 {
 	if (sysctl_rich_container_enable == 0)

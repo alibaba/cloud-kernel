@@ -229,7 +229,7 @@ static ssize_t show_cpus_attr(struct device *dev,
 	rcu_read_unlock();
 
 	if (rich_container && !strcmp(attr->attr.name, "online"))
-		cpuset_cpus_allowed(scenario, &cpuset_allowed);
+		rich_container_get_cpus(scenario, &cpuset_allowed);
 	else
 		cpumask_copy(&cpuset_allowed, ca->map);
 

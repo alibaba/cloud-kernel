@@ -2010,12 +2010,17 @@ struct cpuacct_usage_result {
 bool child_cpuacct(struct task_struct *tsk);
 bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total);
-
+void rich_container_get_cpus(struct task_struct *tsk, struct cpumask *pmask);
 #else
 static inline bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total)
 {
 	return false;
+}
+
+static inline
+void rich_container_get_cpus(struct task_struct *tsk, struct cpumask *pmask)
+{
 }
 #endif
 
