@@ -48,7 +48,7 @@ static void ne_submit_request(struct pci_dev *pdev, enum ne_pci_dev_cmd_type cmd
 {
 	struct ne_pci_dev *ne_pci_dev = pci_get_drvdata(pdev);
 
-	memcpy_toio(ne_pci_dev->iomem_base + NE_SEND_DATA, cmd_request, cmd_request_size);
+	memcpy_toio(ne_pci_dev->mem_base + NE_SEND_DATA, cmd_request, cmd_request_size);
 
 	iowrite32(cmd_type, ne_pci_dev->iomem_base + NE_COMMAND);
 }
@@ -66,7 +66,7 @@ static void ne_retrieve_reply(struct pci_dev *pdev, struct ne_pci_dev_cmd_reply 
 {
 	struct ne_pci_dev *ne_pci_dev = pci_get_drvdata(pdev);
 
-	memcpy_fromio(cmd_reply, ne_pci_dev->iomem_base + NE_RECV_DATA, cmd_reply_size);
+	memcpy_fromio(cmd_reply, ne_pci_dev->mem_base + NE_RECV_DATA, cmd_reply_size);
 }
 
 /**
@@ -496,13 +496,22 @@ static int ne_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto release_pci_regions;
 	}
 
+	ne_pci_dev->mem_base = pci_iomap(pdev, PCI_BAR_DE, 0);
+	if (!ne_pci_dev->mem_base) {
+		rc = -ENOMEM;
+
+		dev_err(&pdev->dev, "Error in pci iomap [rc=%d]\n", rc);
+
+		goto iounmap_pci_bar;
+	}
+
 	pci_set_drvdata(pdev, ne_pci_dev);
 
 	rc = ne_setup_msix(pdev);
 	if (rc < 0) {
 		dev_err(&pdev->dev, "Error in pci dev msix setup [rc=%d]\n", rc);
 
-		goto iounmap_pci_bar;
+		goto iounmap_pci_bar_de;
 	}
 
 	ne_pci_dev_disable(pdev);
@@ -537,8 +546,10 @@ disable_ne_pci_dev:
 	ne_pci_dev_disable(pdev);
 teardown_msix:
 	ne_teardown_msix(pdev);
-iounmap_pci_bar:
+iounmap_pci_bar_de:
 	pci_set_drvdata(pdev, NULL);
+	pci_iounmap(pdev, ne_pci_dev->mem_base);
+iounmap_pci_bar:
 	pci_iounmap(pdev, ne_pci_dev->iomem_base);
 release_pci_regions:
 	pci_release_regions(pdev);
@@ -570,6 +581,7 @@ static void ne_pci_remove(struct pci_dev *pdev)
 
 	pci_set_drvdata(pdev, NULL);
 
+	pci_iounmap(pdev, ne_pci_dev->mem_base);
 	pci_iounmap(pdev, ne_pci_dev->iomem_base);
 
 	pci_release_regions(pdev);
@@ -602,6 +614,7 @@ static void ne_pci_shutdown(struct pci_dev *pdev)
 
 	pci_set_drvdata(pdev, NULL);
 
+	pci_iounmap(pdev, ne_pci_dev->mem_base);
 	pci_iounmap(pdev, ne_pci_dev->iomem_base);
 
 	pci_release_regions(pdev);
