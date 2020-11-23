@@ -42,13 +42,13 @@
  * NE_EIF_LOAD_OFFSET - The offset where to copy the Enclave Image Format (EIF)
  *			image in enclave memory.
  */
-#define NE_EIF_LOAD_OFFSET	(8 * 1024UL * 1024UL)
+#define NE_EIF_LOAD_OFFSET	(64 * 1024UL * 1024UL)
 
 /**
  * NE_MIN_ENCLAVE_MEM_SIZE - The minimum memory size an enclave can be launched
  *			     with.
  */
-#define NE_MIN_ENCLAVE_MEM_SIZE	(64 * 1024UL * 1024UL)
+#define NE_MIN_ENCLAVE_MEM_SIZE	(128 * 1024UL * 1024UL)
 
 /**
  * NE_MIN_MEM_REGION_SIZE - The minimum size of an enclave memory region.
