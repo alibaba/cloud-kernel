@@ -23,13 +23,17 @@
 #include <net/xdp.h>
 #include <net/net_failover.h>
 
+/* skip virtio_check_driver_offered_feature check for force_xdp  */
+#define virtio_has_feature __virtio_test_bit
+
 static int napi_weight = NAPI_POLL_WEIGHT;
 module_param(napi_weight, int, 0444);
 
-static bool csum = true, gso = true, napi_tx;
+static bool csum = true, gso = true, napi_tx, force_xdp;
 module_param(csum, bool, 0444);
 module_param(gso, bool, 0444);
 module_param(napi_tx, bool, 0644);
+module_param(force_xdp, bool, 0644);
 
 /* FIXME: MTU in config. */
 #define GOOD_PACKET_LEN (ETH_HLEN + VLAN_HLEN + ETH_DATA_LEN)
@@ -3354,6 +3358,22 @@ static unsigned int features_legacy[] = {
 	VIRTIO_F_ANY_LAYOUT,
 };
 
+static unsigned int features_force_xdp[] = {
+	VIRTIO_NET_F_CSUM,
+	VIRTIO_NET_F_MAC,
+	VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_HOST_TSO6,
+	VIRTIO_NET_F_HOST_ECN,
+	VIRTIO_NET_F_MRG_RXBUF, VIRTIO_NET_F_STATUS, VIRTIO_NET_F_CTRL_VQ,
+	VIRTIO_NET_F_CTRL_RX, VIRTIO_NET_F_CTRL_VLAN,
+	VIRTIO_NET_F_GUEST_ANNOUNCE, VIRTIO_NET_F_MQ,
+	VIRTIO_NET_F_CTRL_MAC_ADDR,
+	VIRTIO_NET_F_CTRL_GUEST_OFFLOADS,
+	VIRTIO_NET_F_SPEED_DUPLEX, VIRTIO_NET_F_STANDBY,
+	/* legacy */
+	VIRTIO_NET_F_GSO,
+	VIRTIO_F_ANY_LAYOUT,
+};
+
 static struct virtio_driver virtio_net_driver = {
 	.feature_table = features,
 	.feature_table_size = ARRAY_SIZE(features),
@@ -3386,6 +3406,16 @@ static __init int virtio_net_driver_init(void)
 				      NULL, virtnet_cpu_dead);
 	if (ret)
 		goto err_dead;
+
+	if (force_xdp) {
+		virtio_net_driver.feature_table = features_force_xdp;
+		virtio_net_driver.feature_table_size =
+			ARRAY_SIZE(features_force_xdp) - 2;
+
+		virtio_net_driver.feature_table_legacy = features_force_xdp;
+		virtio_net_driver.feature_table_size_legacy =
+			ARRAY_SIZE(features_force_xdp);
+	}
 
         ret = register_virtio_driver(&virtio_net_driver);
 	if (ret)
