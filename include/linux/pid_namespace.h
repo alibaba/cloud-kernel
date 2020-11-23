@@ -102,6 +102,7 @@ void pid_idr_init(void);
 
 #ifdef CONFIG_RICH_CONTAINER
 extern int sysctl_rich_container_enable;
+extern int sysctl_rich_container_source;
 static inline bool in_rich_container(struct task_struct *tsk)
 {
 	if (sysctl_rich_container_enable == 0)
@@ -109,10 +110,23 @@ static inline bool in_rich_container(struct task_struct *tsk)
 
 	return (task_active_pid_ns(tsk) != &init_pid_ns) && child_cpuacct(tsk);
 }
+
+static inline struct task_struct *rich_container_get_scenario(void)
+{
+	if (sysctl_rich_container_source == 1)
+		return task_active_pid_ns(current)->child_reaper;
+
+	return current;
+}
 #else
 static inline bool in_rich_container(struct task_struct *tsk)
 {
 	return false;
+}
+
+static inline struct task_struct *rich_container_get_scenario(void)
+{
+	return NULL;
 }
 #endif
 

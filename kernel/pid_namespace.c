@@ -25,6 +25,7 @@
 
 #ifdef CONFIG_RICH_CONTAINER
 int sysctl_rich_container_enable;
+int sysctl_rich_container_source; /* 0 - current; 1 - child_reaper */
 #endif
 
 static DEFINE_MUTEX(pid_caches_mutex);

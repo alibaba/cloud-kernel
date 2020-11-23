@@ -1165,7 +1165,7 @@ bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total)
 {
 	struct cpumask cpuset_allowed;
-	struct task_struct *init_tsk;
+	struct task_struct *scenario;
 	bool in_rich;
 	int i, id = 0;
 
@@ -1178,11 +1178,11 @@ bool check_rich_container(unsigned int cpu, unsigned int *index,
 	*rich_container = true;
 
 	read_lock(&tasklist_lock);
-	init_tsk = task_active_pid_ns(current)->child_reaper;
-	get_task_struct(init_tsk);
+	scenario = rich_container_get_scenario();
+	get_task_struct(scenario);
 	read_unlock(&tasklist_lock);
-	cpuset_cpus_allowed(init_tsk, &cpuset_allowed);
-	put_task_struct(init_tsk);
+	cpuset_cpus_allowed(scenario, &cpuset_allowed);
+	put_task_struct(scenario);
 
 	*total = cpumask_weight(&cpuset_allowed);
 	if (cpumask_test_cpu(cpu, &cpuset_allowed)) {
