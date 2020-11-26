@@ -939,7 +939,7 @@ struct netns_ipvs {
 	/* ip_vs_est */
 	struct list_head	est_list;	/* estimator list */
 	spinlock_t		est_lock;
-	struct timer_list	est_timer;	/* Estimation timer */
+	struct delayed_work	est_work;	/* Estimation timer */
 	/* ip_vs_sync */
 	spinlock_t		sync_lock;
 	struct ipvs_master_sync_state *ms;

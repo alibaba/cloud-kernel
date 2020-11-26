@@ -14,6 +14,11 @@
  *              Affected data: est_list and est_lock.
  *              estimation_timer() runs with timer per netns.
  *              get_stats()) do the per cpu summing.
+ *
+ *              Dust Li <dust.li@linux.alibaba.com>
+ *              Run estimation in delayed work rather then timer to
+ *              prevent occuping softirq too long when est_list * CPU
+ *              is large
  */
 
 #define KMSG_COMPONENT "IPVS"
@@ -96,13 +101,14 @@ static void ip_vs_read_cpu_stats(struct ip_vs_kstats *sum,
 	}
 }
 
-
-static void estimation_timer(struct timer_list *t)
+static void estimation_work(struct work_struct *work)
 {
 	struct ip_vs_estimator *e;
 	struct ip_vs_stats *s;
 	u64 rate;
-	struct netns_ipvs *ipvs = from_timer(ipvs, t, est_timer);
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct netns_ipvs *ipvs = container_of(dwork, struct netns_ipvs,
+						est_work);
 
 	spin_lock(&ipvs->est_lock);
 	list_for_each_entry(e, &ipvs->est_list, list) {
@@ -135,7 +141,7 @@ static void estimation_timer(struct timer_list *t)
 		spin_unlock(&s->lock);
 	}
 	spin_unlock(&ipvs->est_lock);
-	mod_timer(&ipvs->est_timer, jiffies + 2*HZ);
+	schedule_delayed_work(&ipvs->est_work, 2 * HZ);
 }
 
 void ip_vs_start_estimator(struct netns_ipvs *ipvs, struct ip_vs_stats *stats)
@@ -192,12 +198,12 @@ int __net_init ip_vs_estimator_net_init(struct netns_ipvs *ipvs)
 {
 	INIT_LIST_HEAD(&ipvs->est_list);
 	spin_lock_init(&ipvs->est_lock);
-	timer_setup(&ipvs->est_timer, estimation_timer, 0);
-	mod_timer(&ipvs->est_timer, jiffies + 2 * HZ);
+	INIT_DELAYED_WORK(&ipvs->est_work, estimation_work);
+	schedule_delayed_work(&ipvs->est_work, 2 * HZ);
 	return 0;
 }
 
 void __net_exit ip_vs_estimator_net_cleanup(struct netns_ipvs *ipvs)
 {
-	del_timer_sync(&ipvs->est_timer);
+	cancel_delayed_work(&ipvs->est_work);
 }
