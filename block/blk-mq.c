@@ -1975,6 +1975,7 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 	struct blk_plug *plug;
 	struct request *same_queue_rq = NULL;
 	blk_qc_t cookie;
+	bool hipri;
 
 	blk_queue_bounce(q, &bio);
 
@@ -1991,6 +1992,8 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 		return BLK_QC_T_NONE;
 
 	rq_qos_throttle(q, bio, NULL);
+
+	hipri = bio->bi_opf & REQ_HIPRI;
 
 	data.cmd_flags = bio->bi_opf;
 	rq = blk_mq_get_request(q, bio, &data);
@@ -2074,6 +2077,8 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 		blk_mq_sched_insert_request(rq, false, true, true);
 	}
 
+	if (!hipri)
+		return BLK_QC_T_NONE;
 	return cookie;
 }
 

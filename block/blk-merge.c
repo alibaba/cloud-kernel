@@ -167,6 +167,13 @@ split:
 	*segs = nsegs;
 
 	if (do_split) {
+		/*
+		 * Bio splitting may cause subtle trouble such as hang when doing sync
+		 * iopoll in direct IO routine. Given performance gain of iopoll for
+		 * big IO can be trival, disable iopoll when split needed.
+		 */
+		bio->bi_opf &= ~REQ_HIPRI;
+
 		new = bio_split(bio, sectors, GFP_NOIO, bs);
 		if (new)
 			bio = new;
