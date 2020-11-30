@@ -725,6 +725,11 @@ menuconfig CGROUPS
 
 if CGROUPS
 
+config CGROUP_CACHE
+	bool "Cgroup cache"
+	help
+	  Use cache to speed up creating cgroup.
+
 config PAGE_COUNTER
        bool
 

@@ -6297,3 +6297,171 @@ static int __init cgroup_sysfs_init(void)
 subsys_initcall(cgroup_sysfs_init);
 
 #endif /* CONFIG_SYSFS */
+
+#ifdef CONFIG_CGROUP_CACHE
+
+void init_cache_header(struct cache_header *ch, unsigned int limit,
+			void (*clean_up)(void **ptr),
+			void (*release_cache)(void **ptr))
+{
+	INIT_LIST_HEAD(&ch->header);
+	spin_lock_init(&ch->lock);
+	ch->limit = limit;
+	ch->ready_node = 0;
+	ch->empty_node = 0;
+	ch->online = true;
+	ch->clean_up = clean_up;
+	ch->release_cache = release_cache;
+}
+EXPORT_SYMBOL(init_cache_header);
+
+/**
+ * get_from_cache - get cache data
+ * @ch: cache header where get data
+ * @dst: dst of cache data
+ * @cnt: number of pointers to get
+ *
+ * copy cache data from ready_node.ptr to @dst and transform this ready_node to
+ * empty_node.
+ */
+
+bool get_from_cache(struct cache_header *ch, void **dst, unsigned int cnt)
+{
+	struct cache_node *cn;
+
+	spin_lock(&ch->lock);
+	if (!ch->ready_node || !ch->online) {
+		spin_unlock(&ch->lock);
+		return false;
+	}
+
+	cn = list_first_entry(&ch->header, struct cache_node, node);
+	list_del(&cn->node);
+	ch->ready_node--;
+	memcpy(dst, cn->ptr, sizeof(void *) * cnt);
+
+	/* limit may change, if too many empty_node in list, free extra */
+	if (ch->empty_node + ch->ready_node > ch->limit) {
+		spin_unlock(&ch->lock);
+		kfree(cn);
+	} else {
+		list_add_tail(&cn->node, &ch->header);
+		ch->empty_node++;
+		spin_unlock(&ch->lock);
+	}
+
+	return true;
+
+}
+
+static struct cache_node *alloc_cache_node(unsigned int cnt)
+{
+	struct cache_node *cn;
+
+	cn = kmalloc(sizeof(*cn) + sizeof(void *) * cnt, GFP_KERNEL);
+	if (!cn)
+		return NULL;
+
+	return cn;
+}
+
+/**
+ * put_to_cache - put cache data
+ * @ch: cache header where put data
+ * @src: src of cache data
+ * @cnt: number of pointers to get
+ *
+ * copy cache data from empty_node.ptr to @dst and transform this empty_node to
+ * ready_node.
+ */
+bool put_to_cache(struct cache_header *ch, void **src, unsigned int cnt)
+{
+	struct cache_node *cn;
+
+	spin_lock(&ch->lock);
+	if (!ch->online || ch->ready_node >= ch->limit) {
+		spin_unlock(&ch->lock);
+		return false;
+	}
+
+	/* get an empty_node */
+	if (!ch->empty_node) {
+		spin_unlock(&ch->lock);
+		cn = alloc_cache_node(cnt);
+		if (!cn)
+			return false;
+		spin_lock(&ch->lock);
+	} else {
+		cn = list_last_entry(&ch->header, struct cache_node, node);
+		list_del(&cn->node);
+		ch->empty_node--;
+	}
+	spin_unlock(&ch->lock);
+
+	ch->clean_up(src);
+
+	memcpy(cn->ptr, src, sizeof(void *) * cnt);
+
+	spin_lock(&ch->lock);
+	list_add(&cn->node, &ch->header);
+	ch->ready_node++;
+	spin_unlock(&ch->lock);
+
+	return true;
+}
+
+/**
+ * change_cache_limit - change cache_limit of cache header
+ * @ch: cache header
+ * @limit: new limit to set
+ */
+void change_cache_limit(struct cache_header *ch, unsigned int limit)
+{
+	struct cache_node *cn;
+
+	spin_lock(&ch->lock);
+	ch->limit = limit;
+	if (ch->ready_node <= ch->limit) {
+		spin_unlock(&ch->lock);
+		return;
+	}
+	/* disable cache until extra ready_node be released */
+	ch->online = false;
+	spin_unlock(&ch->lock);
+
+	/*
+	 * cache header is offline, release extra ready_node. because cache
+	 * header is offline, and there is no pre_node, any operation to cache
+	 * header will return false. so releasing extra ready_node doesn't have
+	 * to hold lock.
+	 */
+	while (ch->ready_node > ch->limit) {
+		cn = list_first_entry(&ch->header, struct cache_node, node);
+		list_del(&cn->node);
+		ch->ready_node--;
+
+		ch->release_cache(cn->ptr);
+		kfree(cn);
+	}
+
+	/* release empty_node */
+	while (ch->empty_node) {
+		cn = list_last_entry(&ch->header, struct cache_node, node);
+		list_del(&cn->node);
+		ch->empty_node--;
+
+		kfree(cn);
+	}
+
+	/* release done, online cache header */
+	ch->online = true;
+}
+EXPORT_SYMBOL(change_cache_limit);
+
+bool cache_not_full(struct cache_header *ch)
+{
+	return ch->ready_node < ch->limit;
+}
+EXPORT_SYMBOL(cache_not_full);
+
+#endif /* CONFIG_CGROUP_CACHE */

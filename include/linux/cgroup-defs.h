@@ -99,6 +99,79 @@ enum {
 	__CFTYPE_NOT_ON_DFL	= (1 << 17),	/* not on default hierarchy */
 };
 
+struct cache_header {
+	struct list_head header;
+	spinlock_t lock;
+
+	/* number of nodes that are ready to be used, at head of list */
+	unsigned int ready_node;
+
+	/* number of nodes that can become ready_node, at tail of list */
+	unsigned int empty_node;
+
+	/* limit of ready_node */
+	unsigned int limit;
+
+	/* cache is available */
+	bool online;
+
+	/* callback function to clean up data before putting to cache */
+	void (*clean_up)(void **ptr);
+
+	/* callback function to release cache */
+	void (*release_cache)(void **ptr);
+};
+
+struct cache_node {
+	struct list_head node;
+
+	/* pointer of a structure to reuse */
+	void *ptr[];
+};
+
+#define CACHE_HEADER(name, __limit, __clean_up, __release_cache) \
+	struct cache_header name =  \
+	{ \
+		.header = LIST_HEAD_INIT(name.header), \
+		.lock =  __SPIN_LOCK_UNLOCKED(name.lock), \
+		.limit = __limit, \
+		.ready_node = 0, \
+		.empty_node = 0, \
+		.online = true, \
+		.clean_up = __clean_up, \
+		.release_cache = __release_cache, \
+	}
+
+#define DEFAULT_CACHE_SIZE 0
+
+#ifdef CONFIG_CGROUP_CACHE
+
+extern void init_cache_header(struct cache_header *ch, unsigned int limit,
+		void (*clean_up)(void **ptr),
+		void (*release_cache)(void **ptr));
+extern bool get_from_cache(struct cache_header *ch, void **dst, unsigned int cnt);
+extern bool put_to_cache(struct cache_header *ch, void **src, unsigned int cnt);
+extern void change_cache_limit(struct cache_header *ch, unsigned int limit);
+extern bool cache_not_full(struct cache_header *ch);
+
+#else /* CONFIG_CGROUP_CACHE */
+
+static inline void init_cache_header(struct cache_header *ch, unsigned int limit,
+		void (*clean_up)(void **ptr),
+		void (*release_cache)(void **ptr)) {}
+static inline bool get_from_cache(struct cache_header *ch, void **dst, unsigned int cnt)
+{
+	return false;
+}
+static inline bool put_to_cache(struct cache_header *ch, void **src, unsigned int cnt)
+{
+	return false;
+}
+static inline void change_cache_limit(struct cache_header *ch, unsigned int limit) {}
+static inline bool cache_not_full(struct cache_header *ch) { return false; }
+
+#endif
+
 /*
  * cgroup_file is the handle for a file instance created in a cgroup which
  * is used, for example, to generate file changed notifications.  This can
