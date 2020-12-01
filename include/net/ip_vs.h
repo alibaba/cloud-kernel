@@ -937,6 +937,9 @@ struct netns_ipvs {
 	struct ctl_table_header	*lblcr_ctl_header;
 	struct ctl_table	*lblcr_ctl_table;
 	/* ip_vs_est */
+	int			sysctl_run_estimation;
+	struct ctl_table_header	*est_ctl_header;
+	struct ctl_table	*est_ctl_table;
 	struct list_head	est_list;	/* estimator list */
 	spinlock_t		est_lock;
 	struct delayed_work	est_work;	/* Estimation timer */

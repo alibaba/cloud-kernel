@@ -58,7 +58,6 @@
   * A lot of code is taken from net/core/gen_estimator.c
  */
 
-
 /*
  * Make a summary from each cpu
  */
@@ -110,6 +109,9 @@ static void estimation_work(struct work_struct *work)
 	struct netns_ipvs *ipvs = container_of(dwork, struct netns_ipvs,
 						est_work);
 
+	if (!ipvs->sysctl_run_estimation)
+		goto reschedule;
+
 	spin_lock(&ipvs->est_lock);
 	list_for_each_entry(e, &ipvs->est_list, list) {
 		s = container_of(e, struct ip_vs_stats, est);
@@ -141,6 +143,8 @@ static void estimation_work(struct work_struct *work)
 		spin_unlock(&s->lock);
 	}
 	spin_unlock(&ipvs->est_lock);
+
+reschedule:
 	schedule_delayed_work(&ipvs->est_work, 2 * HZ);
 }
 
@@ -194,11 +198,78 @@ void ip_vs_read_estimator(struct ip_vs_kstats *dst, struct ip_vs_stats *stats)
 	dst->outbps = (e->outbps + 0xF) >> 5;
 }
 
+#ifdef CONFIG_SYSCTL
+/* IPVS ESTIMATION sysctl table */
+static struct ctl_table vs_vars_table[] = {
+	{
+		.procname	= "run_estimation",
+		.data		= NULL,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{ }
+};
+
+static int ip_vs_est_sysctl_init(struct netns_ipvs *ipvs)
+{
+	struct net *net = ipvs->net;
+
+	if (!net_eq(net, &init_net)) {
+		ipvs->est_ctl_table = kmemdup(vs_vars_table,
+					      sizeof(vs_vars_table),
+					      GFP_KERNEL);
+		if (!ipvs->est_ctl_table)
+			return -ENOMEM;
+
+		/* Don't export sysctls to unprivileged users */
+		if (net->user_ns != &init_user_ns)
+			ipvs->est_ctl_table[0].procname = NULL;
+
+	} else {
+		ipvs->est_ctl_table = vs_vars_table;
+	}
+
+	ipvs->sysctl_run_estimation = 1;
+	ipvs->est_ctl_table[0].data = &ipvs->sysctl_run_estimation;
+
+	ipvs->est_ctl_header =
+		register_net_sysctl(net, "net/ipv4/vs", ipvs->est_ctl_table);
+	if (!ipvs->est_ctl_header) {
+		if (!net_eq(net, &init_net))
+			kfree(ipvs->est_ctl_table);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void ip_vs_est_sysctl_cleanup(struct netns_ipvs *ipvs)
+{
+	unregister_net_sysctl_table(ipvs->est_ctl_header);
+
+	if (!net_eq(ipvs->net, &init_net))
+		kfree(ipvs->est_ctl_table);
+}
+
+#else
+
+static int ip_vs_est_sysctl_init(struct netns_ipvs *ipvs)
+{
+	ipvs->sysctl_run_estimation = 1;
+	return 0;
+}
+
+static void ip_vs_est_sysctl_cleanup(struct netns_ipvs *ipvs) { }
+
+#endif
+
 int __net_init ip_vs_estimator_net_init(struct netns_ipvs *ipvs)
 {
 	INIT_LIST_HEAD(&ipvs->est_list);
 	spin_lock_init(&ipvs->est_lock);
 	INIT_DELAYED_WORK(&ipvs->est_work, estimation_work);
+	ip_vs_est_sysctl_init(ipvs);
 	schedule_delayed_work(&ipvs->est_work, 2 * HZ);
 	return 0;
 }
@@ -206,4 +277,5 @@ int __net_init ip_vs_estimator_net_init(struct netns_ipvs *ipvs)
 void __net_exit ip_vs_estimator_net_cleanup(struct netns_ipvs *ipvs)
 {
 	cancel_delayed_work(&ipvs->est_work);
+	ip_vs_est_sysctl_cleanup(ipvs);
 }
