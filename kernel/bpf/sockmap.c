@@ -1020,8 +1020,11 @@ bytes_ready:
 			goto bytes_ready;
 		}
 
-		if (err)
+		if (err) {
 			copied = err;
+		} else {
+			copied = -EAGAIN;
+		}
 	}
 
 	release_sock(sk);
