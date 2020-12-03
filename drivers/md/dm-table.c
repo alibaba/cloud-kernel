@@ -1937,7 +1937,8 @@ static int device_supports_poll(struct dm_target *ti, struct dm_dev *dev,
 {
 	struct request_queue *q = bdev_get_queue(dev->bdev);
 
-	return q && test_bit(QUEUE_FLAG_POLL, &q->queue_flags);
+	return q && test_bit(QUEUE_FLAG_POLL, &q->queue_flags) &&
+	       (!q->mq_ops || q->tag_set->map[HCTX_TYPE_POLL].nr_queues);
 }
 
 static bool dm_table_supports_poll(struct dm_table *t)
