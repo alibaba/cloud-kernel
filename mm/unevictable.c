@@ -93,17 +93,19 @@ static void __evict_pid(struct evict_pid_entry *pid)
 		mm = get_task_mm(tsk);
 		if (mm) {
 			if (!(mm->def_flags & VM_LOCKED)) {
-				struct vm_area_struct *vma, *prev;
+				struct vm_area_struct *vma, *next, *prev = NULL;
 				vm_flags_t flag;
 
 				down_write(&mm->mmap_sem);
-				for (vma = mm->mmap; vma; vma = vma->vm_next) {
+				for (vma = mm->mmap; vma; prev = vma, vma = next) {
+					next = vma->vm_next;
 					if (vma->vm_file &&
 					    (vma->vm_flags & VM_EXEC) &&
 					    (vma->vm_flags & VM_READ)) {
 						flag = vma->vm_flags & VM_LOCKED_CLEAR_MASK;
-						prev = NULL;
 						mlock_fixup(vma, &prev, vma->vm_start, vma->vm_end, flag);
+						vma = prev;
+						next = prev->vm_next;
 					}
 				}
 				up_write(&mm->mmap_sem);
@@ -383,17 +385,19 @@ static void execute_vm_lock(struct work_struct *unused)
 		mm = get_task_mm(tsk);
 		if (mm && !(mm->def_flags & VM_LOCKED)) {
 			if (down_write_trylock(&mm->mmap_sem)) {
-				struct vm_area_struct *vma, *prev;
+				struct vm_area_struct *vma, *next, *prev = NULL;
 				vm_flags_t flag;
 
-				for (vma = mm->mmap; vma; vma = vma->vm_next) {
+				for (vma = mm->mmap; vma; prev = vma, vma = next) {
+					next = vma->vm_next;
 					if (vma->vm_file &&
 					    (vma->vm_flags & VM_EXEC) &&
 					    (vma->vm_flags & VM_READ)) {
 						flag = vma->vm_flags & VM_LOCKED_CLEAR_MASK;
 						flag |= (VM_LOCKED | VM_LOCKONFAULT);
-						prev = NULL;
 						mlock_fixup(vma, &prev, vma->vm_start, vma->vm_end, flag);
+						vma = prev;
+						next = prev->vm_next;
 					}
 				}
 
