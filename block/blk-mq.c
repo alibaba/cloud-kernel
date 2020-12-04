@@ -130,7 +130,7 @@ static void blk_mq_check_inflight_rw(struct blk_mq_hw_ctx *hctx,
 {
 	struct mq_inflight *mi = priv;
 
-	if (rq->part == mi->part)
+	if (!mi->part->partno || rq->part == mi->part)
 		mi->inflight[rq_data_dir(rq)]++;
 }
 
