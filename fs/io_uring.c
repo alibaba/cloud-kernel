@@ -3554,10 +3554,18 @@ static int io_remove_buffers(struct io_kiocb *req, bool force_nonblock)
 	if (head)
 		ret = __io_remove_buffers(ctx, head, p->bgid, p->nbufs);
 
-	io_ring_submit_lock(ctx, !force_nonblock);
 	if (ret < 0)
 		req_set_fail_links(req);
-	io_req_complete(req, ret);
+
+	/* need to hold the lock to complete IOPOLL requests */
+	if (ctx->flags & IORING_SETUP_IOPOLL) {
+		io_req_complete(req, ret);
+		io_ring_submit_unlock(ctx, !force_nonblock);
+	} else {
+		io_ring_submit_unlock(ctx, !force_nonblock);
+		io_req_complete(req, ret);
+	}
+
 	return 0;
 }
 
@@ -3642,10 +3650,18 @@ static int io_provide_buffers(struct io_kiocb *req, bool force_nonblock)
 		}
 	}
 out:
-	io_ring_submit_unlock(ctx, !force_nonblock);
 	if (ret < 0)
 		req_set_fail_links(req);
-	io_req_complete(req, ret);
+
+	/* need to hold the lock to complete IOPOLL requests */
+	if (ctx->flags & IORING_SETUP_IOPOLL) {
+		io_req_complete(req, ret);
+		io_ring_submit_unlock(ctx, !force_nonblock);
+	} else {
+		io_ring_submit_unlock(ctx, !force_nonblock);
+		io_req_complete(req, ret);
+	}
+
 	return 0;
 }
 
