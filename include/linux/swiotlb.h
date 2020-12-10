@@ -31,6 +31,9 @@ extern enum swiotlb_force swiotlb_force;
  */
 #define IO_TLB_SHIFT 11
 
+/* default to 64MB */
+#define IO_TLB_DEFAULT_SIZE (64UL<<20)
+
 extern void swiotlb_init(int verbose);
 int swiotlb_init_with_tbl(char *tlb, unsigned long nslabs, int verbose);
 extern unsigned long swiotlb_nr_tbl(void);
@@ -117,6 +120,7 @@ extern void __init swiotlb_exit(void);
 unsigned int swiotlb_max_segment(void);
 size_t swiotlb_max_mapping_size(struct device *dev);
 bool is_swiotlb_active(void);
+void __init swiotlb_adjust_size(unsigned long new_size);
 #else
 static inline void swiotlb_exit(void) { }
 static inline unsigned int swiotlb_max_segment(void) { return 0; }
@@ -127,6 +131,10 @@ static inline size_t swiotlb_max_mapping_size(struct device *dev);
 static inline bool is_swiotlb_active(void)
 {
 	return false;
+}
+
+static inline void swiotlb_adjust_size(unsigned long new_size)
+{
 }
 #endif
 
