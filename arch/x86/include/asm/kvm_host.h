@@ -1287,6 +1287,8 @@ struct kvm_x86_ops {
 	void (*msr_filter_changed)(struct kvm_vcpu *vcpu);
 
 	int (*vm_attestation)(struct kvm *kvm, unsigned long gpa, unsigned long len);
+
+	int (*complete_emulated_msr)(struct kvm_vcpu *vcpu, int err);
 };
 
 struct kvm_x86_nested_ops {

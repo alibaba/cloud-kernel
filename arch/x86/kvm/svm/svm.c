@@ -4345,6 +4345,8 @@ static struct kvm_x86_ops svm_x86_ops __initdata = {
 	.msr_filter_changed = svm_msr_filter_changed,
 
 	.vm_attestation = sev_vm_attestation,
+
+	.complete_emulated_msr = kvm_complete_insn_gp,
 };
 
 static struct kvm_x86_init_ops svm_init_ops __initdata = {
