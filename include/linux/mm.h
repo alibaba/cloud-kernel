@@ -173,6 +173,8 @@ extern int overcommit_ratio_handler(struct ctl_table *, int, void __user *,
 				    size_t *, loff_t *);
 extern int overcommit_kbytes_handler(struct ctl_table *, int, void __user *,
 				    size_t *, loff_t *);
+extern void putback_inactive_pages(struct lruvec *lruvec,
+				   struct list_head *page_list);
 
 #define nth_page(page,n) pfn_to_page(page_to_pfn((page)) + (n))
 

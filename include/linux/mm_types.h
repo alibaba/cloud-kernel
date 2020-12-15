@@ -138,6 +138,14 @@ struct page {
 			/* For both global and memcg */
 			struct list_head deferred_list;
 		};
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+		struct {	/* Third tail page of compound page */
+			unsigned long _compound_pad_3;	/* compound_head */
+			unsigned long _compound_pad_4;
+			/* For zero subpage reclaim */
+			struct list_head hugepage_reclaim_list;
+		};
+#endif
 		struct {	/* Page table pages */
 			unsigned long _pt_pad_1;	/* compound_head */
 			pgtable_t pmd_huge_pte; /* protected by page->ptl */

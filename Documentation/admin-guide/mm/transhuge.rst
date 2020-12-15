@@ -423,3 +423,55 @@ support enabled just fine as always. No difference can be noted in
 hugetlbfs other than there will be less overall fragmentation. All
 usual features belonging to hugetlbfs are preserved and
 unaffected. libhugetlbfs will also work fine as usual.
+
+THP zero subpages reclaim
+=========================
+THP may lead to memory bloat which may cause OOM. The reason is a huge
+page may contain some zero subpages which users didn't really access them.
+To avoid this, a mechanism to reclaim these zero subpages is introduced::
+
+        echo reclaim > /sys/fs/cgroup/memory/{memcg}/memory.thp_reclaim
+        echo swap > /sys/fs/cgroup/memory/{memcg}/memory.thp_reclaim
+        echo disable > /sys/fs/cgroup/memory/{memcg}/memory.thp_reclaim
+
+reclaim
+        means the huge page will be split and the zero subpages will be
+        reclaimed.
+
+swap
+        means we just put the huge page in the inactive lru list and use
+        swap mechanism to swap it.
+
+disable
+        means do nothing.
+
+The default mode is inherited from its parent. The default mode of root
+memcg is disable.
+
+We also add a global interface, if you don't want to configure it by configuring
+every memory cgroup, you can use this one::
+
+        /sys/kernel/mm/transparent_hugepage/reclaim
+
+memcg
+        The default mode. It means every mem cgroup will use their own configure.
+
+reclaim
+        means every mem cgroup will use reclaim.
+
+swap
+        means every mem cgroup will use swap.
+
+disable
+        means every mem cgroup will use disable.
+
+If the mode is reclaim or swap, the new huge page will be add to a reclaim
+queue in mem_cgroup, and the queue would be scanned when memory reclaiming.
+The huge page which contains at least 1/32 zero pages would be split(estimate
+it by checking some discrete unsigned long values).
+
+The queue stat can be checked like this::
+
+        cat /sys/fs/cgroup/memory/{memcg}/memory.thp_reclaim_stat
+
+Now, it only contains the queue length of each node.

@@ -1107,6 +1107,12 @@ static int free_tail_pages_check(struct page *head_page, struct page *page)
 		 * deferred_list.next -- ignore value.
 		 */
 		break;
+	case 3:
+		/*
+		 * the third tail page: ->mapping is
+		 * hugepage_reclaim_list.next -- ignore value.
+		 */
+		break;
 	default:
 		if (page->mapping != TAIL_MAPPING) {
 			bad_page(page, "corrupted mapping in tail page", 0);

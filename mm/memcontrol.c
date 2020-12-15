@@ -3021,6 +3021,10 @@ static void commit_charge(struct page *page, struct mem_cgroup *memcg)
 	 * - exclusive reference
 	 */
 	page->mem_cgroup = memcg;
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	add_hugepage_to_queue(page);
+#endif
 }
 
 #ifdef CONFIG_MEMCG_KMEM
@@ -5779,6 +5783,60 @@ static int memory_events_local_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+static int memcg_thp_reclaim_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	int thp_reclaim = READ_ONCE(memcg->thp_reclaim);
+
+	if (thp_reclaim == THP_RECLAIM_ZSR)
+		seq_puts(m, "[reclaim] swap disable\n");
+	else if (memcg->thp_reclaim == THP_RECLAIM_SWAP)
+		seq_puts(m, "reclaim [swap] disable\n");
+	else
+		seq_puts(m, "reclaim swap [disable]\n");
+
+	return 0;
+}
+
+static ssize_t memcg_thp_reclaim_write(struct kernfs_open_file *of, char *buf,
+				      size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+
+	buf = strstrip(buf);
+	if (!strcmp(buf, "reclaim"))
+		WRITE_ONCE(memcg->thp_reclaim,
+			   THP_RECLAIM_ZSR);
+	else if (!strcmp(buf, "swap"))
+		WRITE_ONCE(memcg->thp_reclaim, THP_RECLAIM_SWAP);
+	else if (!strcmp(buf, "disable"))
+		WRITE_ONCE(memcg->thp_reclaim, THP_RECLAIM_DISABLE);
+	else
+		return -EINVAL;
+
+	return nbytes;
+}
+
+static int memcg_thp_reclaim_stat_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	struct mem_cgroup_per_node *mz;
+	int node;
+	unsigned long len;
+
+	seq_puts(m, "queue_length");
+	for_each_node(node) {
+		mz = mem_cgroup_nodeinfo(memcg, node);
+		len = READ_ONCE(mz->hugepage_reclaim_queue.reclaim_queue_len);
+		seq_printf(m, " %8lu", len);
+	}
+	seq_puts(m, "\n");
+
+	return 0;
+}
+#endif
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -6045,6 +6103,17 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.file_offset = offsetof(struct mem_cgroup, swap_events_file),
 		.seq_show = swap_events_show,
 	},
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	{
+		.name = "thp_reclaim",
+		.seq_show = memcg_thp_reclaim_show,
+		.write = memcg_thp_reclaim_write,
+	},
+	{
+		.name = "thp_reclaim_stat",
+		.seq_show = memcg_thp_reclaim_stat_show,
+	},
+#endif
 	{ },	/* terminate */
 };
 
@@ -6198,6 +6267,10 @@ static void mem_cgroup_per_node_info_init(struct mem_cgroup *memcg, int node)
 	spin_lock_init(&pn->deferred_split_queue.split_queue_lock);
 	INIT_LIST_HEAD(&pn->deferred_split_queue.split_queue);
 	pn->deferred_split_queue.split_queue_len = 0;
+
+	spin_lock_init(&pn->hugepage_reclaim_queue.reclaim_queue_lock);
+	INIT_LIST_HEAD(&pn->hugepage_reclaim_queue.reclaim_queue);
+	pn->hugepage_reclaim_queue.reclaim_queue_len = 0;
 #endif
 }
 
@@ -6226,6 +6299,9 @@ static bool __mem_cgroup_init(struct mem_cgroup *memcg)
 #endif
 #ifdef CONFIG_CGROUP_WRITEBACK
 	INIT_LIST_HEAD(&memcg->cgwb_list);
+#endif
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	memcg->thp_reclaim = THP_RECLAIM_DISABLE;
 #endif
 	kidled_memcg_init(memcg);
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
@@ -6391,6 +6467,9 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		/* Default gap is 0.5% max limit */
 		memcg->wmark_scale_factor = parent->wmark_scale_factor ?
 					    : 50;
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+		memcg->thp_reclaim = parent->thp_reclaim;
+#endif
 		kidled_memcg_inherit_parent_buckets(parent, memcg);
 	}
 	if (parent && parent->use_hierarchy) {
@@ -6708,6 +6787,9 @@ static int mem_cgroup_move_account(struct page *page,
 	struct pglist_data *pgdat;
 	unsigned int nr_pages = compound ? hpage_nr_pages(page) : 1;
 	int ret;
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	bool del_hugepage_queue;
+#endif
 
 	VM_BUG_ON(from == to);
 	VM_BUG_ON_PAGE(PageLRU(page), page);
@@ -6774,6 +6856,10 @@ static int mem_cgroup_move_account(struct page *page,
 		__mod_lruvec_state(to_vec, NR_WRITEBACK, nr_pages);
 	}
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	del_hugepage_queue = del_hugepage_from_queue(page);
+#endif
+
 	/*
 	 * All state has been migrated, let's switch to the new memcg.
 	 *
@@ -6791,6 +6877,10 @@ static int mem_cgroup_move_account(struct page *page,
 
 	page->mem_cgroup = to; 	/* caller should have done css_get */
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	if (del_hugepage_queue)
+		add_hugepage_to_queue(page);
+#endif
 	__unlock_page_memcg(from);
 
 	ret = 0;
@@ -7862,6 +7952,10 @@ static void uncharge_page(struct page *page, struct uncharge_gather *ug)
 	if (!page->mem_cgroup)
 		return;
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	del_hugepage_from_queue(page);
+#endif
+
 	/*
 	 * Nobody should be changing or seriously looking at
 	 * page->mem_cgroup at this point, we have fully
@@ -8306,6 +8400,10 @@ void mem_cgroup_swapout(struct page *page, swp_entry_t entry)
 				   nr_entries);
 	VM_BUG_ON_PAGE(oldid, page);
 	mod_memcg_state(swap_memcg, MEMCG_SWAP, nr_entries);
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	del_hugepage_from_queue(page);
+#endif
 
 	page->mem_cgroup = NULL;
 

@@ -188,6 +188,7 @@ struct mem_cgroup_per_node {
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	struct deferred_split deferred_split_queue;
+	struct hugepage_reclaim hugepage_reclaim_queue;
 #endif
 
 	struct mem_cgroup	*memcg;		/* Back pointer, we cannot */
@@ -233,6 +234,14 @@ struct memcg_padding {
 #define MEMCG_PADDING(name)      struct memcg_padding name;
 #else
 #define MEMCG_PADDING(name)
+#endif
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#define THP_RECLAIM_DISABLE	0
+#define THP_RECLAIM_SWAP	1
+#define THP_RECLAIM_ZSR		2
+
+#define THP_RECLAIM_MEMCG	3 /* For global configure*/
 #endif
 
 /*
@@ -390,6 +399,10 @@ struct mem_cgroup {
 
 	/* memory latency stat */
 	struct mem_cgroup_lat_stat_cpu __percpu *lat_stat_cpu;
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	int thp_reclaim;
+#endif
 
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
@@ -904,7 +917,94 @@ static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
 int memcg_get_wmark_min_adj(struct task_struct *curr);
 void memcg_check_wmark_min_adj(struct task_struct *curr,
 		struct alloc_context *ac);
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+extern int global_thp_reclaim;
+extern void set_hugepage_reclaim_shrinker_bit(struct mem_cgroup *memcg,
+					      int nid);
+
+static inline struct list_head *hugepage_reclaim_list(struct page *page)
+{
+	return &page[3].hugepage_reclaim_list;
+}
+
+static inline bool add_hugepage_to_queue(struct page *page)
+{
+	struct page *head = compound_head(page);
+	struct mem_cgroup *memcg = compound_head(page)->mem_cgroup;
+	int nid = page_to_nid(page);
+	struct hugepage_reclaim *hr_queue;
+	unsigned long flags;
+	int memcg_reclaim, global_reclaim;
+	bool ret = false;
+
+	if (!memcg || !(PageTransHuge(head) && !PageHuge(head)))
+		return ret;
+
+	global_reclaim = READ_ONCE(global_thp_reclaim);
+	if (global_reclaim == THP_RECLAIM_DISABLE)
+		return ret;
+	else if (global_reclaim == THP_RECLAIM_MEMCG) {
+		memcg_reclaim = READ_ONCE(memcg->thp_reclaim);
+		if (memcg_reclaim == THP_RECLAIM_DISABLE)
+			return ret;
+	}
+
+	hr_queue = &memcg->nodeinfo[nid]->hugepage_reclaim_queue;
+	spin_lock_irqsave(&hr_queue->reclaim_queue_lock, flags);
+	if (list_empty(hugepage_reclaim_list(head))) {
+		list_add(hugepage_reclaim_list(head),
+			      &hr_queue->reclaim_queue);
+		hr_queue->reclaim_queue_len++;
+		ret = true;
+	}
+
+	if (unlikely(hr_queue->reclaim_queue_len == 1))
+		set_hugepage_reclaim_shrinker_bit(memcg, page_to_nid(page));
+
+	spin_unlock_irqrestore(&hr_queue->reclaim_queue_lock, flags);
+
+	return ret;
+}
+
+static inline bool del_hugepage_from_queue(struct page *page)
+{
+	struct page *head = compound_head(page);
+	struct mem_cgroup *memcg = compound_head(page)->mem_cgroup;
+	int nid = page_to_nid(page);
+	struct hugepage_reclaim *hr_queue;
+	unsigned long flags;
+	bool ret = false;
+
+	if (!memcg || !(PageTransHuge(head) && !PageHuge(head)))
+		return ret;
+
+	hr_queue = &memcg->nodeinfo[nid]->hugepage_reclaim_queue;
+	spin_lock_irqsave(&hr_queue->reclaim_queue_lock, flags);
+	if (!list_empty(hugepage_reclaim_list(head))) {
+		list_del_init(hugepage_reclaim_list(head));
+		hr_queue->reclaim_queue_len--;
+		ret = true;
+	}
+	spin_unlock_irqrestore(&hr_queue->reclaim_queue_lock, flags);
+
+	return ret;
+}
+#endif
+
 #else /* CONFIG_MEMCG */
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+static inline bool add_hugepage_to_queue(struct page *page)
+{
+	return false;
+}
+
+static inline bool del_hugepage_from_queue(struct page *page)
+{
+	return false;
+}
+#endif
 
 #define MEM_CGROUP_ID_SHIFT	0
 #define MEM_CGROUP_ID_MAX	0

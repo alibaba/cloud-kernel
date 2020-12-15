@@ -61,6 +61,14 @@ unsigned long transparent_hugepage_flags __read_mostly =
 
 static struct shrinker deferred_split_shrinker;
 
+#ifdef CONFIG_MEMCG
+/*
+ * Zero subpages reclaim for huge pages only works when memcg defined.
+ */
+int global_thp_reclaim;
+static struct shrinker hugepage_reclaim_shrinker;
+#endif
+
 static atomic_t huge_zero_refcount;
 struct page *huge_zero_page __read_mostly;
 
@@ -342,6 +350,48 @@ static ssize_t fast_cow_store(struct kobject *kobj,
 static struct kobj_attribute fast_cow_attr =
 	__ATTR(fast_cow, 0644, fast_cow_show, fast_cow_store);
 
+#ifdef CONFIG_MEMCG
+static ssize_t reclaim_show(struct kobject *kobj,
+			    struct kobj_attribute *attr, char *buf)
+{
+	int thp_reclaim = READ_ONCE(global_thp_reclaim);
+
+	if (thp_reclaim == THP_RECLAIM_MEMCG)
+		return sprintf(buf, "[memcg] reclaim swap disable\n");
+	else if (thp_reclaim == THP_RECLAIM_ZSR)
+		return sprintf(buf, "memcg [reclaim] swap disable\n");
+	else if (thp_reclaim == THP_RECLAIM_SWAP)
+		return sprintf(buf, "memcg reclaim [swap] disable\n");
+	else
+		return sprintf(buf, "memcg reclaim swap [disable]\n");
+}
+
+static ssize_t reclaim_store(struct kobject *kobj,
+			     struct kobj_attribute *attr,
+			     const char *buf, size_t count)
+{
+	if (!memcmp("memcg", buf,
+		    min(sizeof("memcg")-1, count)))
+		WRITE_ONCE(global_thp_reclaim, THP_RECLAIM_MEMCG);
+	else if (!memcmp("reclaim", buf,
+		    min(sizeof("reclaim")-1, count)))
+		WRITE_ONCE(global_thp_reclaim, THP_RECLAIM_ZSR);
+	else if (!memcmp("swap", buf,
+		    min(sizeof("swap")-1, count)))
+		WRITE_ONCE(global_thp_reclaim, THP_RECLAIM_SWAP);
+	else if (!memcmp("disable", buf,
+		    min(sizeof("disable")-1, count)))
+		WRITE_ONCE(global_thp_reclaim, THP_RECLAIM_DISABLE);
+	else
+		return -EINVAL;
+
+	return count;
+}
+
+static struct kobj_attribute reclaim_attr =
+	__ATTR(reclaim, 0644, reclaim_show, reclaim_store);
+#endif
+
 static struct attribute *hugepage_attr[] = {
 	&enabled_attr.attr,
 	&defrag_attr.attr,
@@ -354,6 +404,9 @@ static struct attribute *hugepage_attr[] = {
 	&debug_cow_attr.attr,
 #endif
 	&fast_cow_attr.attr,
+#ifdef CONFIG_MEMCG
+	&reclaim_attr.attr,
+#endif
 	NULL,
 };
 
@@ -443,6 +496,12 @@ static int __init hugepage_init(void)
 	err = register_shrinker(&deferred_split_shrinker);
 	if (err)
 		goto err_split_shrinker;
+#ifdef CONFIG_MEMCG
+	err = register_shrinker(&hugepage_reclaim_shrinker);
+	if (err)
+		goto err_hugepage_reclaim;
+	global_thp_reclaim = THP_RECLAIM_MEMCG;
+#endif
 
 	/*
 	 * By default disable transparent hugepages on smaller systems,
@@ -461,6 +520,10 @@ static int __init hugepage_init(void)
 	return 0;
 err_khugepaged:
 	unregister_shrinker(&deferred_split_shrinker);
+#ifdef CONFIG_MEMCG
+err_hugepage_reclaim:
+	unregister_shrinker(&hugepage_reclaim_shrinker);
+#endif
 err_split_shrinker:
 	unregister_shrinker(&huge_zero_page_shrinker);
 err_hzp_shrinker:
@@ -539,6 +602,9 @@ void prep_transhuge_page(struct page *page)
 	 */
 
 	INIT_LIST_HEAD(page_deferred_list(page));
+#ifdef CONFIG_MEMCG
+	INIT_LIST_HEAD(hugepage_reclaim_list(page));
+#endif
 	set_compound_page_dtor(page, TRANSHUGE_PAGE_DTOR);
 }
 
@@ -2512,7 +2578,7 @@ static void __split_huge_page_tail(struct page *head, int tail,
 			 (1L << PG_dirty)));
 
 	/* ->mapping in first tail page is compound_mapcount */
-	VM_BUG_ON_PAGE(tail > 2 && page_tail->mapping != TAIL_MAPPING,
+	VM_BUG_ON_PAGE(tail > 3 && page_tail->mapping != TAIL_MAPPING,
 			page_tail);
 	page_tail->mapping = head->mapping;
 	page_tail->index = head->index + tail;
@@ -2740,6 +2806,8 @@ int split_huge_page_to_list(struct page *page, struct list_head *list)
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	VM_BUG_ON_PAGE(!PageCompound(page), page);
 
+	del_hugepage_from_queue(page);
+
 	if (PageWriteback(page))
 		return -EBUSY;
 
@@ -2912,6 +2980,7 @@ void deferred_split_huge_page(struct page *page)
 			memcg_set_shrinker_bit(memcg, page_to_nid(page),
 					       deferred_split_shrinker.id);
 #endif
+		del_hugepage_from_queue(page);
 	}
 	spin_unlock_irqrestore(&ds_queue->split_queue_lock, flags);
 }
@@ -3111,4 +3180,414 @@ void remove_migration_pmd(struct page_vma_mapped_walk *pvmw, struct page *new)
 		mlock_vma_page(new);
 	update_mmu_cache_pmd(vma, address, pvmw->pmd);
 }
+#endif
+
+#ifdef CONFIG_MEMCG
+void set_hugepage_reclaim_shrinker_bit(struct mem_cgroup *memcg, int nid)
+{
+	memcg_set_shrinker_bit(memcg, nid, hugepage_reclaim_shrinker.id);
+}
+
+static inline bool is_zero_page(struct page *page)
+{
+	void *addr = kmap(page);
+	unsigned long *ul = (unsigned long *)addr;
+	bool ret = true;
+	int i;
+
+#define BYTES_PER_LONG (BITS_PER_LONG / BITS_PER_BYTE)
+	BUILD_BUG_ON(PAGE_SIZE % BYTES_PER_LONG);
+	for (i = 0; i < PAGE_SIZE; i += BYTES_PER_LONG, ul++)
+		if (*ul) {
+			ret = false;
+			break;
+		}
+	kunmap(page);
+
+	return ret;
+}
+
+/*
+ * We'll split the huge page iff it contains at least 1/32 zeros,
+ * estimate it by checking some discrete unsigned long values.
+ */
+static bool hugepage_estimate_zero(struct page *page)
+{
+	unsigned int i, maybe_zero_pages = 0, offset = 0;
+	void *addr;
+
+	for (i = 0; i < HPAGE_PMD_NR; i++, page++, offset++) {
+		addr = kmap(page);
+		if (unlikely((offset + 1) * BYTES_PER_LONG > PAGE_SIZE))
+			offset = 0;
+		if (*(const unsigned long *)(addr + offset) == 0UL)
+			maybe_zero_pages++;
+		kunmap(page);
+	}
+
+	return (maybe_zero_pages << 5) >= HPAGE_PMD_NR;
+}
+
+static bool replace_zero_pte(struct page *page, struct vm_area_struct *vma,
+			     unsigned long addr, void *zero_page)
+{
+	struct page_vma_mapped_walk pvmw = {
+		.page = page,
+		.vma = vma,
+		.address = addr,
+		.flags = PVMW_SYNC | PVMW_MIGRATION,
+	};
+	pte_t pte;
+
+	VM_BUG_ON_PAGE(PageTail(page), page);
+
+	while (page_vma_mapped_walk(&pvmw)) {
+		pte = pte_mkspecial(
+			pfn_pte(page_to_pfn((struct page *)zero_page),
+			vma->vm_page_prot));
+
+		/*
+		 * We're replacing an anonymous page with a zero page, which is
+		 * not anonymous. We need to do proper accounting otherwise we
+		 * will get wrong values in /proc, and a BUG message in dmesg
+		 * when tearing down the mm.
+		 */
+		dec_mm_counter(vma->vm_mm, MM_ANONPAGES);
+		set_pte_at(vma->vm_mm, pvmw.address, pvmw.pte, pte);
+
+		/* We ignore the dirty or referenced bit, it's acceptable. */
+
+		/* No need to invalidate - it was non-present before.*/
+		update_mmu_cache(vma, pvmw.address, pvmw.pte);
+	}
+
+	return true;
+}
+
+static void replace_zero_ptes_locked(struct page *page)
+{
+	struct page *zero_page = ZERO_PAGE(0);
+	struct rmap_walk_control rwc = {
+		.rmap_one = replace_zero_pte,
+		.arg = zero_page,
+	};
+
+	rmap_walk_locked(page, &rwc);
+}
+
+static bool replace_zero_page(struct page *page)
+{
+	struct anon_vma *anon_vma = NULL;
+	enum ttu_flags ttu_flags = TTU_RMAP_LOCKED | TTU_MIGRATION;
+	bool unmap_success;
+	bool ret = true;
+
+	anon_vma = page_get_anon_vma(page);
+	if (!anon_vma)
+		return false;
+
+	anon_vma_lock_write(anon_vma);
+	unmap_success = try_to_unmap(page, ttu_flags);
+
+	if (!unmap_success)
+		ret = false;
+	else if (!is_zero_page(page)) {
+		/* remap the non-zero page */
+		remove_migration_ptes(page, page, true);
+		ret = false;
+	} else
+		replace_zero_ptes_locked(page);
+
+	anon_vma_unlock_write(anon_vma);
+	put_anon_vma(anon_vma);
+
+	return ret;
+}
+
+/*
+ * reclaim_zero_subpages - reclaim the zero subpages and putback the non-zero
+ * subpages.
+ *
+ * The non-zero subpages are putback to the keep_list, and will be putback to
+ * the lru list.
+ *
+ * Return the number of reclaimed zero subpages.
+ */
+static unsigned long reclaim_zero_subpages(struct list_head *list,
+					   struct list_head *keep_list)
+{
+	LIST_HEAD(zero_list);
+	struct reclaim_state *reclaim_state = current->reclaim_state;
+	struct page *page;
+	unsigned long reclaimed = 0;
+
+	while (!list_empty(list)) {
+		page = lru_to_page(list);
+		list_del_init(&page->lru);
+		if (is_zero_page(page)) {
+			if (!trylock_page(page))
+				goto keep;
+
+			if (!replace_zero_page(page)) {
+				unlock_page(page);
+				goto keep;
+			}
+
+			__ClearPageActive(page);
+			unlock_page(page);
+			if (put_page_testzero(page)) {
+				list_add(&page->lru, &zero_list);
+				reclaimed++;
+				if (reclaim_state)
+					reclaim_state->reclaimed_slab++;
+			}
+
+			/* someone may hold the zero page, we just skip it. */
+
+			continue;
+		}
+keep:
+		list_add(&page->lru, keep_list);
+	}
+
+	mem_cgroup_uncharge_list(&zero_list);
+	free_unref_page_list(&zero_list);
+
+	return reclaimed;
+
+}
+
+static unsigned long hugepage_reclaim_count(struct shrinker *shrink,
+		struct shrink_control *sc)
+{
+	int nid = sc->nid;
+	struct hugepage_reclaim *hr_queue;
+
+	if (sc->memcg) {
+		hr_queue = &sc->memcg->nodeinfo[nid]->hugepage_reclaim_queue;
+		return READ_ONCE(hr_queue->reclaim_queue_len);
+	}
+
+	return 0;
+}
+
+#ifdef CONFIG_MMU
+#define ZSR_IF_HAVE_PG_MLOCK(flag)	(1UL << flag)
+#else
+#define ZSR_IF_HAVE_PG_MLOCK(flag)	0
+#endif
+#ifdef CONFIG_ARCH_USES_PG_UNCACHED
+#define ZSR_IF_HAVE_PG_UNCACHED(flag)	(1UL << flag)
+#else
+#define ZSR_IF_HAVE_PG_UNCACHED(flag)	0
+#endif
+#ifdef CONFIG_MEMORY_FAILURE
+#define ZSR_IF_HAVE_PG_HWPOISON(flag)	(1UL << flag)
+#else
+#define ZSR_IF_HAVE_PG_HWPOISON(flag)	0
+#endif
+
+/* Fiter unsupported page flags. */
+#define PAGE_FLAG_CHECK_AT_ZERO_SUBPAGE_RECLAIM	\
+	((1UL << PG_error) |			\
+	 (1UL << PG_owner_priv_1) |		\
+	 (1UL << PG_arch_1) |			\
+	 (1UL << PG_reserved) |			\
+	 (1UL << PG_private) |			\
+	 (1UL << PG_private_2) |		\
+	 (1UL << PG_writeback) |		\
+	 (1UL << PG_swapcache) |		\
+	 (1UL << PG_mappedtodisk) |		\
+	 (1UL << PG_reclaim) |			\
+	 (1UL << PG_unevictable) |		\
+	 ZSR_IF_HAVE_PG_MLOCK(PG_mlocked) |	\
+	 ZSR_IF_HAVE_PG_UNCACHED(PG_uncached) |	\
+	 ZSR_IF_HAVE_PG_HWPOISON(PG_hwpoison))
+
+#define hugepage_can_reclaim(page) \
+	(PageAnon(page) && !PageKsm(page) && PageTransHuge(page) && \
+	 !PageHuge(page) && \
+	 !(page->flags & PAGE_FLAG_CHECK_AT_ZERO_SUBPAGE_RECLAIM))
+
+#define hr_list_to_page(head) \
+	compound_head(list_entry((head)->prev, struct page,\
+		      hugepage_reclaim_list))
+
+/*
+ * get_reclaim_hugepage - get one huge page from huge page reclaim queue
+ * @hugepage_reclaim: the huge page reclaim queue
+ * @empty: store the state if the queue is empty or not
+ * @disable: whethe the thp reclaim mode is disable or not
+ *
+ * If the queue is empty, then @empty is true, and hugepage_reclaim_scan
+ * will be stopped.
+ *
+ * if @disable is true, it means the thp reclaim is disable, and we just
+ * delete one huge page from the queue.
+ *
+ * Return the huge page can be reclaimed, and the huge page is isolated
+ * from lru list and locked.
+ */
+static struct page *get_reclaim_hugepage(struct hugepage_reclaim *hr_queue,
+					 bool *empty, bool disable)
+{
+	struct page *page = NULL, *reclaim_page = NULL;
+	unsigned long flags;
+
+	*empty = true;
+	spin_lock_irqsave(&hr_queue->reclaim_queue_lock, flags);
+	if (!list_empty(&hr_queue->reclaim_queue)) {
+		*empty = false;
+		page = hr_list_to_page(&hr_queue->reclaim_queue);
+		list_del_init(hugepage_reclaim_list(page));
+		hr_queue->reclaim_queue_len--;
+
+		if (disable)
+			goto unlock;
+
+		if (hugepage_can_reclaim(page) && get_page_unless_zero(page)) {
+			if (trylock_page(page)) {
+				spin_unlock_irqrestore(&hr_queue->reclaim_queue_lock,
+						       flags);
+				if (hugepage_can_reclaim(page) &&
+				    hugepage_estimate_zero(page) &&
+				    !isolate_lru_page(page)) {
+					__mod_node_page_state(page_pgdat(page),
+							NR_ISOLATED_ANON,
+							HPAGE_PMD_NR);
+					/*
+					 *  dec the reference added in
+					 *  isolate_lru_page
+					 */
+					page_ref_dec(page);
+					reclaim_page = page;
+				} else {
+					unlock_page(page);
+					put_page(page);
+				}
+
+				return reclaim_page;
+
+			} else
+				put_page(page);
+		}
+	}
+unlock:
+	spin_unlock_irqrestore(&hr_queue->reclaim_queue_lock, flags);
+
+	return reclaim_page;
+
+}
+
+static unsigned long hugepage_reclaim_scan(struct shrinker *shrink,
+		struct shrink_control *sc)
+{
+	int nid = sc->nid;
+	struct pglist_data *pgdat = NODE_DATA(nid);
+	struct lruvec *lruvec = mem_cgroup_lruvec(sc->memcg, pgdat);
+	struct hugepage_reclaim *hr_queue = NULL;
+	struct page *page;
+	int thp_reclaim;
+	unsigned long nr_to_scan, nr_scanned;
+	unsigned long flags;
+	bool empty;
+#define MAX_SCAN_HUGEPAGES 32UL
+
+	/*
+	 * This is to avoid drop_slab (by 'echo 2 > /proc/sys/vm/drop_caches')
+	 * to trigger ZSR. Since Page reclaim (kswapd or direct reclaim) will
+	 * set the PF_MEMALLOC flag, and drop_slab not.
+	 */
+	if (!(current->flags & PF_MEMALLOC))
+		return SHRINK_STOP;
+
+	if (sc->memcg)
+		hr_queue = &sc->memcg->nodeinfo[nid]->hugepage_reclaim_queue;
+
+	if (!hr_queue)
+		return SHRINK_STOP;
+
+	thp_reclaim = READ_ONCE(global_thp_reclaim);
+	thp_reclaim = (thp_reclaim != THP_RECLAIM_MEMCG) ? thp_reclaim :
+			READ_ONCE(sc->memcg->thp_reclaim);
+	nr_to_scan = min(sc->nr_to_scan, MAX_SCAN_HUGEPAGES);
+	nr_scanned = 0;
+
+	while (nr_to_scan) {
+		LIST_HEAD(split_list);
+		LIST_HEAD(keep_list);
+
+		cond_resched();
+		page = get_reclaim_hugepage(hr_queue, &empty,
+				thp_reclaim == THP_RECLAIM_DISABLE);
+		if (empty)
+			break;
+
+		nr_to_scan--;
+		nr_scanned++;
+
+		if (!page)
+			continue;
+
+		switch (thp_reclaim) {
+		case THP_RECLAIM_SWAP:
+			/*
+			 * Putback the page to inactive lru list.
+			 * Since there is no interface function to put the
+			 * page to the tail of inactive lru list, we put it
+			 * to the head of the list in order to less invasion.
+			 */
+			__ClearPageActive(page);
+			ClearPageReferenced(page);
+			unlock_page(page);
+			putback_lru_page(page);
+			mod_node_page_state(pgdat, NR_ISOLATED_ANON,
+					    -HPAGE_PMD_NR);
+
+			continue;
+
+		case THP_RECLAIM_ZSR:
+			/*
+			 * Split the huge page and reclaim the zero subpages.
+			 * And putback the non-zero subpages to the lru list.
+			 */
+			if (split_huge_page_to_list(page, &split_list)) {
+				unlock_page(page);
+				putback_lru_page(page);
+				mod_node_page_state(pgdat, NR_ISOLATED_ANON,
+						    -HPAGE_PMD_NR);
+				continue;
+			}
+
+			unlock_page(page);
+			list_add_tail(&page->lru, &split_list);
+			reclaim_zero_subpages(&split_list, &keep_list);
+
+			spin_lock_irqsave(&pgdat->lru_lock, flags);
+			putback_inactive_pages(lruvec, &keep_list);
+			spin_unlock_irqrestore(&pgdat->lru_lock, flags);
+			mod_node_page_state(pgdat, NR_ISOLATED_ANON,
+					    -HPAGE_PMD_NR);
+
+			mem_cgroup_uncharge_list(&keep_list);
+			free_unref_page_list(&keep_list);
+
+			break;
+		}
+	}
+
+	sc->nr_scanned = nr_scanned;
+	if (!sc->nr_scanned && list_empty(&hr_queue->reclaim_queue))
+		return SHRINK_STOP;
+
+	return sc->nr_scanned;
+}
+
+static struct shrinker hugepage_reclaim_shrinker = {
+	.count_objects = hugepage_reclaim_count,
+	.scan_objects = hugepage_reclaim_scan,
+	.seeks = DEFAULT_SEEKS,
+	.flags = SHRINKER_NUMA_AWARE | SHRINKER_MEMCG_AWARE |
+		 SHRINKER_NONSLAB,
+};
 #endif
