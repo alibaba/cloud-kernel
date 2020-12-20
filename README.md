@@ -1,11 +1,11 @@
-Alibaba Cloud Kernel
-====================
+Cloud Kernel
+============
 
 + [中文版](zh/README.md)
 
 Table of Contents
 -----------------
-1. [What is Alibaba Cloud Kernel](#1-what-is-alibaba-cloud-kernel)
+1. [What is Cloud Kernel](#1-what-is-cloud-kernel)
 2. [Getting Started](#2-getting-started)
    1. [Run with pre-built RPMs (recommended)](#21-run-with-pre-built-rpms-recommended)
    2. [Compile from source](#22-compile-from-source)
@@ -17,9 +17,11 @@ Table of Contents
 ---------------------------------
 
 
-## 1. What is Alibaba Cloud Kernel
+## 1. What is Cloud Kernel
 
-Alibaba Cloud Kernel(a.k.a. the "Cloud Kernel"), a customized and optimized version of Linux kernel, is originated by Alibaba Operating System Team (formerly known as Taobao Kernel Team). Cloud Kernel is installed as the default kernel in Alibaba Cloud Linux OS version 2 (or Aliyun Linux 2), which is running on Alibaba Cloud Elastic Compute Service (ECS) product. In Cloud Kernel, several features and enhancements adapted to specific Alibaba Cloud infrastructre and products have been made to help Alibaba Cloud customers to achieve better user experiences.
+Cloud Kernel is a customized and optimized version of Linux kernel, it is originated by Alibaba Operating System Team (formerly known as Taobao Kernel Team). Cloud Kernel is installed as the default kernel in Alibaba Cloud Linux OS version 2 (or Aliyun Linux 2), which is running on Alibaba Cloud Elastic Compute Service (ECS) product. In Cloud Kernel, several features and enhancements adapted to specific cloud infrastructre and products have been made to help customers in cloud platform achieve better user experiences.
+
+In 2020, Cloud Kernel joined [OpenAnolis](https://openanolis.org) community, an open source operating system community and innovation platform.
 
 Like many other kernels, Cloud Kernel should work with almost all commonly-used Linux distributions, however, we highly recommend you run it in Alibaba Cloud Linux OS with Alibaba Cloud ECS instances to get best functionality, performance and stability.
 
@@ -100,9 +102,8 @@ We use the same license as the upstream does, so please refer to the [COPYING](C
 + Join the [mailing list discussions](MAILLIST.md);
 + Join the IRC channel `#anolis-linux` on FreeNode;
 + Join the DingTalk chat group: `23149462`;
-+ Send us an E-mail to [os@openanolis.org](mailto:os@openanolis.org).
++ Send us an E-mail to our [service mailbox](mailto:cloud-kernel@openanolis.org).
 
 ------------------------
 
-> Alibaba Cloud Linux OS and Cloud Kernel are sub-projects maintained by [OpenAnolis](http://openanolis.org) community, an open source operating system community and innovation platform.
 > The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.

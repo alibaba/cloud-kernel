@@ -6,4 +6,4 @@ Mailing Lists
 | List name | Post address | Description | Subscribe | List archive |
 |-----------|--------------|-------------|-----------|--------------|
 |Cloud Kernel|cloud-kernel@lists.OpenAnolis.org |Mailing list for Cloud Kernel development, open for patches|[Subscribe](https://lists.openanolis.org/postorius/lists/cloud-kernel.lists.openanolis.org/) | [List archive](https://lists.openanolis.org/hyperkitty/list/cloud-kernel@lists.openanolis.org/)|
-|Alibaba Cloud Linux OS|os@lists.OpenAnolis.org |Mailing list for Alibaba Cloud Linux OS Distro| [Subscribe](https://lists.openanolis.org/postorius/lists/os.lists.openanolis.org/) | [List archive](https://lists.openanolis.org/hyperkitty/list/os@lists.openanolis.org/) |
+|Alibaba Cloud Linux OS|alinux@lists.OpenAnolis.org |Mailing list for Alibaba Cloud Linux OS Distro| [Subscribe](https://lists.openanolis.org/postorius/lists/alinux.lists.openanolis.org/) | [List archive](https://lists.openanolis.org/hyperkitty/list/alinux@lists.openanolis.org/) |

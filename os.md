@@ -21,6 +21,8 @@ Table of Contents
 
 Alibaba Cloud Linux (a.k.a. Aliyun Linux) OS is an open-source Linux distribution originated by Alibaba Operating System team, aiming to deliver OS services with various functionality, high performance and stability to Alibaba Cloud Elastic Compute Service (ECS) customers.
 
+In 2020, Alibaba Cloud Linux OS joined [OpenAnolis](https://openanolis.org) community, an open source operating system community and innovation platform. Now Alibaba Cloud Linux is one of the down-stream distributions of Anolis OS.
+
 Current released version is Alibaba Cloud Linux OS version 2, or known as 'Aliyun Linux 2', please refer to the [release note](https://www.alibabacloud.com/help/doc-detail/111881.html) for more details.
 
 ## 2. How to use
@@ -47,9 +49,8 @@ To get helps when using Alibaba Cloud Linux OS, you can
 + Join the [mailing list discussions](MAILLIST.md);
 + Join the IRC channel `#anolis-linux` on FreeNode;
 + Join the DingTalk chat group: `23149462`;
-+ Send us an E-mail to [os@OpenAnolis.org](mailto:os@openanolis.org).
++ Send us an E-mail to our [service mailbox](mailto:alinux@openanolis.org).
 
 ------------------------
 
-> Alibaba Cloud Linux OS and Cloud Kernel are sub-projects maintained by [OpenAnolis](http://openanolis.org) community, an open source operating system community and innovation platform.
 > The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.

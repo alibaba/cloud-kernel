@@ -21,6 +21,8 @@ Alibaba Cloud Linux 2 操作系统简介
 
 Alibaba Cloud Linux 操作系统(原名 _Aliyun Linux_)是一款开源且免费的 Linux 操作系统发行版，旨在为阿里云 ECS 客户提供丰富功能，高性能且稳定的操作系统服务。
 
+在 2020 年，Alibaba Cloud Linux 操作系统加入了 [OpenAnolis](https://openanolis.org) 社区，OpenAnolis 是一个开源操作系统社区及系统软件创新平台，致力于通过开放的社区合作，推动软硬件及应用生态繁荣发展，共同构建云计算系统技术底座。现如今，Alibaba Cloud Linux 是社区发行版 Anolis OS 的下游发行版之一。
+
 Alibaba Cloud Linux 2 是 Alibaba Cloud Linux 的下一代版本，其开发团队是阿里巴巴操作系统团队，前身是淘宝内核组。九年来，团队成员大多是活跃在内核社区的开发者，积累了深厚的操作系统和内核开发底蕴。
 
 可以访问 Alibaba Cloud Linux 2 的[产品文档](https://help.aliyun.com/document_detail/111881.html)以获取产品更多信息。
@@ -49,9 +51,8 @@ sudo yumdownloader --source <包名>
 + 可以加入[邮件列表](MAILLIST.md)参与讨论；
 + 可以加入 FreeNode 上的 IRC 频道： `#anolis-linux`;
 + 可以加入钉钉群：`Alibaba Cloud Linux OS 开发者&用户群`，群号：`23149462`;
-+ 或者可以给我们发邮件：[os@OpenAnolis.org](mailto:os@openanolis.org).
++ 或者可以给我们的[服务邮箱](mailto:alinux@openanolis.org)发邮件。
 
 --------------------------------
 
-> Alibaba Cloud Linux OS and Cloud Kernel are sub-projects maintained by [OpenAnolis](http://openanolis.org) community, an open source operating system community and innovation platform.
 > The registered trademark Linux® is used pursuant to a sublicense from the Linux Foundation, the exclusive licensee of Linus Torvalds, owner of the mark on a world­wide basis.

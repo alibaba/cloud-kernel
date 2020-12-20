@@ -6,4 +6,4 @@
 | 邮件列表名称 | 列表地址 | 描述 | 订阅 | 归档讨论 |
 |-----------|--------------|-------------|-----------|--------------|
 |Cloud Kernel|cloud-kernel@lists.OpenAnolis.org | Cloud Kernel 开发邮件列表，接受内核补丁投递|[订阅](https://lists.openanolis.org/postorius/lists/cloud-kernel.lists.openanolis.org/) | [归档讨论](https://lists.openanolis.org/hyperkitty/list/cloud-kernel@lists.openanolis.org/)|
-|Alibaba Cloud Linux OS|os@lists.OpenAnolis.org | Alibaba Cloud Linux 操作系统讨论邮件列表| [订阅](https://lists.openanolis.org/postorius/lists/os.lists.openanolis.org/) | [归档讨论](https://lists.openanolis.org/hyperkitty/list/os@lists.openanolis.org/) |
+|Alibaba Cloud Linux OS|alinux@lists.OpenAnolis.org | Alibaba Cloud Linux 操作系统讨论邮件列表| [订阅](https://lists.openanolis.org/postorius/lists/alinux.lists.openanolis.org/) | [归档讨论](https://lists.openanolis.org/hyperkitty/list/alinux@lists.openanolis.org/) |
