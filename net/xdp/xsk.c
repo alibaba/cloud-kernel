@@ -187,6 +187,9 @@ void xsk_umem_consume_tx_done(struct xdp_umem *umem)
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(xs, &umem->xsk_list, list) {
+		if (!xs->tx)
+			continue;
+
 		xsk_tx_new_space(xs);
 	}
 	rcu_read_unlock();
@@ -200,6 +203,9 @@ bool xsk_umem_consume_tx(struct xdp_umem *umem, dma_addr_t *dma, u32 *len)
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(xs, &umem->xsk_list, list) {
+		if (!xs->tx)
+			continue;
+
 		if (!xskq_peek_desc(xs->tx, &desc))
 			continue;
 
