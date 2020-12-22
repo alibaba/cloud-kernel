@@ -101,6 +101,22 @@ struct virtnet_rq_stats {
 	u64 kicks;
 };
 
+enum {
+	XDP_TYPE_XSK,
+	XDP_TYPE_TX,
+};
+
+struct virtnet_xdp_type {
+	int offset:24;
+	unsigned type:8;
+};
+
+struct virtnet_xsk_hdr {
+	struct virtnet_xdp_type type;
+	struct virtio_net_hdr_mrg_rxbuf hdr;
+	u32 len;
+};
+
 #define VIRTNET_SQ_STAT(m)	offsetof(struct virtnet_sq_stats, m)
 #define VIRTNET_RQ_STAT(m)	offsetof(struct virtnet_rq_stats, m)
 
@@ -262,14 +278,19 @@ static bool is_xdp_frame(void *ptr)
 	return (unsigned long)ptr & VIRTIO_XDP_FLAG;
 }
 
-static void *xdp_to_ptr(struct xdp_frame *ptr)
+static void *xdp_to_ptr(struct virtnet_xdp_type *ptr)
 {
 	return (void *)((unsigned long)ptr | VIRTIO_XDP_FLAG);
 }
 
-static struct xdp_frame *ptr_to_xdp(void *ptr)
+static struct virtnet_xdp_type *ptr_to_xtype(void *ptr)
 {
-	return (struct xdp_frame *)((unsigned long)ptr & ~VIRTIO_XDP_FLAG);
+	return (struct virtnet_xdp_type *)((unsigned long)ptr & ~VIRTIO_XDP_FLAG);
+}
+
+static void *xtype_got_ptr(struct virtnet_xdp_type *xdptype)
+{
+	return (char *)xdptype + xdptype->offset;
 }
 
 /* Converting between virtqueue no. and kernel tx/rx queue no.
@@ -505,10 +526,15 @@ static int __virtnet_xdp_xmit_one(struct virtnet_info *vi,
 				   struct xdp_frame *xdpf)
 {
 	struct virtio_net_hdr_mrg_rxbuf *hdr;
+	struct virtnet_xdp_type *xdptype;
 	int err;
 
-	if (unlikely(xdpf->headroom < vi->hdr_len))
+	if (unlikely(xdpf->headroom < vi->hdr_len + sizeof(*xdptype)))
 		return -EOVERFLOW;
+
+	xdptype = (struct virtnet_xdp_type *)(xdpf + 1);
+	xdptype->offset = (char *)xdpf - (char *)xdptype;
+	xdptype->type = XDP_TYPE_TX;
 
 	/* Make room for virtqueue hdr (also change xdpf->headroom?) */
 	xdpf->data -= vi->hdr_len;
@@ -519,7 +545,7 @@ static int __virtnet_xdp_xmit_one(struct virtnet_info *vi,
 
 	sg_init_one(sq->sg, xdpf->data, xdpf->len);
 
-	err = virtqueue_add_outbuf(sq->vq, sq->sg, 1, xdp_to_ptr(xdpf),
+	err = virtqueue_add_outbuf(sq->vq, sq->sg, 1, xdp_to_ptr(xdptype),
 				   GFP_ATOMIC);
 	if (unlikely(err))
 		return -ENOSPC; /* Caller handle free/refcnt */
@@ -598,8 +624,11 @@ static int virtnet_xdp_xmit(struct net_device *dev,
 	/* Free up any pending old buffers before queueing new ones. */
 	while ((ptr = virtqueue_get_buf(sq->vq, &len)) != NULL) {
 		if (likely(is_xdp_frame(ptr))) {
-			struct xdp_frame *frame = ptr_to_xdp(ptr);
+			struct virtnet_xdp_type *xtype;
+			struct xdp_frame *frame;
 
+			xtype = ptr_to_xtype(ptr);
+			frame = xtype_got_ptr(xtype);
 			bytes += frame->len;
 			xdp_return_frame(frame);
 		} else {
@@ -1462,24 +1491,34 @@ static int virtnet_receive(struct receive_queue *rq, int budget,
 
 static void free_old_xmit_skbs(struct send_queue *sq, bool in_napi)
 {
-	unsigned int len;
 	unsigned int packets = 0;
 	unsigned int bytes = 0;
-	void *ptr;
+	unsigned int len;
+	struct virtnet_xdp_type *xtype;
+	struct xdp_frame        *frame;
+	struct virtnet_xsk_hdr  *xskhdr;
+	struct sk_buff          *skb;
+	void                    *ptr;
 
 	while ((ptr = virtqueue_get_buf(sq->vq, &len)) != NULL) {
 		if (likely(!is_xdp_frame(ptr))) {
-			struct sk_buff *skb = ptr;
+			skb = ptr;
 
 			pr_debug("Sent skb %p\n", skb);
 
 			bytes += skb->len;
 			napi_consume_skb(skb, in_napi);
 		} else {
-			struct xdp_frame *frame = ptr_to_xdp(ptr);
+			xtype = ptr_to_xtype(ptr);
 
-			bytes += frame->len;
-			xdp_return_frame(frame);
+			if (xtype->type == XDP_TYPE_XSK) {
+				xskhdr = (struct virtnet_xsk_hdr *)xtype;
+				bytes += xskhdr->len;
+			} else {
+				frame = xtype_got_ptr(xtype);
+				xdp_return_frame(frame);
+				bytes += frame->len;
+			}
 		}
 		packets++;
 	}
@@ -2792,14 +2831,22 @@ static void free_unused_bufs(struct virtnet_info *vi)
 {
 	void *buf;
 	int i;
+	struct send_queue *sq;
 
 	for (i = 0; i < vi->max_queue_pairs; i++) {
 		struct virtqueue *vq = vi->sq[i].vq;
+		sq = vi->sq + i;
 		while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
-			if (!is_xdp_frame(buf))
+			if (!is_xdp_frame(buf)) {
 				dev_kfree_skb(buf);
-			else
-				xdp_return_frame(ptr_to_xdp(buf));
+			} else {
+				struct virtnet_xdp_type *xtype;
+
+				xtype = ptr_to_xtype(buf);
+
+				if (xtype->type != XDP_TYPE_XSK)
+					xdp_return_frame(xtype_got_ptr(xtype));
+			}
 		}
 	}
 
