@@ -196,9 +196,8 @@ void xsk_umem_consume_tx_done(struct xdp_umem *umem)
 }
 EXPORT_SYMBOL(xsk_umem_consume_tx_done);
 
-bool xsk_umem_consume_tx(struct xdp_umem *umem, dma_addr_t *dma, u32 *len)
+bool xsk_umem_consume_tx(struct xdp_umem *umem, struct xdp_desc *desc)
 {
-	struct xdp_desc desc;
 	struct xdp_sock *xs;
 
 	rcu_read_lock();
@@ -206,14 +205,11 @@ bool xsk_umem_consume_tx(struct xdp_umem *umem, dma_addr_t *dma, u32 *len)
 		if (!xs->tx)
 			continue;
 
-		if (!xskq_peek_desc(xs->tx, &desc))
+		if (!xskq_peek_desc(xs->tx, desc))
 			continue;
 
-		if (xskq_produce_addr_lazy(umem->cq, desc.addr))
+		if (xskq_produce_addr_lazy(umem->cq, desc->addr))
 			goto out;
-
-		*dma = xdp_umem_get_dma(umem, desc.addr);
-		*len = desc.len;
 
 		xskq_discard_desc(xs->tx);
 		rcu_read_unlock();
