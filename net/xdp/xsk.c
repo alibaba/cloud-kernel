@@ -297,9 +297,11 @@ static int xsk_sendmsg(struct socket *sock, struct msghdr *m, size_t total_len)
 static unsigned int xsk_poll(struct file *file, struct socket *sock,
 			     struct poll_table_struct *wait)
 {
-	unsigned int mask = datagram_poll(file, sock, wait);
+	unsigned int mask = 0;
 	struct sock *sk = sock->sk;
 	struct xdp_sock *xs = xdp_sk(sk);
+
+	sock_poll_wait(file, sock, wait);
 
 	if (xs->rx && !xskq_empty_desc(xs->rx))
 		mask |= POLLIN | POLLRDNORM;
