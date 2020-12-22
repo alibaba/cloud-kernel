@@ -49,6 +49,33 @@ static bool xsk_tx_writeable(struct xdp_sock *xs)
 	return true;
 }
 
+static void xsk_tx_new_space(struct xdp_sock *xs)
+{
+	struct sock *sk = &xs->sk;
+
+	if (sk->sk_socket && test_bit(SOCK_NOSPACE, &sk->sk_socket->flags)) {
+		if (xsk_tx_writeable(xs)) {
+			clear_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+
+			xs->sk.sk_write_space(&xs->sk);
+		}
+	}
+}
+
+static void xsk_def_write_space(struct sock *sk)
+{
+	struct socket_wq *wq;
+
+	rcu_read_lock();
+
+	wq = rcu_dereference(sk->sk_wq);
+	if (skwq_has_sleeper(wq))
+		wake_up_interruptible_sync_poll(&wq->wait, EPOLLOUT |
+						EPOLLWRNORM | EPOLLWRBAND);
+
+	rcu_read_unlock();
+}
+
 u64 *xsk_umem_peek_addr(struct xdp_umem *umem, u64 *addr)
 {
 	return xskq_peek_addr(umem->fq, addr);
@@ -160,8 +187,7 @@ void xsk_umem_consume_tx_done(struct xdp_umem *umem)
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(xs, &umem->xsk_list, list) {
-		if (xsk_tx_writeable(xs))
-			xs->sk.sk_write_space(&xs->sk);
+		xsk_tx_new_space(xs);
 	}
 	rcu_read_unlock();
 }
@@ -214,8 +240,7 @@ static void xsk_destruct_skb(struct sk_buff *skb)
 
 	__sock_wfree(skb);
 
-	if (xsk_tx_writeable(xs))
-		xs->sk.sk_write_space(&xs->sk);
+	xsk_tx_new_space(xs);
 }
 
 static int xsk_generic_xmit(struct sock *sk, struct msghdr *m,
@@ -282,8 +307,7 @@ static int xsk_generic_xmit(struct sock *sk, struct msghdr *m,
 
 out:
 	if (sent_frame)
-		if (xsk_tx_writeable(xs))
-			sk->sk_write_space(sk);
+		xsk_tx_new_space(xs);
 
 	mutex_unlock(&xs->mutex);
 	return err;
@@ -304,6 +328,9 @@ static int xsk_sendmsg(struct socket *sock, struct msghdr *m, size_t total_len)
 	if (need_wait)
 		return -EOPNOTSUPP;
 
+	if (xskq_cons_present_entries(xs->tx) == xs->tx->nentries)
+		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+
 	return (xs->zc) ? xsk_zc_xmit(sk) : xsk_generic_xmit(sk, m, total_len);
 }
 
@@ -318,8 +345,12 @@ static unsigned int xsk_poll(struct file *file, struct socket *sock,
 
 	if (xs->rx && !xskq_empty_desc(xs->rx))
 		mask |= POLLIN | POLLRDNORM;
-	if (xs->tx && xsk_tx_writeable(xs))
-		mask |= POLLOUT | POLLWRNORM;
+	if (xs->tx) {
+		if (xsk_tx_writeable(xs))
+			mask |= POLLOUT | POLLWRNORM;
+		else
+			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+	}
 
 	return mask;
 }
@@ -782,6 +813,7 @@ static int xsk_create(struct net *net, struct socket *sock, int protocol,
 	sk->sk_destruct = xsk_destruct;
 	sk_refcnt_debug_inc(sk);
 
+	sk->sk_write_space = xsk_def_write_space;
 	sock_set_flag(sk, SOCK_RCU_FREE);
 	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
 
