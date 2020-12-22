@@ -273,6 +273,11 @@ struct padded_vnet_hdr {
 	char padding[4];
 };
 
+static void __free_old_xmit_ptr(struct send_queue *sq, bool in_napi,
+				bool xsk_wakeup,
+				unsigned int *_packets, unsigned int *_bytes);
+static void free_old_xmit_skbs(struct send_queue *sq, bool in_napi);
+
 static bool is_xdp_frame(void *ptr)
 {
 	return (unsigned long)ptr & VIRTIO_XDP_FLAG;
@@ -384,6 +389,37 @@ static void skb_xmit_done(struct virtqueue *vq)
 	else
 		/* We were probably waiting for more output buffers. */
 		netif_wake_subqueue(vi->dev, vq2txq(vq));
+}
+
+static void virtnet_sq_stop_check(struct send_queue *sq, bool in_napi)
+{
+	struct virtnet_info *vi = sq->vq->vdev->priv;
+	struct net_device *dev = vi->dev;
+	int qnum = sq - vi->sq;
+
+	/* If running out of space, stop queue to avoid getting packets that we
+	 * are then unable to transmit.
+	 * An alternative would be to force queuing layer to requeue the skb by
+	 * returning NETDEV_TX_BUSY. However, NETDEV_TX_BUSY should not be
+	 * returned in a normal path of operation: it means that driver is not
+	 * maintaining the TX queue stop/start state properly, and causes
+	 * the stack to do a non-trivial amount of useless work.
+	 * Since most packets only take 1 or 2 ring slots, stopping the queue
+	 * early means 16 slots are typically wasted.
+	 */
+
+	if (sq->vq->num_free < 2 + MAX_SKB_FRAGS) {
+		netif_stop_subqueue(dev, qnum);
+		if (!sq->napi.weight &&
+		    unlikely(!virtqueue_enable_cb_delayed(sq->vq))) {
+			/* More just got used, free them then recheck. */
+			free_old_xmit_skbs(sq, in_napi);
+			if (sq->vq->num_free >= 2 + MAX_SKB_FRAGS) {
+				netif_start_subqueue(dev, qnum);
+				virtqueue_disable_cb(sq->vq);
+			}
+		}
+	}
 }
 
 #define MRG_CTX_HEADER_SHIFT 22
@@ -597,13 +633,11 @@ static int virtnet_xdp_xmit(struct net_device *dev,
 	struct receive_queue *rq = vi->rq;
 	struct bpf_prog *xdp_prog;
 	struct send_queue *sq;
-	unsigned int len;
 	int packets = 0;
 	int bytes = 0;
 	int drops = 0;
 	int kicks = 0;
 	int ret, err;
-	void *ptr;
 	int i;
 
 	/* Only allow ndo_xdp_xmit if XDP is loaded on dev, as this
@@ -621,24 +655,7 @@ static int virtnet_xdp_xmit(struct net_device *dev,
 		goto out;
 	}
 
-	/* Free up any pending old buffers before queueing new ones. */
-	while ((ptr = virtqueue_get_buf(sq->vq, &len)) != NULL) {
-		if (likely(is_xdp_frame(ptr))) {
-			struct virtnet_xdp_type *xtype;
-			struct xdp_frame *frame;
-
-			xtype = ptr_to_xtype(ptr);
-			frame = xtype_got_ptr(xtype);
-			bytes += frame->len;
-			xdp_return_frame(frame);
-		} else {
-			struct sk_buff *skb = ptr;
-
-			bytes += skb->len;
-			napi_consume_skb(skb, false);
-		}
-		packets++;
-	}
+	__free_old_xmit_ptr(sq, false, true, &packets, &bytes);
 
 	for (i = 0; i < n; i++) {
 		struct xdp_frame *xdpf = frames[i];
@@ -1489,7 +1506,9 @@ static int virtnet_receive(struct receive_queue *rq, int budget,
 	return stats.packets;
 }
 
-static void free_old_xmit_skbs(struct send_queue *sq, bool in_napi)
+static void __free_old_xmit_ptr(struct send_queue *sq, bool in_napi,
+				bool xsk_wakeup,
+				unsigned int *_packets, unsigned int *_bytes)
 {
 	unsigned int packets = 0;
 	unsigned int bytes = 0;
@@ -1522,6 +1541,17 @@ static void free_old_xmit_skbs(struct send_queue *sq, bool in_napi)
 		}
 		packets++;
 	}
+
+	*_packets = packets;
+	*_bytes = bytes;
+}
+
+static void free_old_xmit_skbs(struct send_queue *sq, bool in_napi)
+{
+	unsigned int packets = 0;
+	unsigned int bytes = 0;
+
+	__free_old_xmit_ptr(sq, in_napi, true, &packets, &bytes);
 
 	/* Avoid overhead when no packets have been processed
 	 * happens when called speculatively from start_xmit.
@@ -1759,28 +1789,7 @@ static netdev_tx_t start_xmit(struct sk_buff *skb, struct net_device *dev)
 		nf_reset_ct(skb);
 	}
 
-	/* If running out of space, stop queue to avoid getting packets that we
-	 * are then unable to transmit.
-	 * An alternative would be to force queuing layer to requeue the skb by
-	 * returning NETDEV_TX_BUSY. However, NETDEV_TX_BUSY should not be
-	 * returned in a normal path of operation: it means that driver is not
-	 * maintaining the TX queue stop/start state properly, and causes
-	 * the stack to do a non-trivial amount of useless work.
-	 * Since most packets only take 1 or 2 ring slots, stopping the queue
-	 * early means 16 slots are typically wasted.
-	 */
-	if (sq->vq->num_free < 2+MAX_SKB_FRAGS) {
-		netif_stop_subqueue(dev, qnum);
-		if (!use_napi &&
-		    unlikely(!virtqueue_enable_cb_delayed(sq->vq))) {
-			/* More just got used, free them then recheck. */
-			free_old_xmit_skbs(sq, false);
-			if (sq->vq->num_free >= 2+MAX_SKB_FRAGS) {
-				netif_start_subqueue(dev, qnum);
-				virtqueue_disable_cb(sq->vq);
-			}
-		}
-	}
+	virtnet_sq_stop_check(sq, false);
 
 	if (kick || netif_xmit_stopped(txq)) {
 		if (virtqueue_kick_prepare(sq->vq) && virtqueue_notify(sq->vq)) {
