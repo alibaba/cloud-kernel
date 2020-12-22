@@ -2541,7 +2541,7 @@ static void tg_drain_bios(struct throtl_service_queue *parent_sq)
 {
 	struct throtl_grp *tg;
 
-	while ((tg = throtl_rb_first(parent_sq))) {
+	while (parent_sq->nr_pending && (tg = throtl_rb_first(parent_sq))) {
 		struct throtl_service_queue *sq = &tg->service_queue;
 		struct bio *bio;
 
