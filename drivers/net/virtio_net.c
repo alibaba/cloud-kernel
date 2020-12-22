@@ -104,6 +104,12 @@ struct virtnet_sq_stats {
 	u64 xdp_tx_drops;
 	u64 kicks;
 	u64 tx_timeouts;
+	u64 xsk_wakeup;
+	u64 xsk_wakeup_recycle;
+	u64 xsk_run;
+	u64 xsk_devfull;
+	u64 xsk_timer;
+	u64 xsk_timer_run;
 };
 
 struct virtnet_rq_stats {
@@ -1518,6 +1524,9 @@ static void virt_xsk_complete(struct send_queue *sq, u32 num, bool xsk_wakeup)
 	if (n > sq->xsk.hdr_n / 2) {
 		sq->xsk.wait_slot = false;
 		virtqueue_napi_schedule(&sq->napi, sq->vq);
+		u64_stats_update_begin(&sq->stats.syncp);
+		sq->stats.xsk_wakeup_recycle  += 1;
+		u64_stats_update_end(&sq->stats.syncp);
 	}
 }
 
@@ -2685,6 +2694,10 @@ static enum hrtimer_restart virtnet_xsk_timeout(struct hrtimer *timer)
 
 	virtqueue_napi_schedule(&sq->napi, sq->vq);
 
+	u64_stats_update_begin(&sq->stats.syncp);
+	sq->stats.xsk_timer_run += 1;
+	u64_stats_update_end(&sq->stats.syncp);
+
 	return HRTIMER_NORESTART;
 }
 
@@ -2904,8 +2917,9 @@ static int virtnet_xsk_run(struct send_queue *sq,
 			   struct xdp_umem *umem, int budget)
 {
 	int err, ret = 0;
-	unsigned int _packets = 0;
-	unsigned int _bytes = 0;
+	unsigned int packets = 0, _packets = 0;
+	unsigned int bytes = 0, _bytes = 0;
+	unsigned int timer = 0, devfull = 0;
 
 	sq->xsk.wait_slot = false;
 
@@ -2913,6 +2927,8 @@ static int virtnet_xsk_run(struct send_queue *sq,
 		hrtimer_try_to_cancel(&sq->xsk.timer);
 
 	__free_old_xmit_ptr(sq, true, false, &_packets, &_bytes);
+	packets += _packets;
+	bytes += _bytes;
 
 	err = virtnet_xsk_xmit_zc(sq, umem, xsk_budget);
 	if (!err) {
@@ -2944,15 +2960,20 @@ static int virtnet_xsk_run(struct send_queue *sq,
 	 */
 
 	__free_old_xmit_ptr(sq, true, false, &_packets, &_bytes);
+	packets += _packets;
+	bytes += _bytes;
 
 	if (!virtnet_xsk_dev_is_full(sq)) {
 		ret = budget;
 		goto end;
 	}
 
+	devfull = 1;
+
 	sq->xsk.wait_slot = true;
 
 	if (xsk_check_timeout) {
+		timer = 1;
 		hrtimer_start(&sq->xsk.timer,
 			      ns_to_ktime(xsk_check_timeout * 1000),
 			      HRTIMER_MODE_REL_PINNED);
@@ -2963,6 +2984,14 @@ static int virtnet_xsk_run(struct send_queue *sq,
 	virtnet_sq_stop_check(sq, true);
 
 end:
+	u64_stats_update_begin(&sq->stats.syncp);
+	sq->stats.bytes       += bytes;
+	sq->stats.packets     += packets;
+	sq->stats.xsk_run     += 1;
+	sq->stats.xsk_devfull += devfull;
+	sq->stats.xsk_timer   += timer;
+	u64_stats_update_end(&sq->stats.syncp);
+
 	return ret;
 }
 
@@ -3003,6 +3032,10 @@ static int virtnet_xsk_wakeup(struct net_device *dev, u32 qid)
 
 	if (work == xsk_budget)
 		virtqueue_napi_schedule(&sq->napi, sq->vq);
+
+	u64_stats_update_begin(&sq->stats.syncp);
+	sq->stats.xsk_wakeup += 1;
+	u64_stats_update_end(&sq->stats.syncp);
 
 end:
 	rcu_read_unlock();
