@@ -253,6 +253,12 @@ static inline bool xskq_empty_desc(struct xsk_queue *q)
 	return xskq_nb_free(q, q->prod_tail, q->nentries) == q->nentries;
 }
 
+static inline u32 xskq_cons_present_entries(struct xsk_queue *q)
+{
+	/* No barriers needed since data is not accessed */
+	return READ_ONCE(q->ring->producer) - READ_ONCE(q->ring->consumer);
+}
+
 void xskq_set_umem(struct xsk_queue *q, struct xdp_umem_props *umem_props);
 struct xsk_queue *xskq_create(u32 nentries, bool umem_queue);
 void xskq_destroy(struct xsk_queue *q_ops);

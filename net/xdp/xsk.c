@@ -41,6 +41,14 @@ bool xsk_is_setup_for_bpf_map(struct xdp_sock *xs)
 		READ_ONCE(xs->umem->fq);
 }
 
+static bool xsk_tx_writeable(struct xdp_sock *xs)
+{
+	if (xskq_cons_present_entries(xs->tx) > xs->tx->nentries / 2)
+		return false;
+
+	return true;
+}
+
 u64 *xsk_umem_peek_addr(struct xdp_umem *umem, u64 *addr)
 {
 	return xskq_peek_addr(umem->fq, addr);
@@ -152,7 +160,8 @@ void xsk_umem_consume_tx_done(struct xdp_umem *umem)
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(xs, &umem->xsk_list, list) {
-		xs->sk.sk_write_space(&xs->sk);
+		if (xsk_tx_writeable(xs))
+			xs->sk.sk_write_space(&xs->sk);
 	}
 	rcu_read_unlock();
 }
@@ -270,7 +279,8 @@ static int xsk_generic_xmit(struct sock *sk, struct msghdr *m,
 
 out:
 	if (sent_frame)
-		sk->sk_write_space(sk);
+		if (xsk_tx_writeable(xs))
+			sk->sk_write_space(sk);
 
 	mutex_unlock(&xs->mutex);
 	return err;
@@ -305,7 +315,7 @@ static unsigned int xsk_poll(struct file *file, struct socket *sock,
 
 	if (xs->rx && !xskq_empty_desc(xs->rx))
 		mask |= POLLIN | POLLRDNORM;
-	if (xs->tx && !xskq_full_desc(xs->tx))
+	if (xs->tx && xsk_tx_writeable(xs))
 		mask |= POLLOUT | POLLWRNORM;
 
 	return mask;
