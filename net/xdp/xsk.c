@@ -212,7 +212,10 @@ static void xsk_destruct_skb(struct sk_buff *skb)
 	WARN_ON_ONCE(xskq_produce_addr(xs->umem->cq, addr));
 	spin_unlock_irqrestore(&xs->tx_completion_lock, flags);
 
-	sock_wfree(skb);
+	__sock_wfree(skb);
+
+	if (xsk_tx_writeable(xs))
+		xs->sk.sk_write_space(&xs->sk);
 }
 
 static int xsk_generic_xmit(struct sock *sk, struct msghdr *m,
@@ -780,6 +783,7 @@ static int xsk_create(struct net *net, struct socket *sock, int protocol,
 	sk_refcnt_debug_inc(sk);
 
 	sock_set_flag(sk, SOCK_RCU_FREE);
+	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
 
 	xs = xdp_sk(sk);
 	mutex_init(&xs->mutex);
