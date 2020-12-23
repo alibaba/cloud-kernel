@@ -1100,7 +1100,8 @@ static bool split_lock_verify_msr(bool on)
 
 static void __init split_lock_setup(void)
 {
-	enum split_lock_detect_state state = sld_warn;
+	/* Make split lock detection disabled by default for anolis. */
+	enum split_lock_detect_state state = sld_off;
 	char arg[20];
 	int i, ret;
 
