@@ -2365,6 +2365,7 @@ bool blk_throtl_bio(struct bio *bio, wait_queue_head_t **wait)
 	struct throtl_service_queue *sq;
 	bool rw = bio_data_dir(bio);
 	bool throttled = false;
+	bool has_rules = tg->has_rules[rw];
 	struct throtl_data *td = tg->td;
 
 	rcu_read_lock();
@@ -2379,9 +2380,10 @@ bool blk_throtl_bio(struct bio *bio, wait_queue_head_t **wait)
 		blkg_rwstat_add(&tg->stat_ios, bio->bi_opf, 1);
 	}
 
-	throtl_bio_stats_start(bio, tg);
-	if (!tg->has_rules[rw])
+	if (!has_rules)
 		goto out;
+
+	throtl_bio_stats_start(bio, tg);
 
 	spin_lock_irq(&q->queue_lock);
 
@@ -2477,7 +2479,7 @@ again:
 out_unlock:
 	spin_unlock_irq(&q->queue_lock);
 out:
-	if (!throttled)
+	if (!throttled && has_rules)
 		bio_set_io_start_time_ns(bio);
 	bio_set_flag(bio, BIO_THROTTLED);
 
