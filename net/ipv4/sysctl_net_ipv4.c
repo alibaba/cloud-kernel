@@ -52,6 +52,9 @@ static u32 u32_max_div_HZ = UINT_MAX / HZ;
 static int one_day_secs = 24 * 3600;
 static int tcp_tw_timeout_min = 1 * HZ;
 static int tcp_tw_timeout_max = 600 * HZ;
+#if IS_ENABLED(CONFIG_TCP_INIT_CWND_PROC)
+static u32 tcp_init_cwnd_min = 10;
+#endif
 
 static int tcp_ato_min1 = 4;
 static int tcp_ato_min2 = 200;
@@ -600,6 +603,16 @@ static struct ctl_table ipv4_table[] = {
 		.mode           = 0644,
 		.proc_handler   = proc_dointvec,
 	},
+#if IS_ENABLED(CONFIG_TCP_INIT_CWND_PROC)
+	{
+		.procname       = "tcp_init_cwnd",
+		.data           = &sysctl_tcp_init_cwnd,
+		.maxlen         = sizeof(u32),
+		.mode           = 0644,
+		.proc_handler   = proc_douintvec_minmax,
+		.extra1         = &tcp_init_cwnd_min,
+	},
+#endif
 	{ }
 };
 

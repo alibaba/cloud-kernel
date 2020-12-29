@@ -227,8 +227,14 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 /* TCP thin-stream limits */
 #define TCP_THIN_LINEAR_RETRIES 6       /* After 6 linear retries, do exp. backoff */
 
+#if IS_ENABLED(CONFIG_TCP_INIT_CWND_PROC)
+extern u32 sysctl_tcp_init_cwnd;
+/* TCP_INIT_CWND is rvalue */
+#define TCP_INIT_CWND		(sysctl_tcp_init_cwnd + 0)
+#else
 /* TCP initial congestion window as per rfc6928 */
 #define TCP_INIT_CWND		10
+#endif
 
 /* Bit Flags for sysctl_tcp_fastopen */
 #define	TFO_CLIENT_ENABLE	1

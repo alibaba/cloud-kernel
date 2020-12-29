@@ -940,6 +940,11 @@ tcp_rx_skb_cache - BOOLEAN
 
 	Default: 0 (disabled)
 
+tcp_init_cwnd - UNSIGNED INTEGER
+        The TCP initial congestion window. It must be larger than 10(RFC6928).
+        Default: 10
+
+
 UDP variables
 =============
 
