@@ -742,3 +742,12 @@ config TCP_MD5SIG
 	  on the Internet.
 
 	  If unsure, say N.
+
+config TCP_INIT_CWND_PROC
+	bool "TCP: proc interface for initial cwnd"
+	default n
+	help
+	  This enables a proc interface for TCP initial cwnd, so the cwnd could
+	  be greater than 10 (RFC6928).
+
+	  If unsure, say N.
