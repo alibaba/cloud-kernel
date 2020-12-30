@@ -1228,6 +1228,11 @@ struct journal_s
 	struct transaction_stats_s j_stats;
 
 	/**
+	 * @j_force_copy: if not zero, force to do buffer copy-out.
+	 */
+	unsigned int j_force_copy;
+
+	/**
 	 * @j_failed_commit: Failed journal commit ID.
 	 */
 	unsigned int		j_failed_commit;
