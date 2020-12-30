@@ -455,6 +455,9 @@ repeat:
 	}
 	kunmap_atomic(mapped_data);
 
+	/* force copy-out */
+	if (need_copy_out == 0 && journal->j_force_copy)
+		need_copy_out = 1;
 	/*
 	 * Do we need to do a data copy?
 	 */
@@ -1406,6 +1409,57 @@ static const struct proc_ops jbd2_stats_proc_ops = {
 	.proc_release	= jbd2_seq_stats_release,
 };
 
+static int jbd2_seq_force_copy_show(struct seq_file *m, void *v)
+{
+	journal_t *journal = m->private;
+
+	seq_printf(m, "%u\n", journal->j_force_copy);
+	return 0;
+}
+
+static int jbd2_seq_force_copy_open(struct inode *inode, struct file *filp)
+{
+	journal_t *journal = PDE_DATA(inode);
+
+	return single_open(filp, jbd2_seq_force_copy_show, journal);
+}
+
+/* Worst case buffer size needed for holding an integer. */
+#define PROC_NUMBUF 13
+
+static ssize_t jbd2_seq_force_copy_write(struct file *file,
+			const char __user *buf, size_t count, loff_t *offset)
+{
+	struct inode *inode = file_inode(file);
+	journal_t *journal = PDE_DATA(inode);
+	char buffer[PROC_NUMBUF];
+	unsigned int force_copy;
+	int err;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err = kstrtouint(strstrip(buffer), 0, &force_copy);
+	if (err)
+		goto out;
+	journal->j_force_copy = force_copy;
+out:
+	return err < 0 ? err : count;
+}
+
+static const struct proc_ops jbd2_force_copy_proc_ops = {
+	.proc_open              = jbd2_seq_force_copy_open,
+	.proc_read              = seq_read,
+	.proc_write             = jbd2_seq_force_copy_write,
+	.proc_lseek             = seq_lseek,
+	.proc_release           = single_release,
+};
+
 static struct proc_dir_entry *proc_jbd2_stats;
 
 static void jbd2_stats_proc_init(journal_t *journal)
@@ -1414,6 +1468,8 @@ static void jbd2_stats_proc_init(journal_t *journal)
 	if (journal->j_proc_entry) {
 		proc_create_data("info", S_IRUGO, journal->j_proc_entry,
 				 &jbd2_info_proc_ops, journal);
+		proc_create_data("force_copy", 0644, journal->j_proc_entry,
+				 &jbd2_force_copy_proc_ops, journal);
 		proc_create_data("stats", 0444, journal->j_proc_entry,
 				 &jbd2_stats_proc_ops, journal);
 	}
@@ -1422,6 +1478,7 @@ static void jbd2_stats_proc_init(journal_t *journal)
 static void jbd2_stats_proc_exit(journal_t *journal)
 {
 	remove_proc_entry("info", journal->j_proc_entry);
+	remove_proc_entry("force_copy", journal->j_proc_entry);
 	remove_proc_entry("stats", journal->j_proc_entry);
 	remove_proc_entry(journal->j_devname, proc_jbd2_stats);
 }
