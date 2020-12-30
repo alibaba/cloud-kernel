@@ -412,6 +412,7 @@ static inline int inode_congested(struct inode *inode, int cong_bits)
 	return wb_congested(&inode_to_bdi(inode)->wb, cong_bits);
 }
 
+#ifdef CONFIG_CGROUPS
 static inline void insert_memcg_blkcg_link(struct cgroup_subsys *ss,
 					   struct list_head *tmp_links,
 					   struct css_set *cset)
@@ -431,6 +432,7 @@ static inline void delete_memcg_blkcg_link(struct cgroup_subsys *ss,
 					   struct cgroup_subsys_state *css)
 {
 }
+#endif
 
 #endif	/* CONFIG_CGROUP_WRITEBACK */
 

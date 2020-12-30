@@ -440,6 +440,7 @@ TRACE_EVENT(writeback_bdi_register,
 	)
 );
 
+#ifdef CONFIG_CGROUP_WRITEBACK
 TRACE_EVENT(insert_memcg_blkcg_link,
 	TP_PROTO(struct cgroup_subsys_state *memcg_css,
 		 struct cgroup_subsys_state *blkcg_css,
@@ -460,6 +461,7 @@ TRACE_EVENT(insert_memcg_blkcg_link,
 		  __entry->memcg_ino, __entry->blkcg_ino, __entry->old_blkcg_ino
 	)
 );
+#endif
 
 DECLARE_EVENT_CLASS(wbc_class,
 	TP_PROTO(struct writeback_control *wbc, struct backing_dev_info *bdi),
