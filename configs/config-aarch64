@@ -1867,6 +1867,12 @@ CONFIG_PCI_HISI=y
 # CONFIG_PCI_SW_SWITCHTEC is not set
 # end of PCI switch controller drivers
 
+#
+# PCIe IOHub
+#
+CONFIG_PCI_IOHUB_SRIOV=m
+# end of PCIe IOHub
+
 CONFIG_PCCARD=y
 # CONFIG_PCMCIA is not set
 CONFIG_CARDBUS=y
