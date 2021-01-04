@@ -543,7 +543,8 @@ static void kvm_setup_pv_ipi(void)
 static void __init kvm_smp_prepare_cpus(unsigned int max_cpus)
 {
 	native_smp_prepare_cpus(max_cpus);
-	if (kvm_para_has_hint(KVM_HINTS_REALTIME))
+	if (kvm_para_has_hint(KVM_HINTS_REALTIME) ||
+	    !kvm_para_has_feature(KVM_FEATURE_PV_UNHALT))
 		static_branch_disable(&virt_spin_lock_key);
 }
 
