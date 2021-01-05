@@ -174,6 +174,11 @@ struct blk_mq_hw_ctx {
 	 */
 	struct list_head	hctx_list;
 
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+
 	/**
 	 * @srcu: Sleepable RCU. Use as lock when type of the hardware queue is
 	 * blocking (BLK_MQ_F_BLOCKING). Must be the last member - see also
@@ -266,6 +271,11 @@ struct blk_mq_tag_set {
 
 	struct mutex		tag_list_lock;
 	struct list_head	tag_list;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
 };
 
 /**
@@ -277,6 +287,8 @@ struct blk_mq_tag_set {
 struct blk_mq_queue_data {
 	struct request *rq;
 	bool last;
+
+	CK_HOTFIX_RESERVE(1)
 };
 
 typedef bool (busy_iter_fn)(struct blk_mq_hw_ctx *, struct request *, void *,
@@ -386,6 +398,9 @@ struct blk_mq_ops {
 	 */
 	void (*show_rq)(struct seq_file *m, struct request *rq);
 #endif
+
+	CK_HOTFIX_RESERVE_P(1)
+	CK_HOTFIX_RESERVE_P(2)
 };
 
 enum {

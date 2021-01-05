@@ -22,6 +22,8 @@
 #include <linux/page-flags.h>
 #include <asm/page.h>
 
+#include <linux/ck_hotfix.h>
+
 /* Free memory management - zoned buddy allocator.  */
 #ifndef CONFIG_FORCE_MAX_ZONEORDER
 #define MAX_ORDER 11
@@ -573,6 +575,9 @@ struct zone {
 	/* Zone statistics */
 	atomic_long_t		vm_stat[NR_VM_ZONE_STAT_ITEMS];
 	atomic_long_t		vm_numa_stat[NR_VM_NUMA_STAT_ITEMS];
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } ____cacheline_internodealigned_in_smp;
 
 enum pgdat_flags {
@@ -806,6 +811,9 @@ typedef struct pglist_data {
 	/* Per-node vmstats */
 	struct per_cpu_nodestat __percpu *per_cpu_nodestats;
 	atomic_long_t		vm_stat[NR_VM_NODE_STAT_ITEMS];
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } pg_data_t;
 
 #define node_present_pages(nid)	(NODE_DATA(nid)->node_present_pages)
