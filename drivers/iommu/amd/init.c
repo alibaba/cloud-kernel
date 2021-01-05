@@ -2005,8 +2005,6 @@ static int iommu_setup_msi(struct amd_iommu *iommu)
 		return r;
 	}
 
-	iommu->int_enabled = true;
-
 	return 0;
 }
 
@@ -2201,6 +2199,7 @@ static int iommu_init_irq(struct amd_iommu *iommu)
 	if (ret)
 		return ret;
 
+	iommu->int_enabled = true;
 enable_faults:
 	iommu_feature_enable(iommu, CONTROL_EVT_INT_EN);
 
