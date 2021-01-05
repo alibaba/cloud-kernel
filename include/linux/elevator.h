@@ -50,6 +50,9 @@ struct elevator_mq_ops {
 	struct request *(*next_request)(struct request_queue *, struct request *);
 	void (*init_icq)(struct io_cq *);
 	void (*exit_icq)(struct io_cq *);
+
+	CK_HOTFIX_RESERVE_P(1)
+	CK_HOTFIX_RESERVE_P(2)
 };
 
 #define ELV_NAME_MAX	(16)

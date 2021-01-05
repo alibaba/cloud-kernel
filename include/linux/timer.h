@@ -8,6 +8,8 @@
 #include <linux/debugobjects.h>
 #include <linux/stringify.h>
 
+#include <linux/ck_hotfix.h>
+
 struct timer_list {
 	/*
 	 * All fields that change during normal runtime grouped to the
@@ -21,6 +23,9 @@ struct timer_list {
 #ifdef CONFIG_LOCKDEP
 	struct lockdep_map	lockdep_map;
 #endif
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 #ifdef CONFIG_LOCKDEP

@@ -469,6 +469,9 @@ struct address_space {
 	spinlock_t		private_lock;
 	struct list_head	private_list;
 	void			*private_data;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } __attribute__((aligned(sizeof(long)))) __randomize_layout;
 	/*
 	 * On most architectures that alignment is already the case; but
