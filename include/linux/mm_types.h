@@ -18,6 +18,8 @@
 
 #include <asm/mmu.h>
 
+#include <linux/ck_hotfix.h>
+
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
 #endif
@@ -373,6 +375,11 @@ struct vm_area_struct {
 	struct mempolicy *vm_policy;	/* NUMA policy for the VMA */
 #endif
 	struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
 } __randomize_layout;
 
 struct core_thread {
@@ -579,6 +586,9 @@ struct mm_struct {
 		u32 pasid;
 #endif
 	} __randomize_layout;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 
 	/*
 	 * The mm_cpumask needs to be at the end of mm_struct, because it

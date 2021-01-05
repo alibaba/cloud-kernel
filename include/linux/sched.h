@@ -35,6 +35,8 @@
 #include <linux/seqlock.h>
 #include <linux/kcsan.h>
 
+#include <linux/ck_hotfix.h>
+
 /* task_struct member predeclarations (sorted alphabetically): */
 struct audit_context;
 struct backing_dev_info;
@@ -453,6 +455,9 @@ struct sched_statistics {
 	u64				nr_wakeups_affine_attempts;
 	u64				nr_wakeups_passive;
 	u64				nr_wakeups_idle;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 #endif
 };
 
@@ -492,6 +497,9 @@ struct sched_entity {
 	 */
 	struct sched_avg		avg;
 #endif
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 struct sched_rt_entity {
@@ -1363,6 +1371,15 @@ struct task_struct {
 	struct callback_head		mce_kill_me;
 	int				mce_count;
 #endif
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 
 	/*
 	 * New fields for task_struct should be added above here, so that

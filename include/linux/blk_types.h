@@ -11,6 +11,8 @@
 #include <linux/ktime.h>
 #include <linux/sched/clock.h>
 
+#include <linux/ck_hotfix.h>
+
 struct bio_set;
 struct bio;
 struct bio_integrity_payload;
@@ -47,6 +49,9 @@ struct block_device {
 	int			bd_fsfreeze_count;
 	/* Mutex for freeze */
 	struct mutex		bd_fsfreeze_mutex;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } __randomize_layout;
 
 /*
@@ -265,6 +270,9 @@ struct bio {
 	struct bio_set		*bi_pool;
 
 	unsigned long		bi_ext_flags;	/* extend the bi_flags */
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
