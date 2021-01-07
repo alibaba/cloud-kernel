@@ -6121,6 +6121,54 @@ struct mem_cgroup *mem_cgroup_from_id(unsigned short id)
 	return idr_find(&mem_cgroup_idr, id);
 }
 
+static void mem_cgroup_per_node_info_init(struct mem_cgroup *memcg, int node)
+{
+	struct mem_cgroup_per_node *pn = memcg->nodeinfo[node];
+
+	lruvec_init(&pn->lruvec);
+	pn->usage_in_excess = 0;
+	pn->on_tree = false;
+	pn->memcg = memcg;
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	spin_lock_init(&pn->deferred_split_queue.split_queue_lock);
+	INIT_LIST_HEAD(&pn->deferred_split_queue.split_queue);
+	pn->deferred_split_queue.split_queue_len = 0;
+#endif
+}
+
+static bool __mem_cgroup_init(struct mem_cgroup *memcg)
+{
+	int node;
+
+	if (memcg_wb_domain_init(memcg, GFP_KERNEL))
+		return false;
+
+	for_each_node(node)
+		mem_cgroup_per_node_info_init(memcg, node);
+
+	INIT_WORK(&memcg->high_work, high_work_func);
+	INIT_WORK(&memcg->wmark_work, wmark_work_func);
+	memcg->last_scanned_node = MAX_NUMNODES;
+	INIT_LIST_HEAD(&memcg->oom_notify);
+	mutex_init(&memcg->thresholds_lock);
+	spin_lock_init(&memcg->move_lock);
+	vmpressure_init(&memcg->vmpressure);
+	INIT_LIST_HEAD(&memcg->event_list);
+	spin_lock_init(&memcg->event_list_lock);
+	memcg->socket_pressure = jiffies;
+#ifdef CONFIG_MEMCG_KMEM
+	memcg->kmemcg_id = -1;
+#endif
+#ifdef CONFIG_CGROUP_WRITEBACK
+	INIT_LIST_HEAD(&memcg->cgwb_list);
+#endif
+	kidled_memcg_init(memcg);
+	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
+
+	return true;
+}
+
 static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 {
 	struct mem_cgroup_per_node *pn;
@@ -6151,17 +6199,6 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 		kfree(pn);
 		return 1;
 	}
-
-	lruvec_init(&pn->lruvec);
-	pn->usage_in_excess = 0;
-	pn->on_tree = false;
-	pn->memcg = memcg;
-
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	spin_lock_init(&pn->deferred_split_queue.split_queue_lock);
-	INIT_LIST_HEAD(&pn->deferred_split_queue.split_queue);
-	pn->deferred_split_queue.split_queue_len = 0;
-#endif
 
 	memcg->nodeinfo[node] = pn;
 	return 0;
@@ -6243,27 +6280,9 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 		if (alloc_mem_cgroup_per_node_info(memcg, node))
 			goto fail;
 
-	if (memcg_wb_domain_init(memcg, GFP_KERNEL))
+	if (!__mem_cgroup_init(memcg))
 		goto fail;
 
-	INIT_WORK(&memcg->high_work, high_work_func);
-	INIT_WORK(&memcg->wmark_work, wmark_work_func);
-	memcg->last_scanned_node = MAX_NUMNODES;
-	INIT_LIST_HEAD(&memcg->oom_notify);
-	mutex_init(&memcg->thresholds_lock);
-	spin_lock_init(&memcg->move_lock);
-	vmpressure_init(&memcg->vmpressure);
-	INIT_LIST_HEAD(&memcg->event_list);
-	spin_lock_init(&memcg->event_list_lock);
-	memcg->socket_pressure = jiffies;
-#ifdef CONFIG_MEMCG_KMEM
-	memcg->kmemcg_id = -1;
-#endif
-#ifdef CONFIG_CGROUP_WRITEBACK
-	INIT_LIST_HEAD(&memcg->cgwb_list);
-#endif
-	kidled_memcg_init(memcg);
-	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
 	return memcg;
 fail:
 	mem_cgroup_id_remove(memcg);
