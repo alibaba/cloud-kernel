@@ -6415,9 +6415,9 @@ bool get_from_cache(struct cache_header *ch, void **dst, unsigned int cnt)
 {
 	struct cache_node *cn;
 
-	spin_lock(&ch->lock);
+	spin_lock_bh(&ch->lock);
 	if (!ch->ready_node || !ch->online) {
-		spin_unlock(&ch->lock);
+		spin_unlock_bh(&ch->lock);
 		return false;
 	}
 
@@ -6428,12 +6428,12 @@ bool get_from_cache(struct cache_header *ch, void **dst, unsigned int cnt)
 
 	/* limit may change, if too many empty_node in list, free extra */
 	if (ch->empty_node + ch->ready_node > ch->limit) {
-		spin_unlock(&ch->lock);
+		spin_unlock_bh(&ch->lock);
 		kfree(cn);
 	} else {
 		list_add_tail(&cn->node, &ch->header);
 		ch->empty_node++;
-		spin_unlock(&ch->lock);
+		spin_unlock_bh(&ch->lock);
 	}
 
 	return true;
@@ -6443,6 +6443,9 @@ bool get_from_cache(struct cache_header *ch, void **dst, unsigned int cnt)
 static struct cache_node *alloc_cache_node(unsigned int cnt)
 {
 	struct cache_node *cn;
+
+	if (in_interrupt())
+		return NULL;
 
 	cn = kmalloc(sizeof(*cn) + sizeof(void *) * cnt, GFP_KERNEL);
 	if (!cn)
@@ -6464,34 +6467,34 @@ bool put_to_cache(struct cache_header *ch, void **src, unsigned int cnt)
 {
 	struct cache_node *cn;
 
-	spin_lock(&ch->lock);
+	spin_lock_bh(&ch->lock);
 	if (!ch->online || ch->ready_node >= ch->limit) {
-		spin_unlock(&ch->lock);
+		spin_unlock_bh(&ch->lock);
 		return false;
 	}
 
 	/* get an empty_node */
 	if (!ch->empty_node) {
-		spin_unlock(&ch->lock);
+		spin_unlock_bh(&ch->lock);
 		cn = alloc_cache_node(cnt);
 		if (!cn)
 			return false;
-		spin_lock(&ch->lock);
+		spin_lock_bh(&ch->lock);
 	} else {
 		cn = list_last_entry(&ch->header, struct cache_node, node);
 		list_del(&cn->node);
 		ch->empty_node--;
 	}
-	spin_unlock(&ch->lock);
+	spin_unlock_bh(&ch->lock);
 
 	ch->clean_up(src);
 
 	memcpy(cn->ptr, src, sizeof(void *) * cnt);
 
-	spin_lock(&ch->lock);
+	spin_lock_bh(&ch->lock);
 	list_add(&cn->node, &ch->header);
 	ch->ready_node++;
-	spin_unlock(&ch->lock);
+	spin_unlock_bh(&ch->lock);
 
 	return true;
 }
@@ -6505,15 +6508,15 @@ void change_cache_limit(struct cache_header *ch, unsigned int limit)
 {
 	struct cache_node *cn;
 
-	spin_lock(&ch->lock);
+	spin_lock_bh(&ch->lock);
 	ch->limit = limit;
 	if (ch->ready_node <= ch->limit) {
-		spin_unlock(&ch->lock);
+		spin_unlock_bh(&ch->lock);
 		return;
 	}
 	/* disable cache until extra ready_node be released */
 	ch->online = false;
-	spin_unlock(&ch->lock);
+	spin_unlock_bh(&ch->lock);
 
 	/*
 	 * cache header is offline, release extra ready_node. because cache
