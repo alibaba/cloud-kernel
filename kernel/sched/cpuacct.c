@@ -295,12 +295,34 @@ void cpuacct_update_latency(struct sched_entity *se, u64 delta)
 }
 #endif
 
+static void cpuacct_free(void **ptr)
+{
+	struct cpuacct *ca = *ptr;
+
+	free_percpu(ca->cpustat);
+	free_percpu(ca->cpuusage);
+#ifdef CONFIG_SCHED_SLI
+	free_percpu(ca->alistats);
+	free_percpu(ca->lat_stat_cpu);
+#endif
+	kfree(ca);
+}
+
+static void cpuacct_init(struct cpuacct *ca)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime1);
+		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime2);
+	}
+}
+
 /* Create a new CPU accounting group */
 static struct cgroup_subsys_state *
 cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
 {
 	struct cpuacct *ca;
-	int i;
 
 	if (!parent_css)
 		return &root_cpuacct.css;
@@ -327,10 +349,7 @@ cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
 		goto out_free_alistats;
 #endif
 
-	for_each_possible_cpu(i) {
-		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime1);
-		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime2);
-	}
+	cpuacct_init(ca);
 
 	return &ca->css;
 
@@ -353,13 +372,7 @@ static void cpuacct_css_free(struct cgroup_subsys_state *css)
 {
 	struct cpuacct *ca = css_ca(css);
 
-	free_percpu(ca->cpustat);
-	free_percpu(ca->cpuusage);
-#ifdef CONFIG_SCHED_SLI
-	free_percpu(ca->alistats);
-	free_percpu(ca->lat_stat_cpu);
-#endif
-	kfree(ca);
+	cpuacct_free((void **)&ca);
 }
 
 static u64 cpuacct_cpuusage_read(struct cpuacct *ca, int cpu,
