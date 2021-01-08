@@ -155,6 +155,18 @@ void css_task_iter_start(struct cgroup_subsys_state *css, unsigned int flags,
 struct task_struct *css_task_iter_next(struct css_task_iter *it);
 void css_task_iter_end(struct css_task_iter *it);
 
+#ifdef CONFIG_CGROUP_CACHE
+extern unsigned int cgroup_limit;
+int cgroup_limit_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp,
+		loff_t *ppos);
+
+extern struct cache_header cpuacct_cache_header;
+extern struct cache_header mem_cgroup_cache_header;
+extern struct cache_header fair_sched_cache_header;
+extern struct cache_header rt_sched_cache_header;
+#endif /* CONFIG_CGROUP_CACHE */
+
 /**
  * css_for_each_child - iterate through children of a css
  * @pos: the css * to use as the loop cursor

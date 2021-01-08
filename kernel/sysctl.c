@@ -67,6 +67,7 @@
 #include <linux/bpf.h>
 #include <linux/mount.h>
 #include <linux/pipe_fs_i.h>
+#include <linux/cgroup.h>
 
 #include "../lib/kstrtox.h"
 
@@ -1328,6 +1329,15 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0600,
 		.proc_handler	= proc_douintvec_minmax,
 		.extra1		= &two,
+	},
+#endif
+#ifdef CONFIG_CGROUP_CACHE
+	{
+		.procname	= "cgroup_limit",
+		.data		= &cgroup_limit,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= cgroup_limit_handler,
 	},
 #endif
 	{ }

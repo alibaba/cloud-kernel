@@ -6549,5 +6549,29 @@ bool cache_not_full(struct cache_header *ch)
 	return ch->ready_node < ch->limit;
 }
 EXPORT_SYMBOL(cache_not_full);
+unsigned int cgroup_limit = DEFAULT_CACHE_SIZE;
 
+int cgroup_limit_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp,
+		loff_t *ppos)
+{
+	static DEFINE_MUTEX(cache_mutex);
+	struct cgroup_root *root;
+	int ret;
+
+	ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	if (!ret && write) {
+		mutex_lock(&cache_mutex);
+		change_cache_limit(&cpuacct_cache_header, cgroup_limit);
+		change_cache_limit(&mem_cgroup_cache_header, cgroup_limit);
+		change_cache_limit(&fair_sched_cache_header, cgroup_limit);
+#ifdef CONFIG_RT_GROUP_SCHED
+		change_cache_limit(&rt_sched_cache_header, cgroup_limit);
+#endif
+		for_each_root(root)
+			change_cache_limit(&root->orphan_header, cgroup_limit);
+		mutex_unlock(&cache_mutex);
+	}
+	return ret;
+}
 #endif /* CONFIG_CGROUP_CACHE */
