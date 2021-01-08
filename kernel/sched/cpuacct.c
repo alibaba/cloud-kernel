@@ -295,6 +295,36 @@ void cpuacct_update_latency(struct sched_entity *se, u64 delta)
 }
 #endif
 
+static void cpuacct_clean_up(void **ptr)
+{
+	struct cpuacct *ca = *ptr;
+	struct cpuacct_usage __percpu *cpuusage = ca->cpuusage;
+	struct kernel_cpustat __percpu *cpustat = ca->cpustat;
+#ifdef CONFIG_SCHED_SLI
+	struct cpuacct_alistats __percpu *alistats = ca->alistats;
+	struct sched_cgroup_lat_stat_cpu __percpu *lat_stat_cpu = ca->lat_stat_cpu;
+#endif
+	int i;
+
+	for_each_possible_cpu(i) {
+		memset(per_cpu_ptr(cpuusage, i), 0, sizeof(*cpuusage));
+		memset(per_cpu_ptr(cpustat, i), 0, sizeof(*cpustat));
+#ifdef CONFIG_SCHED_SLI
+		memset(per_cpu_ptr(alistats, i), 0, sizeof(*alistats));
+		memset(per_cpu_ptr(lat_stat_cpu, i), 0, sizeof(*lat_stat_cpu));
+#endif
+	}
+
+	memset(ca, 0, sizeof(*ca));
+
+	ca->cpuusage = cpuusage;
+	ca->cpustat = cpustat;
+#ifdef CONFIG_SCHED_SLI
+	ca->alistats = alistats;
+	ca->lat_stat_cpu = lat_stat_cpu;
+#endif
+}
+
 static void cpuacct_free(void **ptr)
 {
 	struct cpuacct *ca = *ptr;
@@ -307,6 +337,9 @@ static void cpuacct_free(void **ptr)
 #endif
 	kfree(ca);
 }
+
+CACHE_HEADER(cpuacct_cache_header, DEFAULT_CACHE_SIZE,
+		cpuacct_clean_up, cpuacct_free);
 
 static void cpuacct_init(struct cpuacct *ca)
 {
@@ -326,6 +359,11 @@ cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
 
 	if (!parent_css)
 		return &root_cpuacct.css;
+
+	if (get_from_cache(&cpuacct_cache_header, (void **)&ca, 1)) {
+		cpuacct_init(ca);
+		return &ca->css;
+	}
 
 	ca = kzalloc(sizeof(*ca), GFP_KERNEL);
 	if (!ca)
@@ -371,6 +409,9 @@ out:
 static void cpuacct_css_free(struct cgroup_subsys_state *css)
 {
 	struct cpuacct *ca = css_ca(css);
+
+	if (put_to_cache(&cpuacct_cache_header, (void **)&ca, 1))
+		return;
 
 	cpuacct_free((void **)&ca);
 }
