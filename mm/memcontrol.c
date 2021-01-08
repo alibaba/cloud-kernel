@@ -6121,6 +6121,70 @@ struct mem_cgroup *mem_cgroup_from_id(unsigned short id)
 	return idr_find(&mem_cgroup_idr, id);
 }
 
+static void mem_cgroup_per_node_clean_up(struct mem_cgroup *memcg, int node)
+{
+	struct mem_cgroup_per_node *pn = memcg->nodeinfo[node];
+	struct lruvec_stat __percpu *lruvec_stat_local = pn->lruvec_stat_local;
+	struct lruvec_stat __percpu *lruvec_stat_cpu = pn->lruvec_stat_cpu;
+	int i;
+
+	for_each_possible_cpu(i) {
+		memset(per_cpu_ptr(lruvec_stat_local, i), 0,
+				sizeof(*lruvec_stat_local));
+		memset(per_cpu_ptr(lruvec_stat_cpu, i), 0,
+				sizeof(*lruvec_stat_cpu));
+	}
+
+	memset(pn, 0, sizeof(*pn));
+
+	pn->lruvec_stat_local = lruvec_stat_local;
+	pn->lruvec_stat_cpu = lruvec_stat_cpu;
+}
+
+static void mem_cgroup_clean_up(void **ptr)
+{
+	struct mem_cgroup *memcg = *ptr;
+	struct memcg_vmstats_percpu __percpu *vmstats_percpu = memcg->vmstats_percpu;
+	struct memcg_vmstats_percpu __percpu *vmstats_local = memcg->vmstats_local;
+	struct mem_cgroup_exstat_cpu __percpu *exstat_cpu = memcg->exstat_cpu;
+	struct mem_cgroup_lat_stat_cpu __percpu *lat_stat_cpu = memcg->lat_stat_cpu;
+	int i;
+	int node;
+
+	for_each_possible_cpu(i) {
+		memset(per_cpu_ptr(vmstats_percpu, i), 0, sizeof(*vmstats_percpu));
+		memset(per_cpu_ptr(vmstats_local, i), 0, sizeof(*vmstats_local));
+		memset(per_cpu_ptr(exstat_cpu, i), 0, sizeof(*exstat_cpu));
+		memset(per_cpu_ptr(lat_stat_cpu, i), 0, sizeof(*lat_stat_cpu));
+	}
+
+	memset(memcg, 0, offsetof(struct mem_cgroup, nodeinfo));
+
+	memcg->vmstats_percpu = vmstats_percpu;
+	memcg->vmstats_local = vmstats_local;
+	memcg->exstat_cpu = exstat_cpu;
+	memcg->lat_stat_cpu = lat_stat_cpu;
+
+	for_each_node(node)
+		mem_cgroup_per_node_clean_up(memcg, node);
+
+}
+
+static bool mem_cgroup_check_integrity(struct mem_cgroup *memcg)
+{
+	int node;
+
+	if (!memcg->exstat_cpu || !memcg->vmstats_percpu ||
+			!memcg->vmstats_local || !memcg->lat_stat_cpu)
+		return false;
+
+	for_each_node(node)
+		if (!memcg->nodeinfo[node])
+			return false;
+
+	return true;
+}
+
 static void mem_cgroup_per_node_info_init(struct mem_cgroup *memcg, int node)
 {
 	struct mem_cgroup_per_node *pn = memcg->nodeinfo[node];
@@ -6216,8 +6280,9 @@ static void free_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 	kfree(pn);
 }
 
-static void __mem_cgroup_free(struct mem_cgroup *memcg)
+static void __mem_cgroup_free(void **ptr)
 {
+	struct mem_cgroup *memcg = *ptr;
 	int node;
 
 	for_each_node(node)
@@ -6229,6 +6294,9 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 	kfree(memcg);
 }
 
+CACHE_HEADER(mem_cgroup_cache_header, DEFAULT_CACHE_SIZE,
+		mem_cgroup_clean_up, __mem_cgroup_free);
+
 static void mem_cgroup_free(struct mem_cgroup *memcg)
 {
 	memcg_wb_domain_exit(memcg);
@@ -6238,7 +6306,12 @@ static void mem_cgroup_free(struct mem_cgroup *memcg)
 	 */
 	memcg_flush_percpu_vmstats(memcg);
 	memcg_flush_percpu_vmevents(memcg);
-	__mem_cgroup_free(memcg);
+
+	if (mem_cgroup_check_integrity(memcg))
+		if (put_to_cache(&mem_cgroup_cache_header, (void **)&memcg, 1))
+			return;
+
+	__mem_cgroup_free((void **)&memcg);
 }
 
 static struct mem_cgroup *mem_cgroup_alloc(void)
@@ -6246,6 +6319,12 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	struct mem_cgroup *memcg;
 	size_t size;
 	int node;
+
+	if (get_from_cache(&mem_cgroup_cache_header, (void **)&memcg, 1)) {
+		if (__mem_cgroup_init(memcg))
+			return memcg;
+		__mem_cgroup_free((void **)&memcg);
+	}
 
 	size = sizeof(struct mem_cgroup);
 	size += nr_node_ids * sizeof(struct mem_cgroup_per_node *);
@@ -6286,7 +6365,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	return memcg;
 fail:
 	mem_cgroup_id_remove(memcg);
-	__mem_cgroup_free(memcg);
+	__mem_cgroup_free((void **)&memcg);
 	return NULL;
 }
 
