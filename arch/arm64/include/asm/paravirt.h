@@ -24,9 +24,19 @@ static inline u64 paravirt_steal_clock(int cpu)
 
 int __init pv_time_init(void);
 
+void arch_haltpoll_enable(unsigned int cpu);
+void arch_haltpoll_disable(unsigned int cpu);
+
 #else
 
 #define pv_time_init() do {} while (0)
+
+static inline void arch_haltpoll_enable(unsigned int cpu)
+{
+}
+static inline void arch_haltpoll_disable(unsigned int cpu)
+{
+}
 
 #endif // CONFIG_PARAVIRT
 

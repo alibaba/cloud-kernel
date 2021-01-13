@@ -22,7 +22,10 @@
 #include <asm/paravirt.h>
 #include <asm/pvclock-abi.h>
 #include <asm/smp_plat.h>
+#include <asm/pvpoll-abi.h>
 
+static bool has_pv_poll_control;
+static DEFINE_PER_CPU(struct pv_vcpu_poll_ctl, pv_poll_ctl);
 struct static_key paravirt_steal_enabled;
 struct static_key paravirt_steal_rq_enabled;
 
@@ -160,3 +163,131 @@ int __init pv_time_init(void)
 
 	return 0;
 }
+
+static void kvm_disable_host_haltpoll(void *i)
+{
+	struct arm_smccc_res res;
+	struct pv_vcpu_poll_ctl *poll_ctl;
+
+	poll_ctl = this_cpu_ptr(&pv_poll_ctl);
+	poll_ctl->poll_ctl = cpu_to_le64(0);
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_POLLCONTROL_UPDATE,
+			     false, &res);
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
+		pr_err("Failed to disable poll control\n");
+}
+
+static void kvm_enable_host_haltpoll(void *i)
+{
+	struct arm_smccc_res res;
+	struct pv_vcpu_poll_ctl *poll_ctl;
+
+	poll_ctl = this_cpu_ptr(&pv_poll_ctl);
+	poll_ctl->poll_ctl = cpu_to_le64(1);
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_POLLCONTROL_UPDATE,
+			     true, &res);
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
+		pr_err("Failed to enable poll control\n");
+}
+
+void arch_haltpoll_enable(unsigned int cpu)
+{
+	if (!has_pv_poll_control) {
+		pr_warn("Do not support PV poll control\n");
+		return;
+	}
+
+	/* Enable guest halt poll disables host halt poll */
+	smp_call_function_single(cpu, kvm_disable_host_haltpoll, NULL, 1);
+}
+EXPORT_SYMBOL_GPL(arch_haltpoll_enable);
+
+void arch_haltpoll_disable(unsigned int cpu)
+{
+	if (!has_pv_poll_control) {
+		pr_warn("Do not support PV poll control\n");
+		return;
+	}
+
+	/* Disable guest halt poll enables host halt poll */
+	smp_call_function_single(cpu, kvm_enable_host_haltpoll, NULL, 1);
+}
+EXPORT_SYMBOL_GPL(arch_haltpoll_disable);
+
+static int poll_ctrl_cpu_online(unsigned int cpu)
+{
+	struct pv_vcpu_poll_ctl *poll_ctl;
+	struct arm_smccc_res res;
+
+	poll_ctl = this_cpu_ptr(&pv_poll_ctl);
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_POLLCONTROL_SET, poll_ctl, &res);
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED) {
+		pr_err("Failed to set poll control base\n");
+		return -EINVAL;
+	}
+
+	poll_ctl->poll_ctl = res.a0;
+	return 0;
+}
+
+static int poll_ctrl_cpu_down_prepare(unsigned int cpu)
+{
+	struct pv_vcpu_poll_ctl *poll_ctl;
+	struct arm_smccc_res res;
+
+	poll_ctl = this_cpu_ptr(&pv_poll_ctl);
+
+	poll_ctl->poll_ctl = cpu_to_le64(0);
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_POLLCONTROL_SET, -1, &res);
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
+		pr_warn("Failed to clear poll control base\n");
+
+	return 0;
+}
+
+static int __init pv_poll_control_init_base(void)
+{
+	int ret;
+
+	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
+				"hypervisor/arm/pollctl:online",
+				poll_ctrl_cpu_online,
+				poll_ctrl_cpu_down_prepare);
+	if (ret < 0)
+		return ret;
+	return 0;
+}
+
+static int __init pv_poll_control_init(void)
+{
+	struct arm_smccc_res res;
+	int ret;
+
+	/* To detect the presence of PV poll control support we require SMCCC 1.1+ */
+	if (arm_smccc_1_1_get_conduit() == SMCCC_CONDUIT_NONE) {
+		pr_warn("Failed to support SMCCC 1.1+\n");
+		return -EINVAL;
+	}
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
+			     ARM_SMCCC_HV_PV_POLLCONTROL_FEATURES, &res);
+	if (res.a0 != SMCCC_RET_SUCCESS) {
+		pr_warn("Host did not support poll control\n");
+		return -EINVAL;
+	}
+
+	ret = pv_poll_control_init_base();
+	if (ret) {
+		pr_warn("Failed to initialize the poll control base\n");
+		return ret;
+	}
+
+	has_pv_poll_control = true;
+	pr_info("Enable PV poll control.\n");
+
+	return 0;
+}
+arch_initcall(pv_poll_control_init);
