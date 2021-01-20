@@ -134,7 +134,7 @@ struct virtnet_xsk_hdr {
 	u32 len;
 };
 
-#define VIRTNET_STATE_XSK_WAKEUP BIT(0)
+#define VIRTNET_XSK_TXNAPI_RUNNING 0
 
 #define VIRTNET_SQ_STAT(m)	offsetof(struct virtnet_sq_stats, m)
 #define VIRTNET_RQ_STAT(m)	offsetof(struct virtnet_rq_stats, m)
@@ -2978,16 +2978,24 @@ static int virtnet_xsk_run(struct send_queue *sq,
 	if (!err) {
 		struct xdp_desc desc;
 
-		clear_bit(VIRTNET_STATE_XSK_WAKEUP, &sq->xsk.state);
+		clear_bit(VIRTNET_XSK_TXNAPI_RUNNING, &sq->xsk.state);
 
-		/* Race breaker. If new is coming after last xmit
+		/* Memory barrier make sure xsk_umem_consume_tx must come after
+		 * clear_bit option.
+		 * Race breaker: If new data is coming after last xmit
 		 * but before flag change
 		 */
+		smp_mb__after_atomic();
 
+		/* Check again if there is data in the tx queue. If there is no
+		 * data, we can exit directly. If there is still data, then
+		 * napi needs to wake up again.
+		 */
 		if (!xsk_tx_peek_desc(pool, &desc))
 			goto end;
 
-		set_bit(VIRTNET_STATE_XSK_WAKEUP, &sq->xsk.state);
+		/* this after if check, so memory barrier is no needed. */
+		set_bit(VIRTNET_XSK_TXNAPI_RUNNING, &sq->xsk.state);
 
 		sq->xsk.last_desc = desc;
 		ret = budget;
@@ -3059,7 +3067,7 @@ static int virtnet_xsk_wakeup(struct net_device *dev, u32 qid, u32 flags)
 	if (!pool)
 		goto end;
 
-	if (test_and_set_bit(VIRTNET_STATE_XSK_WAKEUP, &sq->xsk.state))
+	if (test_and_set_bit(VIRTNET_XSK_TXNAPI_RUNNING, &sq->xsk.state))
 		goto end;
 
 	txq = netdev_get_tx_queue(dev, qid);
