@@ -2730,7 +2730,7 @@ static int virtnet_xsk_pool_enable(struct net_device *dev,
 	n = min(xsk_num_max, n * (xsk_num_percent % 100) / 100);
 
 	ret = -ENOMEM;
-	hdr = kcalloc(n, sizeof(struct virtnet_xsk_hdr), GFP_KERNEL);
+	hdr = kcalloc(n, sizeof(struct virtnet_xsk_hdr), GFP_ATOMIC);
 	if (!hdr)
 		goto end;
 
