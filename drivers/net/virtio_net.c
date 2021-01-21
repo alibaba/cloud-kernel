@@ -135,7 +135,6 @@ struct virtnet_xsk_hdr {
 };
 
 #define VIRTNET_STATE_XSK_WAKEUP BIT(0)
-#define VIRTNET_STATE_XSK_TIMER BIT(1)
 
 #define VIRTNET_SQ_STAT(m)	offsetof(struct virtnet_sq_stats, m)
 #define VIRTNET_RQ_STAT(m)	offsetof(struct virtnet_rq_stats, m)
@@ -2766,8 +2765,6 @@ static enum hrtimer_restart virtnet_xsk_timeout(struct hrtimer *timer)
 
 	sq = container_of(timer, struct send_queue, xsk.timer);
 
-	clear_bit(VIRTNET_STATE_XSK_TIMER, &sq->xsk.state);
-
 	virtqueue_napi_schedule(&sq->napi, sq->vq);
 
 	u64_stats_update_begin(&sq->stats.syncp);
@@ -2973,9 +2970,6 @@ static int virtnet_xsk_run(struct send_queue *sq,
 
 	sq->xsk.wait_slot = false;
 
-	if (test_and_clear_bit(VIRTNET_STATE_XSK_TIMER, &sq->xsk.state))
-		hrtimer_try_to_cancel(&sq->xsk.timer);
-
 	__free_old_xmit_ptr(sq, true, false, &_packets, &_bytes);
 	packets += _packets;
 	bytes += _bytes;
@@ -3027,8 +3021,6 @@ static int virtnet_xsk_run(struct send_queue *sq,
 		hrtimer_start(&sq->xsk.timer,
 			      ns_to_ktime(xsk_check_timeout * 1000),
 			      HRTIMER_MODE_REL_PINNED);
-
-		set_bit(VIRTNET_STATE_XSK_TIMER, &sq->xsk.state);
 	}
 
 	virtnet_sq_stop_check(sq, true);
