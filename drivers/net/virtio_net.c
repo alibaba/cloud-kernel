@@ -1565,8 +1565,10 @@ static void virt_xsk_complete(struct send_queue *sq, u32 num, bool xsk_wakeup)
 	pool = rcu_dereference(sq->xsk.pool);
 	if (!pool) {
 		if (sq->xsk.hdr_pro - sq->xsk.hdr_con == sq->xsk.hdr_n) {
-			kfree(sq->xsk.hdr);
-			rcu_assign_pointer(sq->xsk.hdr, NULL);
+			struct virtnet_xsk_hdr *hdr = NULL;
+
+			hdr = rcu_replace_pointer(sq->xsk.hdr, hdr, true);
+			kfree(hdr);
 		}
 		rcu_read_unlock();
 		return;
@@ -2815,6 +2817,9 @@ static int virtnet_xsk_pool_enable(struct net_device *dev,
 	hrtimer_init(&sq->xsk.timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
 	sq->xsk.timer.function = virtnet_xsk_timeout;
 
+	/* Here is already protected by rtnl_lock, so rcu_assign_pointer is
+	 * safe.
+	 */
 	rcu_assign_pointer(sq->xsk.pool, pool);
 	rcu_assign_pointer(sq->xsk.hdr, hdr);
 
@@ -2836,6 +2841,9 @@ static int virtnet_xsk_pool_disable(struct net_device *dev, u16 qid)
 	if (qid >= vi->curr_queue_pairs)
 		return -EINVAL;
 
+	/* Here is already protected by rtnl_lock, so rcu_assign_pointer is
+	 * safe.
+	 */
 	rcu_assign_pointer(sq->xsk.pool, NULL);
 
 	hrtimer_cancel(&sq->xsk.timer);
@@ -2843,9 +2851,19 @@ static int virtnet_xsk_pool_disable(struct net_device *dev, u16 qid)
 	synchronize_rcu(); /* Sync with the XSK wakeup and with NAPI. */
 
 	if (sq->xsk.hdr_pro - sq->xsk.hdr_con == sq->xsk.hdr_n) {
-		kfree(sq->xsk.hdr);
-		rcu_assign_pointer(sq->xsk.hdr, NULL);
-		synchronize_rcu();
+		struct virtnet_xsk_hdr *hdr = NULL;
+		struct netdev_queue *txq;
+
+		txq = netdev_get_tx_queue(vi->dev, qid);
+
+		/* this has race with the virt_xsk_complete when
+		 * sq->xsk.umem == NULL. So add lock to protect.
+		 */
+		__netif_tx_lock_bh(txq);
+		hdr = rcu_replace_pointer(sq->xsk.hdr, hdr, true);
+		__netif_tx_unlock_bh(txq);
+
+		kfree(hdr);
 	}
 
 	return 0;
@@ -2870,7 +2888,7 @@ static int virtnet_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 static int virtnet_xsk_xmit(struct send_queue *sq, struct xdp_desc *desc)
 {
 	struct virtnet_info *vi = sq->vq->vdev->priv;
-	struct virtnet_xsk_hdr *xskhdr;
+	struct virtnet_xsk_hdr *xskhdr, *hdr;
 	struct page *page;
 	void *ptr;
 	u32 idx;
@@ -2880,7 +2898,9 @@ static int virtnet_xsk_xmit(struct send_queue *sq, struct xdp_desc *desc)
 
 	idx = sq->xsk.hdr_con % sq->xsk.hdr_n;
 
-	xskhdr = &sq->xsk.hdr[idx];
+	hdr = rcu_dereference(sq->xsk.hdr);
+
+	xskhdr = hdr + idx;
 
 	xskhdr->len = desc->len;
 
