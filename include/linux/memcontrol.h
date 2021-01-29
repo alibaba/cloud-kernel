@@ -360,6 +360,8 @@ struct mem_cgroup {
 
 #ifdef CONFIG_MEMSLI
 	struct mem_cgroup_lat_stat_cpu __percpu *lat_stat_cpu;
+	struct list_head lat_stat_notify[MEM_LAT_NR_STAT];
+	struct mutex lat_stat_notify_lock;
 #endif
 
 	CK_HOTFIX_RESERVE(1)
