@@ -1082,6 +1082,7 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 	LIST_HEAD(free_pages);
 	unsigned int nr_reclaimed = 0;
 	unsigned int pgactivate = 0;
+	u64 start = 0;
 
 	memset(stat, 0, sizeof(*stat));
 	cond_resched();
@@ -1354,12 +1355,19 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 			 * starts and then write it out here.
 			 */
 			try_to_unmap_flush_dirty();
+			if (!current_is_kswapd())
+				memcg_lat_stat_start(&start);
 			switch (pageout(page, mapping)) {
 			case PAGE_KEEP:
 				goto keep_locked;
 			case PAGE_ACTIVATE:
 				goto activate_locked;
 			case PAGE_SUCCESS:
+				if (!current_is_kswapd())
+					memcg_lat_stat_end(cgroup_reclaim(sc) ?
+						MEM_LAT_MEMCG_DIRECT_SWAPOUT :
+						MEM_LAT_GLOBAL_DIRECT_SWAPOUT,
+						start);
 				stat->nr_pageout += thp_nr_pages(page);
 
 				if (PageWriteback(page))

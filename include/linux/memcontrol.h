@@ -53,6 +53,33 @@ struct mem_cgroup_reclaim_cookie {
 	unsigned int generation;
 };
 
+enum mem_lat_stat_item {
+	MEM_LAT_GLOBAL_DIRECT_RECLAIM,	/* global direct reclaim latency */
+	MEM_LAT_MEMCG_DIRECT_RECLAIM,	/* memcg direct reclaim latency */
+	MEM_LAT_DIRECT_COMPACT,		/* direct compact latency */
+	MEM_LAT_GLOBAL_DIRECT_SWAPOUT,	/* global direct swapout latency */
+	MEM_LAT_MEMCG_DIRECT_SWAPOUT,	/* memcg direct swapout latency */
+	MEM_LAT_DIRECT_SWAPIN,		/* direct swapin latency */
+	MEM_LAT_NR_STAT,
+};
+
+/* Memory latency histogram distribution, in milliseconds */
+enum mem_lat_count_t {
+	MEM_LAT_0_1,
+	MEM_LAT_1_5,
+	MEM_LAT_5_10,
+	MEM_LAT_10_100,
+	MEM_LAT_100_500,
+	MEM_LAT_500_1000,
+	MEM_LAT_1000_INF,
+	MEM_LAT_TOTAL,
+	MEM_LAT_NR_COUNT,
+};
+
+struct mem_cgroup_lat_stat_cpu {
+	unsigned long item[MEM_LAT_NR_STAT][MEM_LAT_NR_COUNT];
+};
+
 #ifdef CONFIG_MEMCG
 
 #define MEM_CGROUP_ID_SHIFT	16
@@ -329,6 +356,10 @@ struct mem_cgroup {
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	struct deferred_split deferred_split_queue;
+#endif
+
+#ifdef CONFIG_MEMSLI
+	struct mem_cgroup_lat_stat_cpu __percpu *lat_stat_cpu;
 #endif
 
 	CK_HOTFIX_RESERVE(1)
@@ -1297,6 +1328,19 @@ void count_memcg_event_mm(struct mm_struct *mm, enum vm_event_item idx)
 {
 }
 #endif /* CONFIG_MEMCG */
+
+#ifdef CONFIG_MEMSLI
+extern void memcg_lat_stat_start(u64 *start);
+extern void memcg_lat_stat_end(enum mem_lat_stat_item sidx, u64 start);
+#else
+static inline void memcg_lat_stat_start(u64 *start)
+{
+}
+
+static inline void memcg_lat_stat_end(enum mem_lat_stat_item sidx, u64 start)
+{
+}
+#endif /* CONFIG_MEMSLI */
 
 /* idx can be of type enum memcg_stat_item or node_stat_item */
 static inline void __inc_memcg_state(struct mem_cgroup *memcg,
