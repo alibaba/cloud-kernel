@@ -4102,10 +4102,12 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	struct page *page = NULL;
 	unsigned long pflags;
 	unsigned int noreclaim_flag;
+	u64 start;
 
 	if (!order)
 		return NULL;
 
+	memcg_lat_stat_start(&start);
 	psi_memstall_enter(&pflags);
 	noreclaim_flag = memalloc_noreclaim_save();
 
@@ -4114,6 +4116,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 
 	memalloc_noreclaim_restore(noreclaim_flag);
 	psi_memstall_leave(&pflags);
+	memcg_lat_stat_end(MEM_LAT_DIRECT_COMPACT, start);
 
 	/*
 	 * At least in one zone compaction wasn't deferred or skipped, so let's
@@ -4322,11 +4325,13 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 {
 	unsigned int noreclaim_flag;
 	unsigned long pflags, progress;
+	u64 start;
 
 	cond_resched();
 
 	/* We now go into synchronous reclaim */
 	cpuset_memory_pressure_bump();
+	memcg_lat_stat_start(&start);
 	psi_memstall_enter(&pflags);
 	fs_reclaim_acquire(gfp_mask);
 	noreclaim_flag = memalloc_noreclaim_save();
@@ -4337,6 +4342,7 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 	memalloc_noreclaim_restore(noreclaim_flag);
 	fs_reclaim_release(gfp_mask);
 	psi_memstall_leave(&pflags);
+	memcg_lat_stat_end(MEM_LAT_GLOBAL_DIRECT_RECLAIM, start);
 
 	cond_resched();
 
