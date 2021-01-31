@@ -6835,9 +6835,6 @@ static int io_sq_thread_percpu(void *data)
 			continue;
 		}
 
-		if (kthread_should_park())
-			continue;
-
 		needs_sched = true;
 		prepare_to_wait(&t->sqo_wait, &wait, TASK_INTERRUPTIBLE);
 		list_for_each_entry(ctx, &t->ctx_list, sqd_list)
@@ -6854,7 +6851,7 @@ static int io_sq_thread_percpu(void *data)
 				break;
 			}
 		}
-		if (needs_sched)
+		if (needs_sched && !kthread_should_park())
 			schedule();
 		list_for_each_entry(ctx, &t->ctx_list, sqd_list)
 			io_ring_clear_wakeup_flag(ctx);
