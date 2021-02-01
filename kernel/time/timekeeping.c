@@ -46,9 +46,24 @@ DEFINE_RAW_SPINLOCK(timekeeper_lock);
  * cache line.
  */
 static struct {
+#ifdef CONFIG_ARCH_LLC_128_WORKAROUND
+	/* Start seq on the middle of 128 bytes aligned address to
+	 * keep some members of tk_core in the same 64 bytes for
+	 * principle of locality while pushing others to another LLC
+	 * cacheline to avoid false sharing.
+	 */
+	u8 padding1[64];
+	seqcount_raw_spinlock_t	seq;
+	/* Push some timekeeper memebers to another LLC cacheline */
+	u8 padding2[16];
+	struct timekeeper	timekeeper;
+	/* For 128 bytes LLC cacheline */
+} tk_core __aligned(128) = {
+#else
 	seqcount_raw_spinlock_t	seq;
 	struct timekeeper	timekeeper;
 } tk_core ____cacheline_aligned = {
+#endif
 	.seq = SEQCNT_RAW_SPINLOCK_ZERO(tk_core.seq, &timekeeper_lock),
 };
 
