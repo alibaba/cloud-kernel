@@ -162,6 +162,12 @@ static const struct apd_device_desc hip08_i2c_desc = {
 	.setup = acpi_apd_setup,
 	.fixed_clk_rate = 250000000,
 };
+
+static const struct apd_device_desc phytium_i2c_desc = {
+	.setup = acpi_apd_setup,
+	.fixed_clk_rate = 200000000,
+};
+
 static const struct apd_device_desc thunderx2_i2c_desc = {
 	.setup = acpi_apd_setup,
 	.fixed_clk_rate = 125000000,
@@ -240,6 +246,7 @@ static const struct acpi_device_id acpi_apd_device_ids[] = {
 	{ "HISI02A1", APD_ADDR(hip07_i2c_desc) },
 	{ "HISI02A2", APD_ADDR(hip08_i2c_desc) },
 	{ "HISI0173", APD_ADDR(hip08_spi_desc) },
+	{ "PHYT0003", APD_ADDR(phytium_i2c_desc) },
 #endif
 	{ }
 };
