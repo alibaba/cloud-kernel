@@ -1793,6 +1793,16 @@ config RTC_DRV_RTD119X
 	  If you say yes here, you get support for the RTD1295 SoC
 	  Real Time Clock.
 
+config RTC_DRV_PHYTIUM
+	tristate "Phytium RTC"
+	depends on ARCH_PHYTIUM
+	default y if ARCH_PHYTIUM
+	help
+	  Say yes here to support the Phytium SoC real time clock.
+
+	  This driver can also be built as a module, if so, the module
+	  will be called "rtc-phytium".
+
 comment "HID Sensor RTC drivers"
 
 config RTC_DRV_HID_SENSOR_TIME
