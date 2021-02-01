@@ -72,6 +72,15 @@ struct sched_domain_shared {
 	atomic_t	ref;
 	atomic_t	nr_busy_cpus;
 	int		has_idle_cores;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 struct sched_domain {
@@ -142,6 +151,16 @@ struct sched_domain {
 	struct sched_domain_shared *shared;
 
 	unsigned int span_weight;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
+
 	/*
 	 * Span of all CPUs in this domain.
 	 *
