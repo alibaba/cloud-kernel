@@ -2596,14 +2596,12 @@ static void io_complete_rw_common(struct kiocb *kiocb, long res,
 static bool io_resubmit_prep(struct io_kiocb *req, int error)
 {
 	struct iovec inline_vecs[UIO_FASTIOV], *iovec = inline_vecs;
-	ssize_t ret = -ECANCELED;
+	ssize_t ret;
 	struct iov_iter iter;
 	int rw;
 
-	if (error) {
-		ret = error;
+	if (error)
 		goto end_req;
-	}
 
 	switch (req->opcode) {
 	case IORING_OP_READV:
