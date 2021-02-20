@@ -197,6 +197,12 @@ int sdei_api_event_interrupt_bind(int hwirq)
 	return (int)event_number;
 }
 
+int sdei_api_clear_eoi(int hwirq)
+{
+	return invoke_sdei_fn(SDEI_1_0_FN_SDEI_CLEAR_EOI, hwirq, 0, 0, 0, 0,
+			NULL);
+}
+
 static int sdei_api_event_get_info(u32 event, u32 info, u64 *result)
 {
 	return invoke_sdei_fn(SDEI_1_0_FN_SDEI_EVENT_GET_INFO, event, info, 0,

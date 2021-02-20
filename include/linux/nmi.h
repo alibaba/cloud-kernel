@@ -222,4 +222,10 @@ int proc_watchdog_cpumask(struct ctl_table *, int, void *, size_t *, loff_t *);
 #include <asm/nmi.h>
 #endif
 
+#ifdef CONFIG_SDEI_WATCHDOG
+void sdei_watchdog_clear_eoi(void);
+#else
+static inline void sdei_watchdog_clear_eoi(void) { }
+#endif
+
 #endif
