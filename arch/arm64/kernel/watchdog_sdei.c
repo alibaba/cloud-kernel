@@ -30,6 +30,8 @@ int watchdog_nmi_enable(unsigned int cpu)
 	if (!sdei_watchdog_registered)
 		return -EINVAL;
 
+	refresh_hld_last_timestamp();
+
 	ret = sdei_api_event_enable(sdei_watchdog_event_num);
 	if (ret) {
 		pr_err("Enable NMI Watchdog failed on cpu%d\n",

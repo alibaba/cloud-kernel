@@ -89,6 +89,15 @@ static bool watchdog_check_timestamp(void)
 	__this_cpu_write(last_timestamp, now);
 	return true;
 }
+
+void refresh_hld_last_timestamp(void)
+{
+	ktime_t now;
+
+	now = ktime_get_mono_fast_ns();
+	__this_cpu_write(last_timestamp, now);
+
+}
 #else
 static inline bool watchdog_check_timestamp(void)
 {
