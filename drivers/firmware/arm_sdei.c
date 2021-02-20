@@ -203,6 +203,12 @@ int sdei_api_clear_eoi(int hwirq)
 			NULL);
 }
 
+int sdei_api_set_secure_timer_period(int sec)
+{
+	return invoke_sdei_fn(SDEI_1_0_FN_SET_SECURE_TIMER_PERIOD, sec, 0, 0, 0,
+			0, NULL);
+}
+
 static int sdei_api_event_get_info(u32 event, u32 info, u64 *result)
 {
 	return invoke_sdei_fn(SDEI_1_0_FN_SDEI_EVENT_GET_INFO, event, info, 0,
