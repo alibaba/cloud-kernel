@@ -187,6 +187,16 @@ int sdei_api_event_context(u32 query, u64 *result)
 }
 NOKPROBE_SYMBOL(sdei_api_event_context);
 
+int sdei_api_event_interrupt_bind(int hwirq)
+{
+	u64 event_number;
+
+	invoke_sdei_fn(SDEI_1_0_FN_SDEI_INTERRUPT_BIND, hwirq, 0, 0, 0, 0,
+			&event_number);
+
+	return (int)event_number;
+}
+
 static int sdei_api_event_get_info(u32 event, u32 info, u64 *result)
 {
 	return invoke_sdei_fn(SDEI_1_0_FN_SDEI_EVENT_GET_INFO, event, info, 0,
