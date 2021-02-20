@@ -14,6 +14,7 @@
 #include <asm/sdei.h>
 #include <asm/virt.h>
 #include <linux/arm_sdei.h>
+#include <linux/kprobes.h>
 #include <linux/nmi.h>
 
 /* We use the secure physical timer as SDEI NMI watchdog timer */
@@ -66,6 +67,7 @@ static int sdei_watchdog_callback(u32 event,
 
 	return 0;
 }
+NOKPROBE_SYMBOL(sdei_watchdog_callback);
 
 static void sdei_nmi_watchdog_bind(void *data)
 {

@@ -16,6 +16,7 @@
 #include <linux/cpu.h>
 #include <linux/nmi.h>
 #include <linux/init.h>
+#include <linux/kprobes.h>
 #include <linux/module.h>
 #include <linux/sysctl.h>
 #include <linux/tick.h>
@@ -311,6 +312,7 @@ bool is_hardlockup(void)
 	__this_cpu_write(hrtimer_interrupts_saved, hrint);
 	return false;
 }
+NOKPROBE_SYMBOL(is_hardlockup);
 
 static void watchdog_interrupt_count(void)
 {

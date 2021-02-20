@@ -14,6 +14,7 @@
 
 #include <linux/nmi.h>
 #include <linux/atomic.h>
+#include <linux/kprobes.h>
 #include <linux/module.h>
 #include <linux/sched/debug.h>
 
@@ -155,6 +156,7 @@ void watchdog_hardlockup_check(struct pt_regs *regs)
 	__this_cpu_write(hard_watchdog_warn, false);
 	return;
 }
+NOKPROBE_SYMBOL(watchdog_hardlockup_check);
 
 #ifdef CONFIG_HARDLOCKUP_DETECTOR_PERF
 static DEFINE_PER_CPU(struct perf_event *, watchdog_ev);
