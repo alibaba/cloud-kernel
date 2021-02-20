@@ -964,6 +964,13 @@ config HARDLOCKUP_DETECTOR_PERF
 	bool
 	select SOFTLOCKUP_DETECTOR
 
+config SDEI_WATCHDOG
+	bool "SDEI NMI Watchdog support"
+	depends on ARM_SDE_INTERFACE
+	select HAVE_HARDLOCKUP_DETECTOR_ARCH
+	select HARDLOCKUP_CHECK_TIMESTAMP
+	select HARDLOCKUP_DETECTOR
+
 #
 # Enables a timestamp based low pass filter to compensate for perf based
 # hard lockup detection which runs too fast due to turbo modes.
