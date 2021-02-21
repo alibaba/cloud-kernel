@@ -25,17 +25,17 @@
 
 #define XSAVE_ALIGNMENT     64
 
-/* All currently supported user features */
-#define XFEATURE_MASK_USER_SUPPORTED (XFEATURE_MASK_FP | \
-				      XFEATURE_MASK_SSE | \
-				      XFEATURE_MASK_YMM | \
-				      XFEATURE_MASK_OPMASK | \
-				      XFEATURE_MASK_ZMM_Hi256 | \
-				      XFEATURE_MASK_Hi16_ZMM	 | \
-				      XFEATURE_MASK_PKRU | \
-				      XFEATURE_MASK_BNDREGS | \
-				      XFEATURE_MASK_BNDCSR | \
-				      XFEATURE_MASK_XTILE)
+/* All currently enabled user features */
+#define XFEATURE_MASK_USER_ENABLED (XFEATURE_MASK_FP | \
+				    XFEATURE_MASK_SSE | \
+				    XFEATURE_MASK_YMM | \
+				    XFEATURE_MASK_OPMASK | \
+				    XFEATURE_MASK_ZMM_Hi256 | \
+				    XFEATURE_MASK_Hi16_ZMM	 | \
+				    XFEATURE_MASK_PKRU | \
+				    XFEATURE_MASK_BNDREGS | \
+				    XFEATURE_MASK_BNDCSR | \
+				    XFEATURE_MASK_XTILE)
 
 /* All currently supported supervisor features */
 #define XFEATURE_MASK_SUPERVISOR_SUPPORTED (XFEATURE_MASK_PASID)
@@ -87,7 +87,7 @@ static inline u64 xfeatures_mask_supervisor(void)
 
 static inline u64 xfeatures_mask_user(void)
 {
-	return xfeatures_mask_all & XFEATURE_MASK_USER_SUPPORTED;
+	return xfeatures_mask_all & ~(XFEATURE_MASK_SUPERVISOR_ALL);
 }
 
 static inline u64 xfeatures_mask_supervisor_dynamic(void)

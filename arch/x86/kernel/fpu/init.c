@@ -5,6 +5,7 @@
 #include <asm/fpu/internal.h>
 #include <asm/tlbflush.h>
 #include <asm/setup.h>
+#include <asm/cmdline.h>
 
 #include <linux/sched.h>
 #include <linux/sched/task.h>
@@ -215,14 +216,45 @@ static void __init fpu__init_system_xstate_size_legacy(void)
 /*
  * Find supported xfeatures based on cpu features and command-line input.
  * This must be called after fpu__init_parse_early_param() is called and
- * xfeatures_mask is enumerated.
+ * xfeatures_mask_all is enumerated.
  */
+
+static u64 xstate_enable;
+static u64 xstate_disable;
+
 u64 __init fpu__get_supported_xfeatures_mask(void)
 {
-	u64 mask = XFEATURE_MASK_USER_SUPPORTED | XFEATURE_MASK_SUPERVISOR_SUPPORTED;
+	u64 mask = XFEATURE_MASK_USER_ENABLED | XFEATURE_MASK_SUPERVISOR_SUPPORTED;
 
-	if (!IS_ENABLED(CONFIG_X86_64))
-		mask &= ~(XFEATURE_MASK_XTILE);
+	if (!IS_ENABLED(CONFIG_X86_64)) {
+		mask  &= ~(XFEATURE_MASK_XTILE);
+	} else if (xstate_enable || xstate_disable) {
+		u64 custom = mask;
+		u64 unknown;
+
+		custom |= xstate_enable;
+		custom &= ~xstate_disable;
+
+		unknown = custom & ~mask;
+		if (unknown) {
+			/*
+			 * User should fully understand the result of using undocumented
+			 * xstate component.
+			 */
+			add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+			pr_warn("x86/fpu: Attempt to enable unknown xstate features 0x%llx\n",
+				unknown);
+			WARN_ON_FPU(1);
+		}
+
+		if ((custom & XFEATURE_MASK_XTILE) != XFEATURE_MASK_XTILE) {
+			pr_warn("x86/fpu: Error in xstate.disable. Additionally disabling 0x%x components.\n",
+				XFEATURE_MASK_XTILE);
+			custom &= ~(XFEATURE_MASK_XTILE);
+		}
+
+		mask = custom;
+	}
 
 	return mask;
 }
@@ -237,11 +269,34 @@ static void __init fpu__init_system_ctx_switch(void)
 }
 
 /*
+ * Longest parameter of 'xstate.enable=' is 22 octal number characters with '0' prefix and
+ * an extra '\0' for termination.
+ */
+#define MAX_XSTATE_MASK_CHARS	24
+/*
+ * We parse xstate parameters early because fpu__init_system() is executed before
+ * parse_early_param().
+ */
+static void __init fpu__init_parse_early_param(void)
+{
+	char arg[MAX_XSTATE_MASK_CHARS];
+
+	if (cmdline_find_option(boot_command_line, "xstate.enable", arg, sizeof(arg)) &&
+	    !kstrtoull(arg, 0, &xstate_enable))
+		xstate_enable &= XFEATURE_MASK_CONFIGURABLE;
+
+	if (cmdline_find_option(boot_command_line, "xstate.disable", arg, sizeof(arg)) &&
+	    !kstrtoull(arg, 0, &xstate_disable))
+		xstate_disable &= XFEATURE_MASK_CONFIGURABLE;
+}
+
+/*
  * Called on the boot CPU once per system bootup, to set up the initial
  * FPU state that is later cloned into all processes:
  */
 void __init fpu__init_system(struct cpuinfo_x86 *c)
 {
+	fpu__init_parse_early_param();
 	fpu__init_system_early_generic(c);
 
 	/*

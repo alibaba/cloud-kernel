@@ -149,6 +149,12 @@ enum xfeature {
 #define XFEATURE_MASK_XTILE		(XFEATURE_MASK_XTILE_DATA \
 					 | XFEATURE_MASK_XTILE_CFG)
 
+#define XFEATURE_REGION_MASK(max_bit, min_bit) \
+	((BIT_ULL((max_bit) - (min_bit) + 1) - 1) << (min_bit))
+
+#define XFEATURE_MASK_CONFIGURABLE \
+	XFEATURE_REGION_MASK(XFEATURE_XTILE_DATA, XFEATURE_XTILE_CFG)
+
 #define FIRST_EXTENDED_XFEATURE	XFEATURE_YMM
 
 struct reg_128_bit {
