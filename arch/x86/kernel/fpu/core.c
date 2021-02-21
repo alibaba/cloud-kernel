@@ -21,7 +21,10 @@
 
 /*
  * Represents the initial FPU state. It's mostly (but not completely) zeroes,
- * depending on the FPU hardware format:
+ * depending on the FPU hardware format.
+ *
+ * The dynamic user states are excluded as they are large but having initial
+ * values with zeros.
  */
 union fpregs_state init_fpstate __read_mostly;
 
@@ -206,9 +209,13 @@ void fpstate_init(struct fpu *fpu)
 		mask = fpu->state_mask;
 		size = get_xstate_size(fpu->state_mask);
 	} else {
+		/*
+		 * init_fpstate excludes the dynamic user states as they are
+		 * large but having initial values with zeros.
+		 */
 		state = &init_fpstate;
-		mask = xfeatures_mask_all;
-		size = get_xstate_config(XSTATE_MAX_SIZE);
+		mask = (xfeatures_mask_all & ~xfeatures_mask_user_dynamic);
+		size = get_xstate_config(XSTATE_MIN_SIZE);
 	}
 
 	if (!static_cpu_has(X86_FEATURE_FPU)) {

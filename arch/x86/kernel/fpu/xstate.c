@@ -571,6 +571,7 @@ static void __init print_xstate_offset_size(void)
 static void __init setup_init_fpu_buf(void)
 {
 	static int on_boot_cpu __initdata = 1;
+	u64 mask;
 
 	BUILD_BUG_ON((XFEATURE_MASK_USER_SUPPORTED |
 		      XFEATURE_MASK_SUPERVISOR_SUPPORTED) !=
@@ -585,8 +586,14 @@ static void __init setup_init_fpu_buf(void)
 	setup_xstate_features();
 	print_xstate_features();
 
+	/*
+	 * Exclude the dynamic user states as they are large but having
+	 * initial values with zeros.
+	 */
+	mask = xfeatures_mask_all & ~xfeatures_mask_user_dynamic;
+
 	if (boot_cpu_has(X86_FEATURE_XSAVES))
-		fpstate_init_xstate(&init_fpstate.xsave, xfeatures_mask_all);
+		fpstate_init_xstate(&init_fpstate.xsave, mask);
 
 	/*
 	 * Init all the features state with header.xfeatures being 0x0
