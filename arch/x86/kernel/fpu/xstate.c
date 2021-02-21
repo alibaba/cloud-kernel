@@ -690,22 +690,30 @@ static void check_xstate_against_struct(int nr)
 }
 
 /*
- * This essentially double-checks what the cpu told us about
- * how large the XSAVE buffer needs to be.  We are recalculating
- * it to be safe.
+ * Calculate the xstate per-task buffer sizes -- maximum and minimum.
+ *
+ * And record the minimum. Also double-check the maximum against what
+ * the cpu told.
+ *
+ * Dynamic user states are stored in this buffer. They account for the
+ * delta between the maximum and the minimum.
  *
  * Dynamic supervisor XSAVE features allocate their own buffers and are
- * not covered by these checks. Only the size of the buffer for task->fpu
- * is checked here.
+ * not covered by these checks.
  */
-static void do_extra_xstate_size_checks(void)
+static void calculate_xstate_sizes(void)
 {
-	int paranoid_xstate_size = FXSAVE_SIZE + XSAVE_HDR_SIZE;
+	int paranoid_min_size = FXSAVE_SIZE + XSAVE_HDR_SIZE;
+	int paranoid_max_size = FXSAVE_SIZE + XSAVE_HDR_SIZE;
 	int i;
 
 	for (i = FIRST_EXTENDED_XFEATURE; i < XFEATURE_MAX; i++) {
+		bool user_dynamic;
+
 		if (!xfeature_enabled(i))
 			continue;
+
+		user_dynamic = (xfeatures_mask_user_dynamic & BIT_ULL(i)) ? true : false;
 
 		check_xstate_against_struct(i);
 		/*
@@ -716,23 +724,32 @@ static void do_extra_xstate_size_checks(void)
 			XSTATE_WARN_ON(xfeature_is_supervisor(i));
 
 		/* Align from the end of the previous feature */
-		if (xfeature_is_aligned(i))
-			paranoid_xstate_size = ALIGN(paranoid_xstate_size, 64);
+		if (xfeature_is_aligned(i)) {
+			paranoid_max_size = ALIGN(paranoid_max_size, 64);
+			if (!user_dynamic)
+				paranoid_min_size = ALIGN(paranoid_min_size, 64);
+		}
 		/*
 		 * The offset of a given state in the non-compacted
 		 * format is given to us in a CPUID leaf.  We check
 		 * them for being ordered (increasing offsets) in
 		 * setup_xstate_features().
 		 */
-		if (!using_compacted_format())
-			paranoid_xstate_size = xfeature_uncompacted_offset(i);
+		if (!using_compacted_format()) {
+			paranoid_max_size = xfeature_uncompacted_offset(i);
+			if (!user_dynamic)
+				paranoid_min_size = xfeature_uncompacted_offset(i);
+		}
 		/*
 		 * The compacted-format offset always depends on where
 		 * the previous state ended.
 		 */
-		paranoid_xstate_size += xfeature_size(i);
+		paranoid_max_size += xfeature_size(i);
+		if (!user_dynamic)
+			paranoid_min_size += xfeature_size(i);
 	}
-	XSTATE_WARN_ON(paranoid_xstate_size != get_xstate_config(XSTATE_MAX_SIZE));
+	XSTATE_WARN_ON(paranoid_max_size != get_xstate_config(XSTATE_MAX_SIZE));
+	set_xstate_config(XSTATE_MIN_SIZE, paranoid_min_size);
 }
 
 
@@ -833,14 +850,11 @@ static int __init init_xstate_size(void)
 	 */
 	set_xstate_config(XSTATE_MAX_SIZE, possible_xstate_size);
 
-	/* Perform an extra check for the maximum size. */
-	do_extra_xstate_size_checks();
-
 	/*
-	 * Set the minimum to be the same as the maximum. The dynamic
-	 * user states are not supported yet.
+	 * Calculate and double-check the maximum size. Calculate and record
+	 * the minimum size.
 	 */
-	set_xstate_config(XSTATE_MIN_SIZE, possible_xstate_size);
+	calculate_xstate_sizes();
 
 	/* Ensure the minimum size fits in the statically-alocated buffer: */
 	if (!is_supported_xstate_size(get_xstate_config(XSTATE_MIN_SIZE)))
