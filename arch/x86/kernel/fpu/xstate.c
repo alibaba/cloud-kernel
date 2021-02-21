@@ -43,18 +43,23 @@ static const char *xfeature_names[] =
 	"unknown xstate feature"	,
 };
 
-static short xsave_cpuid_features[] __initdata = {
-	X86_FEATURE_FPU,
-	X86_FEATURE_XMM,
-	X86_FEATURE_AVX,
-	X86_FEATURE_MPX,
-	X86_FEATURE_MPX,
-	X86_FEATURE_AVX512F,
-	X86_FEATURE_AVX512F,
-	X86_FEATURE_AVX512F,
-	X86_FEATURE_INTEL_PT,
-	X86_FEATURE_PKU,
-	X86_FEATURE_ENQCMD,
+struct xfeature_capflag_info {
+	int xfeature_idx;
+	short cpu_cap;
+};
+
+static struct xfeature_capflag_info xfeature_capflags[] __initdata = {
+	{ XFEATURE_FP,				X86_FEATURE_FPU },
+	{ XFEATURE_SSE,				X86_FEATURE_XMM },
+	{ XFEATURE_YMM,				X86_FEATURE_AVX },
+	{ XFEATURE_BNDREGS,			X86_FEATURE_MPX },
+	{ XFEATURE_BNDCSR,			X86_FEATURE_MPX },
+	{ XFEATURE_OPMASK,			X86_FEATURE_AVX512F },
+	{ XFEATURE_ZMM_Hi256,			X86_FEATURE_AVX512F },
+	{ XFEATURE_Hi16_ZMM,			X86_FEATURE_AVX512F },
+	{ XFEATURE_PT_UNIMPLEMENTED_SO_FAR,	X86_FEATURE_INTEL_PT },
+	{ XFEATURE_PKRU,			X86_FEATURE_PKU },
+	{ XFEATURE_PASID,			X86_FEATURE_ENQCMD },
 };
 
 /*
@@ -1045,11 +1050,15 @@ void __init fpu__init_system_xstate(void)
 	}
 
 	/*
-	 * Clear XSAVE features that are disabled in the normal CPUID.
+	 * Cross-check XSAVE feature with CPU capability flag. Clear the
+	 * mask bit for disabled features.
 	 */
-	for (i = 0; i < ARRAY_SIZE(xsave_cpuid_features); i++) {
-		if (!boot_cpu_has(xsave_cpuid_features[i]))
-			xfeatures_mask_all &= ~BIT_ULL(i);
+	for (i = 0; i < ARRAY_SIZE(xfeature_capflags); i++) {
+		short cpu_cap = xfeature_capflags[i].cpu_cap;
+		int idx = xfeature_capflags[i].xfeature_idx;
+
+		if (!boot_cpu_has(cpu_cap))
+			xfeatures_mask_all &= ~BIT_ULL(idx);
 	}
 
 	xfeatures_mask_all &= fpu__get_supported_xfeatures_mask();
