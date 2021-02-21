@@ -199,9 +199,9 @@ static inline int copy_user_to_fregs(struct fregs_state __user *fx)
 static inline void copy_fxregs_to_kernel(struct fpu *fpu)
 {
 	if (IS_ENABLED(CONFIG_X86_32))
-		asm volatile( "fxsave %[fx]" : [fx] "=m" (fpu->state.fxsave));
+		asm volatile("fxsave %[fx]" : [fx] "=m" (fpu->state->fxsave));
 	else
-		asm volatile("fxsaveq %[fx]" : [fx] "=m" (fpu->state.fxsave));
+		asm volatile("fxsaveq %[fx]" : [fx] "=m" (fpu->state->fxsave));
 }
 
 static inline void fxsave(struct fxregs_state *fx)
@@ -413,7 +413,7 @@ static inline void __copy_kernel_to_fpregs(union fpregs_state *fpstate, u64 mask
 
 static inline void copy_kernel_to_fpregs(struct fpu *fpu)
 {
-	union fpregs_state *fpstate = &fpu->state;
+	union fpregs_state *fpstate = fpu->state;
 
 	/*
 	 * AMD K7/K8 CPUs don't save/restore FDP/FIP/FOP unless an exception is

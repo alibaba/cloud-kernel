@@ -185,14 +185,14 @@ static bool xfeature_is_supervisor(int xfeature_nr)
  */
 void fpstate_sanitize_xstate(struct fpu *fpu)
 {
-	struct fxregs_state *fx = &fpu->state.fxsave;
+	struct fxregs_state *fx = &fpu->state->fxsave;
 	int feature_bit;
 	u64 xfeatures;
 
 	if (!use_xsaveopt())
 		return;
 
-	xfeatures = fpu->state.xsave.header.xfeatures;
+	xfeatures = fpu->state->xsave.header.xfeatures;
 
 	/*
 	 * None of the feature bits are in init state. So nothing else
@@ -1011,7 +1011,7 @@ static void *__raw_xsave_addr(struct fpu *fpu, int xfeature_nr)
 	}
 
 	if (fpu)
-		xsave = &fpu->state.xsave;
+		xsave = &fpu->state->xsave;
 	else
 		xsave = &init_fpstate.xsave;
 
@@ -1054,7 +1054,7 @@ void *get_xsave_addr(struct fpu *fpu, int xfeature_nr)
 		  "get of unsupported state");
 
 	if (fpu)
-		xsave = &fpu->state.xsave;
+		xsave = &fpu->state->xsave;
 	else
 		xsave = &init_fpstate.xsave;
 
@@ -1202,7 +1202,7 @@ void copy_xstate_to_kernel(struct membuf to, struct fpu *fpu)
 	unsigned last = 0;
 	int i;
 
-	xsave = &fpu->state.xsave;
+	xsave = &fpu->state->xsave;
 
 	/*
 	 * The destination is a ptrace buffer; we put in only user xstates:
@@ -1267,7 +1267,7 @@ int copy_kernel_to_xstate(struct fpu *fpu, const void *kbuf)
 	if (validate_user_xstate_header(&hdr))
 		return -EINVAL;
 
-	xsave = &fpu->state.xsave;
+	xsave = &fpu->state->xsave;
 
 	for (i = 0; i < XFEATURE_MAX; i++) {
 		u64 mask = ((u64)1 << i);
@@ -1324,7 +1324,7 @@ int copy_user_to_xstate(struct fpu *fpu, const void __user *ubuf)
 	if (validate_user_xstate_header(&hdr))
 		return -EINVAL;
 
-	xsave = &fpu->state.xsave;
+	xsave = &fpu->state->xsave;
 
 	for (i = 0; i < XFEATURE_MAX; i++) {
 		u64 mask = ((u64)1 << i);
@@ -1383,7 +1383,7 @@ void copy_supervisor_to_kernel(struct fpu *fpu)
 	max_bit = __fls(xfeatures_mask_supervisor());
 	min_bit = __ffs(xfeatures_mask_supervisor());
 
-	xstate = &fpu->state.xsave;
+	xstate = &fpu->state->xsave;
 	lmask = xfeatures_mask_supervisor();
 	hmask = xfeatures_mask_supervisor() >> 32;
 	XSTATE_OP(XSAVES, xstate, lmask, hmask, err);

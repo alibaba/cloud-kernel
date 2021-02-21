@@ -58,7 +58,7 @@ static inline int check_for_xstate(struct fxregs_state __user *buf,
 static inline int save_fsave_header(struct task_struct *tsk, void __user *buf)
 {
 	if (use_fxsr()) {
-		struct xregs_state *xsave = &tsk->thread.fpu.state.xsave;
+		struct xregs_state *xsave = &tsk->thread.fpu.state->xsave;
 		struct user_i387_ia32_struct env;
 		struct _fpstate_32 __user *fp = buf;
 
@@ -216,7 +216,7 @@ sanitize_restored_user_xstate(struct fpu *fpu,
 			      struct user_i387_ia32_struct *ia32_env,
 			      u64 user_xfeatures, int fx_only)
 {
-	struct xregs_state *xsave = &fpu->state.xsave;
+	struct xregs_state *xsave = &fpu->state->xsave;
 	struct xstate_header *header = &xsave->header;
 
 	if (use_xsave()) {
@@ -243,7 +243,7 @@ sanitize_restored_user_xstate(struct fpu *fpu,
 		xsave->i387.mxcsr &= mxcsr_feature_mask;
 
 		if (ia32_env)
-			convert_to_fxsr(&fpu->state.fxsave, ia32_env);
+			convert_to_fxsr(&fpu->state->fxsave, ia32_env);
 	}
 }
 
@@ -360,7 +360,7 @@ static int __fpu__restore_sig(void __user *buf, void __user *buf_fx, int size)
 			 */
 			if (test_thread_flag(TIF_NEED_FPU_LOAD) &&
 			    xfeatures_mask_supervisor())
-				copy_kernel_to_xregs(&fpu->state.xsave,
+				copy_kernel_to_xregs(&fpu->state->xsave,
 						     xfeatures_mask_supervisor());
 			fpregs_mark_activate();
 			fpregs_unlock();
@@ -435,11 +435,11 @@ static int __fpu__restore_sig(void __user *buf, void __user *buf_fx, int size)
 		 * Restore previously saved supervisor xstates along with
 		 * copied-in user xstates.
 		 */
-		ret = copy_kernel_to_xregs_err(&fpu->state.xsave,
+		ret = copy_kernel_to_xregs_err(&fpu->state->xsave,
 					       user_xfeatures | xfeatures_mask_supervisor());
 
 	} else if (use_fxsr()) {
-		ret = __copy_from_user(&fpu->state.fxsave, buf_fx, state_size);
+		ret = __copy_from_user(&fpu->state->fxsave, buf_fx, state_size);
 		if (ret) {
 			ret = -EFAULT;
 			goto out;
@@ -455,14 +455,14 @@ static int __fpu__restore_sig(void __user *buf, void __user *buf_fx, int size)
 			copy_kernel_to_xregs(&init_fpstate.xsave, init_bv);
 		}
 
-		ret = copy_kernel_to_fxregs_err(&fpu->state.fxsave);
+		ret = copy_kernel_to_fxregs_err(&fpu->state->fxsave);
 	} else {
-		ret = __copy_from_user(&fpu->state.fsave, buf_fx, state_size);
+		ret = __copy_from_user(&fpu->state->fsave, buf_fx, state_size);
 		if (ret)
 			goto out;
 
 		fpregs_lock();
-		ret = copy_kernel_to_fregs_err(&fpu->state.fsave);
+		ret = copy_kernel_to_fregs_err(&fpu->state->fsave);
 	}
 	if (!ret)
 		fpregs_mark_activate();

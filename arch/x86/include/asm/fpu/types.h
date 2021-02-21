@@ -339,13 +339,28 @@ struct fpu {
 	/*
 	 * @state:
 	 *
-	 * In-memory copy of all FPU registers that we save/restore
-	 * over context switches. If the task is using the FPU then
-	 * the registers in the FPU are more recent than this state
-	 * copy. If the task context-switches away then they get
-	 * saved here and represent the FPU state.
+	 * A pointer to indicate the in-memory copy of all FPU registers that are
+	 * saved/restored over context switches.
+	 *
+	 * Initially @state points to @__default_state. When dynamic states get
+	 * used, a memory is allocated for the larger state copy and @state is
+	 * updated to point to it. Then, the state in ->state supersedes and
+	 * invalidates the state in @__default_state.
+	 *
+	 * In general, if the task is using the FPU then the registers in the FPU
+	 * are more recent than the state copy. If the task context-switches away
+	 * then they get saved in ->state and represent the FPU state.
 	 */
-	union fpregs_state		state;
+	union fpregs_state		*state;
+
+	/*
+	 * @__default_state:
+	 *
+	 * Initial in-memory copy of all FPU registers that saved/restored
+	 * over context switches. When the task is switched to dynamic states,
+	 * this copy is replaced with the new in-memory copy in ->state.
+	 */
+	union fpregs_state		__default_state;
 	/*
 	 * WARNING: 'state' is dynamically-sized.  Do not put
 	 * anything after it here.
