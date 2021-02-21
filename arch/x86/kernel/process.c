@@ -103,6 +103,11 @@ void arch_thread_struct_whitelist(unsigned long *offset, unsigned long *size)
 	*size = get_xstate_config(XSTATE_MIN_SIZE);
 }
 
+void arch_release_task_struct(struct task_struct *tsk)
+{
+	free_xstate_buffer(&tsk->thread.fpu);
+}
+
 /*
  * Free thread data structures etc..
  */

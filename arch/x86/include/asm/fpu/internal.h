@@ -544,11 +544,58 @@ static inline void switch_fpu_prepare(struct fpu *old_fpu, int cpu)
  * Misc helper functions:
  */
 
+/* The first-use detection helpers: */
+
+static inline void xdisable_setbits(u64 value)
+{
+	wrmsrl_safe(MSR_IA32_XFD, value);
+}
+
+static inline u64 xdisable_getbits(void)
+{
+	u64 value;
+
+	rdmsrl_safe(MSR_IA32_XFD, &value);
+	return value;
+}
+
+static inline u64 xfirstuse_enabled(void)
+{
+	/* All the dynamic user components are first-use enabled. */
+	return xfeatures_mask_user_dynamic;
+}
+
+/*
+ * Convert fpu->state_mask to the xdisable configuration to be written to
+ * MSR IA32_XFD.  So, xdisable_setbits() only uses this outcome.
+ */
+static inline u64 xfirstuse_not_detected(struct fpu *fpu)
+{
+	u64 firstuse_bv = (fpu->state_mask & xfirstuse_enabled());
+
+	/*
+	 * If first-use is not detected, set the bit. If the detection is
+	 * not enabled, the bit is always zero in firstuse_bv. So, make
+	 * following conversion:
+	 */
+	return  (xfirstuse_enabled() ^ firstuse_bv);
+}
+
+/* Update MSR IA32_XFD with xfirstuse_not_detected() if needed. */
+static inline void xdisable_switch(struct fpu *prev, struct fpu *next)
+{
+	if (!static_cpu_has(X86_FEATURE_XFD) || !xfirstuse_enabled())
+		return;
+
+	if (unlikely(prev->state_mask != next->state_mask))
+		xdisable_setbits(xfirstuse_not_detected(next));
+}
+
 /*
  * Load PKRU from the FPU context if available. Delay loading of the
  * complete FPU state until the return to userland.
  */
-static inline void switch_fpu_finish(struct fpu *new_fpu)
+static inline void switch_fpu_finish(struct fpu *old_fpu, struct fpu *new_fpu)
 {
 	u32 pkru_val = init_pkru_value;
 	struct pkru_state *pk;
@@ -557,6 +604,8 @@ static inline void switch_fpu_finish(struct fpu *new_fpu)
 		return;
 
 	set_thread_flag(TIF_NEED_FPU_LOAD);
+
+	xdisable_switch(old_fpu, new_fpu);
 
 	if (!cpu_feature_enabled(X86_FEATURE_OSPKE))
 		return;
