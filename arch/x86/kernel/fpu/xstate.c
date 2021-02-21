@@ -301,7 +301,7 @@ void fpstate_sanitize_xstate(struct fpu *fpu)
 	 * in a special way already:
 	 */
 	feature_bit = 0x2;
-	xfeatures = (xfeatures_mask_user() & ~xfeatures) >> 2;
+	xfeatures = (xfeatures_mask_user() & fpu->state_mask & ~xfeatures) >> feature_bit;
 
 	/*
 	 * Update all the remaining memory layouts according to their
@@ -310,12 +310,19 @@ void fpstate_sanitize_xstate(struct fpu *fpu)
 	 */
 	while (xfeatures) {
 		if (xfeatures & 0x1) {
-			int offset = xstate_comp_offsets[feature_bit];
+			int offset = get_xstate_comp_offset(fpu->state_mask, feature_bit);
 			int size = xstate_sizes[feature_bit];
 
-			memcpy((void *)fx + offset,
-			       (void *)&init_fpstate.xsave + offset,
-			       size);
+			/*
+			 * init_fpstate does not include the dynamic user states
+			 * as having initial values with zeros.
+			 */
+			if (xfeatures_mask_user_dynamic & BIT_ULL(feature_bit))
+				memset((void *)fx + offset, 0, size);
+			else
+				memcpy((void *)fx + offset,
+				       (void *)&init_fpstate.xsave + offset,
+				       size);
 		}
 
 		xfeatures >>= 1;
@@ -1326,15 +1333,31 @@ static void fill_gap(struct membuf *to, unsigned *last, unsigned offset)
 {
 	if (*last >= offset)
 		return;
-	membuf_write(to, (void *)&init_fpstate.xsave + *last, offset - *last);
+
+	/*
+	 * Copy initial data.
+	 *
+	 * init_fpstate buffer has the minimum size as excluding the dynamic user
+	 * states. But their initial values are zeros.
+	 */
+	if (offset <= get_xstate_config(XSTATE_MIN_SIZE))
+		membuf_write(to, (void *)&init_fpstate.xsave + *last, offset - *last);
+	else
+		membuf_zero(to, offset - *last);
 	*last = offset;
 }
 
+/*
+ * @from: If NULL, copy zeros.
+ */
 static void copy_part(struct membuf *to, unsigned *last, unsigned offset,
 		      unsigned size, void *from)
 {
 	fill_gap(to, last, offset);
-	membuf_write(to, from, size);
+	if (from)
+		membuf_write(to, from, size);
+	else
+		membuf_zero(to, size);
 	*last = offset + size;
 }
 
@@ -1386,15 +1409,27 @@ void copy_xstate_to_kernel(struct membuf to, struct fpu *fpu)
 		  sizeof(header), &header);
 
 	for (i = FIRST_EXTENDED_XFEATURE; i < XFEATURE_MAX; i++) {
-		/*
-		 * Copy only in-use xstates:
-		 */
-		if ((header.xfeatures >> i) & 1) {
-			void *src = __raw_xsave_addr(fpu, i);
+		u64 mask = BIT_ULL(i);
+		void *src;
 
-			copy_part(&to, &last, xstate_offsets[i],
-				  xstate_sizes[i], src);
-		}
+		if (!(xfeatures_mask_user() & mask))
+			continue;
+
+		/*
+		 * Copy states if used. Otherwise, copy the initial data.
+		 */
+
+		if (header.xfeatures & mask)
+			src = __raw_xsave_addr(fpu, i);
+		else
+			/*
+			 * init_fpstate buffer does not include the dynamic
+			 * user state data as having initial values with zeros.
+			 */
+			src = (xfeatures_mask_user_dynamic & mask) ?
+			      NULL : (void *)&init_fpstate.xsave + last;
+
+		copy_part(&to, &last, xstate_offsets[i], xstate_sizes[i], src);
 
 	}
 	fill_gap(&to, &last, size);
@@ -1426,6 +1461,9 @@ int copy_kernel_to_xstate(struct fpu *fpu, const void *kbuf)
 
 		if (hdr.xfeatures & mask) {
 			void *dst = __raw_xsave_addr(fpu, i);
+
+			if (!dst)
+				continue;
 
 			offset = xstate_offsets[i];
 			size = xstate_sizes[i];
@@ -1483,6 +1521,9 @@ int copy_user_to_xstate(struct fpu *fpu, const void __user *ubuf)
 
 		if (hdr.xfeatures & mask) {
 			void *dst = __raw_xsave_addr(fpu, i);
+
+			if (!dst)
+				continue;
 
 			offset = xstate_offsets[i];
 			size = xstate_sizes[i];
@@ -1564,7 +1605,7 @@ void copy_supervisor_to_kernel(struct fpu *fpu)
 			continue;
 
 		/* Move xfeature 'i' into its normal location */
-		memmove(xbuf + xstate_comp_offsets[i],
+		memmove(xbuf + get_xstate_comp_offset(fpu->state_mask, i),
 			xbuf + xstate_supervisor_only_offsets[i],
 			xstate_sizes[i]);
 	}
