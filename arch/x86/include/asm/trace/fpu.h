@@ -89,6 +89,11 @@ DEFINE_EVENT(x86_fpu, x86_fpu_xstate_check_failed,
 	TP_ARGS(fpu)
 );
 
+DEFINE_EVENT(x86_fpu, x86_fpu_xstate_alloc_failed,
+	TP_PROTO(struct fpu *fpu),
+	TP_ARGS(fpu)
+);
+
 #undef TRACE_INCLUDE_PATH
 #define TRACE_INCLUDE_PATH asm/trace/
 #undef TRACE_INCLUDE_FILE

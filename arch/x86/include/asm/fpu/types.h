@@ -337,6 +337,13 @@ struct fpu {
 	unsigned long			avx512_timestamp;
 
 	/*
+	 * @state_mask:
+	 *
+	 * The bitmap represents state components reserved to be saved in ->state.
+	 */
+	u64				state_mask;
+
+	/*
 	 * @state:
 	 *
 	 * A pointer to indicate the in-memory copy of all FPU registers that are

@@ -112,6 +112,10 @@ extern unsigned int get_xstate_config(enum xstate_config cfg);
 void set_xstate_config(enum xstate_config cfg, unsigned int value);
 
 void *get_xsave_addr(struct fpu *fpu, int xfeature_nr);
+unsigned int get_xstate_size(u64 mask);
+int alloc_xstate_buffer(struct fpu *fpu, u64 mask);
+void free_xstate_buffer(struct fpu *fpu);
+
 const void *get_xsave_field_ptr(int xfeature_nr);
 int using_compacted_format(void);
 int xfeature_size(int xfeature_nr);
