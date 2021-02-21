@@ -633,10 +633,6 @@ static void __init setup_init_fpu_buf(void)
 	static int on_boot_cpu __initdata = 1;
 	u64 mask;
 
-	BUILD_BUG_ON((XFEATURE_MASK_USER_SUPPORTED |
-		      XFEATURE_MASK_SUPERVISOR_SUPPORTED) !=
-		     XFEATURES_INIT_FPSTATE_HANDLED);
-
 	WARN_ON_FPU(!on_boot_cpu);
 	on_boot_cpu = 0;
 
