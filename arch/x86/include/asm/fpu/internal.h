@@ -573,7 +573,7 @@ static inline void switch_fpu_finish(struct fpu *new_fpu)
 		 * in memory is not valid. This means pkru_val has to be
 		 * set to 0 and not to init_pkru_value.
 		 */
-		pk = get_xsave_addr(&new_fpu->state.xsave, XFEATURE_PKRU);
+		pk = get_xsave_addr(new_fpu, XFEATURE_PKRU);
 		pkru_val = pk ? pk->pkru : 0;
 	}
 	__write_pkru(pkru_val);
