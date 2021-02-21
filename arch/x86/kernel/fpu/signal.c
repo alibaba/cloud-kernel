@@ -212,11 +212,11 @@ retry:
 }
 
 static inline void
-sanitize_restored_user_xstate(union fpregs_state *state,
+sanitize_restored_user_xstate(struct fpu *fpu,
 			      struct user_i387_ia32_struct *ia32_env,
 			      u64 user_xfeatures, int fx_only)
 {
-	struct xregs_state *xsave = &state->xsave;
+	struct xregs_state *xsave = &fpu->state.xsave;
 	struct xstate_header *header = &xsave->header;
 
 	if (use_xsave()) {
@@ -243,7 +243,7 @@ sanitize_restored_user_xstate(union fpregs_state *state,
 		xsave->i387.mxcsr &= mxcsr_feature_mask;
 
 		if (ia32_env)
-			convert_to_fxsr(&state->fxsave, ia32_env);
+			convert_to_fxsr(&fpu->state.fxsave, ia32_env);
 	}
 }
 
@@ -409,7 +409,7 @@ static int __fpu__restore_sig(void __user *buf, void __user *buf_fx, int size)
 		 * current supervisor states first and invalidate the FPU regs.
 		 */
 		if (xfeatures_mask_supervisor())
-			copy_supervisor_to_kernel(&fpu->state.xsave);
+			copy_supervisor_to_kernel(fpu);
 		set_thread_flag(TIF_NEED_FPU_LOAD);
 	}
 	__fpu_invalidate_fpregs_state(fpu);
@@ -418,12 +418,11 @@ static int __fpu__restore_sig(void __user *buf, void __user *buf_fx, int size)
 	if (use_xsave() && !fx_only) {
 		u64 init_bv = xfeatures_mask_user() & ~user_xfeatures;
 
-		ret = copy_user_to_xstate(&fpu->state.xsave, buf_fx);
+		ret = copy_user_to_xstate(fpu, buf_fx);
 		if (ret)
 			goto out;
 
-		sanitize_restored_user_xstate(&fpu->state, envp, user_xfeatures,
-					      fx_only);
+		sanitize_restored_user_xstate(fpu, envp, user_xfeatures, fx_only);
 
 		fpregs_lock();
 		if (unlikely(init_bv))
@@ -443,8 +442,7 @@ static int __fpu__restore_sig(void __user *buf, void __user *buf_fx, int size)
 			goto out;
 		}
 
-		sanitize_restored_user_xstate(&fpu->state, envp, user_xfeatures,
-					      fx_only);
+		sanitize_restored_user_xstate(fpu, envp, user_xfeatures, fx_only);
 
 		fpregs_lock();
 		if (use_xsave()) {

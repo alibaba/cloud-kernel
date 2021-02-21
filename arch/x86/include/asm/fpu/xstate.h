@@ -105,10 +105,10 @@ const void *get_xsave_field_ptr(int xfeature_nr);
 int using_compacted_format(void);
 int xfeature_size(int xfeature_nr);
 struct membuf;
-void copy_xstate_to_kernel(struct membuf to, struct xregs_state *xsave);
-int copy_kernel_to_xstate(struct xregs_state *xsave, const void *kbuf);
-int copy_user_to_xstate(struct xregs_state *xsave, const void __user *ubuf);
-void copy_supervisor_to_kernel(struct xregs_state *xsave);
+void copy_xstate_to_kernel(struct membuf to, struct fpu *fpu);
+int copy_kernel_to_xstate(struct fpu *fpu, const void *kbuf);
+int copy_user_to_xstate(struct fpu *fpu, const void __user *ubuf);
+void copy_supervisor_to_kernel(struct fpu *fpu);
 void copy_dynamic_supervisor_to_kernel(struct xregs_state *xstate, u64 mask);
 void copy_kernel_to_dynamic_supervisor(struct xregs_state *xstate, u64 mask);
 

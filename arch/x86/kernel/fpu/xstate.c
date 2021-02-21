@@ -1106,13 +1106,16 @@ static void copy_part(struct membuf *to, unsigned *last, unsigned offset,
  * It supports partial copy but pos always starts from zero. This is called
  * from xstateregs_get() and there we check the CPU has XSAVES.
  */
-void copy_xstate_to_kernel(struct membuf to, struct xregs_state *xsave)
+void copy_xstate_to_kernel(struct membuf to, struct fpu *fpu)
 {
 	struct xstate_header header;
 	const unsigned off_mxcsr = offsetof(struct fxregs_state, mxcsr);
+	struct xregs_state *xsave;
 	unsigned size = to.left;
 	unsigned last = 0;
 	int i;
+
+	xsave = &fpu->state.xsave;
 
 	/*
 	 * The destination is a ptrace buffer; we put in only user xstates:
@@ -1162,8 +1165,9 @@ void copy_xstate_to_kernel(struct membuf to, struct xregs_state *xsave)
  * Convert from a ptrace standard-format kernel buffer to kernel XSAVES format
  * and copy to the target thread. This is called from xstateregs_set().
  */
-int copy_kernel_to_xstate(struct xregs_state *xsave, const void *kbuf)
+int copy_kernel_to_xstate(struct fpu *fpu, const void *kbuf)
 {
+	struct xregs_state *xsave;
 	unsigned int offset, size;
 	int i;
 	struct xstate_header hdr;
@@ -1175,6 +1179,8 @@ int copy_kernel_to_xstate(struct xregs_state *xsave, const void *kbuf)
 
 	if (validate_user_xstate_header(&hdr))
 		return -EINVAL;
+
+	xsave = &fpu->state.xsave;
 
 	for (i = 0; i < XFEATURE_MAX; i++) {
 		u64 mask = ((u64)1 << i);
@@ -1215,8 +1221,9 @@ int copy_kernel_to_xstate(struct xregs_state *xsave, const void *kbuf)
  * xstateregs_set(), as well as potentially from the sigreturn() and
  * rt_sigreturn() system calls.
  */
-int copy_user_to_xstate(struct xregs_state *xsave, const void __user *ubuf)
+int copy_user_to_xstate(struct fpu *fpu, const void __user *ubuf)
 {
+	struct xregs_state *xsave;
 	unsigned int offset, size;
 	int i;
 	struct xstate_header hdr;
@@ -1229,6 +1236,8 @@ int copy_user_to_xstate(struct xregs_state *xsave, const void __user *ubuf)
 
 	if (validate_user_xstate_header(&hdr))
 		return -EINVAL;
+
+	xsave = &fpu->state.xsave;
 
 	for (i = 0; i < XFEATURE_MAX; i++) {
 		u64 mask = ((u64)1 << i);
@@ -1270,9 +1279,10 @@ int copy_user_to_xstate(struct xregs_state *xsave, const void __user *ubuf)
  * old states, and is intended to be used only in __fpu__restore_sig(), where
  * user states are restored from the user buffer.
  */
-void copy_supervisor_to_kernel(struct xregs_state *xstate)
+void copy_supervisor_to_kernel(struct fpu *fpu)
 {
 	struct xstate_header *header;
+	struct xregs_state *xstate;
 	u64 max_bit, min_bit;
 	u32 lmask, hmask;
 	int err, i;
@@ -1286,6 +1296,7 @@ void copy_supervisor_to_kernel(struct xregs_state *xstate)
 	max_bit = __fls(xfeatures_mask_supervisor());
 	min_bit = __ffs(xfeatures_mask_supervisor());
 
+	xstate = &fpu->state.xsave;
 	lmask = xfeatures_mask_supervisor();
 	hmask = xfeatures_mask_supervisor() >> 32;
 	XSTATE_OP(XSAVES, xstate, lmask, hmask, err);
