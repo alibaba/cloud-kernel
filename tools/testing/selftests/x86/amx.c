@@ -650,6 +650,71 @@ static void test_ptrace(void)
 	test_tile_state_write(ptracee_loads_tiles);
 }
 
+/* Signal handling test */
+
+static int sigtrapped;
+struct tile_data sig_tiles, sighdl_tiles;
+
+static void handle_sigtrap(int sig, siginfo_t *info, void *ctx_void)
+{
+	ucontext_t *uctxt = (ucontext_t *)ctx_void;
+	struct xsave_data xdata;
+	struct tile_config cfg;
+	struct tile_data tiles;
+	u64 header;
+
+	header = __get_xsave_xstate_bv((void *)uctxt->uc_mcontext.fpregs);
+
+	if (header & (1 << XFEATURE_XTILE_DATA))
+		printf("[FAIL]\ttile data was written in sigframe\n");
+	else
+		printf("[OK]\ttile data was skipped in sigframe\n");
+
+	set_tilecfg(&cfg);
+	load_tilecfg(&cfg);
+	init_xdata(&xdata);
+
+	make_tiles(&tiles);
+	copy_tiles_to_xdata(&xdata, &tiles);
+	restore_xdata(&xdata);
+
+	save_xdata(&xdata);
+	if (compare_xdata_tiles(&xdata, &tiles))
+		err(1, "tile load file");
+
+	printf("\tsignal handler: load tile data\n");
+
+	sigtrapped = sig;
+}
+
+static void test_signal_handling(void)
+{
+	struct xsave_data xdata = { 0 };
+	struct tile_data tiles = { 0 };
+
+	sethandler(SIGTRAP, handle_sigtrap, 0);
+	sigtrapped = 0;
+
+	printf("[RUN]\tCheck tile state management in handling signal\n");
+
+	printf("\tbefore signal: initial tile data state\n");
+
+	raise(SIGTRAP);
+
+	if (sigtrapped == 0)
+		err(1, "sigtrap");
+
+	save_xdata(&xdata);
+	if (compare_xdata_tiles(&xdata, &tiles)) {
+		printf("[FAIL]\ttile data was not loaded at sigreturn\n");
+		nerrs++;
+	} else {
+		printf("[OK]\ttile data was re-initialized at sigreturn\n");
+	}
+
+	clearhandler(SIGTRAP);
+}
+
 int main(void)
 {
 	/* Check hardware availability at first */
@@ -672,6 +737,7 @@ int main(void)
 	test_fork();
 	test_context_switch();
 	test_ptrace();
+	test_signal_handling();
 
 	return nerrs ? 1 : 0;
 }
