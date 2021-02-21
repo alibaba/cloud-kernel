@@ -9332,10 +9332,13 @@ static void kvm_save_current_fpu(struct fpu *fpu)
 	/*
 	 * If the target FPU state is not resident in the CPU registers, just
 	 * memcpy() from current, else save CPU state directly to the target.
+	 *
+	 * KVM does not support dynamic user states yet. Assume the buffer
+	 * always has the minimum size.
 	 */
 	if (test_thread_flag(TIF_NEED_FPU_LOAD))
 		memcpy(&fpu->state, &current->thread.fpu.state,
-		       fpu_kernel_xstate_size);
+		       get_xstate_config(XSTATE_MIN_SIZE));
 	else
 		copy_fpregs_to_fpstate(fpu);
 }

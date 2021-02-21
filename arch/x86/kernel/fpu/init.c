@@ -129,15 +129,6 @@ static void __init fpu__init_system_generic(void)
 	fpu__init_system_mxcsr();
 }
 
-/*
- * Size of the FPU context state. All tasks in the system use the
- * same context size, regardless of what portion they use.
- * This is inherent to the XSAVE architecture which puts all state
- * components into a single, continuous memory block:
- */
-unsigned int fpu_kernel_xstate_size;
-EXPORT_SYMBOL_GPL(fpu_kernel_xstate_size);
-
 /* Get alignment of the TYPE. */
 #define TYPE_ALIGN(TYPE) offsetof(struct { char x; TYPE test; }, test)
 
@@ -167,8 +158,10 @@ static void __init fpu__init_task_struct_size(void)
 	/*
 	 * Add back the dynamically-calculated register state
 	 * size.
+	 *
+	 * Use the minimum size as embedded to task_struct.
 	 */
-	task_size += fpu_kernel_xstate_size;
+	task_size += get_xstate_config(XSTATE_MIN_SIZE);
 
 	/*
 	 * We dynamically size 'struct fpu', so we require that
@@ -193,6 +186,7 @@ static void __init fpu__init_task_struct_size(void)
 static void __init fpu__init_system_xstate_size_legacy(void)
 {
 	static int on_boot_cpu __initdata = 1;
+	unsigned int size;
 
 	WARN_ON_FPU(!on_boot_cpu);
 	on_boot_cpu = 0;
@@ -203,17 +197,17 @@ static void __init fpu__init_system_xstate_size_legacy(void)
 	 */
 
 	if (!boot_cpu_has(X86_FEATURE_FPU)) {
-		fpu_kernel_xstate_size = sizeof(struct swregs_state);
+		size = sizeof(struct swregs_state);
 	} else {
 		if (boot_cpu_has(X86_FEATURE_FXSR))
-			fpu_kernel_xstate_size =
-				sizeof(struct fxregs_state);
+			size = sizeof(struct fxregs_state);
 		else
-			fpu_kernel_xstate_size =
-				sizeof(struct fregs_state);
+			size = sizeof(struct fregs_state);
 	}
 
-	fpu_user_xstate_size = fpu_kernel_xstate_size;
+	set_xstate_config(XSTATE_MIN_SIZE, size);
+	set_xstate_config(XSTATE_MAX_SIZE, size);
+	set_xstate_config(XSTATE_USER_SIZE, size);
 }
 
 /*

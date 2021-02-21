@@ -102,6 +102,15 @@ extern u64 xstate_fx_sw_bytes[USER_XSTATE_FX_SW_WORDS];
 extern void __init update_regset_xstate_info(unsigned int size,
 					     u64 xstate_mask);
 
+enum xstate_config {
+	XSTATE_MIN_SIZE,
+	XSTATE_MAX_SIZE,
+	XSTATE_USER_SIZE
+};
+
+extern unsigned int get_xstate_config(enum xstate_config cfg);
+void set_xstate_config(enum xstate_config cfg, unsigned int value);
+
 void *get_xsave_addr(struct fpu *fpu, int xfeature_nr);
 const void *get_xsave_field_ptr(int xfeature_nr);
 int using_compacted_format(void);

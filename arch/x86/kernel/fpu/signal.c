@@ -35,7 +35,7 @@ static inline int check_for_xstate(struct fxregs_state __user *buf,
 	/* Check for the first magic field and other error scenarios. */
 	if (fx_sw->magic1 != FP_XSTATE_MAGIC1 ||
 	    fx_sw->xstate_size < min_xstate_size ||
-	    fx_sw->xstate_size > fpu_user_xstate_size ||
+	    fx_sw->xstate_size > get_xstate_config(XSTATE_USER_SIZE) ||
 	    fx_sw->xstate_size > fx_sw->extended_size)
 		return -1;
 
@@ -98,7 +98,7 @@ static inline int save_xstate_epilog(void __user *buf, int ia32_frame)
 		return err;
 
 	err |= __put_user(FP_XSTATE_MAGIC2,
-			  (__u32 __user *)(buf + fpu_user_xstate_size));
+			  (__u32 __user *)(buf + get_xstate_config(XSTATE_USER_SIZE)));
 
 	/*
 	 * Read the xfeatures which we copied (directly from the cpu or
@@ -135,7 +135,7 @@ static inline int copy_fpregs_to_sigframe(struct xregs_state __user *buf)
 	else
 		err = copy_fregs_to_user((struct fregs_state __user *) buf);
 
-	if (unlikely(err) && __clear_user(buf, fpu_user_xstate_size))
+	if (unlikely(err) && __clear_user(buf, get_xstate_config(XSTATE_USER_SIZE)))
 		err = -EFAULT;
 	return err;
 }
@@ -196,7 +196,7 @@ retry:
 	fpregs_unlock();
 
 	if (ret) {
-		if (!fault_in_pages_writeable(buf_fx, fpu_user_xstate_size))
+		if (!fault_in_pages_writeable(buf_fx, get_xstate_config(XSTATE_USER_SIZE)))
 			goto retry;
 		return -EFAULT;
 	}
@@ -280,13 +280,13 @@ static int copy_user_to_fpregs_zeroing(void __user *buf, u64 xbv, int fx_only)
 static int __fpu__restore_sig(void __user *buf, void __user *buf_fx, int size)
 {
 	struct user_i387_ia32_struct *envp = NULL;
-	int state_size = fpu_kernel_xstate_size;
 	int ia32_fxstate = (buf != buf_fx);
 	struct task_struct *tsk = current;
 	struct fpu *fpu = &tsk->thread.fpu;
 	struct user_i387_ia32_struct env;
 	u64 user_xfeatures = 0;
 	int fx_only = 0;
+	int state_size;
 	int ret = 0;
 
 	ia32_fxstate &= (IS_ENABLED(CONFIG_X86_32) ||
@@ -324,6 +324,9 @@ static int __fpu__restore_sig(void __user *buf, void __user *buf_fx, int size)
 			state_size = fx_sw_user.xstate_size;
 			user_xfeatures = fx_sw_user.xfeatures;
 		}
+	} else {
+		/* The buffer cannot be dynamic without using XSAVE. */
+		state_size = get_xstate_config(XSTATE_MIN_SIZE);
 	}
 
 	if ((unsigned long)buf_fx % 64)
@@ -475,8 +478,9 @@ out:
 
 static inline int xstate_sigframe_size(void)
 {
-	return use_xsave() ? fpu_user_xstate_size + FP_XSTATE_MAGIC2_SIZE :
-			fpu_user_xstate_size;
+	int size = get_xstate_config(XSTATE_USER_SIZE);
+
+	return use_xsave() ? size + FP_XSTATE_MAGIC2_SIZE : size;
 }
 
 /*
@@ -539,19 +543,20 @@ unsigned long fpu__get_fpstate_size(void)
  */
 void fpu__init_prepare_fx_sw_frame(void)
 {
-	int size = fpu_user_xstate_size + FP_XSTATE_MAGIC2_SIZE;
+	int xstate_size = get_xstate_config(XSTATE_USER_SIZE);
+	int ext_size = xstate_size + FP_XSTATE_MAGIC2_SIZE;
 
 	fx_sw_reserved.magic1 = FP_XSTATE_MAGIC1;
-	fx_sw_reserved.extended_size = size;
+	fx_sw_reserved.extended_size = ext_size;
 	fx_sw_reserved.xfeatures = xfeatures_mask_user();
-	fx_sw_reserved.xstate_size = fpu_user_xstate_size;
+	fx_sw_reserved.xstate_size = xstate_size;
 
 	if (IS_ENABLED(CONFIG_IA32_EMULATION) ||
 	    IS_ENABLED(CONFIG_X86_32)) {
 		int fsave_header_size = sizeof(struct fregs_state);
 
 		fx_sw_reserved_ia32 = fx_sw_reserved;
-		fx_sw_reserved_ia32.extended_size = size + fsave_header_size;
+		fx_sw_reserved_ia32.extended_size = ext_size + fsave_header_size;
 	}
 }
 

@@ -99,7 +99,7 @@ int xstateregs_get(struct task_struct *target, const struct user_regset *regset,
 		/*
 		 * Copy the xstate memory layout.
 		 */
-		return membuf_write(&to, xsave, fpu_user_xstate_size);
+		return membuf_write(&to, xsave, get_xstate_config(XSTATE_USER_SIZE));
 	}
 }
 
@@ -117,7 +117,7 @@ int xstateregs_set(struct task_struct *target, const struct user_regset *regset,
 	/*
 	 * A whole standard-format XSAVE buffer is needed:
 	 */
-	if ((pos != 0) || (count < fpu_user_xstate_size))
+	if ((pos != 0) || (count < get_xstate_config(XSTATE_USER_SIZE)))
 		return -EFAULT;
 
 	xsave = &fpu->state.xsave;

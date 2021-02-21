@@ -72,12 +72,50 @@ static unsigned int xstate_sizes[XFEATURE_MAX]   = { [ 0 ... XFEATURE_MAX - 1] =
 static unsigned int xstate_comp_offsets[XFEATURE_MAX] = { [ 0 ... XFEATURE_MAX - 1] = -1};
 static unsigned int xstate_supervisor_only_offsets[XFEATURE_MAX] = { [ 0 ... XFEATURE_MAX - 1] = -1};
 
-/*
- * The XSAVE area of kernel can be in standard or compacted format;
- * it is always in standard format for user mode. This is the user
- * mode standard format size used for signal and ptrace frames.
+/**
+ * struct fpu_xstate_buffer_config - xstate per-task buffer configuration
+ * @min_size, @max_size:	The size of the kernel buffer. It is variable with the dynamic user
+ *				states. Every task has the minimum buffer by default. It can be
+ *				expanded to the max size.  The two sizes are the same when using the
+ *				standard format.
+ * @user_size:			The size of the userspace buffer. The buffer is always in the
+ *				standard format. It is used for signal and ptrace frames.
  */
-unsigned int fpu_user_xstate_size;
+struct fpu_xstate_buffer_config {
+	unsigned int min_size, max_size;
+	unsigned int user_size;
+};
+
+static struct fpu_xstate_buffer_config buffer_config __read_mostly;
+
+unsigned int get_xstate_config(enum xstate_config cfg)
+{
+	switch (cfg) {
+	case XSTATE_MIN_SIZE:
+		return buffer_config.min_size;
+	case XSTATE_MAX_SIZE:
+		return buffer_config.max_size;
+	case XSTATE_USER_SIZE:
+		return buffer_config.user_size;
+	default:
+		return 0;
+	}
+}
+EXPORT_SYMBOL_GPL(get_xstate_config);
+
+void set_xstate_config(enum xstate_config cfg, unsigned int value)
+{
+	switch (cfg) {
+	case XSTATE_MIN_SIZE:
+		buffer_config.min_size = value;
+		break;
+	case XSTATE_MAX_SIZE:
+		buffer_config.max_size = value;
+		break;
+	case XSTATE_USER_SIZE:
+		buffer_config.user_size = value;
+	}
+}
 
 /*
  * Return whether the system supports a given xfeature.
@@ -694,7 +732,7 @@ static void do_extra_xstate_size_checks(void)
 		 */
 		paranoid_xstate_size += xfeature_size(i);
 	}
-	XSTATE_WARN_ON(paranoid_xstate_size != fpu_kernel_xstate_size);
+	XSTATE_WARN_ON(paranoid_xstate_size != get_xstate_config(XSTATE_MAX_SIZE));
 }
 
 
@@ -789,21 +827,29 @@ static int __init init_xstate_size(void)
 	else
 		possible_xstate_size = xsave_size;
 
-	/* Ensure we have the space to store all enabled: */
-	if (!is_supported_xstate_size(possible_xstate_size))
-		return -EINVAL;
+	/*
+	 * The size accounts for all the possible states reserved in the
+	 * per-task buffer.  Set the maximum with this value.
+	 */
+	set_xstate_config(XSTATE_MAX_SIZE, possible_xstate_size);
+
+	/* Perform an extra check for the maximum size. */
+	do_extra_xstate_size_checks();
 
 	/*
-	 * The size is OK, we are definitely going to use xsave,
-	 * make it known to the world that we need more space.
+	 * Set the minimum to be the same as the maximum. The dynamic
+	 * user states are not supported yet.
 	 */
-	fpu_kernel_xstate_size = possible_xstate_size;
-	do_extra_xstate_size_checks();
+	set_xstate_config(XSTATE_MIN_SIZE, possible_xstate_size);
+
+	/* Ensure the minimum size fits in the statically-alocated buffer: */
+	if (!is_supported_xstate_size(get_xstate_config(XSTATE_MIN_SIZE)))
+		return -EINVAL;
 
 	/*
 	 * User space is always in standard format.
 	 */
-	fpu_user_xstate_size = xsave_size;
+	set_xstate_config(XSTATE_USER_SIZE, xsave_size);
 	return 0;
 }
 
@@ -894,7 +940,7 @@ void __init fpu__init_system_xstate(void)
 	 * Update info used for ptrace frames; use standard-format size and no
 	 * supervisor xstates:
 	 */
-	update_regset_xstate_info(fpu_user_xstate_size, xfeatures_mask_user());
+	update_regset_xstate_info(get_xstate_config(XSTATE_USER_SIZE), xfeatures_mask_user());
 
 	fpu__init_prepare_fx_sw_frame();
 	setup_init_fpu_buf();
@@ -904,7 +950,7 @@ void __init fpu__init_system_xstate(void)
 
 	pr_info("x86/fpu: Enabled xstate features 0x%llx, context size is %d bytes, using '%s' format.\n",
 		xfeatures_mask_all,
-		fpu_kernel_xstate_size,
+		get_xstate_config(XSTATE_MAX_SIZE),
 		boot_cpu_has(X86_FEATURE_XSAVES) ? "compacted" : "standard");
 	return;
 
