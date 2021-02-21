@@ -122,6 +122,35 @@ int xstateregs_set(struct task_struct *target, const struct user_regset *regset,
 
 	xsave = &fpu->state->xsave;
 
+	/*
+	 * When a ptracer attempts to write any state in the target buffer but not
+	 * sufficiently allocated, it dynamically expands the buffer.
+	 */
+	if (count > get_xstate_size(fpu->state_mask)) {
+		unsigned int offset, size;
+		struct xstate_header hdr;
+		u64 mask;
+
+		offset = offsetof(struct xregs_state, header);
+		size = sizeof(hdr);
+
+		/* Retrieve XSTATE_BV */
+		if (kbuf) {
+			memcpy(&hdr, kbuf + offset, size);
+		} else {
+			ret = __copy_from_user(&hdr, ubuf + offset, size);
+			if (ret)
+				return ret;
+		}
+
+		mask = hdr.xfeatures & xfeatures_mask_user_dynamic;
+		if (!mask) {
+			ret = alloc_xstate_buffer(fpu, mask);
+			if (ret)
+				return ret;
+		}
+	}
+
 	fpu__prepare_write(fpu);
 
 	if (using_compacted_format()) {
