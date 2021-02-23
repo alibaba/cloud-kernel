@@ -326,5 +326,7 @@ long get_tagged_addr_ctrl(struct task_struct *task);
 })
 #define on_thread_stack()	(on_task_stack(current, current_stack_pointer, NULL))
 
+void default_idle(void);
+
 #endif /* __ASSEMBLY__ */
 #endif /* __ASM_PROCESSOR_H */

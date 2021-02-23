@@ -129,6 +129,15 @@ void noinstr arch_cpu_idle(void)
 	raw_local_irq_enable();
 }
 
+/*
+ * We use this if we don't have any better idle routine..
+ */
+void __cpuidle default_idle(void)
+{
+	arch_cpu_idle();
+}
+EXPORT_SYMBOL(default_idle);
+
 #ifdef CONFIG_HOTPLUG_CPU
 void arch_cpu_idle_dead(void)
 {
