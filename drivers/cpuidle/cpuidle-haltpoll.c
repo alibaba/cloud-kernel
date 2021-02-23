@@ -96,7 +96,11 @@ static void haltpoll_uninit(void)
 
 static bool haltpoll_want(void)
 {
+#ifdef CONFIG_ARM64
+	return true;
+#else
 	return kvm_para_has_hint(KVM_HINTS_REALTIME) || force;
+#endif
 }
 
 static int __init haltpoll_init(void)
