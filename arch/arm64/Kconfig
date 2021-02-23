@@ -1076,8 +1076,15 @@ config ARCH_ENABLE_SPLIT_PMD_PTLOCK
 config CC_HAVE_SHADOW_CALL_STACK
 	def_bool $(cc-option, -fsanitize=shadow-call-stack -ffixed-x18)
 
+config ARCH_CPUIDLE_HALTPOLL
+	def_bool n
+	prompt "Disable host haltpoll when loading haltpoll driver"
+	help
+	  If virtualized under KVM, disable host haltpoll.
+
 config PARAVIRT
 	bool "Enable paravirtualization code"
+	select ARCH_CPUIDLE_HALTPOLL
 	help
 	  This changes the kernel so it can modify itself when it is run
 	  under a hypervisor, potentially improving performance significantly
