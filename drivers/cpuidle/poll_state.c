@@ -4,6 +4,7 @@
  */
 
 #include <linux/cpuidle.h>
+#include <linux/cpu.h>
 #include <linux/sched.h>
 #include <linux/sched/clock.h>
 #include <linux/sched/idle.h>
