@@ -328,5 +328,11 @@ long get_tagged_addr_ctrl(struct task_struct *task);
 
 void default_idle(void);
 
+extern unsigned long boot_option_idle_override;
+enum idle_boot_override {
+	IDLE_NO_OVERRIDE,
+	IDLE_DEFAULT,
+};
+
 #endif /* __ASSEMBLY__ */
 #endif /* __ASM_PROCESSOR_H */

@@ -138,6 +138,18 @@ void __cpuidle default_idle(void)
 }
 EXPORT_SYMBOL(default_idle);
 
+unsigned long boot_option_idle_override = IDLE_NO_OVERRIDE;
+EXPORT_SYMBOL(boot_option_idle_override);
+
+static int __init idle_setup(char *str)
+{
+	boot_option_idle_override = IDLE_DEFAULT;
+	pr_info("Disable halt-polling cpu idle\n");
+
+	return 0;
+}
+early_param("idle", idle_setup);
+
 #ifdef CONFIG_HOTPLUG_CPU
 void arch_cpu_idle_dead(void)
 {
