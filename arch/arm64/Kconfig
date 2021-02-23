@@ -1082,9 +1082,13 @@ config ARCH_CPUIDLE_HALTPOLL
 	help
 	  If virtualized under KVM, disable host haltpoll.
 
+config KVM_GUEST
+	bool "KVM Guest support"
+
 config PARAVIRT
 	bool "Enable paravirtualization code"
 	select ARCH_CPUIDLE_HALTPOLL
+	select KVM_GUEST
 	help
 	  This changes the kernel so it can modify itself when it is run
 	  under a hypervisor, potentially improving performance significantly
@@ -1925,6 +1929,9 @@ config ARCH_ENABLE_HUGEPAGE_MIGRATION
 config ARCH_ENABLE_THP_MIGRATION
 	def_bool y
 	depends on TRANSPARENT_HUGEPAGE
+
+config ARCH_HAS_CPU_RELAX
+        def_bool y
 
 menu "Power management options"
 
