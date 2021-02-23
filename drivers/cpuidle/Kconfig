@@ -64,7 +64,7 @@ endmenu
 
 config HALTPOLL_CPUIDLE
 	tristate "Halt poll cpuidle driver"
-	depends on X86 && KVM_GUEST
+	depends on (X86 || ARM64) && KVM_GUEST
 	default y
 	help
 	 This option enables halt poll cpuidle driver, which allows to poll
