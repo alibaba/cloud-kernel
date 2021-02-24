@@ -774,6 +774,12 @@ tcp_challenge_ack_limit - INTEGER
 	in RFC 5961 (Improving TCP's Robustness to Blind In-Window Attacks)
 	Default: 100
 
+tcp_rto_min - INTEGER
+	The minminal timeout (in  milliseconds) before the TCP segments are
+	retransmitted. This value is per net namespace and not inherited.
+	If the value is smaller than one tick, use one tick.
+	Default: 200 ms
+
 UDP variables:
 
 udp_l3mdev_accept - BOOLEAN

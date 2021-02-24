@@ -124,6 +124,7 @@ enum {
 #define TCP_FASTOPEN_NO_COOKIE	34	/* Enable TFO without a TFO cookie */
 #define TCP_ZEROCOPY_RECEIVE	35
 #define TCP_INQ			36	/* Notify bytes available to read as a cmsg on read */
+#define TCP_RTO_MINIMAL		99	/* TCP RTO minimal */
 
 #define TCP_CM_INQ		TCP_INQ
 

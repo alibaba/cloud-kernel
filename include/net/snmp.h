@@ -153,6 +153,14 @@ struct linux_xfrm_mib {
 		__this_cpu_add(ptr[basefield##OCTETS], addend);	\
 	} while (0)
 
+#define SNMP_UPD_STATS(mib, field, v)	\
+	do {	\
+		int i;	\
+		for_each_possible_cpu(i)	\
+			per_cpu(mib->mibs[field], i) = 0;	\
+		this_cpu_xchg(mib->mibs[field], v);	\
+	} while (0)
+
 
 #if BITS_PER_LONG==32
 

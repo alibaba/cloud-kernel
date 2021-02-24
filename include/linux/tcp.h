@@ -400,6 +400,8 @@ struct tcp_sock {
 	 */
 	struct request_sock *fastopen_rsk;
 	u32	*saved_syn;
+
+	int rto_min; /* per sock tcp_rto_min */
 };
 
 enum tsq_enum {

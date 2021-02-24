@@ -313,6 +313,7 @@ extern struct proto tcp_prot;
 #define __TCP_INC_STATS(net, field)	__SNMP_INC_STATS((net)->mib.tcp_statistics, field)
 #define TCP_DEC_STATS(net, field)	SNMP_DEC_STATS((net)->mib.tcp_statistics, field)
 #define TCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mib.tcp_statistics, field, val)
+#define TCP_UPD_STATS(net, field, val)	SNMP_UPD_STATS((net)->mib.tcp_statistics, field, val)
 
 void tcp_tasklet_init(void);
 
@@ -687,7 +688,7 @@ static inline void tcp_fast_path_check(struct sock *sk)
 static inline u32 tcp_rto_min(struct sock *sk)
 {
 	const struct dst_entry *dst = __sk_dst_get(sk);
-	u32 rto_min = TCP_RTO_MIN;
+	u32 rto_min = sock_net(sk)->ipv4.sysctl_tcp_rto_min;
 
 	if (dst && dst_metric_locked(dst, RTAX_RTO_MIN))
 		rto_min = dst_metric_rtt(dst, RTAX_RTO_MIN);
@@ -1257,7 +1258,8 @@ static inline bool tcp_needs_internal_pacing(const struct sock *sk)
  */
 static inline unsigned long tcp_probe0_base(const struct sock *sk)
 {
-	return max_t(unsigned long, inet_csk(sk)->icsk_rto, TCP_RTO_MIN);
+	return max_t(unsigned long, inet_csk(sk)->icsk_rto,
+		     sock_net(sk)->ipv4.sysctl_tcp_rto_min);
 }
 
 /* Variant of inet_csk_rto_backoff() used for zero window probes */

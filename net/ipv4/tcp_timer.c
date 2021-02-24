@@ -190,8 +190,14 @@ static bool retransmits_timed_out(struct sock *sk,
 				  unsigned int boundary,
 				  unsigned int timeout)
 {
-	const unsigned int rto_base = TCP_RTO_MIN;
+	struct tcp_sock *tp = tcp_sk(sk);
+	unsigned int rto_base;
 	unsigned int linear_backoff_thresh, start_ts;
+
+	if (tp->rto_min)
+		rto_base = tp->rto_min;
+	else
+		rto_base = sock_net(sk)->ipv4.sysctl_tcp_rto_min;
 
 	if (!inet_csk(sk)->icsk_retransmits)
 		return false;

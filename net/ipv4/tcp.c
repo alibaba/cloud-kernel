@@ -3062,6 +3062,12 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		else
 			tp->recvmsg_inq = val;
 		break;
+	case TCP_RTO_MINIMAL:
+		if (val > TCP_RTO_MAX || val < 0)
+			err = -EINVAL;
+		else
+			tp->rto_min = msecs_to_jiffies(val);
+		break;
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -3527,6 +3533,9 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		break;
 	case TCP_INQ:
 		val = tp->recvmsg_inq;
+		break;
+	case TCP_RTO_MINIMAL:
+		val = jiffies_to_msecs(tp->rto_min);
 		break;
 	case TCP_SAVE_SYN:
 		val = tp->save_syn;

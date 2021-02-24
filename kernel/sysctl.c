@@ -3204,6 +3204,44 @@ static int do_proc_dointvec_ms_jiffies_conv(bool *negp, unsigned long *lvalp,
 	return 0;
 }
 
+struct do_proc_dointvec_ms_jiffies_minmax_conv_param {
+	int *min;
+	int *max;
+};
+
+static int do_proc_dointvec_ms_jiffies_minmax_conv(bool *negp, unsigned long *lvalp,
+						   int *valp,
+						   int write, void *data)
+{
+	struct do_proc_dointvec_ms_jiffies_minmax_conv_param *param = data;
+
+	if (write) {
+		unsigned long jif = msecs_to_jiffies(*negp ? -*lvalp : *lvalp);
+
+		if (jif > INT_MAX)
+			return -EINVAL;
+
+		if ((param->min && *param->min > jif) ||
+		    (param->max && *param->max < jif))
+			return -ERANGE;
+
+		*valp = (int)jif;
+	} else {
+		int val = *valp;
+		unsigned long lval;
+
+		if (val < 0) {
+			*negp = true;
+			lval = -(unsigned long)val;
+		} else {
+			*negp = false;
+			lval = (unsigned long)val;
+		}
+		*lvalp = jiffies_to_msecs(lval);
+	}
+	return 0;
+}
+
 /**
  * proc_dointvec_jiffies - read a vector of integers as seconds
  * @table: the sysctl table
@@ -3269,6 +3307,18 @@ int proc_dointvec_ms_jiffies(struct ctl_table *table, int write,
 {
 	return do_proc_dointvec(table, write, buffer, lenp, ppos,
 				do_proc_dointvec_ms_jiffies_conv, NULL);
+}
+
+int proc_dointvec_ms_jiffies_minmax(struct ctl_table *table, int write,
+				    void __user *buffer,
+				    size_t *lenp, loff_t *ppos)
+{
+	struct do_proc_dointvec_ms_jiffies_minmax_conv_param param = {
+		.min = (int *) table->extra1,
+		.max = (int *) table->extra2,
+	};
+	return do_proc_dointvec(table, write, buffer, lenp, ppos,
+				do_proc_dointvec_ms_jiffies_minmax_conv, &param);
 }
 
 static int proc_do_cad_pid(struct ctl_table *table, int write,
@@ -3489,6 +3539,13 @@ int proc_dointvec_ms_jiffies(struct ctl_table *table, int write,
 	return -ENOSYS;
 }
 
+int proc_dointvec_ms_jiffies_minmax(struct ctl_table *table, int write,
+				    void __user *buffer,
+				    size_t *lenp, loff_t *ppos)
+{
+	return -ENOSYS;
+}
+
 int proc_doulongvec_minmax(struct ctl_table *table, int write,
 		    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
@@ -3520,3 +3577,4 @@ EXPORT_SYMBOL(proc_dointvec_ms_jiffies);
 EXPORT_SYMBOL(proc_dostring);
 EXPORT_SYMBOL(proc_doulongvec_minmax);
 EXPORT_SYMBOL(proc_doulongvec_ms_jiffies_minmax);
+EXPORT_SYMBOL(proc_dointvec_ms_jiffies_minmax);

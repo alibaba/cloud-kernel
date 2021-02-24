@@ -54,6 +54,8 @@ static u32 u32_max_div_HZ = UINT_MAX / HZ;
 static int one_day_secs = 24 * 3600;
 static int tcp_tw_timeout_min = 1 * HZ;
 static int tcp_tw_timeout_max = 600 * HZ;
+static int tcp_rto_min_min = 1; /* one tick */
+static int tcp_rto_min_max = TCP_RTO_MAX;
 
 /* obsolete */
 static int sysctl_tcp_low_latency __read_mostly;
@@ -439,6 +441,24 @@ static int proc_fib_multipath_hash_policy(struct ctl_table *table, int write,
 	return ret;
 }
 #endif
+
+static int proc_tcp_rto_min(struct ctl_table *table,
+			    int write, void __user *buffer,
+			    size_t *lenp, loff_t *ppos)
+{
+	int ret = 0;
+
+	ret = proc_dointvec_ms_jiffies_minmax(table, write, buffer, lenp, ppos);
+	if (write && !ret) {
+		struct net *net = container_of(table->data, struct net,
+					       ipv4.sysctl_tcp_rto_min);
+		int tcp_rto_min = init_net.ipv4.sysctl_tcp_rto_min;
+
+		TCP_UPD_STATS(net, TCP_MIB_RTOMIN, tcp_rto_min * 1000 / HZ);
+	}
+
+	return ret;
+}
 
 static struct ctl_table ipv4_table[] = {
 	{
@@ -1232,6 +1252,15 @@ static struct ctl_table ipv4_net_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
 		.extra2		= &comp_sack_nr_max,
+	},
+	{
+		.procname	= "tcp_rto_min",
+		.data		= &init_net.ipv4.sysctl_tcp_rto_min,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_tcp_rto_min,
+		.extra1		= &tcp_rto_min_min,
+		.extra2		= &tcp_rto_min_max
 	},
 	{
 		.procname	= "udp_rmem_min",
