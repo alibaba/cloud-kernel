@@ -1359,7 +1359,7 @@ static int scan_movable_pages(unsigned long start, unsigned long end,
 			continue;
 		head = compound_head(page);
 		if (hugepage_migration_supported(page_hstate(head)) &&
-		    page_huge_active(head))
+		    HPageMigratable(head))
 			return pfn;
 		skip = (1 << compound_order(head)) - (page - head);
 		pfn += skip - 1;

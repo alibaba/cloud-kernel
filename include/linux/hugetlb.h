@@ -338,9 +338,13 @@ unsigned long hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
  * HPG_restore_reserve - Set when a hugetlb page consumes a reservation at
  *	allocation time.  Cleared when page is fully instantiated.  Free
  *	routine checks flag to restore a reservation on error paths.
+ * HPG_migratable  - Set after a newly allocated page is added to the page
+ *	cache and/or page tables.  Indicates the page is a candidate for
+ *	migration.
  */
 enum hugetlb_page_flags {
 	HPG_restore_reserve = 0,
+	HPG_migratable,
 	__NR_HPAGEFLAGS,
 };
 
@@ -383,6 +387,7 @@ static inline void ClearHPage##uname(struct page *page)		\
  * Create functions associated with hugetlb page flags
  */
 HPAGEFLAG(RestoreReserve, restore_reserve)
+HPAGEFLAG(Migratable, migratable)
 
 #ifdef CONFIG_HUGETLB_PAGE
 
