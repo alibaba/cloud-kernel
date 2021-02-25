@@ -1263,6 +1263,15 @@ static bool has_cache_dic(const struct arm64_cpu_capabilities *entry,
 	return ctr & BIT(CTR_DIC_SHIFT);
 }
 
+static bool nocnp;
+
+static int __init early_nocnp(char *p)
+{
+	nocnp = true;
+	return 0;
+}
+early_param("nocnp", early_nocnp);
+
 static bool __maybe_unused
 has_useable_cnp(const struct arm64_cpu_capabilities *entry, int scope)
 {
@@ -1274,7 +1283,7 @@ has_useable_cnp(const struct arm64_cpu_capabilities *entry, int scope)
 	 if (is_kdump_kernel())
 		return false;
 
-	return has_cpuid_feature(entry, scope);
+	return has_cpuid_feature(entry, scope) && !nocnp;
 }
 
 /*
