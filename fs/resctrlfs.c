@@ -708,6 +708,11 @@ static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 	ret = 0;
 
 	rdtgrp->closid = closid;
+
+	ret = rdtgroup_init_alloc(rdtgrp);
+	if (ret < 0)
+		goto out_id_free;
+
 	list_add(&rdtgrp->resctrl_group_list, &resctrl_all_groups);
 
 	if (resctrl_mon_capable) {

@@ -86,6 +86,9 @@ static inline void mpam_node_assign_val(struct mpam_node *n,
 	n->addr = hwpage_address;
 	n->component_id = component_id;
 	n->cpus_list = "0";
+
+	if (n->type == MPAM_RESOURCE_MC)
+		n->default_ctrl = MBA_MAX_WD;
 }
 
 #define MPAM_NODE_NAME_SIZE (10)
@@ -544,6 +547,20 @@ void post_resctrl_mount(void)
 
 static int reset_all_ctrls(struct resctrl_resource *r)
 {
+	struct raw_resctrl_resource *rr;
+	struct rdt_domain *d;
+	int partid;
+
+	rr = (struct raw_resctrl_resource *)r->res;
+	for (partid = 0; partid < rr->num_partid; partid++) {
+		list_for_each_entry(d, &r->domains, list) {
+			d->new_ctrl = rr->default_ctrl;
+			d->ctrl_val[partid] = rr->default_ctrl;
+			d->have_new_ctrl = true;
+			rr->msr_update(d, partid);
+		}
+	}
+
 	return 0;
 }
 
