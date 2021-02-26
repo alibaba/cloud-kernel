@@ -666,3 +666,15 @@ void __init mpam_discovery_failed(void)
 	}
 	mutex_unlock(&mpam_devices_lock);
 }
+
+u16 mpam_sysprops_num_partid(void)
+{
+	/* At least one partid for system width */
+	return mpam_sysprops.max_partid + 1;
+}
+
+u16 mpam_sysprops_num_pmg(void)
+{
+	/* At least one pmg for system width */
+	return mpam_sysprops.max_pmg + 1;
+}

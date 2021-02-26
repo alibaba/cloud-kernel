@@ -48,4 +48,7 @@ static inline void mpam_clear_feature(enum mpam_device_features feat,
 
 #define MPAM_ARCHITECTURE_V1    0x10
 
+u16 mpam_sysprops_num_partid(void);
+u16 mpam_sysprops_num_pmg(void);
+
 #endif
