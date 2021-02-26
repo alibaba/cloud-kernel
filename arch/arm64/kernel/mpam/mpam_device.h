@@ -58,6 +58,12 @@ struct mpam_device {
 	/* for reset device MPAMCFG_PRI */
 	u16         hwdef_intpri;
 	u16         hwdef_dspri;
+
+	bool        enable_error_irq;
+	u32         error_irq;
+	u32         error_irq_flags;
+	u32         overflow_irq;
+	u32         overflow_irq_flags;
 };
 
 /*

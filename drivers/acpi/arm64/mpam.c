@@ -93,7 +93,7 @@ static int acpi_mpam_label_memory_component_id(u8 proximity_domain,
 
 static int __init acpi_mpam_parse_memory(struct acpi_mpam_header *h)
 {
-	int ret = 0;
+	int ret;
 	u32 component_id;
 	struct mpam_device *dev;
 	struct acpi_mpam_node_memory *node = (struct acpi_mpam_node_memory *)h;
@@ -112,7 +112,9 @@ static int __init acpi_mpam_parse_memory(struct acpi_mpam_header *h)
 		return -EINVAL;
 	}
 
-	return ret;
+	return mpam_register_device_irq(dev,
+		node->header.overflow_interrupt, node->header.overflow_flags,
+		node->header.error_interrupt, node->header.error_interrupt_flags);
 }
 
 static int __init acpi_mpam_parse_cache(struct acpi_mpam_header *h,
@@ -178,7 +180,9 @@ static int __init acpi_mpam_parse_cache(struct acpi_mpam_header *h,
 		return -EINVAL;
 	}
 
-	return ret;
+	return mpam_register_device_irq(dev,
+		node->header.overflow_interrupt, node->header.overflow_flags,
+		node->header.error_interrupt, node->header.error_interrupt_flags);
 }
 
 static int __init acpi_mpam_parse_table(struct acpi_table_header *table,

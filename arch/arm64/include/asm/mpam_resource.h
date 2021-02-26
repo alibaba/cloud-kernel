@@ -102,8 +102,16 @@
  */
 #define MPAMCFG_PART_SEL_INTERNAL   BIT(16)
 
-/* MPAM_ESR */
+/* MPAMF_ESR - MPAM Error Status Register */
+#define MPAMF_ESR_PARTID_OR_MON GENMASK(15, 0)
+#define MPAMF_ESR_PMG           GENMASK(23, 16)
+#define MPAMF_ESR_ERRCODE       GENMASK(27, 24)
+#define MPAMF_ESR_ERRCODE_SHIFT 24
+#define MPAMF_ESR_OVRWR         BIT(31)
 #define MPAMF_ESR_ERRCODE_MASK  ((BIT(4) - 1) << 24)
+
+/* MPAMF_ECR - MPAM Error Control Register */
+#define MPAMF_ECR_INTEN         BIT(0)
 
 /*
  * Size of the memory mapped registers: 4K of feature page then 2 x 4K

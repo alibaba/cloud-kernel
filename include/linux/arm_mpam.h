@@ -2,6 +2,7 @@
 #ifndef __LINUX_ARM_MPAM_H
 #define __LINUX_ARM_MPAM_H
 
+#include <linux/acpi.h>
 #include <linux/err.h>
 #include <linux/cpumask.h>
 #include <linux/types.h>
@@ -63,5 +64,55 @@ enum mpam_enable_type {
 };
 
 extern enum mpam_enable_type mpam_enabled;
+
+#define MPAM_IRQ_MODE_LEVEL    0x1
+#define MPAM_IRQ_FLAGS_MASK    0x7f
+
+#define mpam_irq_flags_to_acpi(x) ((x & MPAM_IRQ_MODE_LEVEL) ?  \
+			ACPI_LEVEL_SENSITIVE : ACPI_EDGE_SENSITIVE)
+
+void __init mpam_device_set_error_irq(struct mpam_device *dev, u32 irq,
+			u32 flags);
+void __init mpam_device_set_overflow_irq(struct mpam_device *dev, u32 irq,
+			u32 flags);
+
+static inline int __init mpam_register_device_irq(struct mpam_device *dev,
+			u32 overflow_interrupt, u32 overflow_flags,
+			u32 error_interrupt, u32 error_flags)
+{
+	int irq, trigger;
+	int ret = 0;
+	u8 irq_flags;
+
+	if (overflow_interrupt) {
+		irq_flags = overflow_flags & MPAM_IRQ_FLAGS_MASK;
+		trigger = mpam_irq_flags_to_acpi(irq_flags);
+
+		irq = acpi_register_gsi(NULL, overflow_interrupt, trigger,
+				ACPI_ACTIVE_HIGH);
+		if (irq < 0) {
+			pr_err_once("Failed to register overflow interrupt with ACPI\n");
+			return ret;
+		}
+
+		mpam_device_set_overflow_irq(dev, irq, irq_flags);
+	}
+
+	if (error_interrupt) {
+		irq_flags = error_flags & MPAM_IRQ_FLAGS_MASK;
+		trigger = mpam_irq_flags_to_acpi(irq_flags);
+
+		irq = acpi_register_gsi(NULL, error_interrupt, trigger,
+				ACPI_ACTIVE_HIGH);
+		if (irq < 0) {
+			pr_err_once("Failed to register error interrupt with ACPI\n");
+			return ret;
+		}
+
+		mpam_device_set_error_irq(dev, irq, irq_flags);
+	}
+
+	return ret;
+}
 
 #endif

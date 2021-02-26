@@ -20,6 +20,16 @@ extern struct list_head mpam_classes;
 
 #define MAX_MBA_BW  100u
 
+#define MPAM_ERRCODE_NONE                       0
+#define MPAM_ERRCODE_PARTID_SEL_RANGE           1
+#define MPAM_ERRCODE_REQ_PARTID_RANGE           2
+#define MPAM_ERRCODE_MSMONCFG_ID_RANGE          3
+#define MPAM_ERRCODE_REQ_PMG_RANGE              4
+#define MPAM_ERRCODE_MONITOR_RANGE              5
+#define MPAM_ERRCODE_INTPARTID_RANGE            6
+#define MPAM_ERRCODE_UNEXPECTED_INTERNAL        7
+#define _MPAM_NUM_ERRCODE                       8
+
 struct mpam_resctrl_dom {
 	struct mpam_component   *comp;
 
