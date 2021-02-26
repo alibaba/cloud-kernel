@@ -212,15 +212,6 @@ extern struct resctrl_resource resctrl_resources_all[];
 
 int __init resctrl_group_init(void);
 
-enum {
-	MPAM_RESOURCE_SMMU,
-	MPAM_RESOURCE_CACHE,
-	MPAM_RESOURCE_MC,
-
-	/* Must be the last */
-	MPAM_NUM_RESOURCES,
-};
-
 void rdt_last_cmd_clear(void);
 void rdt_last_cmd_puts(const char *s);
 void rdt_last_cmd_printf(const char *fmt, ...);

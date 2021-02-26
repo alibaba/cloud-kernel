@@ -190,7 +190,7 @@ int mpam_create_cache_node(u32 component_id,
 	struct mpam_node *new;
 	char *name;
 
-	if (validate_mpam_node(MPAM_RESOURCE_CACHE, component_id))
+	if (validate_mpam_node(RDT_RESOURCE_L3, component_id))
 		goto skip;
 
 	new = kzalloc(sizeof(struct mpam_node), GFP_KERNEL);
@@ -206,7 +206,7 @@ int mpam_create_cache_node(u32 component_id,
 
 	mpam_node_assign_val(new,
 			name,
-			MPAM_RESOURCE_CACHE,
+			RDT_RESOURCE_L3,
 			hwpage_address,
 			component_id);
 	list_add_tail(&new->list, &mpam_nodes_ptr->list);
@@ -221,7 +221,7 @@ int mpam_create_memory_node(u32 component_id,
 	struct mpam_node *new;
 	char *name;
 
-	if (validate_mpam_node(MPAM_RESOURCE_MC, component_id))
+	if (validate_mpam_node(RDT_RESOURCE_MC, component_id))
 		goto skip;
 
 	new = kzalloc(sizeof(struct mpam_node), GFP_KERNEL);
@@ -237,7 +237,7 @@ int mpam_create_memory_node(u32 component_id,
 
 	mpam_node_assign_val(new,
 			name,
-			MPAM_RESOURCE_MC,
+			RDT_RESOURCE_MC,
 			hwpage_address,
 			component_id);
 	list_add_tail(&new->list, &mpam_nodes_ptr->list);
@@ -296,7 +296,7 @@ static int csu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable);
 #define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
 
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
-	[MPAM_RESOURCE_CACHE] = {
+	[RDT_RESOURCE_L3] = {
 		.msr_update		= cat_wrmsr,
 		.msr_read		= cat_rdmsr,
 		.parse_ctrlval		= parse_cbm,
@@ -304,7 +304,15 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.mon_read		= csu_read,
 		.mon_write		= csu_write,
 	},
-	[MPAM_RESOURCE_MC] = {
+	[RDT_RESOURCE_L2] = {
+		.msr_update		= cat_wrmsr,
+		.msr_read		= cat_rdmsr,
+		.parse_ctrlval		= parse_cbm,
+		.format_str		= "%d=%0*x",
+		.mon_read		= csu_read,
+		.mon_write		= csu_write,
+	},
+	[RDT_RESOURCE_MC] = {
 		.msr_update		= bw_wrmsr,
 		.msr_read		= bw_rdmsr,
 		.parse_ctrlval		= parse_bw,	/* add parse_bw() helper */
@@ -315,23 +323,40 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 };
 
 struct resctrl_resource resctrl_resources_all[] = {
-	[MPAM_RESOURCE_CACHE] = {
-		.rid			= MPAM_RESOURCE_CACHE,
-		.name			= "L3",
-		.domains		= domain_init(MPAM_RESOURCE_CACHE),
-		.res			= &raw_resctrl_resources_all[MPAM_RESOURCE_CACHE],
-		.fflags			= RFTYPE_RES_CACHE,
-		.alloc_enabled		= 1,
+	[RDT_RESOURCE_L3] = {
+		.rid		= RDT_RESOURCE_L3,
+		.name		= "L3",
+		.domains	= domain_init(RDT_RESOURCE_L3),
+		.res		= &raw_resctrl_resources_all[RDT_RESOURCE_L3],
+		.fflags		= RFTYPE_RES_CACHE,
+		.alloc_enabled	= 1,
 	},
-	[MPAM_RESOURCE_MC] = {
-		.rid			= MPAM_RESOURCE_MC,
-		.name			= "MB",
-		.domains		= domain_init(MPAM_RESOURCE_MC),
-		.res			= &raw_resctrl_resources_all[MPAM_RESOURCE_MC],
-		.fflags			= RFTYPE_RES_MC,
-		.alloc_enabled		= 1,
+	[RDT_RESOURCE_L2] = {
+		.rid		= RDT_RESOURCE_L2,
+		.name		= "L2",
+		.domains	= domain_init(RDT_RESOURCE_L2),
+		.res		= &raw_resctrl_resources_all[RDT_RESOURCE_L2],
+		.fflags		= RFTYPE_RES_CACHE,
+		.alloc_enabled	= 1,
+	},
+	[RDT_RESOURCE_MC] = {
+		.rid		= RDT_RESOURCE_MC,
+		.name		= "MB",
+		.domains	= domain_init(RDT_RESOURCE_MC),
+		.res		= &raw_resctrl_resources_all[RDT_RESOURCE_MC],
+		.fflags		= RFTYPE_RES_MC,
+		.alloc_enabled	= 1,
 	},
 };
+
+struct raw_resctrl_resource *
+mpam_get_raw_resctrl_resource(enum resctrl_resource_level level)
+{
+	if (level >= RDT_NUM_RESOURCES)
+		return NULL;
+
+	return &raw_resctrl_resources_all[level];
+}
 
 static void
 cat_wrmsr(struct rdt_domain *d, int partid)
@@ -1319,13 +1344,13 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		r->mon_capable = MPAMF_IDR_HAS_MSMON(val);
 		r->mon_enabled = MPAMF_IDR_HAS_MSMON(val);
 
-		if (r->rid == MPAM_RESOURCE_CACHE) {
+		if (r->rid == RDT_RESOURCE_L3) {
 			r->alloc_capable = MPAMF_IDR_HAS_CPOR_PART(val);
 			r->alloc_enabled = MPAMF_IDR_HAS_CPOR_PART(val);
 
 			val = mpam_readl(d->base + MPAMF_CSUMON_IDR);
 			rr->num_mon = MPAMF_IDR_NUM_MON(val);
-		} else if (r->rid == MPAM_RESOURCE_MC) {
+		} else if (r->rid == RDT_RESOURCE_MC) {
 			r->alloc_capable = MPAMF_IDR_HAS_MBW_PART(val);
 			r->alloc_enabled = MPAMF_IDR_HAS_MBW_PART(val);
 
@@ -1382,8 +1407,8 @@ static int __init mpam_init(void)
 		goto out;
 	}
 
-	mpam_domains_init(&resctrl_resources_all[MPAM_RESOURCE_CACHE]);
-	mpam_domains_init(&resctrl_resources_all[MPAM_RESOURCE_MC]);
+	mpam_domains_init(&resctrl_resources_all[RDT_RESOURCE_L3]);
+	mpam_domains_init(&resctrl_resources_all[RDT_RESOURCE_MC]);
 
 	state = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
 				  "arm64/mpam:online:",

@@ -200,9 +200,128 @@ static void mpam_resctrl_pick_event_mbm_local(void)
 	}
 }
 
+static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+{
+	struct mpam_class *class = res->class;
+	struct resctrl_resource *r = &res->resctrl_res;
+
+	if (class == mpam_resctrl_exports[RDT_RESOURCE_SMMU].class) {
+		return 0;
+	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_MC].class) {
+		r->rid = RDT_RESOURCE_MC;
+		r->name = "MB";
+		r->fflags = RFTYPE_RES_MC;
+		r->mbw.delay_linear = true;
+		r->res = mpam_get_raw_resctrl_resource(RDT_RESOURCE_MC);
+
+		if (mpam_has_feature(mpam_feat_mbw_part, class->features)) {
+			res->resctrl_mba_uses_mbw_part = true;
+
+			/*
+			 * The maximum throttling is the number of bits we can
+			 * unset in the bitmap. We never clear all of them,
+			 * so the minimum is one bit, as a percentage.
+			 */
+			r->mbw.min_bw = MAX_MBA_BW / class->mbw_pbm_bits;
+		} else {
+			/* we're using mpam_feat_mbw_max's */
+			res->resctrl_mba_uses_mbw_part = false;
+
+			/*
+			 * The maximum throttling is the number of fractions we
+			 * can represent with the implemented bits. We never
+			 * set 0. The minimum is the LSB, as a percentage.
+			 */
+			r->mbw.min_bw = MAX_MBA_BW /
+				((1ULL << class->bwa_wd) - 1);
+			/* the largest mbw_max is 100 */
+			r->default_ctrl = 100;
+		}
+		/* Just in case we have an excessive number of bits */
+		if (!r->mbw.min_bw)
+			r->mbw.min_bw = 1;
+
+		/*
+		 * because its linear with no offset, the granule is the same
+		 * as the smallest value
+		 */
+		r->mbw.bw_gran = r->mbw.min_bw;
+
+		/* We will only pick a class that can monitor and control */
+		r->alloc_capable = true;
+		r->alloc_enabled = true;
+		rdt_alloc_capable = true;
+		r->mon_capable = true;
+		r->mon_enabled = true;
+	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L3].class) {
+		r->rid = RDT_RESOURCE_L3;
+		r->res = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L3);
+		r->fflags = RFTYPE_RES_CACHE;
+		r->name = "L3";
+
+		r->cache.cbm_len = class->cpbm_wd;
+		r->default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
+		/*
+		 * Which bits are shared with other ...things...
+		 * Unknown devices use partid-0 which uses all the bitmap
+		 * fields. Until we configured the SMMU and GIC not to do this
+		 * 'all the bits' is the correct answer here.
+		 */
+		r->cache.shareable_bits = r->default_ctrl;
+		r->cache.min_cbm_bits = 1;
+
+		if (mpam_has_feature(mpam_feat_cpor_part, class->features)) {
+			r->alloc_capable = true;
+			r->alloc_enabled = true;
+			rdt_alloc_capable = true;
+		}
+		/*
+		 * While this is a CPU-interface feature of MPAM, we only tell
+		 * resctrl about it for caches, as that seems to be how x86
+		 * works, and thus what resctrl expects.
+		 */
+		r->cdp_capable = true;
+		r->mon_capable = true;
+		r->mon_enabled = true;
+
+	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L2].class) {
+		r->rid = RDT_RESOURCE_L2;
+		r->res = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L2);
+		r->fflags = RFTYPE_RES_CACHE;
+		r->name = "L2";
+
+		r->cache.cbm_len = class->cpbm_wd;
+		r->default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
+		/*
+		 * Which bits are shared with other ...things...
+		 * Unknown devices use partid-0 which uses all the bitmap
+		 * fields. Until we configured the SMMU and GIC not to do this
+		 * 'all the bits' is the correct answer here.
+		 */
+		r->cache.shareable_bits = r->default_ctrl;
+
+		if (mpam_has_feature(mpam_feat_cpor_part, class->features)) {
+			r->alloc_capable = true;
+			r->alloc_enabled = true;
+			rdt_alloc_capable = true;
+		}
+
+		/*
+		 * While this is a CPU-interface feature of MPAM, we only tell
+		 * resctrl about it for caches, as that seems to be how x86
+		 * works, and thus what resctrl expects.
+		 */
+		r->cdp_capable = true;
+		r->mon_capable = false;
+	}
+
+	return 0;
+}
+
 /* Called with the mpam classes lock held */
 int mpam_resctrl_setup(void)
 {
+	int rc;
 	struct mpam_resctrl_res *res;
 	enum resctrl_resource_level level = 0;
 
@@ -218,6 +337,15 @@ int mpam_resctrl_setup(void)
 	mpam_resctrl_pick_event_l3_occup();
 	mpam_resctrl_pick_event_mbm_total();
 	mpam_resctrl_pick_event_mbm_local();
+
+	for_each_supported_resctrl_exports(res) {
+		rc = mpam_resctrl_resource_init(res);
+		if (rc)
+			return rc;
+	}
+
+	if (!rdt_alloc_capable && !rdt_mon_capable)
+		return -EOPNOTSUPP;
 
 	return 0;
 }

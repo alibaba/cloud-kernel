@@ -10,6 +10,36 @@
 #include <linux/seq_buf.h>
 #include <linux/seq_file.h>
 
+/**
+ * struct resctrl_cache - Cache allocation related data
+ * @cbm_len:        Length of the cache bit mask
+ * @min_cbm_bits:   Minimum number of consecutive bits to be set
+ * @cbm_idx_mult:   Multiplier of CBM index
+ * @cbm_idx_offset: Offset of CBM index. CBM index is computed by:
+ *          closid * cbm_idx_multi + cbm_idx_offset
+ *          in a cache bit mask
+ * @shareable_bits: Bitmask of shareable resource with other
+ *          executing entities
+ * @arch_has_sparse_bitmaps:   True if a bitmap like f00f is valid.
+ */
+struct resctrl_cache {
+	u32     cbm_len;
+	u32     shareable_bits;
+	u32     min_cbm_bits;
+};
+
+/**
+ * struct resctrl_membw - Memory bandwidth allocation related data
+ * @min_bw:     Minimum memory bandwidth percentage user can request
+ * @bw_gran:        Granularity at which the memory bandwidth is allocated
+ * @delay_linear:   True if memory B/W delay is in linear scale
+ */
+struct resctrl_membw {
+	u32     min_bw;
+	u32     bw_gran;
+	u32     delay_linear;
+};
+
 struct resctrl_resource {
 	int			rid;
 	bool			alloc_enabled;
@@ -20,6 +50,13 @@ struct resctrl_resource {
 	struct list_head	domains;
 	struct list_head	evt_list;
 	unsigned long		fflags;
+
+	struct resctrl_cache cache;
+	struct resctrl_membw mbw;
+
+	bool cdp_capable;
+	bool cdp_enable;
+	u32 default_ctrl;
 
 	void *res;
 };

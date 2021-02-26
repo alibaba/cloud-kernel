@@ -534,7 +534,7 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 		if (r->mon_enabled) {
 			/* HHA does not support monitor by pmg */
 			if ((prgrp->type == RDTMON_GROUP) &&
-			    (r->rid == MPAM_RESOURCE_MC))
+			    (r->rid == RDT_RESOURCE_MC))
 				continue;
 
 			ret = mkdir_mondata_subdir_alldom(kn, r, prgrp);

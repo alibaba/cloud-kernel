@@ -42,7 +42,7 @@ void pmg_init(void)
 {
 	/* use L3's num_pmg as system num_pmg */
 	struct raw_resctrl_resource *rr =
-		resctrl_resources_all[MPAM_RESOURCE_CACHE].res;
+		resctrl_resources_all[RDT_RESOURCE_L3].res;
 	int num_pmg = rr->num_pmg;
 
 	mon_init();

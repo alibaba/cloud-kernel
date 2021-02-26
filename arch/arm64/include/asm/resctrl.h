@@ -71,7 +71,7 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 
 #define for_each_resctrl_resource(r)					\
 	for (r = resctrl_resources_all;					\
-	     r < resctrl_resources_all + MPAM_NUM_RESOURCES;		\
+	     r < resctrl_resources_all + RDT_NUM_RESOURCES;		\
 	     r++)							\
 
 int mpam_get_mon_config(struct resctrl_resource *r);

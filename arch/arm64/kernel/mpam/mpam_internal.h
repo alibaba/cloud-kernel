@@ -9,11 +9,14 @@ typedef u32 mpam_features_t;
 struct mpam_component;
 struct rdt_domain;
 struct mpam_class;
+struct raw_resctrl_resource;
 
 extern bool rdt_alloc_capable;
 extern bool rdt_mon_capable;
 
 extern struct list_head mpam_classes;
+
+#define MAX_MBA_BW  100u
 
 struct mpam_resctrl_dom {
 	struct mpam_component   *comp;
@@ -119,5 +122,8 @@ u16 mpam_sysprops_num_pmg(void);
 void mpam_class_list_lock_held(void);
 
 int mpam_resctrl_setup(void);
+
+struct raw_resctrl_resource *
+mpam_get_raw_resctrl_resource(u32 level);
 
 #endif
