@@ -1076,16 +1076,29 @@ static int mpam_device_frob_mon(struct mpam_device *dev,
 	return 0;
 }
 
-static int mpam_device_narrow_map(struct mpam_device *dev, u32 partid,
+static void mpam_device_narrow_map(struct mpam_device *dev, u32 partid,
 					u32 intpartid)
 {
-	return 0;
+	int cur_intpartid;
+
+	lockdep_assert_held(&dev->lock);
+
+	mpam_write_reg(dev, MPAMCFG_PART_SEL, partid);
+	wmb(); /* subsequent writes must be applied to our new partid */
+
+	cur_intpartid = mpam_read_reg(dev, MPAMCFG_INTPARTID);
+	/* write association, this need set 16 bit to 1 */
+	intpartid = intpartid | MPAMCFG_INTPARTID_INTERNAL;
+	/* reqpartid has already been associated to this intpartid */
+	if (cur_intpartid == intpartid)
+		return;
+
+	mpam_write_reg(dev, MPAMCFG_INTPARTID, intpartid);
 }
 
 static int mpam_device_config(struct mpam_device *dev, u32 partid,
 					struct mpam_config *cfg)
 {
-	int ret;
 	u16 cmax = GENMASK(dev->cmax_wd, 0);
 	u32 pri_val = 0;
 	u16 intpri, dspri, max_intpri, max_dspri;
@@ -1101,15 +1114,10 @@ static int mpam_device_config(struct mpam_device *dev, u32 partid,
 	 * upstream(resctrl) keep this order
 	 */
 	if (mpam_has_feature(mpam_feat_part_nrw, dev->features)) {
-		if (cfg && mpam_has_feature(mpam_feat_part_nrw, cfg->valid)) {
-			ret = mpam_device_narrow_map(dev, partid,
-					cfg->intpartid);
-			if (ret)
-				goto out;
-			partid = PART_SEL_SET_INTERNAL(cfg->intpartid);
-		} else {
-			partid = PART_SEL_SET_INTERNAL(cfg->intpartid);
-		}
+		if (cfg && mpam_has_feature(mpam_feat_part_nrw, cfg->valid))
+			mpam_device_narrow_map(dev, partid, cfg->intpartid);
+		/* intpartid success, set 16 bit to 1*/
+		partid = PART_SEL_SET_INTERNAL(cfg->intpartid);
 	}
 
 	mpam_write_reg(dev, MPAMCFG_PART_SEL, partid);
@@ -1185,8 +1193,7 @@ static int mpam_device_config(struct mpam_device *dev, u32 partid,
 	 */
 	mb();
 
-out:
-	return ret;
+	return 0;
 }
 
 static void mpam_component_device_sync(void *__ctx)

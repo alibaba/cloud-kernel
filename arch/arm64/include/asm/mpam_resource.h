@@ -92,6 +92,10 @@
 #define MSMON_CFG_MBWU_TYPE         0x42
 
 /*
+ * Set MPAMCFG_INTPARTID internal bit
+ */
+#define MPAMCFG_INTPARTID_INTERNAL  BIT(16)
+/*
  * Set MPAMCFG_PART_SEL internal bit
  */
 #define PART_SEL_SET_INTERNAL(r)    (r | BIT(16))
