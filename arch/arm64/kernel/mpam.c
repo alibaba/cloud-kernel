@@ -406,8 +406,10 @@ static __init bool get_rdt_mon_resources(void)
 
 static __init bool get_resctrl_resources(void)
 {
-	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
+	if (!cpus_have_const_cap(ARM64_HAS_MPAM)) {
+		pr_info("This cpu don't support MPAM feature: pfr0: %016llx\n", read_sysreg_s(SYS_ID_AA64PFR0_EL1));
 		return false;
+	}
 
 	rdt_alloc_capable = get_rdt_alloc_resources();
 	rdt_mon_capable = get_rdt_mon_resources();
