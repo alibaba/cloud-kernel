@@ -220,7 +220,40 @@ void resctrl_group_kn_unlock(struct kernfs_node *kn)
 
 static int resctrl_enable_ctx(struct resctrl_fs_context *ctx)
 {
-	return 0;
+	int ret = 0;
+
+	extend_ctrl_disable();
+	basic_ctrl_enable();
+	disable_cdp();
+
+	if (ctx->enable_cdpl3)
+		ret = cdpl3_enable();
+
+	if (!ret && ctx->enable_cdpl2)
+		ret = cdpl2_enable();
+
+	if (!ret && ctx->enable_mbMax)
+		ret = mbMax_enable();
+
+	if (!ret && ctx->enable_mbMin)
+		ret = mbMin_enable();
+
+	if (!ret && ctx->enable_mbHdl)
+		ret = mbHdl_enable();
+
+	if (!ret && ctx->enable_mbPrio)
+		ret = mbPrio_enable();
+
+	if (!ret && ctx->enable_caPbm)
+		ret = caPbm_enable();
+
+	if (!ret && ctx->enable_caMax)
+		ret = caMax_enable();
+
+	if (!ret && ctx->enable_caPrio)
+		ret = caPrio_enable();
+
+	return ret;
 }
 
 static int
@@ -541,12 +574,76 @@ static void resctrl_kill_sb(struct super_block *sb)
 	cpus_read_unlock();
 }
 
-static const struct fs_parameter_spec resctrl_fs_parameters = {
+enum resctrl_param {
+	Opt_cdpl3,
+	Opt_cdpl2,
+	Opt_mbMax,
+	Opt_mbMin,
+	Opt_mbHdl,
+	Opt_mbPrio,
+	Opt_caPbm,
+	Opt_caMax,
+	Opt_caPrio,
+	nr__resctrl_params
+};
+
+static const struct fs_parameter_spec resctrl_fs_parameters[] = {
+	fsparam_flag("cdpl3",        Opt_cdpl3),
+	fsparam_flag("cdpl2",        Opt_cdpl2),
+	fsparam_flag("mbMax",        Opt_mbMax),
+	fsparam_flag("mbMin",        Opt_mbMin),
+	fsparam_flag("mbHdl",        Opt_mbHdl),
+	fsparam_flag("mbPrio",       Opt_mbPrio),
+	fsparam_flag("caPbm",        Opt_caPbm),
+	fsparam_flag("caMax",        Opt_caMax),
+	fsparam_flag("caPrio",       Opt_caPrio),
+	{}
 };
 
 static int resctrl_parse_param(struct fs_context *fc, struct fs_parameter *param)
 {
+	struct resctrl_fs_context *ctx = resctrl_fc2context(fc);
+	struct fs_parse_result result;
+	int opt;
+
+	opt = fs_parse(fc, resctrl_fs_parameters, param, &result);
+	if (opt < 0)
+		return opt;
+
+	switch (opt) {
+	case Opt_cdpl3:
+		ctx->enable_cdpl3 = true;
+		return 0;
+	case Opt_cdpl2:
+		ctx->enable_cdpl2 = true;
+		return 0;
+	case Opt_mbMax:
+		ctx->enable_mbMax = true;
+		return 0;
+	case Opt_mbMin:
+		ctx->enable_mbMin = true;
+		return 0;
+	case Opt_mbHdl:
+		ctx->enable_mbHdl = true;
+		return 0;
+	case Opt_mbPrio:
+		ctx->enable_mbPrio = true;
+		return 0;
+	case Opt_caPbm:
+		ctx->enable_caPbm = true;
+		return 0;
+	case Opt_caMax:
+		ctx->enable_caMax = true;
+		return 0;
+	case Opt_caPrio:
+		ctx->enable_caPrio = true;
+		return 0;
+
 	return 0;
+}
+
+return -EINVAL;
+
 }
 
 static void resctrl_fs_context_free(struct fs_context *fc)
@@ -585,7 +682,7 @@ static int resctrl_init_fs_context(struct fs_context *fc)
 static struct file_system_type resctrl_fs_type = {
 	.name                   = "resctrl",
 	.init_fs_context        = resctrl_init_fs_context,
-	.parameters             = &resctrl_fs_parameters,
+	.parameters             = resctrl_fs_parameters,
 	.kill_sb                = resctrl_kill_sb,
 };
 

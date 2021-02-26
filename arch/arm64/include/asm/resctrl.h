@@ -409,9 +409,6 @@ void rdt_last_cmd_printf(const char *fmt, ...);
 
 void resctrl_resource_reset(void);
 
-#define release_resctrl_group_fs_options release_rdtgroupfs_options
-#define parse_resctrl_group_fs_options parse_rdtgroupfs_options
-
 int resctrl_group_init_alloc(struct rdtgroup *rdtgrp);
 
 static inline int __resctrl_group_show_options(struct seq_file *seq)
@@ -451,6 +448,15 @@ int resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflags);
 
 struct resctrl_fs_context {
 	struct kernfs_fs_context        kfc;
+	bool enable_cdpl3;
+	bool enable_cdpl2;
+	bool enable_mbMax;
+	bool enable_mbMin;
+	bool enable_mbHdl;
+	bool enable_mbPrio;
+	bool enable_caPbm;
+	bool enable_caMax;
+	bool enable_caPrio;
 };
 
 static inline struct resctrl_fs_context *resctrl_fc2context(struct fs_context *fc)
@@ -491,6 +497,26 @@ static inline u32 resctrl_navie_closid(struct sd_closid closid)
 {
 	return closid.intpartid;
 }
+
+void extend_ctrl_disable(void);
+void basic_ctrl_enable(void);
+void disable_cdp(void);
+
+int cdpl2_enable(void);
+int cdpl3_enable(void);
+int extend_ctrl_enable(char *tok);
+#define DEFINE_INLINE_CTRL_FEATURE_ENABLE_FUNC(name)    \
+	static inline int name##_enable(void) \
+	{   \
+		return extend_ctrl_enable(#name);	\
+	}
+DEFINE_INLINE_CTRL_FEATURE_ENABLE_FUNC(mbMax);
+DEFINE_INLINE_CTRL_FEATURE_ENABLE_FUNC(mbMin);
+DEFINE_INLINE_CTRL_FEATURE_ENABLE_FUNC(mbHdl);
+DEFINE_INLINE_CTRL_FEATURE_ENABLE_FUNC(mbPrio);
+DEFINE_INLINE_CTRL_FEATURE_ENABLE_FUNC(caPbm);
+DEFINE_INLINE_CTRL_FEATURE_ENABLE_FUNC(caMax);
+DEFINE_INLINE_CTRL_FEATURE_ENABLE_FUNC(caPrio);
 
 #endif
 #endif /* _ASM_ARM64_RESCTRL_H */

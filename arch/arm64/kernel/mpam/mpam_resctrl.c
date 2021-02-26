@@ -1067,7 +1067,7 @@ void release_rdtgroupfs_options(void)
 {
 }
 
-static void disable_cdp(void)
+void disable_cdp(void)
 {
 	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
@@ -1093,17 +1093,17 @@ static int try_to_enable_cdp(enum resctrl_resource_level level)
 	return 0;
 }
 
-static int cdpl3_enable(void)
+int cdpl3_enable(void)
 {
 	return try_to_enable_cdp(RDT_RESOURCE_L3);
 }
 
-static int cdpl2_enable(void)
+int cdpl2_enable(void)
 {
 	return try_to_enable_cdp(RDT_RESOURCE_L2);
 }
 
-static void basic_ctrl_enable(void)
+void basic_ctrl_enable(void)
 {
 	struct mpam_resctrl_res *res;
 	struct raw_resctrl_resource *rr;
@@ -1115,7 +1115,7 @@ static void basic_ctrl_enable(void)
 	}
 }
 
-static int extend_ctrl_enable(char *tok)
+int extend_ctrl_enable(char *tok)
 {
 	bool match = false;
 	struct resctrl_resource *r;
@@ -1153,7 +1153,7 @@ static int extend_ctrl_enable(char *tok)
 	return 0;
 }
 
-static void extend_ctrl_disable(void)
+void extend_ctrl_disable(void)
 {
 	struct raw_resctrl_resource *rr;
 	struct mpam_resctrl_res *res;
@@ -1169,44 +1169,7 @@ static void extend_ctrl_disable(void)
 	}
 }
 
-int parse_rdtgroupfs_options(char *data)
-{
-	char *token;
-	char *o = data;
-	int ret = 0;
 
-	disable_cdp();
-	extend_ctrl_disable();
-	basic_ctrl_enable();
-
-	while ((token = strsep(&o, ",")) != NULL) {
-		if (!*token) {
-			ret = -EINVAL;
-			goto out;
-		}
-
-		if (!strcmp(token, "cdpl3")) {
-			ret = cdpl3_enable();
-			if (ret)
-				goto out;
-		} else if (!strcmp(token, "cdpl2")) {
-			ret = cdpl2_enable();
-			if (ret)
-				goto out;
-		} else {
-			ret = extend_ctrl_enable(token);
-			if (ret)
-				goto out;
-		}
-	}
-
-	return 0;
-
-out:
-	pr_err("Invalid mount option \"%s\"\n", token);
-
-	return ret;
-}
 
 /*
  * This is safe against intel_resctrl_sched_in() called from __switch_to()
