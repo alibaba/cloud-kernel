@@ -213,6 +213,34 @@ int __weak cache_setup_acpi(unsigned int cpu)
 	return -ENOTSUPP;
 }
 
+/**
+ * cacheinfo_shared_cpu_map_search() - find an instance of struct cacheinfo
+ * from the provided firmware description.
+ * Caller must hold cpus_read_lock() until its finished with the cacheinfo.
+ *
+ * Return a CPUs cache leaf described @fw_desc, or NULL.
+ */
+struct cacheinfo *cacheinfo_shared_cpu_map_search(void *fw_token)
+{
+	struct cacheinfo *iter;
+	unsigned int cpu, index;
+	struct cpu_cacheinfo *cpu_ci;
+
+	for_each_online_cpu(cpu) {
+		cpu_ci = get_cpu_cacheinfo(cpu);
+
+		for (index = 0; index < cache_leaves(cpu); index++) {
+			iter = cpu_ci->info_list + index;
+
+			if (iter->fw_token == fw_token) {
+				return iter;
+			}
+		}
+	}
+
+	return NULL;
+}
+
 unsigned int coherency_max_size;
 
 static int cache_shared_cpu_map_setup(unsigned int cpu)
