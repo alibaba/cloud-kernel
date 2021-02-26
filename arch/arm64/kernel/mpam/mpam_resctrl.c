@@ -1399,8 +1399,6 @@ static int __init mpam_init(void)
 	rdt_alloc_capable = 1;
 	rdt_mon_capable = 1;
 
-	mpam_init_padding();
-
 	ret = mpam_nodes_init();
 	if (ret) {
 		pr_err("internal error: bad cpu list\n");
@@ -1418,12 +1416,7 @@ static int __init mpam_init(void)
 		goto out;
 	}
 
-	register_resctrl_specific_files(res_specific_files, ARRAY_SIZE(res_specific_files));
-
-	seq_buf_init(&last_cmd_status, last_cmd_status_buf,
-		     sizeof(last_cmd_status_buf));
-
-	ret = resctrl_group_init();
+	ret = mpam_resctrl_init();
 	if (ret) {
 		cpuhp_remove_state(state);
 		goto out;
@@ -1442,6 +1435,19 @@ static int __init mpam_init(void)
 out:
 	mpam_nodes_destroy();
 	return ret;
+}
+
+int __init mpam_resctrl_init(void)
+{
+	mpam_init_padding();
+
+	register_resctrl_specific_files(res_specific_files,
+			ARRAY_SIZE(res_specific_files));
+
+	seq_buf_init(&last_cmd_status, last_cmd_status_buf,
+			sizeof(last_cmd_status_buf));
+
+	return resctrl_group_init();
 }
 
 /*

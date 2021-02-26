@@ -121,9 +121,15 @@ u16 mpam_sysprops_num_pmg(void);
 
 void mpam_class_list_lock_held(void);
 
+int mpam_resctrl_cpu_online(unsigned int cpu);
+
+int mpam_resctrl_cpu_offline(unsigned int cpu);
+
 int mpam_resctrl_setup(void);
 
 struct raw_resctrl_resource *
 mpam_get_raw_resctrl_resource(u32 level);
+
+int __init mpam_resctrl_init(void);
 
 #endif

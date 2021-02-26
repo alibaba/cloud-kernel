@@ -53,6 +53,7 @@ LIST_HEAD(mpam_classes);
 static DEFINE_MUTEX(mpam_cpuhp_lock);
 static int mpam_cpuhp_state;
 
+static bool resctrl_registered;
 
 static inline int mpam_cpu_online(unsigned int cpu);
 static inline int mpam_cpu_offline(unsigned int cpu);
@@ -431,11 +432,24 @@ static void __init mpam_enable(struct work_struct *work)
 		return;
 	}
 	cpuhp_remove_state(mpam_cpuhp_state);
-	mutex_unlock(&mpam_cpuhp_lock);
 
 	mutex_lock(&mpam_devices_lock);
 	err = mpam_resctrl_setup();
+	if (!err) {
+		err = mpam_resctrl_init();
+		if (!err)
+			resctrl_registered = true;
+	}
+	if (err)
+		pr_err("Failed to setup/init resctrl\n");
 	mutex_unlock(&mpam_devices_lock);
+
+	mpam_cpuhp_state = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
+						"mpam:online", mpam_cpu_online,
+						mpam_cpu_offline);
+	if (mpam_cpuhp_state <= 0)
+		pr_err("Failed to re-register 'dyn' cpuhp callbacks");
+	mutex_unlock(&mpam_cpuhp_lock);
 }
 
 static void mpam_failed(struct work_struct *work)
@@ -868,6 +882,9 @@ static int mpam_cpu_online(unsigned int cpu)
 		return err;
 	}
 
+	if (resctrl_registered)
+		mpam_resctrl_cpu_online(cpu);
+
 	return 0;
 }
 
@@ -880,6 +897,9 @@ static int mpam_cpu_offline(unsigned int cpu)
 		cpumask_clear_cpu(cpu, &dev->online_affinity);
 
 	mutex_unlock(&mpam_devices_lock);
+
+	if (resctrl_registered)
+		mpam_resctrl_cpu_offline(cpu);
 
 	return 0;
 }

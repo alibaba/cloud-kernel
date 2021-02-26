@@ -41,6 +41,16 @@
 struct mpam_resctrl_res mpam_resctrl_exports[RDT_NUM_RESOURCES];
 struct mpam_resctrl_res mpam_resctrl_events[RESCTRL_NUM_EVENT_IDS];
 
+int mpam_resctrl_cpu_online(unsigned int cpu)
+{
+	return 0;
+}
+
+int mpam_resctrl_cpu_offline(unsigned int cpu)
+{
+	return 0;
+}
+
 /* Test whether we can export MPAM_CLASS_CACHE:{2,3}? */
 static void mpam_resctrl_pick_caches(void)
 {
