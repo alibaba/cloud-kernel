@@ -73,6 +73,7 @@ static int resctrl_group_add_file(struct kernfs_node *parent_kn, struct rftype *
 	int ret;
 
 	kn = __kernfs_create_file(parent_kn, rft->name, rft->mode,
+				  GLOBAL_ROOT_UID, GLOBAL_ROOT_GID,
 				  0, rft->kf_ops, rft, NULL, NULL);
 	if (IS_ERR(kn))
 		return PTR_ERR(kn);
@@ -111,7 +112,7 @@ static int __resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflag
 				     struct rftype *rfts, int len)
 {
 	struct rftype *rft;
-	int ret;
+	int ret = 0;
 
 	lockdep_assert_held(&resctrl_group_mutex);
 
@@ -138,7 +139,7 @@ error:
 
 static int resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflags)
 {
-	int ret;
+	int ret = 0;
 
 	if (res_common_files)
 		ret = __resctrl_group_add_files(kn, fflags, res_common_files,
@@ -187,19 +188,23 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 	if (ret)
 		goto out_destroy;
 
-	for_each_alloc_enabled_resctrl_resource(r) {
-		fflags =  r->fflags | RF_CTRL_INFO;
-		ret = resctrl_group_mkdir_info_resdir(r, r->name, fflags);
-		if (ret)
-			goto out_destroy;
+	for_each_resctrl_resource(r) {
+		if (r->alloc_enabled) {
+			fflags =  r->fflags | RF_CTRL_INFO;
+			ret = resctrl_group_mkdir_info_resdir(r, r->name, fflags);
+			if (ret)
+				goto out_destroy;
+		}
 	}
 
-	for_each_mon_enabled_resctrl_resource(r) {
-		fflags =  r->fflags | RF_MON_INFO;
-		sprintf(name, "%s_MON", r->name);
-		ret = resctrl_group_mkdir_info_resdir(r, name, fflags);
-		if (ret)
-			goto out_destroy;
+	for_each_resctrl_resource(r) {
+		if (r->mon_enabled) {
+			fflags =  r->fflags | RF_MON_INFO;
+			sprintf(name, "%s_MON", r->name);
+			ret = resctrl_group_mkdir_info_resdir(r, name, fflags);
+			if (ret)
+				goto out_destroy;
+		}
 	}
 
 	/*

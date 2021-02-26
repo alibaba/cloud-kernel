@@ -350,3 +350,12 @@ config IO_WQ
 	bool
 
 endmenu
+
+config RESCTRL
+	bool "Support Memory Partitioning and Monitoring"
+	default n
+	depends on MPAM
+	select KERNFS
+	help
+	  Memory Partitioning and Monitoring. More exactly Memory system
+	  performance resource Partitioning and Monitoring
