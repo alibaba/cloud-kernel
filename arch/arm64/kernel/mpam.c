@@ -1219,8 +1219,10 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		d->cpus_list = n->cpus_list;
 
 		d->ctrl_val = kmalloc_array(rr->num_partid, sizeof(*d->ctrl_val), GFP_KERNEL);
-		if (!d->ctrl_val)
+		if (!d->ctrl_val) {
+			kfree(d);
 			return;
+		}
 
 		list_add_tail(&d->list, add_pos);
 
