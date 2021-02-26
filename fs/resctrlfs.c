@@ -40,8 +40,8 @@
 
 #include <uapi/linux/magic.h>
 
-#include <asm/mpam.h>
 #include <asm/resctrl.h>
+#include <asm/mpam.h>
 
 DEFINE_STATIC_KEY_FALSE(resctrl_enable_key);
 DEFINE_STATIC_KEY_FALSE(resctrl_mon_enable_key);
@@ -143,7 +143,7 @@ error:
 	return ret;
 }
 
-static int resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflags)
+int resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflags)
 {
 	int ret = 0;
 
@@ -151,94 +151,6 @@ static int resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflags)
 		ret = __resctrl_group_add_files(kn, fflags, res_common_files,
 						res_common_files_len);
 
-	return ret;
-}
-
-static int resctrl_group_mkdir_info_resdir(struct resctrl_resource *r, char *name,
-				      unsigned long fflags)
-{
-	struct kernfs_node *kn_subdir;
-	int ret;
-
-	kn_subdir = kernfs_create_dir(kn_info, name,
-				      kn_info->mode, r);
-	if (IS_ERR(kn_subdir))
-		return PTR_ERR(kn_subdir);
-
-	kernfs_get(kn_subdir);
-	ret = resctrl_group_kn_set_ugid(kn_subdir);
-	if (ret)
-		return ret;
-
-	ret = resctrl_group_add_files(kn_subdir, fflags);
-	if (!ret)
-		kernfs_activate(kn_subdir);
-
-	return ret;
-}
-
-static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
-{
-	struct resctrl_schema *s;
-	struct resctrl_resource *r;
-	struct raw_resctrl_resource *rr;
-	unsigned long fflags;
-	char name[32];
-	int ret;
-
-	/* create the directory */
-	kn_info = kernfs_create_dir(parent_kn, "info", parent_kn->mode, NULL);
-	if (IS_ERR(kn_info))
-		return PTR_ERR(kn_info);
-	kernfs_get(kn_info);
-
-	ret = resctrl_group_add_files(kn_info, RF_TOP_INFO);
-	if (ret)
-		goto out_destroy;
-
-	list_for_each_entry(s, &resctrl_all_schema, list) {
-		r = s->res;
-		if (!r)
-			continue;
-		rr = r->res;
-		if (r->alloc_enabled) {
-			fflags =  rr->fflags | RF_CTRL_INFO;
-			ret = resctrl_group_mkdir_info_resdir(r, s->name, fflags);
-			if (ret)
-				goto out_destroy;
-		}
-	}
-
-	list_for_each_entry(s, &resctrl_all_schema, list) {
-		r = s->res;
-		if (!r)
-			continue;
-		rr = r->res;
-		if (r->mon_enabled) {
-			fflags =  rr->fflags | RF_MON_INFO;
-			snprintf(name, sizeof(name), "%s_MON", s->name);
-			ret = resctrl_group_mkdir_info_resdir(r, name, fflags);
-			if (ret)
-				goto out_destroy;
-		}
-	}
-
-	/*
-	 m This extra ref will be put in kernfs_remove() and guarantees
-	 * that @rdtgrp->kn is always accessible.
-	 */
-	kernfs_get(kn_info);
-
-	ret = resctrl_group_kn_set_ugid(kn_info);
-	if (ret)
-		goto out_destroy;
-
-	kernfs_activate(kn_info);
-
-	return 0;
-
-out_destroy:
-	kernfs_remove(kn_info);
 	return ret;
 }
 
@@ -439,7 +351,7 @@ static int resctrl_get_tree(struct fs_context *fc)
 	if (ret)
 		goto out;
 
-	ret = resctrl_group_create_info_dir(resctrl_group_default.kn);
+	ret = resctrl_group_create_info_dir(resctrl_group_default.kn, &kn_info);
 	if (ret)
 		goto out;
 

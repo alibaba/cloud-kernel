@@ -2,8 +2,6 @@
 #ifndef _ASM_ARM64_MPAM_INTERNAL_H
 #define _ASM_ARM64_MPAM_INTERNAL_H
 
-#include <linux/resctrlfs.h>
-#include <asm/mpam.h>
 #include <asm/resctrl.h>
 
 typedef u32 mpam_features_t;
@@ -12,6 +10,142 @@ struct mpam_component;
 struct rdt_domain;
 struct mpam_class;
 struct raw_resctrl_resource;
+struct resctrl_resource;
+/* MPAM register */
+#define SYS_MPAM0_EL1			sys_reg(3, 0, 10, 5, 1)
+#define SYS_MPAM1_EL1			sys_reg(3, 0, 10, 5, 0)
+#define SYS_MPAM2_EL2			sys_reg(3, 4, 10, 5, 0)
+#define SYS_MPAM3_EL3			sys_reg(3, 6, 10, 5, 0)
+#define SYS_MPAM1_EL12			sys_reg(3, 5, 10, 5, 0)
+#define SYS_MPAMHCR_EL2			sys_reg(3, 4, 10, 4, 0)
+#define SYS_MPAMVPMV_EL2		sys_reg(3, 4, 10, 4, 1)
+#define SYS_MPAMVPMn_EL2(n)		sys_reg(3, 4, 10, 6, n)
+#define SYS_MPAMIDR_EL1			sys_reg(3, 0, 10, 4, 4)
+
+#define MPAM_MASK(n)			((1UL << n) - 1)
+/* plan to use GENMASK(n, 0) instead */
+
+/*
+ * MPAMx_ELn:
+ * 15:0		PARTID_I
+ * 31:16	PARTID_D
+ * 39:32	PMG_I
+ * 47:40	PMG_D
+ * 48		TRAPMPAM1EL1
+ * 49		TRAPMPAM0EL1
+ * 61:49	Reserved
+ * 62		TRAPLOWER
+ * 63		MPAMEN
+ */
+#define PARTID_BITS			(16)
+#define PMG_BITS			(8)
+#define PARTID_MASK			MPAM_MASK(PARTID_BITS)
+#define PMG_MASK			MPAM_MASK(PMG_BITS)
+
+#define PARTID_I_SHIFT			(0)
+#define PARTID_D_SHIFT			(PARTID_I_SHIFT + PARTID_BITS)
+#define PMG_I_SHIFT			(PARTID_D_SHIFT + PARTID_BITS)
+#define PMG_D_SHIFT			(PMG_I_SHIFT + PMG_BITS)
+
+#define PARTID_I_MASK			(PARTID_MASK << PARTID_I_SHIFT)
+#define PARTID_D_MASK			(PARTID_MASK << PARTID_D_SHIFT)
+#define PARTID_I_CLR(r)			((r) & ~PARTID_I_MASK)
+#define PARTID_D_CLR(r)			((r) & ~PARTID_D_MASK)
+#define PARTID_CLR(r)			(PARTID_I_CLR(r) & PARTID_D_CLR(r))
+
+#define PARTID_I_SET(r, id)		(PARTID_I_CLR(r) | ((id) << PARTID_I_SHIFT))
+#define PARTID_D_SET(r, id)		(PARTID_D_CLR(r) | ((id) << PARTID_D_SHIFT))
+#define PARTID_SET(r, id)		(PARTID_CLR(r) | ((id) << PARTID_I_SHIFT) | ((id) << PARTID_D_SHIFT))
+
+#define PMG_I_MASK			(PMG_MASK << PMG_I_SHIFT)
+#define PMG_D_MASK			(PMG_MASK << PMG_D_SHIFT)
+#define PMG_I_CLR(r)			((r) & ~PMG_I_MASK)
+#define PMG_D_CLR(r)			((r) & ~PMG_D_MASK)
+#define PMG_CLR(r)			(PMG_I_CLR(r) & PMG_D_CLR(r))
+
+#define PMG_I_SET(r, id)		(PMG_I_CLR(r) | ((id) << PMG_I_SHIFT))
+#define PMG_D_SET(r, id)		(PMG_D_CLR(r) | ((id) << PMG_D_SHIFT))
+#define PMG_SET(r, id)			(PMG_CLR(r) | ((id) << PMG_I_SHIFT) | ((id) << PMG_D_SHIFT))
+
+#define TRAPMPAM1EL1_SHIFT		(PMG_D_SHIFT + PMG_BITS)
+#define TRAPMPAM0EL1_SHIFT		(TRAPMPAM1EL1_SHIFT + 1)
+#define TRAPLOWER_SHIFT			(TRAPMPAM0EL1_SHIFT + 13)
+#define MPAMEN_SHIFT			(TRAPLOWER_SHIFT + 1)
+
+/*
+ * MPAMHCR_EL2:
+ * 0		EL0_VPMEN
+ * 1		EL1_VPMEN
+ * 7:2		Reserved
+ * 8		GSTAPP_PLK
+ * 30:9		Reserved
+ * 31		TRAP_MPAMIDR_EL1
+ * 63:32	Reserved
+ */
+#define EL0_VPMEN_SHIFT			(0)
+#define EL1_VPMEN_SHIFT			(EL0_VPMEN_SHIFT + 1)
+#define GSTAPP_PLK_SHIFT		(8)
+#define TRAP_MPAMIDR_EL1_SHIFT		(31)
+
+/*
+ * MPAMIDR_EL1:
+ * 15:0		PARTID_MAX
+ * 16		Reserved
+ * 17		HAS_HCR
+ * 20:18	VPMR_MAX
+ * 31:21	Reserved
+ * 39:32	PMG_MAX
+ * 63:40	Reserved
+ */
+#define VPMR_MAX_BITS			(3)
+#define PARTID_MAX_SHIFT		(0)
+#define PARTID_MAX_MASK			(MPAM_MASK(PARTID_BITS) << PARTID_MAX_SHIFT)
+#define HAS_HCR_SHIFT			(PARTID_MAX_SHIFT + PARTID_BITS + 1)
+#define VPMR_MAX_SHIFT			(HAS_HCR_SHIFT + 1)
+#define PMG_MAX_SHIFT			(VPMR_MAX_SHIFT + VPMR_MAX_BITS + 11)
+#define PMG_MAX_MASK			(MPAM_MASK(PMG_BITS) << PMG_MAX_SHIFT)
+#define VPMR_MASK			MPAM_MASK(VPMR_MAX_BITS)
+
+/*
+ * MPAMVPMV_EL2:
+ * 31:0		VPM_V
+ * 63:32	Reserved
+ */
+#define VPM_V_BITS			32
+
+DECLARE_STATIC_KEY_FALSE(resctrl_enable_key);
+DECLARE_STATIC_KEY_FALSE(resctrl_mon_enable_key);
+
+extern int max_name_width, max_data_width;
+
+#define RESCTRL_SHOW_DOM_MAX_NUM 8
+
+#define mpam_read_sysreg_s(reg, name) read_sysreg_s(reg)
+#define mpam_write_sysreg_s(v, r, n) write_sysreg_s(v, r)
+#define mpam_readl(addr) readl(addr)
+#define mpam_writel(v, addr) writel(v, addr)
+
+/* 64bit arm64 specified */
+union mon_data_bits {
+	void *priv;
+	struct {
+		u8	rid;
+		u8	domid;
+		u8	partid;
+		u8	pmg;
+		u8	mon;
+		u8	cdp_both_mon;
+	} u;
+};
+
+ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off);
+
+int resctrl_group_schemata_show(struct kernfs_open_file *of,
+				struct seq_file *s, void *v);
+
+struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
+		struct list_head **pos);
 
 extern bool rdt_alloc_capable;
 extern bool rdt_mon_capable;
@@ -201,4 +335,8 @@ int assoc_rmid_with_mon(u32 rmid);
 void deassoc_rmid_with_mon(u32 rmid);
 u32 get_rmid_mon(u32 rmid, enum resctrl_resource_level rid);
 int rmid_mon_ptrs_init(u32 nr_rmids);
+
+struct resctrl_resource *
+mpam_resctrl_get_resource(enum resctrl_resource_level level);
+
 #endif

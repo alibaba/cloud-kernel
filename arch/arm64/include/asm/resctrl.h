@@ -1,8 +1,11 @@
 #ifndef _ASM_ARM64_RESCTRL_H
 #define _ASM_ARM64_RESCTRL_H
 
+#include <linux/resctrlfs.h>
 #include <asm/mpam_sched.h>
 #include <asm/mpam.h>
+
+#if defined(CONFIG_RESCTRL) && defined(CONFIG_MPAM)
 
 #define resctrl_group rdtgroup
 #define resctrl_alloc_capable rdt_alloc_capable
@@ -41,12 +44,80 @@ enum rdt_group_type {
 };
 
 /**
+ * struct resctrl_cache - Cache allocation related data
+ * @cbm_len:        Length of the cache bit mask
+ * @min_cbm_bits:   Minimum number of consecutive bits to be set
+ * @shareable_bits: Bitmask of shareable resource with other
+ *          executing entities
+ */
+struct resctrl_cache {
+	u32     cbm_len;
+	u32     shareable_bits;
+	u32     min_cbm_bits;
+};
+
+/**
+ * struct resctrl_membw - Memory bandwidth allocation related data
+ * @min_bw:     Minimum memory bandwidth percentage user can request
+ * @bw_gran:        Granularity at which the memory bandwidth is allocated
+ * @delay_linear:   True if memory B/W delay is in linear scale
+ * @ctrl_extend_bits: Indicates if there are extra ctrl capabilities supported.
+ *          e.g. priority/hardlimit.
+ */
+struct resctrl_membw {
+	u32     min_bw;
+	u32     bw_gran;
+	u32     delay_linear;
+};
+
+/**
+ * struct resctrl_resource - attributes of an RDT resource
+ * @rid:		The index of the resource
+ * @alloc_enabled:		Is allocation enabled on this machine
+ * @mon_enabled:		Is monitoring enabled for this feature
+ * @alloc_capable:		Is allocation available on this machine
+ * @mon_capable:		Is monitor feature available on this machine
+ * @name:		Name to use in "schemata" file
+ * @domains:	All domains for this resource
+ * @cache:		Cache allocation related data
+ * @mbw:		Memory Bandwidth allocation related data
+ * @evt_list:	List of monitoring events
+ * @fflags:		flags to choose base and info files
+ */
+struct resctrl_resource {
+	int             rid;
+	bool            alloc_enabled;
+	bool            mon_enabled;
+	bool            alloc_capable;
+	bool            mon_capable;
+	char            *name;
+	struct list_head    domains;
+	u32             dom_num;
+	struct list_head    evt_list;
+	unsigned long   fflags;
+
+	struct resctrl_cache cache;
+	struct resctrl_membw mbw;
+
+	bool            cdp_capable;
+	bool            cdp_enable;
+	u32             *default_ctrl;
+
+	u32             ctrl_extend_bits;
+
+	void            *res;
+};
+
+/* List of all resource groups */
+extern struct list_head resctrl_all_groups;
+
+/**
  * struct mongroup - store mon group's data in resctrl fs.
  * @mon_data_kn     kernlfs node for the mon_data directory
  * @parent:         parent rdtgrp
  * @crdtgrp_list:       child rdtgroup node list
  * @rmid:           rmid for this rdtgroup
- * @mon:            monnitor id
+ * @init:           init flag
  */
 struct mongroup {
 	struct kernfs_node  *mon_data_kn;
@@ -59,7 +130,7 @@ struct mongroup {
 /**
  * struct sd_closid - software defined closid
  * @intpartid:  closid for this rdtgroup only for allocation
- * @weak_closid:    closid for synchronizing configuration and monitoring
+ * @reqpartid:  closid for synchronizing configuration and monitoring
  */
 struct sd_closid {
 	u32         intpartid;
@@ -70,6 +141,7 @@ struct sd_closid {
  * struct rdtgroup - store rdtgroup's data in resctrl file system.
  * @kn:             kernfs node
  * @resctrl_group_list:     linked list for all rdtgroups
+ * @closid:             software defined closid
  * @cpu_mask:           CPUs assigned to this rdtgroup
  * @flags:          status bits
  * @waitcount:          how many cpus expect to find this
@@ -89,11 +161,214 @@ struct rdtgroup {
 	struct mongroup     mon;
 };
 
+enum resctrl_ctrl_type {
+	SCHEMA_COMM = 0,
+	SCHEMA_PRI,
+	SCHEMA_HDL,
+	SCHEMA_NUM_CTRL_TYPE
+};
+
+#define for_each_ctrl_type(t)	\
+		for (t = SCHEMA_COMM; t != SCHEMA_NUM_CTRL_TYPE; t++)
+
+#define for_each_extend_ctrl_type(t)	\
+		for (t = SCHEMA_PRI; t != SCHEMA_NUM_CTRL_TYPE; t++)
+
+/**
+ * struct resctrl_ctrl_feature - ctrl feature member live in schema list
+ * @flags:    Does what ctrl types can this feature server for
+ * @name:     Name of this ctrl feature
+ * @max_wd:   Max width of this feature can be input from outter space
+ * @base:     Base of integer from outter space
+ * @evt:      rdt_event_id event owned for applying configuration
+ * @capable:  Does this feature support
+ * @enabled:  Enabled or not.
+ * @default_ctrl:  Default ctrl value of this feature
+ */
+struct resctrl_ctrl_feature {
+	enum resctrl_ctrl_type type;
+	int        flags;
+	const char *name;
+	u32        max_wd;
+	int        base;
+	enum rdt_event_id   evt;
+	int        default_ctrl;
+	bool       capable;
+	bool       enabled;
+};
+
+struct msr_param {
+	enum resctrl_ctrl_type type;
+	struct sd_closid *closid;
+};
+
+enum resctrl_conf_type {
+	CDP_BOTH = 0,
+	CDP_CODE,
+	CDP_DATA,
+	CDP_NUM_CONF_TYPE,
+};
+
+static inline int conf_name_to_conf_type(char *name)
+{
+	enum resctrl_conf_type t;
+
+	if (!strcmp(name, "L3CODE") || !strcmp(name, "L2CODE"))
+		t = CDP_CODE;
+	else if (!strcmp(name, "L3DATA") || !strcmp(name, "L2DATA"))
+		t = CDP_DATA;
+	else
+		t = CDP_BOTH;
+	return t;
+}
+
+#define for_each_conf_type(t) \
+		for (t = CDP_BOTH; t < CDP_NUM_CONF_TYPE; t++)
+
+typedef struct { u16 val; } hw_def_t;
+
+#define hw_closid_t hw_def_t
+#define hw_monid_t hw_def_t
+#define hw_closid_val(__x) (__x.val)
+#define hw_monid_val(__x) (__x.val)
+
+#define as_hw_t(__name, __x) \
+			((hw_##__name##id_t){(__x)})
+#define hw_val(__name, __x) \
+			hw_##__name##id_val(__x)
+
+/**
+ * When cdp enabled, give (closid + 1) to Cache LxDATA.
+ */
+#define resctrl_cdp_map(__name, __closid, __type, __result)    \
+do {   \
+	if (__type == CDP_CODE) \
+		__result = as_hw_t(__name, __closid); \
+	else if (__type == CDP_DATA)     \
+		__result = as_hw_t(__name, __closid + 1); \
+	else    \
+		__result = as_hw_t(__name, __closid); \
+} while (0)
+
+bool is_resctrl_cdp_enabled(void);
+
+#define hw_alloc_validate(__flag) \
+do {   \
+	if (is_resctrl_cdp_enabled()) \
+		__flag = true;  \
+	else    \
+		__flag = false; \
+} while (0)
+
+#define hw_alloc_times_validate(__times, __flag) \
+do {   \
+	hw_alloc_validate(__flag); \
+	if (__flag) \
+		__times = 2;    \
+	else    \
+		__times = 1;    \
+} while (0)
+
+/**
+ * struct resctrl_staged_config - parsed configuration to be applied
+ * @hw_closid:      raw closid for this configuration, regardless of CDP
+ * @new_ctrl:       new ctrl value to be loaded
+ * @have_new_ctrl:  did user provide new_ctrl for this domain
+ * @new_ctrl_type:  CDP property of the new ctrl
+ * @cdp_both_ctrl:   did cdp both control if cdp enabled
+ */
+struct resctrl_staged_config {
+	hw_closid_t     hw_closid;
+	u32             new_ctrl[SCHEMA_NUM_CTRL_TYPE];
+	bool            have_new_ctrl;
+	enum resctrl_conf_type  conf_type;
+	enum resctrl_ctrl_type  ctrl_type;
+	bool            cdp_both_ctrl;
+};
+
+/* later move to resctrl common directory */
+#define RESCTRL_NAME_LEN    15
+
+struct resctrl_schema_ctrl {
+	struct list_head       list;
+	char name[RESCTRL_NAME_LEN];
+	enum resctrl_ctrl_type     ctrl_type;
+};
+
+/**
+ * @list:   Member of resctrl's schema list
+ * @name:   Name visible in the schemata file
+ * @conf_type:  Type of configuration, e.g. code/data/both
+ * @res:    The rdt_resource for this entry
+ * @schemata_ctrl_list:   Type of ctrl configuration. e.g. priority/hardlimit
+ * @cdp_mc_both:   did cdp both mon/ctrl if cdp enabled
+ */
+struct resctrl_schema {
+	struct list_head        list;
+	char                name[RESCTRL_NAME_LEN];
+	enum resctrl_conf_type      conf_type;
+	struct resctrl_resource     *res;
+	struct list_head        schema_ctrl_list;
+	bool                cdp_mc_both;
+};
+
 int schemata_list_init(void);
 
 void schemata_list_destroy(void);
 
-int resctrl_lru_request_mon(void);
+/**
+ * struct rdt_domain - group of cpus sharing an RDT resource
+ * @list:	all instances of this resource
+ * @id:		unique id for this instance
+ * @cpu_mask:	which cpus share this resource
+ * @base        MMIO base address
+ * @ctrl_val:	array of cache or mem ctrl values (indexed by CLOSID)
+ * @have_new_ctrl: did user provide new_ctrl for this domain
+ */
+struct rdt_domain {
+	struct list_head	list;
+	int			id;
+	struct cpumask		cpu_mask;
+	void __iomem		*base;
+
+	/* arch specific fields */
+	u32			*ctrl_val[SCHEMA_NUM_CTRL_TYPE];
+	bool			have_new_ctrl;
+
+	/* for debug */
+	char			*cpus_list;
+
+	struct resctrl_staged_config staged_cfg[CDP_NUM_CONF_TYPE];
+};
+
+/*
+ * Internal struct of resctrl_resource structure,
+ * for static initialization.
+ */
+struct raw_resctrl_resource {
+	u16		num_partid;
+	u16		num_intpartid;
+	u16		num_pmg;
+
+	u16		extend_ctrls_wd[SCHEMA_NUM_CTRL_TYPE];
+
+	void (*msr_update)(struct resctrl_resource *r, struct rdt_domain *d,
+					struct msr_param *para);
+	u64 (*msr_read)(struct resctrl_resource *r, struct rdt_domain *d,
+					struct msr_param *para);
+
+	int			data_width;
+	const char		*format_str;
+	int (*parse_ctrlval)(char *buf, struct resctrl_resource *r,
+			struct resctrl_staged_config *cfg, enum resctrl_ctrl_type ctrl_type);
+
+	u16			num_mon;
+	u64 (*mon_read)(struct rdt_domain *d, void *md_priv);
+	int (*mon_write)(struct rdt_domain *d, void *md_priv);
+	unsigned long       fflags;
+
+	struct resctrl_ctrl_feature ctrl_features[SCHEMA_NUM_CTRL_TYPE];
+};
 
 int rmid_alloc(int entry_idx);
 void rmid_free(int rmid);
@@ -103,7 +378,8 @@ int closid_alloc(void);
 void closid_free(int closid);
 
 void update_cpu_closid_rmid(void *info);
-void update_closid_rmid(const struct cpumask *cpu_mask, struct resctrl_group *r);
+void update_closid_rmid(const struct cpumask *cpu_mask,
+				struct resctrl_group *r);
 int __resctrl_group_move_task(struct task_struct *tsk,
 				struct resctrl_group *rdtgrp);
 
@@ -117,17 +393,10 @@ void rdt_last_cmd_clear(void);
 void rdt_last_cmd_puts(const char *s);
 void rdt_last_cmd_printf(const char *fmt, ...);
 
-extern struct mutex resctrl_group_mutex;
-
-void release_rdtgroupfs_options(void);
-int parse_rdtgroupfs_options(char *data);
-
 void resctrl_resource_reset(void);
 
 #define release_resctrl_group_fs_options release_rdtgroupfs_options
 #define parse_resctrl_group_fs_options parse_rdtgroupfs_options
-
-int mpam_get_mon_config(struct resctrl_resource *r);
 
 int resctrl_group_init_alloc(struct rdtgroup *rdtgrp);
 
@@ -136,15 +405,46 @@ static inline int __resctrl_group_show_options(struct seq_file *seq)
 	return 0;
 }
 
-int resctrl_mkdir_mondata_all_subdir(struct kernfs_node *parent_kn,
-			struct resctrl_group *prgrp);
-
-struct resctrl_resource *
-mpam_resctrl_get_resource(enum resctrl_resource_level level);
-
 int resctrl_update_groups_config(struct rdtgroup *rdtgrp);
 
 #define RESCTRL_MAX_CLOSID 32
+
+int __init resctrl_group_init(void);
+
+void post_resctrl_mount(void);
+
+extern struct mutex resctrl_group_mutex;
+DECLARE_STATIC_KEY_FALSE(resctrl_alloc_enable_key);
+extern struct rdtgroup resctrl_group_default;
+int resctrl_mkdir_mondata_all_subdir(struct kernfs_node *parent_kn,
+		struct resctrl_group *prgrp);
+
+int resctrl_group_create_info_dir(struct kernfs_node *parent_kn,
+		struct kernfs_node **kn_info);
+
+int register_resctrl_specific_files(struct rftype *files, size_t len);
+extern struct kernfs_ops resctrl_group_kf_single_ops;
+
+extern struct rdtgroup *resctrl_group_kn_lock_live(struct kernfs_node *kn);
+void resctrl_group_kn_unlock(struct kernfs_node *kn);
+
+void release_rdtgroupfs_options(void);
+int parse_rdtgroupfs_options(char *data);
+
+int resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflags);
+
+#define RESCTRL_MAX_CBM 32
+
+struct resctrl_fs_context {
+	struct kernfs_fs_context        kfc;
+};
+
+static inline struct resctrl_fs_context *resctrl_fc2context(struct fs_context *fc)
+{
+	struct kernfs_fs_context *kfc = fc->fs_private;
+
+	return container_of(kfc, struct resctrl_fs_context, kfc);
+}
 
 /*
  * This is only for avoiding unnecessary cost in mpam_sched_in()
@@ -178,4 +478,5 @@ static inline u32 resctrl_navie_closid(struct sd_closid closid)
 	return closid.intpartid;
 }
 
+#endif
 #endif /* _ASM_ARM64_RESCTRL_H */

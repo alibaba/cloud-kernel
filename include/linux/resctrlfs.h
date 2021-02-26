@@ -10,59 +10,6 @@
 #include <linux/seq_buf.h>
 #include <linux/seq_file.h>
 
-/**
- * struct resctrl_cache - Cache allocation related data
- * @cbm_len:        Length of the cache bit mask
- * @min_cbm_bits:   Minimum number of consecutive bits to be set
- * @cbm_idx_mult:   Multiplier of CBM index
- * @cbm_idx_offset: Offset of CBM index. CBM index is computed by:
- *          closid * cbm_idx_multi + cbm_idx_offset
- *          in a cache bit mask
- * @shareable_bits: Bitmask of shareable resource with other
- *          executing entities
- * @arch_has_sparse_bitmaps:   True if a bitmap like f00f is valid.
- */
-struct resctrl_cache {
-	u32     cbm_len;
-	u32     shareable_bits;
-	u32     min_cbm_bits;
-};
-
-/**
- * struct resctrl_membw - Memory bandwidth allocation related data
- * @min_bw:     Minimum memory bandwidth percentage user can request
- * @bw_gran:        Granularity at which the memory bandwidth is allocated
- * @delay_linear:   True if memory B/W delay is in linear scale
- * @ctrl_extend_bits: Indicates if there are extra ctrl capabilities supported.
- *          e.g. priority/hardlimit.
- */
-struct resctrl_membw {
-	u32     min_bw;
-	u32     bw_gran;
-	u32     delay_linear;
-};
-
-struct resctrl_resource {
-	int			rid;
-	bool			alloc_enabled;
-	bool			mon_enabled;
-	bool			alloc_capable;
-	bool			mon_capable;
-	char			*name;
-	struct list_head	domains;
-	u32			dom_num;
-	struct list_head	evt_list;
-	unsigned long		fflags;
-
-	struct resctrl_cache cache;
-	struct resctrl_membw mbw;
-
-	bool cdp_capable;
-	bool cdp_enable;
-
-	void *res;
-};
-
 DECLARE_STATIC_KEY_FALSE(resctrl_enable_key);
 
 /* rftype.flags */
@@ -87,9 +34,6 @@ DECLARE_STATIC_KEY_FALSE(resctrl_enable_key);
 #define RF_MON_INFO			(RFTYPE_INFO | RFTYPE_MON)
 #define RF_TOP_INFO			(RFTYPE_INFO | RFTYPE_TOP)
 #define RF_CTRL_BASE			(RFTYPE_BASE | RFTYPE_CTRL)
-
-/* List of all resource groups */
-extern struct list_head resctrl_all_groups;
 
 /**
  * struct rftype - describe each file in the resctrl file system
@@ -120,31 +64,5 @@ struct rftype {
 	ssize_t (*write)(struct kernfs_open_file *of,
 			 char *buf, size_t nbytes, loff_t off);
 };
-
-DECLARE_STATIC_KEY_FALSE(resctrl_alloc_enable_key);
-extern struct rdtgroup resctrl_group_default;
-
-int __init resctrl_group_init(void);
-
-int register_resctrl_specific_files(struct rftype *files, size_t len);
-extern struct kernfs_ops resctrl_group_kf_single_ops;
-
-extern struct rdtgroup *resctrl_group_kn_lock_live(struct kernfs_node *kn);
-void resctrl_group_kn_unlock(struct kernfs_node *kn);
-
-struct resctrl_fs_context {
-	struct kernfs_fs_context        kfc;
-};
-
-static inline struct resctrl_fs_context *resctrl_fc2context(struct fs_context *fc)
-{
-	struct kernfs_fs_context *kfc = fc->fs_private;
-
-	return container_of(kfc, struct resctrl_fs_context, kfc);
-}
-
-void post_resctrl_mount(void);
-
-#define RESCTRL_MAX_CBM 32
 
 #endif /* _RESCTRLFS_H */

@@ -35,10 +35,11 @@
 #include <linux/arm_mpam.h>
 
 #include <asm/mpam_sched.h>
-#include <asm/mpam_resource.h>
+#include <asm/mpam.h>
 #include <asm/io.h>
 
 #include "mpam_device.h"
+#include "mpam_resource.h"
 #include "mpam_internal.h"
 
 /* Mutex to protect rdtgroup access. */

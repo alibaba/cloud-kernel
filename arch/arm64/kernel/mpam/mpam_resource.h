@@ -165,10 +165,10 @@
 #define MPAMF_MBWUMON_IDR_HAS_CAPTURE   BIT(31)
 
 /* MPAMF_CPOR_IDR - MPAM features cache portion partitioning ID register */
-#define MPAMF_CPOR_IDR_CPBM_WD          GENMASK(15, 0)
+#define MPAMF_CPOR_IDR_CPBM_WD                  GENMASK(15, 0)
 
 /* MPAMF_CCAP_IDR - MPAM features cache capacity partitioning ID register */
-#define MPAMF_CCAP_IDR_CMAX_WD          GENMASK(5, 0)
+#define MPAMF_CCAP_IDR_CMAX_WD                  GENMASK(5, 0)
 
 /* MPAMF_MBW_IDR - MPAM features memory bandwidth partitioning ID register */
 #define MPAMF_MBW_IDR_BWA_WD            GENMASK(5, 0)

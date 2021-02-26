@@ -29,8 +29,9 @@
 #include <linux/kernfs.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <asm/mpam.h>
 
-#include <asm/mpam_resource.h>
+#include "mpam_resource.h"
 #include "mpam_internal.h"
 
 /* schemata content list */
@@ -750,6 +751,99 @@ int resctrl_mkdir_mondata_all_subdir(struct kernfs_node *parent_kn,
 
 	return ret;
 }
+
+static int resctrl_group_mkdir_info_resdir(struct resctrl_resource *r,
+		char *name,unsigned long fflags, struct kernfs_node *kn_info)
+{
+	struct kernfs_node *kn_subdir;
+	int ret;
+
+	kn_subdir = kernfs_create_dir(kn_info, name,
+				      kn_info->mode, r);
+	if (IS_ERR(kn_subdir))
+		return PTR_ERR(kn_subdir);
+
+	kernfs_get(kn_subdir);
+	ret = resctrl_group_kn_set_ugid(kn_subdir);
+	if (ret)
+		return ret;
+
+	ret = resctrl_group_add_files(kn_subdir, fflags);
+	if (!ret)
+		kernfs_activate(kn_subdir);
+
+	return ret;
+}
+
+int resctrl_group_create_info_dir(struct kernfs_node *parent_kn,
+		struct kernfs_node **kn_info)
+{
+	struct resctrl_schema *s;
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+	unsigned long fflags;
+	char name[32];
+	int ret;
+
+	/* create the directory */
+	*kn_info = kernfs_create_dir(parent_kn, "info", parent_kn->mode, NULL);
+	if (IS_ERR(*kn_info))
+		return PTR_ERR(*kn_info);
+	kernfs_get(*kn_info);
+
+	ret = resctrl_group_add_files(*kn_info, RF_TOP_INFO);
+	if (ret)
+		goto out_destroy;
+
+	list_for_each_entry(s, &resctrl_all_schema, list) {
+		r = s->res;
+		if (!r)
+			continue;
+		rr = r->res;
+		if (r->alloc_enabled) {
+			fflags =  rr->fflags | RF_CTRL_INFO;
+			ret = resctrl_group_mkdir_info_resdir(r, s->name,
+				fflags, *kn_info);
+			if (ret)
+				goto out_destroy;
+		}
+	}
+
+	list_for_each_entry(s, &resctrl_all_schema, list) {
+		r = s->res;
+		if (!r)
+			continue;
+		rr = r->res;
+		if (r->mon_enabled) {
+			fflags =  rr->fflags | RF_MON_INFO;
+			snprintf(name, sizeof(name), "%s_MON", s->name);
+			ret = resctrl_group_mkdir_info_resdir(r, name,
+				fflags, *kn_info);
+			if (ret)
+				goto out_destroy;
+		}
+	}
+
+	/*
+	 m This extra ref will be put in kernfs_remove() and guarantees
+	 * that @rdtgrp->kn is always accessible.
+	 */
+	kernfs_get(*kn_info);
+
+	ret = resctrl_group_kn_set_ugid(*kn_info);
+	if (ret)
+		goto out_destroy;
+
+	kernfs_activate(*kn_info);
+
+	return 0;
+
+out_destroy:
+	kernfs_remove(*kn_info);
+	return ret;
+}
+
+
 
 /* Initialize MBA resource with default values. */
 static void rdtgroup_init_mba(struct resctrl_schema *s, u32 closid)

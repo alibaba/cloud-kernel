@@ -32,8 +32,8 @@
 #include <linux/cpu.h>
 #include <linux/cacheinfo.h>
 #include <linux/arm_mpam.h>
-#include <asm/mpam_resource.h>
 
+#include "mpam_resource.h"
 #include "mpam_device.h"
 #include "mpam_internal.h"
 
