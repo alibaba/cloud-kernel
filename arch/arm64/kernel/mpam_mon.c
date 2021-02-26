@@ -51,8 +51,11 @@ int alloc_pmg(void)
 {
 	u32 pmg = ffs(pmg_free_map);
 
-	if (pmg == 0)
+	if (pmg == 0) {
+		pr_info("%s: no pmg available\n");
 		return -ENOSPC;
+	}
+
 	pmg--;
 	pmg_free_map &= ~(1 << pmg);
 
@@ -78,4 +81,12 @@ int alloc_rmid(void)
 void free_rmid(u32 pmg)
 {
 	free_pmg(pmg);
+}
+
+int mpam_get_mon_config(struct resctrl_resource *r)
+{
+	r->mon_capable = true;
+	r->mon_enabled = true;
+
+	return 0;
 }
