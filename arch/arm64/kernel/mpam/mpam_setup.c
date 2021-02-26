@@ -28,8 +28,6 @@
 
 #include <linux/slab.h>
 #include <linux/err.h>
-#include <linux/resctrlfs.h>
-#include <asm/resctrl.h>
 
 #include "mpam_device.h"
 #include "mpam_internal.h"

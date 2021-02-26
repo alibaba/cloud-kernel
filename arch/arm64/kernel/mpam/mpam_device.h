@@ -6,7 +6,6 @@
 #include <linux/cpumask.h>
 #include <linux/types.h>
 #include <linux/arm_mpam.h>
-#include "mpam_internal.h"
 
 struct mpam_config;
 

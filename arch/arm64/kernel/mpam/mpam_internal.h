@@ -3,6 +3,7 @@
 #define _ASM_ARM64_MPAM_INTERNAL_H
 
 #include <linux/resctrlfs.h>
+#include <asm/mpam.h>
 #include <asm/resctrl.h>
 
 typedef u32 mpam_features_t;

@@ -2,7 +2,6 @@
 #define _ASM_ARM64_RESCTRL_H
 
 #include <asm/mpam_sched.h>
-#include <asm/mpam.h>
 
 #define resctrl_group rdtgroup
 #define resctrl_alloc_capable rdt_alloc_capable
@@ -79,6 +78,9 @@ int schemata_list_init(void);
 
 void schemata_list_destroy(void);
 
+int alloc_rmid(void);
+void free_rmid(u32 rmid);
+
 static inline int alloc_mon_id(void)
 {
 
@@ -90,7 +92,11 @@ static inline void free_mon_id(u32 id)
 	free_rmid(id);
 }
 
+int closid_init(void);
+int closid_alloc(void);
+void closid_free(int closid);
 void pmg_init(void);
+
 static inline int resctrl_id_init(void)
 {
 	int ret;
@@ -120,11 +126,26 @@ void update_closid_rmid(const struct cpumask *cpu_mask, struct resctrl_group *r)
 int __resctrl_group_move_task(struct task_struct *tsk,
 				struct resctrl_group *rdtgrp);
 
-ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
-				char *buf, size_t nbytes, loff_t off);
+extern bool rdt_alloc_capable;
+extern bool rdt_mon_capable;
 
-int resctrl_group_schemata_show(struct kernfs_open_file *of,
-				struct seq_file *s, void *v);
+/* rdtgroup.flags */
+#define	RDT_DELETED		BIT(0)
+#define	RDT_CTRLMON		BIT(1)
+
+void rdt_last_cmd_clear(void);
+void rdt_last_cmd_puts(const char *s);
+void rdt_last_cmd_printf(const char *fmt, ...);
+
+extern struct mutex resctrl_group_mutex;
+
+void release_rdtgroupfs_options(void);
+int parse_rdtgroupfs_options(char *data);
+
+int alloc_mon(void);
+void free_mon(u32 mon);
+
+void resctrl_resource_reset(void);
 
 #define release_resctrl_group_fs_options release_rdtgroupfs_options
 #define parse_resctrl_group_fs_options parse_rdtgroupfs_options
@@ -140,6 +161,15 @@ mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
 		    char *name, struct kernfs_node **dest_kn);
 
 int resctrl_group_init_alloc(struct rdtgroup *rdtgrp);
+
+static inline int __resctrl_group_show_options(struct seq_file *seq)
+{
+	return 0;
+}
+
+int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
+				  struct rdtgroup *prgrp,
+				  struct kernfs_node **dest_kn);
 
 struct resctrl_resource *
 mpam_resctrl_get_resource(enum resctrl_resource_level level);

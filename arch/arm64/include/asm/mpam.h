@@ -115,9 +115,6 @@
 DECLARE_STATIC_KEY_FALSE(resctrl_enable_key);
 DECLARE_STATIC_KEY_FALSE(resctrl_mon_enable_key);
 
-extern bool rdt_alloc_capable;
-extern bool rdt_mon_capable;
-
 extern int max_name_width, max_data_width;
 
 enum resctrl_conf_type {
@@ -207,11 +204,6 @@ struct resctrl_schema {
 	struct resctrl_resource     *res;
 };
 
-
-/* rdtgroup.flags */
-#define	RDT_DELETED		BIT(0)
-#define	RDT_CTRLMON		BIT(1)
-
 /**
  * struct rdt_domain - group of cpus sharing an RDT resource
  * @list:	all instances of this resource
@@ -250,35 +242,13 @@ struct rdt_domain {
 
 #define RESCTRL_SHOW_DOM_MAX_NUM 8
 
-extern struct mutex resctrl_group_mutex;
-
-extern struct resctrl_resource resctrl_resources_all[];
-
 int __init resctrl_group_init(void);
 
-void rdt_last_cmd_clear(void);
-void rdt_last_cmd_puts(const char *s);
-void rdt_last_cmd_printf(const char *fmt, ...);
-
-int alloc_rmid(void);
-void free_rmid(u32 rmid);
 int resctrl_group_mondata_show(struct seq_file *m, void *arg);
 void rmdir_mondata_subdir_allrdtgrp(struct resctrl_resource *r,
 				    unsigned int dom_id);
 
-int closid_init(void);
-int closid_alloc(void);
-void closid_free(int closid);
-
 int cdp_enable(int level, int data_type, int code_type);
-void resctrl_resource_reset(void);
-void release_rdtgroupfs_options(void);
-int parse_rdtgroupfs_options(char *data);
-
-static inline int __resctrl_group_show_options(struct seq_file *seq)
-{
-	return 0;
-}
 
 void post_resctrl_mount(void);
 
@@ -354,6 +324,12 @@ union mon_data_bits {
 	} u;
 };
 
+ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off);
+
+int resctrl_group_schemata_show(struct kernfs_open_file *of,
+				struct seq_file *s, void *v);
+
 struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
 		struct list_head **pos);
 
@@ -364,14 +340,6 @@ int resctrl_group_ctrlmon_show(struct kernfs_open_file *of,
 		struct seq_file *s, void *v);
 
 int resctrl_group_alloc_mon(struct rdtgroup *grp);
-
-void mon_init(void);
-int alloc_mon(void);
-void free_mon(u32 mon);
-
-int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
-				  struct rdtgroup *prgrp,
-				  struct kernfs_node **dest_kn);
 
 u16 mpam_resctrl_max_mon_num(void);
 

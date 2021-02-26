@@ -33,9 +33,9 @@
 #include <linux/cacheinfo.h>
 #include <linux/arm_mpam.h>
 #include <asm/mpam_resource.h>
-#include <asm/mpam.h>
 
 #include "mpam_device.h"
+#include "mpam_internal.h"
 
 /*
  * During discovery this lock protects writers to class, components and devices.

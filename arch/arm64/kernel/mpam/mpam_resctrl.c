@@ -32,12 +32,10 @@
 #include <linux/task_work.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
-#include <linux/resctrlfs.h>
 #include <linux/arm_mpam.h>
 
 #include <asm/mpam_sched.h>
 #include <asm/mpam_resource.h>
-#include <asm/resctrl.h>
 #include <asm/io.h>
 
 #include "mpam_device.h"

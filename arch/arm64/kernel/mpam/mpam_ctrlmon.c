@@ -29,11 +29,8 @@
 #include <linux/kernfs.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <linux/resctrlfs.h>
 
-#include <asm/mpam.h>
 #include <asm/mpam_resource.h>
-#include <asm/resctrl.h>
 #include "mpam_internal.h"
 
 /* schemata content list */
@@ -701,7 +698,6 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 		r = s->res;
 
 		if (r->mon_enabled) {
-			/* HHA does not support monitor by pmg */
 			struct raw_resctrl_resource *rr;
 
 			rr = r->res;
