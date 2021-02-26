@@ -1896,6 +1896,18 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.cpu_enable = cpu_clear_disr,
 	},
 #endif /* CONFIG_ARM64_RAS_EXTN */
+#ifdef CONFIG_MPAM
+	{
+		.desc = "ARM64 MPAM Extension Support",
+		.capability = ARM64_HAS_MPAM,
+		.type = ARM64_CPUCAP_SCOPE_SYSTEM,
+		.matches = has_cpuid_feature,
+		.sys_reg = SYS_ID_AA64PFR0_EL1,
+		.sign = FTR_UNSIGNED,
+		.field_pos = ID_AA64PFR0_MPAM_SHIFT,
+		.min_field_value = ID_AA64PFR0_MPAM,
+	},
+#endif /* CONFIG_MPAM */
 #ifdef CONFIG_ARM64_AMU_EXTN
 	{
 		/*
