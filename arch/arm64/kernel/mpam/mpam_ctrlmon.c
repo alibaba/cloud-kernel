@@ -421,7 +421,7 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 		goto out;
 	}
 
-	usage = rr->mon_read(d, rdtgrp);
+	usage = rr->mon_read(d, md.priv);
 	seq_printf(m, "%llu\n", usage);
 
 out:
@@ -450,22 +450,31 @@ static int resctrl_group_kn_set_ugid(struct kernfs_node *kn)
 }
 
 static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
-				struct rdt_domain *d,
-				struct resctrl_resource *r, struct resctrl_group *prgrp)
+			struct rdt_domain *d, struct resctrl_schema *s,
+			struct resctrl_group *prgrp)
+
 {
-	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+	hw_closid_t hw_closid;
+	hw_monid_t hw_monid;
 	union mon_data_bits md;
 	struct kernfs_node *kn;
 	char name[32];
 	int ret = 0;
 
+	r = s->res;
+	rr = r->res;
 
 	md.u.rid = r->rid;
 	md.u.domid = d->id;
-	md.u.partid = prgrp->closid;
+	resctrl_cdp_map(clos, prgrp->closid, s->conf_type, hw_closid);
+	md.u.partid = hw_closid_val(hw_closid);
+	resctrl_cdp_map(mon, prgrp->mon.mon, s->conf_type, hw_monid);
+	md.u.mon = hw_monid_val(hw_monid);
 	md.u.pmg = prgrp->mon.rmid;
 
-	snprintf(name, sizeof(name), "mon_%s_%02d", r->name, d->id);
+	snprintf(name, sizeof(name), "mon_%s_%02d", s->name, d->id);
 	kn = __kernfs_create_file(parent_kn, name, 0444,
 				  GLOBAL_ROOT_UID, GLOBAL_ROOT_GID, 0,
 				  &kf_mondata_ops, md.priv, NULL, NULL);
@@ -480,7 +489,7 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 	}
 
 	/* Could we remove the MATCH_* param ? */
-	rr->mon_write(d, prgrp, true);
+	rr->mon_write(d, md.priv, true);
 
 	return ret;
 }
@@ -595,14 +604,15 @@ int resctrl_group_ctrlmon_show(struct kernfs_open_file *of,
 
 
 static int mkdir_mondata_subdir_alldom(struct kernfs_node *parent_kn,
-				       struct resctrl_resource *r,
-				       struct resctrl_group *prgrp)
+			struct resctrl_schema *s, struct resctrl_group *prgrp)
 {
+	struct resctrl_resource *r;
 	struct rdt_domain *dom;
 	int ret;
 
+	r = s->res;
 	list_for_each_entry(dom, &r->domains, list) {
-		ret = mkdir_mondata_subdir(parent_kn, dom, r, prgrp);
+		ret = mkdir_mondata_subdir(parent_kn, dom, s, prgrp);
 		if (ret)
 			return ret;
 	}
@@ -668,7 +678,7 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 			     struct resctrl_group *prgrp,
 			     struct kernfs_node **dest_kn)
 {
-	struct mpam_resctrl_res *res;
+	struct resctrl_schema *s;
 	struct resctrl_resource *r;
 	struct kernfs_node *kn;
 	int ret;
@@ -687,16 +697,23 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 	 * Create the subdirectories for each domain. Note that all events
 	 * in a domain like L3 are grouped into a resource whose domain is L3
 	 */
-	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
+	list_for_each_entry(s, &resctrl_all_schema, list) {
+		r = s->res;
 
 		if (r->mon_enabled) {
 			/* HHA does not support monitor by pmg */
+			struct raw_resctrl_resource *rr;
+
+			rr = r->res;
+			/*
+			 * num pmg of different resources varies, we just
+			 * skip creating those unqualified ones.
+			 */
 			if ((prgrp->type == RDTMON_GROUP) &&
-			    (r->rid == RDT_RESOURCE_MC))
+				(prgrp->mon.rmid >= rr->num_pmg))
 				continue;
 
-			ret = mkdir_mondata_subdir_alldom(kn, r, prgrp);
+			ret = mkdir_mondata_subdir_alldom(kn, s, prgrp);
 			if (ret)
 				goto out_destroy;
 		}

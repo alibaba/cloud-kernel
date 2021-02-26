@@ -338,10 +338,11 @@ struct raw_resctrl_resource {
 			struct resctrl_staged_config *cfg, hw_closid_t closid);
 
 	u16                num_mon;
-	u64 (*mon_read)(struct rdt_domain *d, struct rdtgroup *g);
-	int (*mon_write)(struct rdt_domain *d, struct rdtgroup *g, bool enable);
+	u64 (*mon_read)(struct rdt_domain *d, void *md_priv);
+	int (*mon_write)(struct rdt_domain *d, void *md_priv, bool enable);
 };
 
+/* 64bit arm64 specified */
 union mon_data_bits {
 	void *priv;
 	struct {
@@ -349,6 +350,7 @@ union mon_data_bits {
 		u8	domid;
 		u8	partid;
 		u8	pmg;
+		u8	mon;
 	} u;
 };
 

@@ -118,11 +118,10 @@ common_wrmsr(struct resctrl_resource *r, struct rdt_domain *d,
 static u64 cache_rdmsr(struct rdt_domain *d, int partid);
 static u64 mbw_rdmsr(struct rdt_domain *d, int partid);
 
-static u64 cache_rdmon(struct rdt_domain *d, struct rdtgroup *g);
-static u64 mbw_rdmon(struct rdt_domain *d, struct rdtgroup *g);
+static u64 cache_rdmon(struct rdt_domain *d, void *md_priv);
+static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv);
 
-static int common_wrmon(struct rdt_domain *d, struct rdtgroup *g,
-			bool enable);
+static int common_wrmon(struct rdt_domain *d, void *md_priv, bool enable);
 
 static inline bool is_mon_dyn(u32 mon)
 {
@@ -337,22 +336,27 @@ static u64 mbw_rdmsr(struct rdt_domain *d, int partid)
  * use pmg as monitor id
  * just use match_pardid only.
  */
-static u64 cache_rdmon(struct rdt_domain *d, struct rdtgroup *g)
+static u64 cache_rdmon(struct rdt_domain *d, void *md_priv)
 {
 	int err;
 	u64 result;
+	union mon_data_bits md;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
-	u32 mon = g->mon.mon;
+	u32 mon;
 	unsigned long timeout;
+
+	md.priv = md_priv;
+
+	mon = md.u.mon;
 
 	/* Indicates whether allocating a monitor dynamically*/
 	if (is_mon_dyn(mon))
 		mon = alloc_mon();
 
-	args.partid = g->closid;
+	args.partid = md.u.partid;
 	args.mon = mon;
-	args.pmg = g->mon.rmid;
+	args.pmg = md.u.pmg;
 	args.match_pmg = true;
 	args.eventid = QOS_L3_OCCUP_EVENT_ID;
 
@@ -382,21 +386,26 @@ static u64 cache_rdmon(struct rdt_domain *d, struct rdtgroup *g)
  * use pmg as monitor id
  * just use match_pardid only.
  */
-static u64 mbw_rdmon(struct rdt_domain *d, struct rdtgroup *g)
+static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv)
 {
 	int err;
 	u64 result;
+	union mon_data_bits md;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
-	u32 mon = g->mon.mon;
+	u32 mon;
 	unsigned long timeout;
+
+	md.priv = md_priv;
+
+	mon = md.u.mon;
 
 	if (is_mon_dyn(mon))
 		mon = alloc_mon();
 
-	args.partid = g->closid;
+	args.partid = md.u.partid;
 	args.mon = mon;
-	args.pmg = g->mon.rmid;
+	args.pmg = md.u.pmg;
 	args.match_pmg = true;
 	args.eventid = QOS_L3_MBM_LOCAL_EVENT_ID;
 
@@ -422,18 +431,22 @@ static u64 mbw_rdmon(struct rdt_domain *d, struct rdtgroup *g)
 	return result;
 }
 
-static int common_wrmon(struct rdt_domain *d, struct rdtgroup *g, bool enable)
+static int
+common_wrmon(struct rdt_domain *d, void *md_priv, bool enable)
 {
 	u64 result;
+	union mon_data_bits md;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
 
 	if (!enable)
 		return -EINVAL;
 
-	args.partid = g->closid;
-	args.mon = g->mon.mon;
-	args.pmg = g->mon.rmid;
+	md.priv = md_priv;
+	args.partid = md.u.partid;
+	args.mon = md.u.mon;
+	args.pmg = md.u.pmg;
+
 	args.match_pmg = true;
 
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
