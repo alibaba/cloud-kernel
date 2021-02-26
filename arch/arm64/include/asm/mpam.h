@@ -328,6 +328,7 @@ struct raw_resctrl_resource {
 	int (*parse_ctrlval)	(char *buf, struct raw_resctrl_resource *r,
 				 struct rdt_domain *d);
 	int			num_pmg;
+	u64 (*mon_read)		(struct rdt_domain *d, struct rdtgroup *g);
 };
 
 int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
@@ -341,5 +342,8 @@ union mon_data_bits {
 		u8	pmg;
 	} u;
 };
+
+struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
+		struct list_head **pos);
 
 #endif /* _ASM_ARM64_MPAM_H */

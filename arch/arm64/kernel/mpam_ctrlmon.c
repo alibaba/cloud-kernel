@@ -251,27 +251,6 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 	return ret;
 }
 
-/*
- * [FIXME]
- * use pmg as monitor id
- * just use match_pardid only.
- */
-static inline u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g)
-{
-	u32 pmg = g->mon.rmid;
-
-	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
-	return mpam_readl(d->base + MSMON_MBWU);
-}
-
-static inline u64 csu_read(struct rdt_domain *d, struct rdtgroup *g)
-{
-	u32 pmg = g->mon.rmid;
-
-	mpam_writel(pmg, d->base + MSMON_CFG_MON_SEL);
-	return mpam_readl(d->base + MSMON_CSU);
-}
-
 static inline char *kernfs_node_name(struct kernfs_open_file *of)
 {
 	return (char *)(of ? of->kn->name : NULL);
@@ -306,9 +285,13 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 {
 	struct kernfs_open_file *of = m->private;
 	struct rdtgroup *rdtgrp;
+	struct rdt_domain *d;
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
 	union mon_data_bits md;
 	int ret = 0;
 	char *resname = get_resource_name(kernfs_node_name(of));
+	u64 usage;
 
 	if (!resname)
 		return -ENOMEM;
@@ -330,7 +313,18 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 		rdtgrp->mon.rmid
 	       );
 
+	r = &resctrl_resources_all[md.u.rid];
+	rr = r->res;
+
 	/* show monitor data */
+	d = mpam_find_domain(r, md.u.domid, NULL);
+	if (IS_ERR(d)) {
+		pr_warn("Could't find domain id %d\n", md.u.domid);
+		return -ENOENT;
+	}
+
+	usage = rr->mon_read(d, rdtgrp);
+	seq_printf(m, "%llu\n", usage);
 
 	put_resource_name(resname);
 	resctrl_group_kn_unlock(of->kn);
