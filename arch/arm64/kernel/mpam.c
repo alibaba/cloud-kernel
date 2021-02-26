@@ -1013,9 +1013,10 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 		rdtgrp->flags &= ~RDT_CTRLMON;
 		resctrl_ctrlmon_disable(rdtgrp->mon.mon_data_kn, rdtgrp);
 	} else if (!(rdtgrp->flags & RDT_CTRLMON) && ctrlmon) {
-		rdtgrp->flags |= RDT_CTRLMON;
-		resctrl_ctrlmon_enable(rdtgrp->kn, rdtgrp,
-				       &rdtgrp->mon.mon_data_kn);
+		ret = resctrl_ctrlmon_enable(rdtgrp->kn, rdtgrp,
+					     &rdtgrp->mon.mon_data_kn);
+		if (!ret)
+			rdtgrp->flags |= RDT_CTRLMON;
 	} else {
 		ret = -ENOENT;
 	}
