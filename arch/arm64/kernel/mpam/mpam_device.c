@@ -123,7 +123,7 @@ mpam_probe_update_sysprops(u16 max_partid, u16 max_pmg)
 
 static int mpam_device_probe(struct mpam_device *dev)
 {
-	u32 hwfeatures;
+	u32 hwfeatures, part_sel;
 	u16 max_intpartid = 0;
 	u16 max_partid, max_pmg;
 
@@ -205,8 +205,17 @@ static int mpam_device_probe(struct mpam_device *dev)
 
 	/* Priority partitioning */
 	if (MPAMF_IDR_HAS_PRI_PART(hwfeatures)) {
-		u32 pri_features = mpam_read_reg(dev, MPAMF_PRI_IDR);
-		u32 hwdef_pri = mpam_read_reg(dev, MPAMCFG_PRI);
+		u32 pri_features, hwdef_pri;
+		/*
+		 * if narrow support, MPAMCFG_PART_SEL.INTERNAL must be 1 when
+		 * reading/writing MPAMCFG register other than MPAMCFG_INTPARTID.
+		 */
+		if (mpam_has_feature(mpam_feat_part_nrw, dev->features)) {
+			part_sel = MPAMCFG_PART_SEL_INTERNAL;
+			mpam_write_reg(dev, MPAMCFG_PART_SEL, part_sel);
+		}
+		pri_features = mpam_read_reg(dev, MPAMF_PRI_IDR);
+		hwdef_pri = mpam_read_reg(dev, MPAMCFG_PRI);
 
 		pr_debug("probe: probed PRI_PART\n");
 
