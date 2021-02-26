@@ -182,9 +182,7 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 	unsigned long fflags;
 	char name[32];
 	int ret;
-#ifdef CONFIG_ARM64
 	enum resctrl_resource_level level;
-#endif
 
 	/* create the directory */
 	kn_info = kernfs_create_dir(parent_kn, "info", parent_kn->mode, NULL);
@@ -196,14 +194,10 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 	if (ret)
 		goto out_destroy;
 
-#ifdef CONFIG_ARM64
 	for (level = RDT_RESOURCE_SMMU; level < RDT_NUM_RESOURCES; level++) {
 		r = mpam_resctrl_get_resource(level);
 		if (!r)
 			continue;
-#else
-	for_each_resctrl_resource(r) {
-#endif
 		if (r->alloc_enabled) {
 			fflags =  r->fflags | RF_CTRL_INFO;
 			ret = resctrl_group_mkdir_info_resdir(r, r->name, fflags);
@@ -212,14 +206,10 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 		}
 	}
 
-#ifdef CONFIG_ARM64
 	for (level = RDT_RESOURCE_SMMU; level < RDT_NUM_RESOURCES; level++) {
 		r = mpam_resctrl_get_resource(level);
 		if (!r)
 			continue;
-#else
-	for_each_resctrl_resource(r) {
-#endif
 		if (r->mon_enabled) {
 			fflags =  r->fflags | RF_MON_INFO;
 			snprintf(name, sizeof(name), "%s_MON", r->name);
@@ -468,11 +458,10 @@ static int resctrl_get_tree(struct fs_context *fc)
 	if (ret)
 		goto out;
 
-#ifdef CONFIG_ARM64
 	ret = schemata_list_init();
 	if (ret)
 		goto out;
-#endif
+
 	ret = resctrl_id_init();
 	if (ret)
 		goto out;
@@ -490,7 +479,6 @@ static int resctrl_get_tree(struct fs_context *fc)
 
 		kernfs_get(kn_mongrp);
 
-#ifndef CONFIG_ARM64 /* [FIXME] arch specific code */
 		ret = mkdir_mondata_all_prepare(&resctrl_group_default);
 		if (ret < 0)
 			goto out_mongrp;
@@ -502,7 +490,6 @@ static int resctrl_get_tree(struct fs_context *fc)
 
 		kernfs_get(kn_mondata);
 		resctrl_group_default.mon.mon_data_kn = kn_mondata;
-#endif
 	}
 
 	ret = kernfs_get_tree(fc);
@@ -514,11 +501,9 @@ static int resctrl_get_tree(struct fs_context *fc)
 	goto out;
 
 out_mondata:
-#ifndef CONFIG_ARM64 /* [FIXME] arch specific code */
 	if (resctrl_mon_capable)
 		kernfs_remove(kn_mondata);
 out_mongrp:
-#endif
 	if (resctrl_mon_capable)
 		kernfs_remove(kn_mongrp);
 out_info:
@@ -641,9 +626,8 @@ static void resctrl_kill_sb(struct super_block *sb)
 	mutex_lock(&resctrl_group_mutex);
 
 	resctrl_resource_reset();
-#ifdef CONFIG_ARM64
+
 	schemata_list_destroy();
-#endif
 
 	rmdir_all_sub();
 	static_branch_disable_cpuslocked(&resctrl_alloc_enable_key);
