@@ -306,7 +306,7 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 {
 	struct kernfs_open_file *of = m->private;
 	struct rdtgroup *rdtgrp;
-	struct rdt_domain *d;
+	union mon_data_bits md;
 	int ret = 0;
 	char *resname = get_resource_name(kernfs_node_name(of));
 
@@ -315,19 +315,13 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 
-	d = of->kn->priv;
-
-	if (rdtgrp)
-	/* for debug */
-		seq_printf(m, "resource: %s, group: partid: %d, pmg: %d\n",
-				resname, rdtgrp->closid, rdtgrp->mon.rmid);
-	else
-		seq_printf(m, "resource: %s: need partid and pmg here\n",
-				resname);
-
-	if (d)
-		seq_printf(m, "domain: id %d: cpu_list %s, base %016llx\n",
-			   d->id, d->cpus_list, (u64)d->base);
+	md.priv = of->kn->priv;
+	pr_info("%s: resname %s, rid %d, domid %d, partid %d, pmg %d\n",
+		__func__, resname,
+		md.u.rid,
+		md.u.domid,
+		md.u.partid,
+		md.u.pmg);
 
 	/* show monitor data */
 
@@ -383,14 +377,21 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 				struct resctrl_resource *r, struct resctrl_group *prgrp)
 {
 #if 1
+	union mon_data_bits md;
 	struct kernfs_node *kn;
 	char name[32];
 	int ret = 0;
 
+
+	md.u.rid = r->rid;
+	md.u.domid = d->id;
+	md.u.partid = prgrp->closid;
+	md.u.pmg = prgrp->mon.rmid;
+
 	sprintf(name, "mon_%s_%02d", r->name, d->id);
 	kn = __kernfs_create_file(parent_kn, name, 0444,
 				  GLOBAL_ROOT_UID, GLOBAL_ROOT_GID, 0,
-				  &kf_mondata_ops, d, NULL, NULL);
+				  &kf_mondata_ops, md.priv, NULL, NULL);
 	if (IS_ERR(kn))
 		return PTR_ERR(kn);
 

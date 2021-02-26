@@ -332,4 +332,14 @@ struct raw_resctrl_resource {
 
 int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
 
+union mon_data_bits {
+	void *priv;
+	struct {
+		u8	rid;
+		u8	domid;
+		u8	partid;
+		u8	pmg;
+	} u;
+};
+
 #endif /* _ASM_ARM64_MPAM_H */
