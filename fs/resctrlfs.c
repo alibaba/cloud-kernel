@@ -591,6 +591,9 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	}
 
 	if (resctrl_mon_capable) {
+#ifdef CONFIG_ARM64
+		resctrl_mkdir_ctrlmon_mondata(kn, rdtgrp, &rdtgrp->mon.mon_data_kn);
+#else
 		ret = alloc_mon_id();
 		if (ret < 0) {
 			rdt_last_cmd_puts("out of RMIDs\n");
@@ -603,6 +606,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 			rdt_last_cmd_puts("kernfs subdir error\n");
 			goto out_idfree;
 		}
+#endif
 	}
 	kernfs_activate(kn);
 
@@ -611,8 +615,10 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	 */
 	return 0;
 
+#ifndef CONFIG_ARM64
 out_idfree:
 	free_mon_id(rdtgrp->mon.rmid);
+#endif
 out_destroy:
 	kernfs_remove(rdtgrp->kn);
 out_free_rgrp:
@@ -777,7 +783,7 @@ static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
 	cpumask_or(tmpmask, tmpmask, &rdtgrp->cpu_mask);
 	update_closid_rmid(tmpmask, NULL);
 
-	rdtgrp->flags = RDT_DELETED;
+	rdtgrp->flags |= RDT_DELETED;
 	free_mon_id(rdtgrp->mon.rmid);
 
 	/*
@@ -826,7 +832,7 @@ static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tm
 	cpumask_or(tmpmask, tmpmask, &rdtgrp->cpu_mask);
 	update_closid_rmid(tmpmask, NULL);
 
-	rdtgrp->flags = RDT_DELETED;
+	rdtgrp->flags |= RDT_DELETED;
 	resctrl_id_free(rdtgrp->closid);
 	free_mon_id(rdtgrp->mon.rmid);
 

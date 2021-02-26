@@ -127,12 +127,14 @@ enum rdt_group_type {
  * @parent:			parent rdtgrp
  * @crdtgrp_list:		child rdtgroup node list
  * @rmid:			rmid for this rdtgroup
+ * @mon:			monnitor id
  */
 struct mongroup {
 	struct kernfs_node	*mon_data_kn;
 	struct rdtgroup		*parent;
 	struct list_head	crdtgrp_list;
 	u32			rmid;
+	u32			mon;
 	int			init;
 };
 
@@ -164,7 +166,8 @@ struct rdtgroup {
 extern int max_name_width, max_data_width;
 
 /* rdtgroup.flags */
-#define	RDT_DELETED		1
+#define	RDT_DELETED		BIT(0)
+#define	RDT_CTRLMON		BIT(1)
 
 /**
  * struct rdt_domain - group of cpus sharing an RDT resource
@@ -327,8 +330,9 @@ struct raw_resctrl_resource {
 	int (*parse_ctrlval)	(char *buf, struct raw_resctrl_resource *r,
 				 struct rdt_domain *d);
 	int			num_pmg;
+	int			num_mon;
 	u64 (*mon_read)		(struct rdt_domain *d, struct rdtgroup *g);
-	int (*mon_write)	(struct rdt_domain *d, struct rdtgroup *g, u32 match);
+	int (*mon_write)	(struct rdt_domain *d, struct rdtgroup *g, bool enable);
 };
 
 int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
@@ -345,5 +349,15 @@ union mon_data_bits {
 
 struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
 		struct list_head **pos);
+
+int resctrl_group_alloc_mon(struct rdtgroup *grp);
+
+void mon_init(void);
+int alloc_mon(void);
+void free_mon(u32 mon);
+
+int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
+				  struct rdtgroup *prgrp,
+				  struct kernfs_node **dest_kn);
 
 #endif /* _ASM_ARM64_MPAM_H */
