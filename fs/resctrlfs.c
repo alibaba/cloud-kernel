@@ -774,6 +774,10 @@ static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
 	struct resctrl_group *prdtgrp = rdtgrp->mon.parent;
 	int cpu;
 
+#ifdef CONFIG_ARM64 /* [FIXME] arch specific code */
+	free_mon(rdtgrp->mon.mon);
+#endif
+
 	/* Give any tasks back to the parent group */
 	resctrl_move_group_tasks(rdtgrp, prdtgrp, tmpmask);
 
