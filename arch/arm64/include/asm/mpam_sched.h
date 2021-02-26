@@ -39,6 +39,8 @@ static inline void mpam_sched_in(void)
 		__mpam_sched_in();
 }
 
+extern int __read_mostly mpam_enabled;
+
 #else
 
 static inline void mpam_sched_in(void) {}

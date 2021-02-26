@@ -1242,10 +1242,22 @@ static void mpam_domains_init(struct resctrl_resource *r)
 	}
 }
 
+int __read_mostly mpam_enabled;
+
+static int __init mpam_setup(char *str)
+{
+	mpam_enabled = 1;
+	return 1;
+}
+__setup("mpam", mpam_setup);
+
 static int __init mpam_late_init(void)
 {
 	struct resctrl_resource *r;
 	int state, ret;
+
+	if (!mpam_enabled)
+		return 0;
 
 	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
 		return -ENODEV;
