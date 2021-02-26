@@ -734,8 +734,7 @@ static int extend_ctrl_enable(enum resctrl_ctrl_type type)
 	for_each_supported_resctrl_exports(res) {
 		r = &res->resctrl_res;
 		rr = r->res;
-		if ((type == SCHEMA_PRI && rr->pri_wd) ||
-			(type == SCHEMA_HDL && rr->hdl_wd)) {
+		if (rr->extend_ctrls_wd[type]) {
 			resctrl_ctrl_extend_bits_set(&r->ctrl_extend_bits, type);
 			match = true;
 		}

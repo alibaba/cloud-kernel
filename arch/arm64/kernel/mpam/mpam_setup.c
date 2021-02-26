@@ -392,8 +392,8 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->mon_capable = true;
 		r->mon_enabled = true;
 		/* Export memory bandwidth hardlimit, default active hardlimit */
-		rr->hdl_wd = 2;
-		r->default_ctrl[SCHEMA_HDL] = rr->hdl_wd - 1;
+		rr->extend_ctrls_wd[SCHEMA_HDL] = 2;
+		r->default_ctrl[SCHEMA_HDL] = 1;
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L3].class) {
 		r->rid = RDT_RESOURCE_L3;
 		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L3);
@@ -466,11 +466,13 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		rr->num_pmg = class->num_pmg;
 
 		/*
-		 * Export priority setting, default priority from hardware,
-		 * no clever here, we don't need to define another default
+		 * Export priority setting, extend_ctrls_wd represents the
+		 * max level of control we can export. this default priority
+		 * is just from hardware, no need to define another default
 		 * value.
 		 */
-		rr->pri_wd = max(class->intpri_wd, class->dspri_wd);
+		rr->extend_ctrls_wd[SCHEMA_PRI] = 1 << max(class->intpri_wd,
+			class->dspri_wd);
 		r->default_ctrl[SCHEMA_PRI] = max(class->hwdef_intpri,
 			class->hwdef_dspri);
 	}

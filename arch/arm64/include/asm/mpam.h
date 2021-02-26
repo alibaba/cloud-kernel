@@ -315,8 +315,7 @@ struct raw_resctrl_resource {
 	u16                 num_intpartid;
 	u16                 num_pmg;
 
-	u16                 pri_wd;
-	u16                 hdl_wd;
+	u16                 extend_ctrls_wd[SCHEMA_NUM_CTRL_TYPE];
 
 	void (*msr_update)(struct resctrl_resource *r, struct rdt_domain *d,
 				struct msr_param *para);

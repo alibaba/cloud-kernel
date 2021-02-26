@@ -83,10 +83,8 @@ static int add_schema(enum resctrl_conf_type t, struct resctrl_resource *r)
 	rr = r->res;
 	INIT_LIST_HEAD(&s->schema_ctrl_list);
 	for_each_extend_ctrl_type(type) {
-		if ((type == SCHEMA_PRI && !rr->pri_wd) ||
-			(type == SCHEMA_HDL && !rr->hdl_wd) ||
-			!resctrl_ctrl_extend_bits_match(r->ctrl_extend_bits,
-			type))
+		if (!resctrl_ctrl_extend_bits_match(r->ctrl_extend_bits, type) ||
+			!rr->extend_ctrls_wd[type])
 			continue;
 
 		sc = kzalloc(sizeof(*sc), GFP_KERNEL);
