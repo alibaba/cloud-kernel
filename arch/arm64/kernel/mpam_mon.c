@@ -121,11 +121,3 @@ void free_rmid(u32 pmg)
 {
 	free_pmg(pmg);
 }
-
-int mpam_get_mon_config(struct resctrl_resource *r)
-{
-	r->mon_capable = true;
-	r->mon_enabled = true;
-
-	return 0;
-}

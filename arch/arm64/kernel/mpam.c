@@ -400,35 +400,6 @@ static __init void mpam_init_padding(void)
 	}
 }
 
-static __init bool get_rdt_alloc_resources(void)
-{
-	bool ret = true;
-
-	return ret;
-}
-
-static __init bool get_rdt_mon_resources(void)
-{
-	bool ret = true;
-
-	mpam_get_mon_config(&resctrl_resources_all[MPAM_RESOURCE_CACHE]);
-	mpam_get_mon_config(&resctrl_resources_all[MPAM_RESOURCE_MC]);
-	return ret;
-}
-
-static __init bool get_resctrl_resources(void)
-{
-	if (!cpus_have_const_cap(ARM64_HAS_MPAM)) {
-		pr_info("This cpu don't support MPAM feature: pfr0: %016llx\n", read_sysreg_s(SYS_ID_AA64PFR0_EL1));
-		return false;
-	}
-
-	rdt_alloc_capable = get_rdt_alloc_resources();
-	rdt_mon_capable = get_rdt_mon_resources();
-
-	return (rdt_mon_capable || rdt_alloc_capable);
-}
-
 void post_resctrl_mount(void)
 {
 	if (rdt_alloc_capable)
@@ -1233,10 +1204,19 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		rr->num_partid = MPAMF_IDR_PARTID_MAX_GET(val);
 		rr->num_pmg = MPAMF_IDR_PMG_MAX_GET(val);
 
+		r->mon_capable = MPAMF_IDR_HAS_MSMON(val);
+		r->mon_enabled = MPAMF_IDR_HAS_MSMON(val);
+
 		if (r->rid == MPAM_RESOURCE_CACHE) {
+			r->alloc_capable = MPAMF_IDR_HAS_CPOR_PART(val);
+			r->alloc_enabled = MPAMF_IDR_HAS_CPOR_PART(val);
+
 			val = mpam_readl(d->base + MPAMF_CSUMON_IDR);
 			rr->num_mon = MPAMF_IDR_NUM_MON(val);
 		} else if (r->rid == MPAM_RESOURCE_MC) {
+			r->alloc_capable = MPAMF_IDR_HAS_MBW_PART(val);
+			r->alloc_enabled = MPAMF_IDR_HAS_MBW_PART(val);
+
 			val = mpam_readl(d->base + MPAMF_MBWUMON_IDR);
 			rr->num_mon = MPAMF_IDR_NUM_MON(val);
 		}
@@ -1273,7 +1253,7 @@ static int __init mpam_late_init(void)
 	struct resctrl_resource *r;
 	int state, ret;
 
-	if (!get_resctrl_resources())
+	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
 		return -ENODEV;
 
 	mpam_init_padding();

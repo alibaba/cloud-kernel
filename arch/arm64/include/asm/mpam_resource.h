@@ -54,6 +54,11 @@
 #define MPAMF_IDR_PMG_MAX_GET(v)	((v & MPAMF_IDR_PMG_MAX_MASK) >> 16)
 #define MPAMF_IDR_PARTID_MAX_GET(v)	(v & MPAMF_IDR_PARTID_MAX_MASK)
 
+#define MPAMF_IDR_HAS_CCAP_PART(v)	((v) & HAS_CCAP_PART)
+#define MPAMF_IDR_HAS_CPOR_PART(v)	((v) & HAS_CPOR_PART)
+#define MPAMF_IDR_HAS_MBW_PART(v)	((v) & HAS_MBW_PART)
+#define MPAMF_IDR_HAS_MSMON(v)		((v) & HAS_MSMON)
+
 /* MPAMF_x_IDR */
 #define NUM_MON_MASK			(BIT(16) - 1)
 #define MPAMF_IDR_NUM_MON(v)		((v) & NUM_MON_MASK)
