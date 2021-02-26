@@ -179,11 +179,12 @@ static int resctrl_group_mkdir_info_resdir(struct resctrl_resource *r, char *nam
 
 static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 {
+	struct resctrl_schema *s;
 	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
 	unsigned long fflags;
 	char name[32];
 	int ret;
-	enum resctrl_resource_level level;
 
 	/* create the directory */
 	kn_info = kernfs_create_dir(parent_kn, "info", parent_kn->mode, NULL);
@@ -195,25 +196,27 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 	if (ret)
 		goto out_destroy;
 
-	for (level = RDT_RESOURCE_SMMU; level < RDT_NUM_RESOURCES; level++) {
-		r = mpam_resctrl_get_resource(level);
+	list_for_each_entry(s, &resctrl_all_schema, list) {
+		r = s->res;
 		if (!r)
 			continue;
+		rr = r->res;
 		if (r->alloc_enabled) {
-			fflags =  r->fflags | RF_CTRL_INFO;
-			ret = resctrl_group_mkdir_info_resdir(r, r->name, fflags);
+			fflags =  rr->fflags | RF_CTRL_INFO;
+			ret = resctrl_group_mkdir_info_resdir(r, s->name, fflags);
 			if (ret)
 				goto out_destroy;
 		}
 	}
 
-	for (level = RDT_RESOURCE_SMMU; level < RDT_NUM_RESOURCES; level++) {
-		r = mpam_resctrl_get_resource(level);
+	list_for_each_entry(s, &resctrl_all_schema, list) {
+		r = s->res;
 		if (!r)
 			continue;
+		rr = r->res;
 		if (r->mon_enabled) {
-			fflags =  r->fflags | RF_MON_INFO;
-			snprintf(name, sizeof(name), "%s_MON", r->name);
+			fflags =  rr->fflags | RF_MON_INFO;
+			snprintf(name, sizeof(name), "%s_MON", s->name);
 			ret = resctrl_group_mkdir_info_resdir(r, name, fflags);
 			if (ret)
 				goto out_destroy;
@@ -318,7 +321,6 @@ mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
 	/* create the directory */
 	kn = kernfs_create_dir(parent_kn, name, parent_kn->mode, prgrp);
 	if (IS_ERR(kn)) {
-		pr_info("%s: create dir %s, error\n", __func__, name);
 		return PTR_ERR(kn);
 	}
 

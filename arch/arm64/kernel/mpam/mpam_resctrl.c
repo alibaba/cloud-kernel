@@ -131,6 +131,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.format_str     = "%d=%0*x",
 		.mon_read       = cache_rdmon,
 		.mon_write      = common_wrmon,
+		.fflags         = RFTYPE_RES_CACHE,
 		.ctrl_features  = {
 			[SCHEMA_COMM] = {
 				.type = SCHEMA_COMM,
@@ -156,6 +157,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.format_str     = "%d=%0*x",
 		.mon_read       = cache_rdmon,
 		.mon_write      = common_wrmon,
+		.fflags         = RFTYPE_RES_CACHE,
 		.ctrl_features  = {
 			[SCHEMA_COMM] = {
 				.type = SCHEMA_COMM,
@@ -181,6 +183,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.format_str     = "%d=%0*d",
 		.mon_read       = mbw_rdmon,
 		.mon_write      = common_wrmon,
+		.fflags         = RFTYPE_RES_MB,
 		.ctrl_features  = {
 			[SCHEMA_COMM] = {
 				.type = SCHEMA_COMM,
@@ -505,6 +508,14 @@ static void mpam_resctrl_closid_collect(void)
 	}
 }
 
+static u32 get_nr_closid(void)
+{
+	if (!intpartid_free_map)
+		return 0;
+
+	return num_intpartid;
+}
+
 int closid_bitmap_init(void)
 {
 	int pos;
@@ -552,6 +563,14 @@ struct rmid_transform {
 	bool remap_enabled;
 };
 static struct rmid_transform rmid_remap_matrix;
+
+static u32 get_nr_rmids(void)
+{
+	if (!rmid_remap_matrix.remap_enabled)
+		return 0;
+
+	return rmid_remap_matrix.nr_usage;
+}
 
 /*
  * a rmid remap matrix is delivered for transforming partid pmg to rmid,
@@ -863,7 +882,6 @@ static int __rmid_alloc(int partid)
 		goto out;
 
 	return rmid[0];
-
 out:
 	rmid_free(rmid[0]);
 	return ret;
@@ -1347,48 +1365,6 @@ int cpus_ctrl_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 	return 0;
 }
 
-static int resctrl_num_partid_show(struct kernfs_open_file *of,
-				   struct seq_file *seq, void *v)
-{
-	struct resctrl_resource *r = of->kn->parent->priv;
-	struct raw_resctrl_resource *rr = r->res;
-	u16 num_partid;
-
-	num_partid = rr->num_partid;
-
-	seq_printf(seq, "%d\n", num_partid);
-
-	return 0;
-}
-
-static int resctrl_num_pmg_show(struct kernfs_open_file *of,
-				struct seq_file *seq, void *v)
-{
-	struct resctrl_resource *r = of->kn->parent->priv;
-	struct raw_resctrl_resource *rr = r->res;
-	u16 num_pmg;
-
-	num_pmg = rr->num_pmg;
-
-	seq_printf(seq, "%d\n", num_pmg);
-
-	return 0;
-}
-
-static int resctrl_num_mon_show(struct kernfs_open_file *of,
-				struct seq_file *seq, void *v)
-{
-	struct resctrl_resource *r = of->kn->parent->priv;
-	struct raw_resctrl_resource *rr = r->res;
-	u16 num_mon;
-
-	num_mon = rr->num_mon;
-
-	seq_printf(seq, "%d\n", num_mon);
-
-	return 0;
-}
-
 int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 		   cpumask_var_t tmpmask)
 {
@@ -1573,7 +1549,7 @@ void rdt_last_cmd_printf(const char *fmt, ...)
 	va_end(ap);
 }
 
-static int rdt_last_cmd_status_show(struct kernfs_open_file *of,
+static int resctrl_last_cmd_status_show(struct kernfs_open_file *of,
 				    struct seq_file *seq, void *v)
 {
 	int len;
@@ -1587,6 +1563,116 @@ static int rdt_last_cmd_status_show(struct kernfs_open_file *of,
 	mutex_unlock(&resctrl_group_mutex);
 	return 0;
 }
+
+static int resctrl_num_closids_show(struct kernfs_open_file *of,
+					struct seq_file *seq, void *v)
+{
+	u32 flag, times;
+
+	hw_alloc_times_validate(times, flag);
+
+	seq_printf(seq, "%u\n", get_nr_closid() / times);
+	return 0;
+}
+
+static int resctrl_cbm_mask_show(struct kernfs_open_file *of,
+					struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+	struct raw_resctrl_resource *rr = r->res;
+
+	seq_printf(seq, "%x\n", rr->ctrl_features[SCHEMA_COMM].default_ctrl);
+	return 0;
+}
+
+static int resctrl_min_cbm_bits_show(struct kernfs_open_file *of,
+					struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+
+	seq_printf(seq, "%u\n", r->cache.min_cbm_bits);
+	return 0;
+}
+
+static int resctrl_shareable_bits_show(struct kernfs_open_file *of,
+					struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+
+	seq_printf(seq, "%x\n", r->cache.shareable_bits);
+	return 0;
+}
+
+static int resctrl_features_show(struct kernfs_open_file *of,
+					struct seq_file *seq, void *v)
+{
+	enum resctrl_ctrl_type type;
+	struct resctrl_resource *r = of->kn->parent->priv;
+	struct raw_resctrl_resource *rr = r->res;
+
+	for_each_extend_ctrl_type(type) {
+		if (!rr->ctrl_features[type].enabled)
+			continue;
+		/*
+		 * we define the range of ctrl features with integer,
+		 * here give maximum upper bound to user space.
+		 */
+		switch (rr->ctrl_features[type].base) {
+		case 10:
+			seq_printf(seq, "%s@%u\n", rr->ctrl_features[type].name,
+				rr->ctrl_features[type].max_wd - 1);
+			break;
+		case 16:
+			seq_printf(seq, "%s@%x\n", rr->ctrl_features[type].name,
+				rr->ctrl_features[type].max_wd - 1);
+			break;
+		default:
+			break;
+		}
+	}
+	return 0;
+}
+
+static int resctrl_min_bandwidth_show(struct kernfs_open_file *of,
+					struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+
+	seq_printf(seq, "%u\n", r->mbw.min_bw);
+	return 0;
+}
+
+static int resctrl_bandwidth_gran_show(struct kernfs_open_file *of,
+					struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+
+	seq_printf(seq, "%u\n", r->mbw.bw_gran);
+	return 0;
+}
+
+static int resctrl_num_rmids_show(struct kernfs_open_file *of,
+					struct seq_file *seq, void *v)
+{
+	u32 flag, times;
+
+	hw_alloc_times_validate(times, flag);
+	seq_printf(seq, "%u\n", get_nr_rmids() / times);
+	return 0;
+}
+
+static int resctrl_num_monitors_show(struct kernfs_open_file *of,
+				struct seq_file *seq, void *v)
+{
+	struct resctrl_resource *r = of->kn->parent->priv;
+	struct raw_resctrl_resource *rr = r->res;
+	u32 flag, times;
+
+	hw_alloc_times_validate(times, flag);
+	seq_printf(seq, "%u\n", rr->num_mon / times);
+	return 0;
+}
+
 
 static ssize_t resctrl_group_tasks_write(struct kernfs_open_file *of,
 				    char *buf, size_t nbytes, loff_t off)
@@ -1644,32 +1730,74 @@ static int resctrl_group_tasks_show(struct kernfs_open_file *of,
 /* rdtgroup information files for one cache resource. */
 static struct rftype res_specific_files[] = {
 	{
-		.name           = "num_partids",
+		.name		= "last_cmd_status",
+		.mode		= 0444,
+		.kf_ops		= &resctrl_group_kf_single_ops,
+		.seq_show	= resctrl_last_cmd_status_show,
+		.fflags		= RF_TOP_INFO,
+	},
+	{
+		.name           = "num_closids",
 		.mode           = 0444,
 		.kf_ops         = &resctrl_group_kf_single_ops,
-		.seq_show       = resctrl_num_partid_show,
+		.seq_show       = resctrl_num_closids_show,
 		.fflags         = RF_CTRL_INFO,
 	},
 	{
-		.name           = "num_pmgs",
+		.name           = "cbm_mask",
 		.mode           = 0444,
 		.kf_ops         = &resctrl_group_kf_single_ops,
-		.seq_show       = resctrl_num_pmg_show,
+		.seq_show       = resctrl_cbm_mask_show,
+		.fflags         = RF_CTRL_INFO | RFTYPE_RES_CACHE,
+	},
+	{
+		.name           = "min_cbm_bits",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_min_cbm_bits_show,
+		.fflags         = RF_CTRL_INFO | RFTYPE_RES_CACHE,
+	},
+	{
+		.name           = "shareable_bits",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_shareable_bits_show,
+		.fflags         = RF_CTRL_INFO | RFTYPE_RES_CACHE,
+	},
+	{
+		.name           = "features",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_features_show,
+		.fflags         = RF_CTRL_INFO,
+	},
+	{
+		.name           = "min_bandwidth",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_min_bandwidth_show,
+		.fflags         = RF_CTRL_INFO | RFTYPE_RES_MB,
+	},
+	{
+		.name           = "bandwidth_gran",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_bandwidth_gran_show,
+		.fflags         = RF_CTRL_INFO | RFTYPE_RES_MB,
+	},
+	{
+		.name           = "num_rmids",
+		.mode           = 0444,
+		.kf_ops         = &resctrl_group_kf_single_ops,
+		.seq_show       = resctrl_num_rmids_show,
 		.fflags         = RF_MON_INFO,
 	},
 	{
 		.name           = "num_monitors",
 		.mode           = 0444,
 		.kf_ops         = &resctrl_group_kf_single_ops,
-		.seq_show       = resctrl_num_mon_show,
+		.seq_show       = resctrl_num_monitors_show,
 		.fflags         = RF_MON_INFO,
-	},
-	{
-		.name		= "last_cmd_status",
-		.mode		= 0444,
-		.kf_ops		= &resctrl_group_kf_single_ops,
-		.seq_show	= rdt_last_cmd_status_show,
-		.fflags		= RF_TOP_INFO,
 	},
 	{
 		.name		= "cpus",

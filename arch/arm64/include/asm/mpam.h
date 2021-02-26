@@ -246,6 +246,8 @@ struct resctrl_schema {
 	bool                cdp_mc_both;
 };
 
+extern struct list_head resctrl_all_schema;
+
 /**
  * struct rdt_domain - group of cpus sharing an RDT resource
  * @list:	all instances of this resource
@@ -349,6 +351,8 @@ struct raw_resctrl_resource {
 	int (*mon_write)(struct rdt_domain *d, void *md_priv);
 
 	struct resctrl_ctrl_feature ctrl_features[SCHEMA_NUM_CTRL_TYPE];
+
+	unsigned long       fflags;
 };
 
 /* 64bit arm64 specified */
