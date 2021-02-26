@@ -444,6 +444,32 @@ int parse_rdtgroupfs_options(char *data);
 
 int resctrl_group_add_files(struct kernfs_node *kn, unsigned long fflags);
 
+static inline void resctrl_cdp_update_cpus_state(struct resctrl_group *rdtgrp)
+{
+	int cpu;
+
+	/*
+	 * If cdp on, tasks in resctrl default group with closid=0
+	 * and rmid=0 don't know how to fill proper partid_i/pmg_i
+	 * and partid_d/pmg_d into MPAMx_ELx sysregs by mpam_sched_in()
+	 * called by __switch_to(), it's because current cpu's default
+	 * closid and rmid are also equal to 0 and make the operation
+	 * modifying configuration passed. Update per cpu default closid
+	 * of none-zero value, call update_closid_rmid() to update each
+	 * cpu's mpam proper MPAMx_ELx sysregs for setting partid and
+	 * pmg when mounting resctrl sysfs, which is a practical method;
+	 * Besides, to support cpu online and offline we should set
+	 * cur_closid to 0.
+	 */
+	for_each_cpu(cpu, &rdtgrp->cpu_mask) {
+		per_cpu(pqr_state.default_closid, cpu) = ~0;
+		per_cpu(pqr_state.cur_closid, cpu) = 0;
+	}
+
+	update_closid_rmid(&rdtgrp->cpu_mask, NULL);
+}
+
+
 #define RESCTRL_MAX_CBM 32
 
 struct resctrl_fs_context {

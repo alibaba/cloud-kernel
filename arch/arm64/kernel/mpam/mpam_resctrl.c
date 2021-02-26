@@ -85,15 +85,24 @@ static bool resctrl_cdp_enabled;
 
 int mpam_resctrl_set_default_cpu(unsigned int cpu)
 {
-    /* The cpu is set in default rdtgroup after online. */
+	/* The cpu is set in default rdtgroup after online. */
 	cpumask_set_cpu(cpu, &resctrl_group_default.cpu_mask);
+
+	/* Update CPU mpam sysregs' default setting when cdp enabled */
+	if (resctrl_cdp_enabled)
+		resctrl_cdp_update_cpus_state(&resctrl_group_default);
+
 	return 0;
 }
 
 void mpam_resctrl_clear_default_cpu(unsigned int cpu)
 {
-	/* The cpu is set in default rdtgroup after online. */
-	cpumask_clear_cpu(cpu, &resctrl_group_default.cpu_mask);
+	struct resctrl_group *rdtgrp;
+
+	list_for_each_entry(rdtgrp, &resctrl_all_groups, resctrl_group_list) {
+		/* The cpu is clear in associated rdtgroup after offline. */
+		cpumask_clear_cpu(cpu, &rdtgrp->cpu_mask);
+	}
 }
 
 bool is_resctrl_cdp_enabled(void)
