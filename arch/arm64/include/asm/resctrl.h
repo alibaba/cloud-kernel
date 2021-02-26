@@ -195,6 +195,8 @@ struct resctrl_ctrl_feature {
 	int        default_ctrl;
 	bool       capable;
 	bool       enabled;
+
+	const char *ctrl_suffix;
 };
 
 struct msr_param {

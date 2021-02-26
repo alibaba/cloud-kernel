@@ -42,12 +42,9 @@ static int add_schema(enum resctrl_conf_type t, struct resctrl_resource *r)
 {
 	int ret = 0;
 	char *suffix = "";
-	char *ctrl_suffix = "";
 	struct resctrl_schema *s;
 	struct raw_resctrl_resource *rr;
-	struct resctrl_schema_ctrl *sc, *sc_tmp;
-	struct resctrl_schema_ctrl *sc_pri = NULL;
-	struct resctrl_schema_ctrl *sc_hdl = NULL;
+	struct resctrl_schema_ctrl *sc, *tmp;
 	enum resctrl_ctrl_type type;
 
 	s = kzalloc(sizeof(*s), GFP_KERNEL);
@@ -93,6 +90,9 @@ static int add_schema(enum resctrl_conf_type t, struct resctrl_resource *r)
 	rr = r->res;
 	INIT_LIST_HEAD(&s->schema_ctrl_list);
 	for_each_extend_ctrl_type(type) {
+		struct resctrl_ctrl_feature *feature =
+			&rr->ctrl_features[type];
+
 		if (!rr->ctrl_features[type].enabled ||
 			!rr->ctrl_features[type].max_wd)
 			continue;
@@ -103,25 +103,19 @@ static int add_schema(enum resctrl_conf_type t, struct resctrl_resource *r)
 			goto err;
 		}
 		sc->ctrl_type = type;
-		if (type == SCHEMA_PRI) {
-			sc_pri = sc;
-			ctrl_suffix = "PRI";
-		} else if (type == SCHEMA_HDL) {
-			sc_hdl = sc;
-			ctrl_suffix = "HDL";
-		}
 
 		WARN_ON_ONCE(strlen(r->name) + strlen(suffix) +
-			strlen(ctrl_suffix) + 1 > RESCTRL_NAME_LEN);
-		snprintf(sc->name, sizeof(sc->name), "%s%s%s",
-			r->name, suffix, ctrl_suffix);
+			strlen(feature->ctrl_suffix) + 1 > RESCTRL_NAME_LEN);
+		snprintf(sc->name, sizeof(sc->name), "%s%s%s", r->name,
+			suffix, feature->ctrl_suffix);
+
 		list_add_tail(&sc->list, &s->schema_ctrl_list);
 	}
 
 	return 0;
 
 err:
-	list_for_each_entry_safe(sc, sc_tmp, &s->schema_ctrl_list, list) {
+	list_for_each_entry_safe(sc, tmp, &s->schema_ctrl_list, list) {
 		list_del(&sc->list);
 		kfree(sc);
 	}

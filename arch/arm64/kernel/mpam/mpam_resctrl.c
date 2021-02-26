@@ -1048,17 +1048,28 @@ static void basic_ctrl_enable(void)
 	}
 }
 
-static int extend_ctrl_enable(enum resctrl_ctrl_type type)
+static int extend_ctrl_enable(char *tok)
 {
 	bool match = false;
+	struct resctrl_resource *r;
 	struct raw_resctrl_resource *rr;
 	struct mpam_resctrl_res *res;
+	struct resctrl_ctrl_feature *feature;
+	enum resctrl_ctrl_type type;
 
 	for_each_supported_resctrl_exports(res) {
-		rr = res->resctrl_res.res;
-		if (rr->ctrl_features[type].capable) {
-			rr->ctrl_features[type].enabled = true;
-			match = true;
+		r = &res->resctrl_res;
+		if (!r->alloc_capable)
+			continue;
+		rr = r->res;
+		for_each_ctrl_type(type) {
+			feature = &rr->ctrl_features[type];
+			if (strcmp(feature->name, tok))
+				continue;
+			if (rr->ctrl_features[type].capable) {
+				rr->ctrl_features[type].enabled = true;
+				match = true;
+			}
 		}
 	}
 
@@ -1103,17 +1114,10 @@ int parse_rdtgroupfs_options(char *data)
 			ret = cdpl2_enable();
 			if (ret)
 				goto out;
-		} else if (!strcmp(token, "priority")) {
-			ret = extend_ctrl_enable(SCHEMA_PRI);
-			if (ret)
-				goto out;
-		} else if (!strcmp(token, "hardlimit")) {
-			ret = extend_ctrl_enable(SCHEMA_HDL);
-			if (ret)
-				goto out;
 		} else {
-			ret = -EINVAL;
-			goto out;
+			ret = extend_ctrl_enable(token);
+			if (ret)
+				goto out;
 		}
 	}
 
