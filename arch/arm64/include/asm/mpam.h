@@ -247,6 +247,8 @@ struct rdt_domain {
 
 	/* for debug */
 	char			*cpus_list;
+
+	struct resctrl_staged_config staged_cfg[CDP_NUM_CONF_TYPE];
 };
 
 extern struct mutex resctrl_group_mutex;

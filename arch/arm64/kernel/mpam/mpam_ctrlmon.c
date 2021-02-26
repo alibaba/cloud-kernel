@@ -114,6 +114,37 @@ void schemata_list_destroy(void)
 	}
 }
 
+static int resctrl_group_update_domains(struct rdtgroup *rdtgrp,
+			struct resctrl_resource *r)
+{
+	int i;
+	u32 partid;
+	struct rdt_domain *d;
+	struct raw_resctrl_resource *rr;
+	struct resctrl_staged_config *cfg;
+
+	rr = r->res;
+	list_for_each_entry(d, &r->domains, list) {
+		cfg = d->staged_cfg;
+		for (i = 0; i < ARRAY_SIZE(d->staged_cfg); i++) {
+			if (!cfg[i].have_new_ctrl)
+				continue;
+
+			partid = hw_closid_val(cfg[i].hw_closid);
+			/* apply cfg */
+			if (d->ctrl_val[partid] == cfg[i].new_ctrl)
+				continue;
+
+			d->ctrl_val[partid] = cfg[i].new_ctrl;
+			d->have_new_ctrl = true;
+
+			rr->msr_update(r, d, NULL, partid);
+		}
+	}
+
+	return 0;
+}
+
 /*
  * Check whether a cache bit mask is valid. The SDM says:
  *	Please note that all (and only) contiguous '1' combinations
@@ -679,26 +710,88 @@ int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
 	return ret;
 }
 
-/* Initialize the RDT group's allocations. */
-int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
+/* Initialize MBA resource with default values. */
+static void rdtgroup_init_mba(struct resctrl_resource *r, u32 closid)
 {
-	struct mpam_resctrl_res *res;
-	struct resctrl_resource *r;
+	struct resctrl_staged_config *cfg;
 	struct rdt_domain *d;
-	int ret;
 
-	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
+	list_for_each_entry(d, &r->domains, list) {
+		cfg = &d->staged_cfg[CDP_BOTH];
+		cfg->new_ctrl = r->default_ctrl;
+		resctrl_cdp_map(clos, closid, CDP_BOTH, cfg->hw_closid);
+		cfg->have_new_ctrl = true;
+	}
+}
 
-		if (!r->alloc_enabled)
-			continue;
+/*
+ * Initialize cache resources with default values.
+ *
+ * A new resctrl group is being created on an allocation capable (CAT)
+ * supporting system. Set this group up to start off with all usable
+ * allocations.
+ *
+ * If there are no more shareable bits available on any domain then
+ * the entire allocation will fail.
+ */
+static int rdtgroup_init_cat(struct resctrl_schema *s, u32 closid)
+{
+	struct resctrl_staged_config *cfg;
+	enum resctrl_conf_type t = s->conf_type;
+	struct rdt_domain *d;
+	struct resctrl_resource *r;
+	u32 used_b = 0;
+	u32 unused_b = 0;
+	unsigned long tmp_cbm;
 
-		list_for_each_entry(d, &r->domains, list) {
-			d->new_ctrl = r->default_ctrl;
-			d->have_new_ctrl = true;
+	r = s->res;
+	if (WARN_ON(!r))
+		return -EINVAL;
+
+	list_for_each_entry(d, &s->res->domains, list) {
+		cfg = &d->staged_cfg[t];
+		cfg->have_new_ctrl = false;
+		cfg->new_ctrl = r->cache.shareable_bits;
+		used_b = r->cache.shareable_bits;
+
+		unused_b = used_b ^ (BIT_MASK(r->cache.cbm_len) - 1);
+		unused_b &= BIT_MASK(r->cache.cbm_len) - 1;
+		cfg->new_ctrl |= unused_b;
+
+		/* Ensure cbm does not access out-of-bound */
+		tmp_cbm = cfg->new_ctrl;
+		if (bitmap_weight(&tmp_cbm, r->cache.cbm_len) <
+			r->cache.min_cbm_bits) {
+			rdt_last_cmd_printf("No space on %s:%d\n",
+				r->name, d->id);
+			return -ENOSPC;
 		}
 
-		ret = update_domains(r, rdtgrp);
+		resctrl_cdp_map(clos, closid, t, cfg->hw_closid);
+		cfg->have_new_ctrl = true;
+	}
+
+	return 0;
+}
+
+/* Initialize the resctrl group's allocations. */
+int resctrl_group_init_alloc(struct rdtgroup *rdtgrp)
+{
+	struct resctrl_schema *s;
+	struct resctrl_resource *r;
+	int ret;
+
+	list_for_each_entry(s, &resctrl_all_schema, list) {
+		r = s->res;
+		if (r->rid == RDT_RESOURCE_MC) {
+			rdtgroup_init_mba(r, rdtgrp->closid);
+		} else {
+			ret = rdtgroup_init_cat(s, rdtgrp->closid);
+			if (ret < 0)
+				return ret;
+		}
+
+		ret = resctrl_group_update_domains(rdtgrp, r);
 		if (ret < 0) {
 			rdt_last_cmd_puts("Failed to initialize allocations\n");
 			return ret;

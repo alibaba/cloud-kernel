@@ -734,7 +734,7 @@ static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 
 	rdtgrp->closid = closid;
 
-	ret = rdtgroup_init_alloc(rdtgrp);
+	ret = resctrl_group_init_alloc(rdtgrp);
 	if (ret < 0)
 		goto out_id_free;
 

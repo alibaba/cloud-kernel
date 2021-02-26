@@ -131,7 +131,7 @@ int
 mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
 		    char *name, struct kernfs_node **dest_kn);
 
-int rdtgroup_init_alloc(struct rdtgroup *rdtgrp);
+int resctrl_group_init_alloc(struct rdtgroup *rdtgrp);
 
 struct resctrl_resource *
 mpam_resctrl_get_resource(enum resctrl_resource_level level);
