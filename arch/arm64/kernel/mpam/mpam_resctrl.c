@@ -328,11 +328,16 @@ parse_bw(char *buf, struct resctrl_resource *r,
 
 	switch (rr->ctrl_features[type].evt) {
 	case QOS_MBA_MAX_EVENT_ID:
-	case QOS_MBA_MIN_EVENT_ID:
 	case QOS_MBA_PBM_EVENT_ID:
 		if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
 			return -EINVAL;
 		data = (data < r->mbw.min_bw) ? r->mbw.min_bw : data;
+		data = roundup(data, r->mbw.bw_gran);
+		break;
+	case QOS_MBA_MIN_EVENT_ID:
+		if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
+			return -EINVAL;
+		/* for mbw min feature, 0 of setting is allowed */
 		data = roundup(data, r->mbw.bw_gran);
 		break;
 	default:
