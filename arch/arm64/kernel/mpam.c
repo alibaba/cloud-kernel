@@ -1140,6 +1140,21 @@ struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
 	return NULL;
 }
 
+static void mpam_domains_destroy(struct resctrl_resource *r)
+{
+	struct list_head *pos, *q;
+	struct rdt_domain *d;
+
+	list_for_each_safe(pos, q, &r->domains) {
+		d = list_entry(pos, struct rdt_domain, list);
+		list_del(pos);
+		if (d) {
+			kfree(d->ctrl_val);
+			kfree(d);
+		}
+	}
+}
+
 static void mpam_domains_init(struct resctrl_resource *r)
 {
 	int i, cpu, id = 0;
@@ -1167,6 +1182,7 @@ static void mpam_domains_init(struct resctrl_resource *r)
 
 		d = mpam_find_domain(r, id, &add_pos);
 		if (IS_ERR(d)) {
+			mpam_domains_destroy(r);
 			pr_warn("Could't find cache id for cpu %d\n", cpu);
 			return;
 		}
@@ -1174,8 +1190,10 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		if (!d)
 			d = kzalloc(sizeof(*d), GFP_KERNEL);
 
-		if (!d)
+		if (!d) {
+			mpam_domains_destroy(r);
 			return;
+		}
 
 		d->id = id;
 		d->base = n->base;
@@ -1221,6 +1239,8 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		d->ctrl_val = kmalloc_array(rr->num_partid, sizeof(*d->ctrl_val), GFP_KERNEL);
 		if (!d->ctrl_val) {
 			kfree(d);
+			mpam_domains_destroy(r);
+
 			return;
 		}
 
