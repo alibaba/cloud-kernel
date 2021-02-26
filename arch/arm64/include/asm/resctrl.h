@@ -75,6 +75,10 @@ struct rdtgroup {
 	struct mongroup     mon;
 };
 
+int schemata_list_init(void);
+
+void schemata_list_destroy(void);
+
 static inline int alloc_mon_id(void)
 {
 

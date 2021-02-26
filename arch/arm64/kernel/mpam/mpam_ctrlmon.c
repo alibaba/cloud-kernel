@@ -36,6 +36,84 @@
 #include <asm/resctrl.h>
 #include "mpam_internal.h"
 
+/* schemata content list */
+LIST_HEAD(resctrl_all_schema);
+
+/* Init schemata content */
+static int add_schema(enum resctrl_conf_type t, struct resctrl_resource *r)
+{
+	char *suffix = "";
+	struct resctrl_schema *s;
+
+	s = kzalloc(sizeof(*s), GFP_KERNEL);
+	if (!s)
+		return -ENOMEM;
+
+	s->res = r;
+	s->conf_type = t;
+
+	switch (t) {
+	case CDP_CODE:
+		suffix = "CODE";
+		break;
+	case CDP_DATA:
+		suffix = "DATA";
+		break;
+	case CDP_BOTH:
+		suffix = "";
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	WARN_ON_ONCE(strlen(r->name) + strlen(suffix) + 1 > RESCTRL_NAME_LEN);
+	snprintf(s->name, sizeof(s->name), "%s%s", r->name, suffix);
+
+	INIT_LIST_HEAD(&s->list);
+	list_add_tail(&s->list, &resctrl_all_schema);
+
+	return 0;
+}
+
+int schemata_list_init(void)
+{
+	int ret;
+	struct mpam_resctrl_res *res;
+	struct resctrl_resource *r;
+
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+		if (!r || !r->alloc_capable)
+			continue;
+
+		if (r->cdp_enable) {
+			ret = add_schema(CDP_CODE, r);
+			ret |= add_schema(CDP_DATA, r);
+		} else {
+			ret = add_schema(CDP_BOTH, r);
+		}
+		if (ret)
+			break;
+	}
+
+	return ret;
+}
+
+/*
+ * During resctrl_kill_sb(), the mba_sc state is reset before
+ * schemata_list_destroy() is called: unconditionally try to free the
+ * array.
+ */
+void schemata_list_destroy(void)
+{
+	struct resctrl_schema *s, *tmp;
+
+	list_for_each_entry_safe(s, tmp, &resctrl_all_schema, list) {
+		list_del(&s->list);
+		kfree(s);
+	}
+}
+
 /*
  * Check whether a cache bit mask is valid. The SDM says:
  *	Please note that all (and only) contiguous '1' combinations
