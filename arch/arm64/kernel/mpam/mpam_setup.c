@@ -465,10 +465,14 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		rr->num_intpartid = class->num_intpartid;
 		rr->num_pmg = class->num_pmg;
 
-		/* Export priority setting, default highest priority */
+		/*
+		 * Export priority setting, default priority from hardware,
+		 * no clever here, we don't need to define another default
+		 * value.
+		 */
 		rr->pri_wd = max(class->intpri_wd, class->dspri_wd);
-		r->default_ctrl[SCHEMA_PRI] = (rr->pri_wd > 0) ?
-			rr->pri_wd - 1 : 0;
+		r->default_ctrl[SCHEMA_PRI] = max(class->hwdef_intpri,
+			class->hwdef_dspri);
 	}
 
 	return 0;

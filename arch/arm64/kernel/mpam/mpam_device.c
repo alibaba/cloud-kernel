@@ -362,6 +362,8 @@ static void mpam_enable_squash_features(void)
 			class->num_pmg = dev->num_pmg;
 			class->num_csu_mon = dev->num_csu_mon;
 			class->num_mbwu_mon = dev->num_mbwu_mon;
+			class->hwdef_intpri = dev->hwdef_intpri;
+			class->hwdef_dspri = dev->hwdef_dspri;
 			spin_unlock_irqrestore(&dev->lock, flags);
 		}
 
@@ -764,10 +766,17 @@ static void mpam_reset_device_config(struct mpam_component *comp,
 		intpri = dev->hwdef_intpri;
 		dspri = dev->hwdef_dspri;
 
-		if (mpam_has_feature(mpam_feat_intpri_part, dev->features))
+		if (mpam_has_feature(mpam_feat_intpri_part, dev->features)) {
+			if (!mpam_has_feature(mpam_feat_intpri_part_0_low, dev->features))
+				intpri = GENMASK(dev->intpri_wd - 1, 0) & ~intpri;
 			pri_val |= intpri;
-		if (mpam_has_feature(mpam_feat_dspri_part, dev->features))
+		}
+
+		if (mpam_has_feature(mpam_feat_dspri_part, dev->features)) {
+			if (!mpam_has_feature(mpam_feat_dspri_part_0_low, dev->features))
+				dspri = GENMASK(dev->dspri_wd - 1, 0) & ~dspri;
 			pri_val |= (dspri << MPAMCFG_PRI_DSPRI_SHIFT);
+		}
 
 		mpam_write_reg(dev, MPAMCFG_PRI, pri_val);
 	}

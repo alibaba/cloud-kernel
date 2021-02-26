@@ -118,6 +118,10 @@ struct mpam_class {
 	u16                     num_pmg;
 	u16                     num_csu_mon;
 	u16                     num_mbwu_mon;
+
+	/* for reset class MPAMCFG_PRI */
+	u16                     hwdef_intpri;
+	u16                     hwdef_dspri;
 };
 
 /* System wide properties */
