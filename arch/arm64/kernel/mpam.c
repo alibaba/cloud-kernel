@@ -1215,8 +1215,8 @@ static void mpam_domains_init(struct resctrl_resource *r)
 		rr->default_ctrl = n->default_ctrl;
 
 		val = mpam_readl(d->base + MPAMF_IDR);
-		rr->num_partid = MPAMF_IDR_PARTID_MAX_GET(val);
-		rr->num_pmg = MPAMF_IDR_PMG_MAX_GET(val);
+		rr->num_partid = MPAMF_IDR_PARTID_MAX_GET(val) + 1;
+		rr->num_pmg = MPAMF_IDR_PMG_MAX_GET(val) + 1;
 
 		r->mon_capable = MPAMF_IDR_HAS_MSMON(val);
 		r->mon_enabled = MPAMF_IDR_HAS_MSMON(val);
