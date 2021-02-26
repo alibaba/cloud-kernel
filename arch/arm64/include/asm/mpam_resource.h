@@ -49,6 +49,11 @@
 #define HAS_MSMON		BIT(30)
 
 /* MPAMF_IDR */
+#define MPAMF_IDR_PMG_MAX_MASK		((BIT(8) - 1) << 16)
+#define MPAMF_IDR_PARTID_MAX_MASK	(BIT(16) - 1)
+#define MPAMF_IDR_PMG_MAX_GET(v)	((v & MPAMF_IDR_PMG_MAX_MASK) >> 16)
+#define MPAMF_IDR_PARTID_MAX_GET(v)	(v & MPAMF_IDR_PARTID_MAX_MASK)
+
 /* TODO */
 
 #define CPBM_WD_MASK		0xFFFF
