@@ -227,29 +227,35 @@ static inline int conf_name_to_conf_type(char *name)
 #define for_each_conf_type(t) \
 		for (t = CDP_BOTH; t < CDP_NUM_CONF_TYPE; t++)
 
-typedef struct { u16 val; } hw_def_t;
+typedef struct { u16 val; } hw_mpamid_t;
+typedef hw_mpamid_t hw_closid_t;
 
-#define hw_closid_t hw_def_t
-#define hw_monid_t hw_def_t
+#define hw_mpamid_val(__x) (__x.val)
 #define hw_closid_val(__x) (__x.val)
-#define hw_monid_val(__x) (__x.val)
 
-#define as_hw_t(__name, __x) \
-			((hw_##__name##id_t){(__x)})
-#define hw_val(__name, __x) \
-			hw_##__name##id_val(__x)
+#define as_hw_mpamid_t(__x) ((hw_mpamid_t){(__x)})
 
 /**
  * When cdp enabled, give (closid + 1) to Cache LxDATA.
  */
-#define resctrl_cdp_map(__name, __closid, __type, __result)    \
+#define resctrl_cdp_mpamid_map(__id, __type, __hw_mpamid)    \
 do {   \
 	if (__type == CDP_CODE) \
-		__result = as_hw_t(__name, __closid); \
+		__hw_mpamid = as_hw_mpamid_t(__id); \
 	else if (__type == CDP_DATA)     \
-		__result = as_hw_t(__name, __closid + 1); \
+		__hw_mpamid = as_hw_mpamid_t(__id + 1); \
 	else    \
-		__result = as_hw_t(__name, __closid); \
+		__hw_mpamid = as_hw_mpamid_t(__id); \
+} while (0)
+
+#define resctrl_cdp_mpamid_map_val(__id, __type, __hw_mpamid_val)	\
+do {	\
+	if (__type == CDP_CODE) \
+		__hw_mpamid_val = __id; \
+	else if (__type == CDP_DATA)     \
+		__hw_mpamid_val = __id + 1; \
+	else    \
+		__hw_mpamid_val = __id; \
 } while (0)
 
 bool is_resctrl_cdp_enabled(void);

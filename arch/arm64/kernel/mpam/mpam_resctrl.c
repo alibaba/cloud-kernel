@@ -1960,13 +1960,8 @@ void __mpam_sched_in(void)
 		resctrl_navie_rmid_partid_pmg(rmid, (int *)&reqpartid, (int *)&pmg);
 
 		if (resctrl_cdp_enabled) {
-			hw_closid_t hw_closid;
-
-			resctrl_cdp_map(clos, reqpartid, CDP_DATA, hw_closid);
-			partid_d = hw_closid_val(hw_closid);
-
-			resctrl_cdp_map(clos, reqpartid, CDP_CODE, hw_closid);
-			partid_i = hw_closid_val(hw_closid);
+			resctrl_cdp_mpamid_map_val(reqpartid, CDP_DATA, partid_d);
+			resctrl_cdp_mpamid_map_val(reqpartid, CDP_CODE, partid_i);
 
 			/* set in EL0 */
 			reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
