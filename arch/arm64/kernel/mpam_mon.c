@@ -39,11 +39,14 @@ static int pmg_free_map;
 void mon_init(void);
 void pmg_init(void)
 {
-	int pmg_max = 16;
+	/* use L3's num_pmg as system num_pmg */
+	struct raw_resctrl_resource *rr =
+		resctrl_resources_all[MPAM_RESOURCE_CACHE].res;
+	int num_pmg = rr->num_pmg;
 
 	mon_init();
 
-	pmg_free_map = BIT_MASK(pmg_max) - 1;
+	pmg_free_map = BIT_MASK(num_pmg) - 1;
 
 	/* pmg 0 is always reserved for the default group */
 	pmg_free_map &= ~1;
@@ -72,10 +75,18 @@ void free_pmg(u32 pmg)
 static int mon_free_map;
 void mon_init(void)
 {
-	// [FIXME] hard code for max mon.
-	int mon_max = 8;
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+	int num_mon = INT_MAX;
 
-	mon_free_map = BIT_MASK(mon_max) - 1;
+	for_each_resctrl_resource(r) {
+		if (r->mon_enabled) {
+			rr = r->res;
+			num_mon = min(num_mon, rr->num_mon);
+		}
+	}
+
+	mon_free_map = BIT_MASK(num_mon) - 1;
 
 	/* pmg 0 is always reserved for the default group */
 	mon_free_map &= ~1;
