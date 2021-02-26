@@ -206,26 +206,37 @@ static int mpam_device_probe(struct mpam_device *dev)
 	/* Priority partitioning */
 	if (MPAMF_IDR_HAS_PRI_PART(hwfeatures)) {
 		u32 pri_features = mpam_read_reg(dev, MPAMF_PRI_IDR);
+		u32 hwdef_pri = mpam_read_reg(dev, MPAMCFG_PRI);
 
 		pr_debug("probe: probed PRI_PART\n");
 
 		dev->intpri_wd = (pri_features & MPAMF_PRI_IDR_INTPRI_WD) >>
 				MPAMF_PRI_IDR_INTPRI_WD_SHIFT;
-		if (dev->intpri_wd && (pri_features &
-				MPAMF_PRI_IDR_HAS_INTPRI)) {
+		if (dev->intpri_wd && (pri_features & MPAMF_PRI_IDR_HAS_INTPRI)) {
 			mpam_set_feature(mpam_feat_intpri_part, &dev->features);
+			dev->hwdef_intpri = MPAMCFG_INTPRI_GET(hwdef_pri);
 			if (pri_features & MPAMF_PRI_IDR_INTPRI_0_IS_LOW)
 				mpam_set_feature(mpam_feat_intpri_part_0_low,
 					&dev->features);
+			else
+				/* keep higher value higher priority */
+				dev->hwdef_intpri = GENMASK(dev->intpri_wd - 1, 0) &
+					~dev->hwdef_intpri;
+
 		}
 
 		dev->dspri_wd = (pri_features & MPAMF_PRI_IDR_DSPRI_WD) >>
 				MPAMF_PRI_IDR_DSPRI_WD_SHIFT;
 		if (dev->dspri_wd && (pri_features & MPAMF_PRI_IDR_HAS_DSPRI)) {
 			mpam_set_feature(mpam_feat_dspri_part, &dev->features);
+			dev->hwdef_dspri = MPAMCFG_DSPRI_GET(hwdef_pri);
 			if (pri_features & MPAMF_PRI_IDR_DSPRI_0_IS_LOW)
 				mpam_set_feature(mpam_feat_dspri_part_0_low,
 					&dev->features);
+			else
+				/* keep higher value higher priority */
+				dev->hwdef_dspri = GENMASK(dev->dspri_wd - 1, 0) &
+					~dev->hwdef_dspri;
 		}
 	}
 
@@ -723,8 +734,7 @@ static void mpam_reset_device_bitmap(struct mpam_device *dev, u16 reg, u16 wd)
 static void mpam_reset_device_config(struct mpam_component *comp,
 				struct mpam_device *dev, u32 partid)
 {
-	u16 intpri = GENMASK(dev->intpri_wd, 0);
-	u16 dspri = GENMASK(dev->dspri_wd, 0);
+	u16 intpri, dspri;
 	u32 pri_val = 0;
 	u32 mbw_max;
 
@@ -751,13 +761,8 @@ static void mpam_reset_device_config(struct mpam_component *comp,
 
 	if (mpam_has_feature(mpam_feat_intpri_part, dev->features) ||
 		mpam_has_feature(mpam_feat_dspri_part, dev->features)) {
-		/* aces high? */
-		if (!mpam_has_feature(mpam_feat_intpri_part_0_low,
-				dev->features))
-			intpri = 0;
-		if (!mpam_has_feature(mpam_feat_dspri_part_0_low,
-				dev->features))
-			dspri = 0;
+		intpri = dev->hwdef_intpri;
+		dspri = dev->hwdef_dspri;
 
 		if (mpam_has_feature(mpam_feat_intpri_part, dev->features))
 			pri_val |= intpri;
