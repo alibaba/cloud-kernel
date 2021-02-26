@@ -433,32 +433,6 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 	return ret;
 }
 
-/*
- * Add all subdirectories of mon_data for "ctrl_mon" groups
- * and "monitor" groups with given domain id.
- */
-void mkdir_mondata_subdir_allrdtgrp(struct resctrl_resource *r,
-				    struct rdt_domain *d)
-{
-	struct kernfs_node *parent_kn;
-	struct resctrl_group *prgrp, *crgrp;
-	struct list_head *head;
-
-	if (!r->mon_enabled)
-		return;
-
-	list_for_each_entry(prgrp, &resctrl_all_groups, resctrl_group_list) {
-		parent_kn = prgrp->mon.mon_data_kn;
-		mkdir_mondata_subdir(parent_kn, d, r, prgrp);
-
-		head = &prgrp->mon.crdtgrp_list;
-		list_for_each_entry(crgrp, head, mon.crdtgrp_list) {
-			parent_kn = crgrp->mon.mon_data_kn;
-			mkdir_mondata_subdir(parent_kn, d, r, crgrp);
-		}
-	}
-}
-
 static int mkdir_mondata_subdir_alldom(struct kernfs_node *parent_kn,
 				       struct resctrl_resource *r,
 				       struct resctrl_group *prgrp)
