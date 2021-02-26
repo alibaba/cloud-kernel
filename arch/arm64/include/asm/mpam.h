@@ -120,6 +120,97 @@ extern bool rdt_mon_capable;
 
 extern int max_name_width, max_data_width;
 
+enum resctrl_conf_type {
+	CDP_BOTH = 0,
+	CDP_CODE,
+	CDP_DATA,
+	CDP_NUM_CONF_TYPE,
+};
+
+static inline int conf_name_to_conf_type(char *name)
+{
+	enum resctrl_conf_type t;
+
+	if (!strcmp(name, "L3CODE") || !strcmp(name, "L2CODE"))
+		t = CDP_CODE;
+	else if (!strcmp(name, "L3DATA") || !strcmp(name, "L2DATA"))
+		t = CDP_DATA;
+	else
+		t = CDP_BOTH;
+	return t;
+}
+
+#define for_each_conf_type(t) \
+		for (t = CDP_BOTH; t < CDP_NUM_CONF_TYPE; t++)
+
+typedef struct { u16 val; } hw_mpamid_t;
+
+#define hw_closid_t hw_mpamid_t
+#define hw_monid_t hw_mpamid_t
+#define hw_closid_val(__x) (__x.val)
+#define hw_monid_val(__x) (__x.val)
+
+#define as_hw_t(__name, __x) \
+			((hw_##__name##id_t){(__x)})
+#define hw_val(__name, __x) \
+			hw_##__name##id_val(__x)
+
+/**
+ * When cdp enabled, give (closid + 1) to Cache LxDATA.
+ */
+#define resctrl_cdp_map(__name, __closid, __type, __result)    \
+do {   \
+	if (__type == CDP_CODE) \
+		__result = as_hw_t(__name, __closid); \
+	else if (__type == CDP_DATA)     \
+		__result = as_hw_t(__name, __closid + 1); \
+	else    \
+		__result = as_hw_t(__name, __closid); \
+} while (0)
+
+static inline bool is_resctrl_cdp_enabled(void)
+{
+	return 0;
+}
+
+#define hw_alloc_times_validate(__name, __times, __flag) \
+do {   \
+	__flag = is_resctrl_cdp_enabled();	\
+	__times = flag ? 2 : 1;	\
+} while (0)
+
+
+/**
+ * struct resctrl_staged_config - parsed configuration to be applied
+ * @hw_closid:      raw closid for this configuration, regardless of CDP
+ * @new_ctrl:       new ctrl value to be loaded
+ * @have_new_ctrl:  did user provide new_ctrl for this domain
+ * @new_ctrl_type:  CDP property of the new ctrl
+ */
+struct resctrl_staged_config {
+	hw_closid_t     hw_closid;
+	u32             new_ctrl;
+	bool            have_new_ctrl;
+	enum resctrl_conf_type  new_ctrl_type;
+};
+
+/* later move to resctrl common directory */
+#define RESCTRL_NAME_LEN    7
+
+/**
+ * @list:   Member of resctrl's schema list
+ * @name:   Name visible in the schemata file
+ * @conf_type:  Type of configuration, e.g. code/data/both
+ * @res:    The rdt_resource for this entry
+ */
+struct resctrl_schema {
+	struct list_head        list;
+	char                    name[RESCTRL_NAME_LEN];
+	enum resctrl_conf_type      conf_type;
+	struct resctrl_resource     *res;
+};
+
+
 /* rdtgroup.flags */
 #define	RDT_DELETED		BIT(0)
 #define	RDT_CTRLMON		BIT(1)
