@@ -72,6 +72,7 @@
 #define BWA_WD              6		/* hard code for P680 */
 #define MBW_MAX_MASK        0xFC00
 #define MBW_MAX_HARDLIM     BIT(31)
+#define MBW_MAX_BWA_FRACT(w)        GENMASK(w - 1, 0)
 #define MBW_MAX_SET(v)      (MBW_MAX_HARDLIM|((v) << (16 - BWA_WD)))
 #define MBW_MAX_GET(v)      (((v) & MBW_MAX_MASK) >> (16 - BWA_WD))
 
@@ -85,6 +86,10 @@
 #define MSMON_CFG_CSU_TYPE          0x43
 #define MSMON_CFG_MBWU_TYPE         0x42
 
+/*
+ * Set MPAMCFG_PART_SEL internal bit
+ */
+#define PART_SEL_SET_INTERNAL(r)    (r | BIT(16))
 /*
  * Size of the memory mapped registers: 4K of feature page then 2 x 4K
  * bitmap registers
