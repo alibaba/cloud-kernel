@@ -58,6 +58,16 @@
 #define MBW_MAX_MASK		0xFC00
 #define MBW_MAX_HARDLIM		BIT(31)
 
+#define MSMON_MATCH_PMG		BIT(17)
+#define MSMON_MATCH_PARTID	BIT(16)
+
+#define MSMON_CFG_FLT_SET(r, p)		((r) << 16|(p))
+
+#define MBWU_SUBTYPE_DEFAULT		(3 << 20)
+#define MSMON_CFG_MBWU_CTL_SET(m)	(BIT(31)|MBWU_SUBTYPE_DEFAULT|(m))
+
+#define MSMON_CFG_CSU_CTL_SET(m)	(BIT(31)|(m))
+
 /* [FIXME] hard code for hardlim */
 #define MBW_MAX_SET(v)		(MBW_MAX_HARDLIM|((v) << (15 - BWA_WD)))
 #define MBW_MAX_GET(v)		(((v) & MBW_MAX_MASK) >> (15 - BWA_WD))
