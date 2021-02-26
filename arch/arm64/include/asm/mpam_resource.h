@@ -83,8 +83,8 @@
 #define MSMON_CFG_CSU_CTL_SET(m)	(BIT(31)|(m))
 
 /* [FIXME] hard code for hardlim */
-#define MBW_MAX_SET(v)		(MBW_MAX_HARDLIM|((v) << (15 - BWA_WD)))
-#define MBW_MAX_GET(v)		(((v) & MBW_MAX_MASK) >> (15 - BWA_WD))
+#define MBW_MAX_SET(v)		(MBW_MAX_HARDLIM|((v) << (16 - BWA_WD)))
+#define MBW_MAX_GET(v)		(((v) & MBW_MAX_MASK) >> (16 - BWA_WD))
 /*
  * emulate the mpam nodes
  * These should be reported by ACPI MPAM Table.
