@@ -64,6 +64,7 @@ static int mpam_resctrl_setup_domain(unsigned int cpu,
 	struct mpam_component *comp_iter, *comp;
 	u32 num_partid;
 	u32 **ctrlval_ptr;
+	enum resctrl_ctrl_type type;
 
 	num_partid = mpam_sysprops_num_partid();
 
@@ -88,12 +89,14 @@ static int mpam_resctrl_setup_domain(unsigned int cpu,
 	dom->resctrl_dom.id = comp->comp_id;
 	cpumask_set_cpu(cpu, &dom->resctrl_dom.cpu_mask);
 
-	ctrlval_ptr = &dom->resctrl_dom.ctrl_val;
-	*ctrlval_ptr = kmalloc_array(num_partid,
+	for_each_ctrl_type(type) {
+		ctrlval_ptr = &dom->resctrl_dom.ctrl_val[type];
+		*ctrlval_ptr = kmalloc_array(num_partid,
 			sizeof(**ctrlval_ptr), GFP_KERNEL);
-	if (!*ctrlval_ptr) {
-		kfree(dom);
-		return -ENOMEM;
+		if (!*ctrlval_ptr) {
+			kfree(dom);
+			return -ENOMEM;
+		}
 	}
 
 	/* TODO: this list should be sorted */
@@ -331,6 +334,13 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 	struct resctrl_resource *r = &res->resctrl_res;
 	struct raw_resctrl_resource *rr = NULL;
 
+	if (class && !r->default_ctrl) {
+		r->default_ctrl = kmalloc_array(SCHEMA_NUM_CTRL_TYPE,
+			sizeof(*r->default_ctrl), GFP_KERNEL);
+		if (!r->default_ctrl)
+			return -ENOMEM;
+	}
+
 	if (class == mpam_resctrl_exports[RDT_RESOURCE_SMMU].class) {
 		return 0;
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_MC].class) {
@@ -363,7 +373,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 			r->mbw.min_bw = MAX_MBA_BW /
 				((1ULL << class->bwa_wd) - 1);
 			/* the largest mbw_max is 100 */
-			r->default_ctrl = 100;
+			r->default_ctrl[SCHEMA_COMM] = 100;
 		}
 		/* Just in case we have an excessive number of bits */
 		if (!r->mbw.min_bw)
@@ -381,6 +391,9 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		rdt_alloc_capable = true;
 		r->mon_capable = true;
 		r->mon_enabled = true;
+		/* Export memory bandwidth hardlimit, default active hardlimit */
+		rr->hdl_wd = 2;
+		r->default_ctrl[SCHEMA_HDL] = rr->hdl_wd - 1;
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L3].class) {
 		r->rid = RDT_RESOURCE_L3;
 		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L3);
@@ -390,14 +403,14 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->name = "L3";
 
 		r->cache.cbm_len = class->cpbm_wd;
-		r->default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
+		r->default_ctrl[SCHEMA_COMM] = GENMASK(class->cpbm_wd - 1, 0);
 		/*
 		 * Which bits are shared with other ...things...
 		 * Unknown devices use partid-0 which uses all the bitmap
 		 * fields. Until we configured the SMMU and GIC not to do this
 		 * 'all the bits' is the correct answer here.
 		 */
-		r->cache.shareable_bits = r->default_ctrl;
+		r->cache.shareable_bits = r->default_ctrl[SCHEMA_COMM];
 		r->cache.min_cbm_bits = 1;
 
 		if (mpam_has_feature(mpam_feat_cpor_part, class->features)) {
@@ -423,14 +436,14 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->name = "L2";
 
 		r->cache.cbm_len = class->cpbm_wd;
-		r->default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
+		r->default_ctrl[SCHEMA_COMM] = GENMASK(class->cpbm_wd - 1, 0);
 		/*
 		 * Which bits are shared with other ...things...
 		 * Unknown devices use partid-0 which uses all the bitmap
 		 * fields. Until we configured the SMMU and GIC not to do this
 		 * 'all the bits' is the correct answer here.
 		 */
-		r->cache.shareable_bits = r->default_ctrl;
+		r->cache.shareable_bits = r->default_ctrl[SCHEMA_COMM];
 
 		if (mpam_has_feature(mpam_feat_cpor_part, class->features)) {
 			r->alloc_capable = true;
@@ -452,8 +465,10 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		rr->num_intpartid = class->num_intpartid;
 		rr->num_pmg = class->num_pmg;
 
+		/* Export priority setting, default highest priority */
 		rr->pri_wd = max(class->intpri_wd, class->dspri_wd);
-		rr->hdl_wd = 2;
+		r->default_ctrl[SCHEMA_PRI] = (rr->pri_wd > 0) ?
+			rr->pri_wd - 1 : 0;
 	}
 
 	return 0;

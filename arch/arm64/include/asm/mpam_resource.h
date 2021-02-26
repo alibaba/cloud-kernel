@@ -76,6 +76,7 @@
 #define MBW_MAX_SET(v)      (MBW_MAX_HARDLIM|((v) << (16 - BWA_WD)))
 #define MBW_MAX_GET(v)      (((v) & MBW_MAX_MASK) >> (16 - BWA_WD))
 #define MBW_MAX_SET_HDL(r)          (r | MBW_MAX_HARDLIM)
+#define MBW_MAX_GET_HDL(r)          (r & MBW_MAX_HARDLIM)
 /* MPAMCFG_MBW_PROP */
 #define MBW_PROP_HARDLIM            BIT(31)
 #define MBW_PROP_SET_HDL(r)         (r | MBW_PROP_HARDLIM)
@@ -133,6 +134,7 @@
  * MPAMCFG_MBW_MAX SET - temp Hard code
  */
 #define MPAMCFG_PRI_DSPRI_SHIFT			16
+#define MPAMCFG_PRI_GET(r)  ((r & GENMASK(15, 0)) | (r & GENMASK(31, 16)) >> 16)
 
 /* MPAMF_PRI_IDR - MPAM features priority partitioning ID register */
 #define MPAMF_PRI_IDR_HAS_INTPRI        BIT(0)

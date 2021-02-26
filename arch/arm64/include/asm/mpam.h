@@ -117,6 +117,21 @@ DECLARE_STATIC_KEY_FALSE(resctrl_mon_enable_key);
 
 extern int max_name_width, max_data_width;
 
+enum resctrl_ctrl_type {
+	SCHEMA_COMM = 0,
+	SCHEMA_PRI,
+	SCHEMA_HDL,
+	SCHEMA_NUM_CTRL_TYPE
+};
+
+#define for_each_ctrl_type(t)	\
+		for (t = SCHEMA_COMM; t != SCHEMA_NUM_CTRL_TYPE; t++)
+
+#define for_each_extend_ctrl_type(t)	\
+		for (t = SCHEMA_PRI; t != SCHEMA_NUM_CTRL_TYPE; t++)
+
+bool resctrl_ctrl_extend_bits_match(u32 bitmap, enum resctrl_ctrl_type type);
+
 enum resctrl_conf_type {
 	CDP_BOTH = 0,
 	CDP_CODE,
@@ -183,25 +198,34 @@ do {   \
  */
 struct resctrl_staged_config {
 	hw_closid_t     hw_closid;
-	u32             new_ctrl;
+	u32             new_ctrl[SCHEMA_NUM_CTRL_TYPE];
 	bool            have_new_ctrl;
 	enum resctrl_conf_type  conf_type;
+	enum resctrl_ctrl_type  ctrl_type;
 };
 
 /* later move to resctrl common directory */
-#define RESCTRL_NAME_LEN    7
+#define RESCTRL_NAME_LEN    15
+
+struct resctrl_schema_ctrl {
+	struct list_head       list;
+	char name[RESCTRL_NAME_LEN];
+	enum resctrl_ctrl_type     ctrl_type;
+};
 
 /**
  * @list:   Member of resctrl's schema list
  * @name:   Name visible in the schemata file
  * @conf_type:  Type of configuration, e.g. code/data/both
  * @res:    The rdt_resource for this entry
+ * @schemata_ctrl_list:   Type of ctrl configuration. e.g. priority/hardlimit
  */
 struct resctrl_schema {
 	struct list_head        list;
 	char                    name[RESCTRL_NAME_LEN];
 	enum resctrl_conf_type      conf_type;
 	struct resctrl_resource     *res;
+	struct list_head        schema_ctrl_list;
 };
 
 /**
@@ -230,8 +254,7 @@ struct rdt_domain {
 	void __iomem		*base;
 
 	/* arch specific fields */
-	u32			*ctrl_val;
-	u32			new_ctrl;
+	u32			*ctrl_val[SCHEMA_NUM_CTRL_TYPE];
 	bool			have_new_ctrl;
 
 	/* for debug */
@@ -260,6 +283,7 @@ void post_resctrl_mount(void);
 struct sd_closid;
 
 struct msr_param {
+	enum resctrl_ctrl_type type;
 	struct sd_closid *closid;
 };
 
@@ -295,13 +319,14 @@ struct raw_resctrl_resource {
 	u16                 hdl_wd;
 
 	void (*msr_update)(struct resctrl_resource *r, struct rdt_domain *d,
-			struct list_head *opt_list, struct msr_param *para);
+				struct msr_param *para);
 	u64 (*msr_read)(struct rdt_domain *d, struct msr_param *para);
 
 	int			data_width;
 	const char		*format_str;
 	int (*parse_ctrlval)(char *buf, struct raw_resctrl_resource *r,
-			struct resctrl_staged_config *cfg);
+				struct resctrl_staged_config *cfg,
+				enum resctrl_ctrl_type ctrl_type);
 
 	u16                num_mon;
 	u64 (*mon_read)(struct rdt_domain *d, void *md_priv);

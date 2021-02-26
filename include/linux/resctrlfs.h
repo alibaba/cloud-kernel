@@ -33,6 +33,8 @@ struct resctrl_cache {
  * @min_bw:     Minimum memory bandwidth percentage user can request
  * @bw_gran:        Granularity at which the memory bandwidth is allocated
  * @delay_linear:   True if memory B/W delay is in linear scale
+ * @ctrl_extend_bits: Indicates if there are extra ctrl capabilities supported.
+ *          e.g. priority/hardlimit.
  */
 struct resctrl_membw {
 	u32     min_bw;
@@ -57,7 +59,9 @@ struct resctrl_resource {
 
 	bool cdp_capable;
 	bool cdp_enable;
-	u32 default_ctrl;
+	u32 *default_ctrl;
+
+	u32 ctrl_extend_bits;
 
 	void *res;
 };

@@ -106,13 +106,28 @@ bool is_resctrl_cdp_enabled(void)
 }
 
 static void
+resctrl_ctrl_extend_bits_set(u32 *bitmap, enum resctrl_ctrl_type type)
+{
+	*bitmap |= BIT(type);
+}
+
+static void resctrl_ctrl_extend_bits_clear(u32 *bitmap)
+{
+	*bitmap = 0;
+}
+
+bool resctrl_ctrl_extend_bits_match(u32 bitmap, enum resctrl_ctrl_type type)
+{
+	return bitmap & BIT(type);
+}
+
+static void
 mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
-	struct rdt_domain *d, struct list_head *opt_list,
-	struct sd_closid *closid);
+	struct rdt_domain *d, struct sd_closid *closid);
 
 static void
 common_wrmsr(struct resctrl_resource *r, struct rdt_domain *d,
-	struct list_head *opt_list, struct msr_param *para);
+	struct msr_param *para);
 
 static u64 cache_rdmsr(struct rdt_domain *d, struct msr_param *para);
 static u64 mbw_rdmsr(struct rdt_domain *d, struct msr_param *para);
@@ -122,16 +137,16 @@ static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv);
 
 static int common_wrmon(struct rdt_domain *d, void *md_priv);
 
-static int parse_cbm(char *buf, struct raw_resctrl_resource *r,
-		struct resctrl_staged_config *cfg);
+static int parse_cache(char *buf, struct raw_resctrl_resource *r,
+	struct resctrl_staged_config *cfg, enum resctrl_ctrl_type ctrl_type);
 static int parse_bw(char *buf, struct raw_resctrl_resource *r,
-		struct resctrl_staged_config *cfg);
+	struct resctrl_staged_config *cfg, enum resctrl_ctrl_type ctrl_type);
 
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 	[RDT_RESOURCE_L3] = {
 		.msr_update     = common_wrmsr,
 		.msr_read       = cache_rdmsr,
-		.parse_ctrlval  = parse_cbm,
+		.parse_ctrlval  = parse_cache,
 		.format_str     = "%d=%0*x",
 		.mon_read       = cache_rdmon,
 		.mon_write      = common_wrmon,
@@ -139,7 +154,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 	[RDT_RESOURCE_L2] = {
 		.msr_update     = common_wrmsr,
 		.msr_read       = cache_rdmsr,
-		.parse_ctrlval  = parse_cbm,
+		.parse_ctrlval  = parse_cache,
 		.format_str     = "%d=%0*x",
 		.mon_read       = cache_rdmon,
 		.mon_write      = common_wrmon,
@@ -164,33 +179,13 @@ mpam_get_raw_resctrl_resource(enum resctrl_resource_level level)
 }
 
 /*
- * Check whether a cache bit mask is valid. for arm64 MPAM,
- * it seems that there are no restrictions according to MPAM
- * spec expect for requiring at least one bit.
- */
-static bool cbm_validate(char *buf, unsigned long *data,
-			struct raw_resctrl_resource *r)
-{
-	u64 val;
-	int ret;
-
-	ret = kstrtou64(buf, 16, &val);
-	if (ret) {
-		rdt_last_cmd_printf("non-hex character in mask %s\n", buf);
-		return false;
-	}
-
-	*data = val;
-	return true;
-}
-
-/*
- * Read one cache bit mask (hex). Check that it is valid for the current
+ * Read one cache schema row. Check that it is valid for the current
  * resource type.
  */
 static int
-parse_cbm(char *buf, struct raw_resctrl_resource *r,
-		struct resctrl_staged_config *cfg)
+parse_cache(char *buf, struct raw_resctrl_resource *r,
+		struct resctrl_staged_config *cfg,
+		enum resctrl_ctrl_type type)
 {
 	unsigned long data;
 
@@ -199,10 +194,24 @@ parse_cbm(char *buf, struct raw_resctrl_resource *r,
 		return -EINVAL;
 	}
 
-	if (!cbm_validate(buf, &data, r))
+	switch (type) {
+	case SCHEMA_COMM:
+		if (kstrtoul(buf, 16, &data))
+			return -EINVAL;
+		break;
+	case SCHEMA_PRI:
+		if (kstrtoul(buf, 10, &data))
+			return -EINVAL;
+		break;
+	case SCHEMA_HDL:
+		if (kstrtoul(buf, 10, &data))
+			return -EINVAL;
+		break;
+	default:
 		return -EINVAL;
+	}
 
-	cfg->new_ctrl = data;
+	cfg->new_ctrl[type] = data;
 	cfg->have_new_ctrl = true;
 
 	return 0;
@@ -253,7 +262,8 @@ static bool bw_validate(char *buf, unsigned long *data,
 
 static int
 parse_bw(char *buf, struct raw_resctrl_resource *r,
-		struct resctrl_staged_config *cfg)
+		struct resctrl_staged_config *cfg,
+		enum resctrl_ctrl_type type)
 {
 	unsigned long data;
 
@@ -262,10 +272,24 @@ parse_bw(char *buf, struct raw_resctrl_resource *r,
 		return -EINVAL;
 	}
 
-	if (!bw_validate(buf, &data, r))
+	switch (type) {
+	case SCHEMA_COMM:
+		if (!bw_validate(buf, &data, r))
+			return -EINVAL;
+		break;
+	case SCHEMA_PRI:
+		if (kstrtoul(buf, 10, &data))
+			return -EINVAL;
+		break;
+	case SCHEMA_HDL:
+		if (kstrtoul(buf, 10, &data))
+			return -EINVAL;
+		break;
+	default:
 		return -EINVAL;
+	}
 
-	cfg->new_ctrl = data;
+	cfg->new_ctrl[type] = data;
 	cfg->have_new_ctrl = true;
 
 	return 0;
@@ -273,14 +297,14 @@ parse_bw(char *buf, struct raw_resctrl_resource *r,
 
 static void
 common_wrmsr(struct resctrl_resource *r, struct rdt_domain *d,
-			struct list_head *opt_list, struct msr_param *para)
+			struct msr_param *para)
 {
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
 
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 
-	mpam_resctrl_update_component_cfg(r, d, opt_list, para->closid);
+	mpam_resctrl_update_component_cfg(r, d, para->closid);
 
 	/*
 	 * so far we have accomplished configuration replication,
@@ -297,31 +321,75 @@ static u64 cache_rdmsr(struct rdt_domain *d, struct msr_param *para)
 	struct mpam_resctrl_dom *dom;
 
 	args.closid = *para->closid;
-	args.reg = MPAMCFG_CPBM;
+
+	switch (para->type) {
+	case SCHEMA_COMM:
+		args.reg = MPAMCFG_CPBM;
+		break;
+	case SCHEMA_PRI:
+		args.reg = MPAMCFG_PRI;
+	default:
+		return 0;
+	}
 
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
-
 	mpam_component_get_config(dom->comp, &args, &result);
+
+	switch (para->type) {
+	case SCHEMA_PRI:
+		result = MPAMCFG_PRI_GET(result);
+		break;
+	default:
+		break;
+	}
 
 	return result;
 }
 
 static u64 mbw_rdmsr(struct rdt_domain *d, struct msr_param *para)
 {
-	u64 max;
 	u32 result;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
 
 	args.closid = *para->closid;
-	args.reg = MPAMCFG_MBW_MAX;
+
+	/*
+	 * software default set memory bandwidth by
+	 * MPAMCFG_MBW_MAX but not MPAMCFG_MBW_PBM.
+	 */
+	switch (para->type) {
+	case SCHEMA_COMM:
+		args.reg = MPAMCFG_MBW_MAX;
+		break;
+	case SCHEMA_HDL:
+		args.reg = MPAMCFG_MBW_MAX;
+		break;
+	case SCHEMA_PRI:
+		args.reg = MPAMCFG_PRI;
+		break;
+	default:
+		return 0;
+	}
 
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
-
 	mpam_component_get_config(dom->comp, &args, &result);
 
-	max = MBW_MAX_GET(result);
-	return roundup((max * 100) / 64, 5);
+	switch (para->type) {
+	case SCHEMA_COMM:
+		result = roundup((MBW_MAX_GET(result) * 100) / 64, 5);
+		break;
+	case SCHEMA_PRI:
+		result = MPAMCFG_PRI_GET(result);
+		break;
+	case SCHEMA_HDL:
+		result = MBW_MAX_GET_HDL(result);
+		break;
+	default:
+		break;
+	}
+
+	return result;
 }
 
 /*
@@ -644,6 +712,52 @@ static int cdpl2_enable(void)
 	return try_to_enable_cdp(RDT_RESOURCE_L2);
 }
 
+static void basic_ctrl_enable(void)
+{
+	struct mpam_resctrl_res *res;
+	struct resctrl_resource *r;
+
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+		/* At least SCHEMA_COMM is supported */
+		resctrl_ctrl_extend_bits_set(&r->ctrl_extend_bits, SCHEMA_COMM);
+	}
+}
+
+static int extend_ctrl_enable(enum resctrl_ctrl_type type)
+{
+	bool match = false;
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+	struct mpam_resctrl_res *res;
+
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+		rr = r->res;
+		if ((type == SCHEMA_PRI && rr->pri_wd) ||
+			(type == SCHEMA_HDL && rr->hdl_wd)) {
+			resctrl_ctrl_extend_bits_set(&r->ctrl_extend_bits, type);
+			match = true;
+		}
+	}
+
+	if (!match)
+		return -EINVAL;
+
+	return 0;
+}
+
+static void extend_ctrl_disable(void)
+{
+	struct resctrl_resource *r;
+	struct mpam_resctrl_res *res;
+
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+		resctrl_ctrl_extend_bits_clear(&r->ctrl_extend_bits);
+	}
+}
+
 int parse_rdtgroupfs_options(char *data)
 {
 	char *token;
@@ -651,6 +765,7 @@ int parse_rdtgroupfs_options(char *data)
 	int ret = 0;
 
 	disable_cdp();
+	extend_ctrl_disable();
 
 	while ((token = strsep(&o, ",")) != NULL) {
 		if (!*token) {
@@ -666,11 +781,21 @@ int parse_rdtgroupfs_options(char *data)
 			ret = cdpl2_enable();
 			if (ret)
 				goto out;
+		} else if (!strcmp(token, "priority")) {
+			ret = extend_ctrl_enable(SCHEMA_PRI);
+			if (ret)
+				goto out;
+		} else if (!strcmp(token, "hardlimit")) {
+			ret = extend_ctrl_enable(SCHEMA_HDL);
+			if (ret)
+				goto out;
 		} else {
 			ret = -EINVAL;
 			goto out;
 		}
 	}
+
+	basic_ctrl_enable();
 
 	return 0;
 
@@ -1422,45 +1547,70 @@ void __mpam_sched_in(void)
 
 static void
 mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
-			u32 resctrl_cfg, struct mpam_config *mpam_cfg)
+			u32 resctrl_cfg, enum resctrl_ctrl_type ctrl_type,
+			struct mpam_config *mpam_cfg)
 {
-	if (res == &mpam_resctrl_exports[RDT_RESOURCE_MC]) {
-		u64 range;
+	switch (ctrl_type) {
+	case SCHEMA_COMM:
+		if (res == &mpam_resctrl_exports[RDT_RESOURCE_MC]) {
+			u64 range;
 
-		/* For MBA cfg is a percentage of .. */
-		if (res->resctrl_mba_uses_mbw_part) {
-			/* .. the number of bits we can set */
-			range = res->class->mbw_pbm_bits;
-			mpam_cfg->mbw_pbm = (resctrl_cfg * range) / MAX_MBA_BW;
-			mpam_set_feature(mpam_feat_mbw_part, &mpam_cfg->valid);
+			/* For MBA cfg is a percentage of .. */
+			if (res->resctrl_mba_uses_mbw_part) {
+				/* .. the number of bits we can set */
+				range = res->class->mbw_pbm_bits;
+				mpam_cfg->mbw_pbm =
+					(resctrl_cfg * range) / MAX_MBA_BW;
+				mpam_set_feature(mpam_feat_mbw_part, &mpam_cfg->valid);
+			} else {
+				/* .. the number of fractions we can represent */
+				mpam_cfg->mbw_max =
+					bw_max_mask[(resctrl_cfg / 5 - 1) %
+					ARRAY_SIZE(bw_max_mask)];
+
+				mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
+			}
 		} else {
-			/* .. the number of fractions we can represent */
-			mpam_cfg->mbw_max = bw_max_mask[(resctrl_cfg / 5 - 1) %
-				ARRAY_SIZE(bw_max_mask)];
-
-			mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
+			/*
+			 * Nothing clever here as mpam_resctrl_pick_caches()
+			 * capped the size at RESCTRL_MAX_CBM.
+			 */
+			mpam_cfg->cpbm = resctrl_cfg;
+			mpam_set_feature(mpam_feat_cpor_part, &mpam_cfg->valid);
 		}
-	} else {
-		/*
-		 * Nothing clever here as mpam_resctrl_pick_caches()
-		 * capped the size at RESCTRL_MAX_CBM.
-		 */
-		mpam_cfg->cpbm = resctrl_cfg;
-		mpam_set_feature(mpam_feat_cpor_part, &mpam_cfg->valid);
+		break;
+	case SCHEMA_PRI:
+		mpam_cfg->dspri = resctrl_cfg;
+		mpam_cfg->intpri = resctrl_cfg;
+		mpam_set_feature(mpam_feat_dspri_part, &mpam_cfg->valid);
+		mpam_set_feature(mpam_feat_intpri_part, &mpam_cfg->valid);
+		break;
+	case SCHEMA_HDL:
+		mpam_cfg->hdl = resctrl_cfg;
+		mpam_set_feature(mpam_feat_part_hdl, &mpam_cfg->valid);
+		break;
+	default:
+		break;
 	}
 }
 
+/*
+ * copy all ctrl type at once looks more efficient, as it
+ * only needs refresh devices' state once time through
+ * mpam_component_config, this feature will be checked
+ * again when appling configuration.
+ */
 static void
 mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
-		struct rdt_domain *d, struct list_head *opt_list,
-		struct sd_closid *closid)
+		struct rdt_domain *d, struct sd_closid *closid)
 {
 	struct mpam_resctrl_dom *dom;
 	struct mpam_resctrl_res *res;
 	struct mpam_config *slave_mpam_cfg;
+	enum resctrl_ctrl_type type;
 	u32 intpartid = closid->intpartid;
 	u32 reqpartid = closid->reqpartid;
-	u32 resctrl_cfg = d->ctrl_val[intpartid];
+	u32 resctrl_cfg;
 
 	lockdep_assert_held(&resctrl_group_mutex);
 
@@ -1481,9 +1631,18 @@ mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
 	slave_mpam_cfg = &dom->comp->cfg[reqpartid];
 	if (WARN_ON_ONCE(!slave_mpam_cfg))
 		return;
-
 	slave_mpam_cfg->valid = 0;
-	mpam_update_from_resctrl_cfg(res, resctrl_cfg, slave_mpam_cfg);
+
+	for_each_ctrl_type(type) {
+		/*
+		 * we don't need check if we have enabled this ctrl type, because
+		 * this ctrls also should be applied an default configuration and
+		 * this feature type would be rechecked when configuring mpam devices.
+		 */
+		resctrl_cfg = d->ctrl_val[type][intpartid];
+		mpam_update_from_resctrl_cfg(res, resctrl_cfg,
+			type, slave_mpam_cfg);
+	}
 }
 
 static void mpam_reset_cfg(struct mpam_resctrl_res *res,
@@ -1492,11 +1651,14 @@ static void mpam_reset_cfg(struct mpam_resctrl_res *res,
 {
 	int i;
 	struct resctrl_resource *r = &res->resctrl_res;
+	enum resctrl_ctrl_type type;
 
 	for (i = 0; i != mpam_sysprops_num_partid(); i++) {
-		mpam_update_from_resctrl_cfg(res, r->default_ctrl,
-			&dom->comp->cfg[i]);
-		d->ctrl_val[i] = r->default_ctrl;
+		for_each_ctrl_type(type) {
+			mpam_update_from_resctrl_cfg(res, r->default_ctrl[type],
+				type, &dom->comp->cfg[i]);
+			d->ctrl_val[type][i] = r->default_ctrl[type];
+		}
 	}
 }
 
