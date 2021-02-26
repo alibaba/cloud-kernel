@@ -253,6 +253,112 @@ static int mpam_device_probe(struct mpam_device *dev)
 }
 
 /*
+ * If device doesn't match class feature/configuration, do the right thing.
+ * For 'num' properties we can just take the minimum.
+ * For properties where the mismatched unused bits would make a difference, we
+ * nobble the class feature, as we can't configure all the devices.
+ * e.g. The L3 cache is composed of two devices with 13 and 17 portion
+ * bitmaps respectively.
+ */
+static void __device_class_feature_mismatch(struct mpam_device *dev,
+					struct mpam_class *class)
+{
+	lockdep_assert_held(&mpam_devices_lock); /* we modify class */
+
+	if (class->cpbm_wd != dev->cpbm_wd)
+		mpam_clear_feature(mpam_feat_cpor_part, &class->features);
+	if (class->mbw_pbm_bits != dev->mbw_pbm_bits)
+		mpam_clear_feature(mpam_feat_mbw_part, &class->features);
+
+	/* For num properties, take the minimum */
+	if (class->num_partid != dev->num_partid)
+		class->num_partid = min(class->num_partid, dev->num_partid);
+	if (class->num_intpartid != dev->num_intpartid)
+		class->num_intpartid = min(class->num_intpartid, dev->num_intpartid);
+	if (class->num_pmg != dev->num_pmg)
+		class->num_pmg = min(class->num_pmg, dev->num_pmg);
+	if (class->num_csu_mon != dev->num_csu_mon)
+		class->num_csu_mon = min(class->num_csu_mon, dev->num_csu_mon);
+	if (class->num_mbwu_mon != dev->num_mbwu_mon)
+		class->num_mbwu_mon = min(class->num_mbwu_mon,
+			dev->num_mbwu_mon);
+
+	/* bwa_wd is a count of bits, fewer bits means less precision */
+	if (class->bwa_wd != dev->bwa_wd)
+		class->bwa_wd = min(class->bwa_wd, dev->bwa_wd);
+
+	if (class->intpri_wd != dev->intpri_wd)
+		class->intpri_wd = min(class->intpri_wd, dev->intpri_wd);
+	if (class->dspri_wd != dev->dspri_wd)
+		class->dspri_wd = min(class->dspri_wd, dev->dspri_wd);
+
+	/* {int,ds}pri may not have differing 0-low behaviour */
+	if (mpam_has_feature(mpam_feat_intpri_part_0_low, class->features) !=
+		mpam_has_feature(mpam_feat_intpri_part_0_low, dev->features))
+		mpam_clear_feature(mpam_feat_intpri_part, &class->features);
+	if (mpam_has_feature(mpam_feat_dspri_part_0_low, class->features) !=
+		mpam_has_feature(mpam_feat_dspri_part_0_low, dev->features))
+		mpam_clear_feature(mpam_feat_dspri_part, &class->features);
+}
+
+/*
+ * Squash common class=>component=>device->features down to the
+ * class->features
+ */
+static void mpam_enable_squash_features(void)
+{
+	unsigned long flags;
+	struct mpam_device *dev;
+	struct mpam_class *class;
+	struct mpam_component *comp;
+
+	lockdep_assert_held(&mpam_devices_lock);
+
+	list_for_each_entry(class, &mpam_classes, classes_list) {
+		/*
+		 * Copy the first component's first device's properties and
+		 * features to the class. __device_class_feature_mismatch()
+		 * will fix them as appropriate.
+		 * It is not possible to have a component with no devices.
+		 */
+		if (!list_empty(&class->components)) {
+			comp = list_first_entry_or_null(&class->components,
+					struct mpam_component, class_list);
+			if (WARN_ON(!comp))
+				break;
+
+			dev = list_first_entry_or_null(&comp->devices,
+						struct mpam_device, comp_list);
+			if (WARN_ON(!dev))
+				break;
+
+			spin_lock_irqsave(&dev->lock, flags);
+			class->features = dev->features;
+			class->cpbm_wd = dev->cpbm_wd;
+			class->mbw_pbm_bits = dev->mbw_pbm_bits;
+			class->bwa_wd = dev->bwa_wd;
+			class->intpri_wd = dev->intpri_wd;
+			class->dspri_wd = dev->dspri_wd;
+			class->num_partid = dev->num_partid;
+			class->num_intpartid = dev->num_intpartid;
+			class->num_pmg = dev->num_pmg;
+			class->num_csu_mon = dev->num_csu_mon;
+			class->num_mbwu_mon = dev->num_mbwu_mon;
+			spin_unlock_irqrestore(&dev->lock, flags);
+		}
+
+		list_for_each_entry(comp, &class->components, class_list) {
+			list_for_each_entry(dev, &comp->devices, comp_list) {
+				spin_lock_irqsave(&dev->lock, flags);
+				__device_class_feature_mismatch(dev, class);
+				class->features &= dev->features;
+				spin_unlock_irqrestore(&dev->lock, flags);
+			}
+		}
+	}
+}
+
+/*
  * Enable mpam once all devices have been probed.
  * Scheduled by mpam_discovery_complete() once all devices have been created.
  * Also scheduled when new devices are probed when new CPUs come online.
@@ -278,6 +384,10 @@ static void __init mpam_enable(struct work_struct *work)
 
 	if (!all_devices_probed)
 		return;
+
+	mutex_lock(&mpam_devices_lock);
+	mpam_enable_squash_features();
+	mutex_unlock(&mpam_devices_lock);
 }
 
 static void mpam_failed(struct work_struct *work)
