@@ -822,8 +822,9 @@ static void show_resctrl_tasks(struct rdtgroup *r, struct seq_file *s)
 	for_each_process_thread(p, t) {
 		if ((r->type == RDTCTRL_GROUP && t->closid == r->closid) ||
 		    (r->type == RDTMON_GROUP && t->rmid == r->mon.rmid))
-			seq_printf(s, "%d: partid = %d, pmg = %d\n",
-				   t->pid, t->closid, t->rmid);
+			seq_printf(s, "%d: partid = %d, pmg = %d, (group: partid %d, pmg %d)\n",
+				   t->pid, t->closid, t->rmid,
+				   r->closid, r->mon.rmid);
 	}
 	rcu_read_unlock();
 }
