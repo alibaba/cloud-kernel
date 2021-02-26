@@ -170,6 +170,9 @@ u16 mpam_sysprops_num_pmg(void);
 
 void mpam_class_list_lock_held(void);
 
+extern struct mpam_resctrl_res mpam_resctrl_exports[RDT_NUM_RESOURCES];
+extern struct mpam_resctrl_res mpam_resctrl_events[RESCTRL_NUM_EVENT_IDS];
+
 int mpam_resctrl_cpu_online(unsigned int cpu);
 
 int mpam_resctrl_cpu_offline(unsigned int cpu);

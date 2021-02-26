@@ -27,6 +27,54 @@ enum rdt_event_id {
 	RESCTRL_NUM_EVENT_IDS,
 };
 
+enum rdt_group_type {
+	RDTCTRL_GROUP = 0,
+	RDTMON_GROUP,
+	RDT_NUM_GROUP,
+};
+
+/**
+ * struct mongroup - store mon group's data in resctrl fs.
+ * @mon_data_kn     kernlfs node for the mon_data directory
+ * @parent:         parent rdtgrp
+ * @crdtgrp_list:       child rdtgroup node list
+ * @rmid:           rmid for this rdtgroup
+ * @mon:            monnitor id
+ */
+struct mongroup {
+	struct kernfs_node  *mon_data_kn;
+	struct rdtgroup     *parent;
+	struct list_head    crdtgrp_list;
+	u32         rmid;
+	u32         mon;
+	int         init;
+};
+
+/**
+ * struct rdtgroup - store rdtgroup's data in resctrl file system.
+ * @kn:             kernfs node
+ * @resctrl_group_list:     linked list for all rdtgroups
+ * @closid:         closid for this rdtgroup
+ * #endif
+ * @cpu_mask:           CPUs assigned to this rdtgroup
+ * @flags:          status bits
+ * @waitcount:          how many cpus expect to find this
+ *              group when they acquire resctrl_group_mutex
+ * @type:           indicates type of this rdtgroup - either
+ *              monitor only or ctrl_mon group
+ * @mon:            mongroup related data
+ */
+struct rdtgroup {
+	struct kernfs_node  *kn;
+	struct list_head    resctrl_group_list;
+	u32         closid;
+	struct cpumask      cpu_mask;
+	int         flags;
+	atomic_t        waitcount;
+	enum rdt_group_type type;
+	struct mongroup     mon;
+};
+
 static inline int alloc_mon_id(void)
 {
 
@@ -69,11 +117,6 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 #define release_resctrl_group_fs_options release_rdtgroupfs_options
 #define parse_resctrl_group_fs_options parse_rdtgroupfs_options
 
-#define for_each_resctrl_resource(r)					\
-	for (r = resctrl_resources_all;					\
-	     r < resctrl_resources_all + RDT_NUM_RESOURCES;		\
-	     r++)							\
-
 int mpam_get_mon_config(struct resctrl_resource *r);
 
 int mkdir_mondata_all(struct kernfs_node *parent_kn,
@@ -85,5 +128,8 @@ mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
 		    char *name, struct kernfs_node **dest_kn);
 
 int rdtgroup_init_alloc(struct rdtgroup *rdtgrp);
+
+struct resctrl_resource *
+mpam_resctrl_get_resource(enum resctrl_resource_level level);
 
 #endif /* _ASM_ARM64_RESCTRL_H */

@@ -40,10 +40,17 @@ static int pmg_free_map;
 void mon_init(void);
 void pmg_init(void)
 {
-	/* use L3's num_pmg as system num_pmg */
-	struct raw_resctrl_resource *rr =
-		resctrl_resources_all[RDT_RESOURCE_L3].res;
-	int num_pmg = rr->num_pmg;
+	u16 num_pmg = USHRT_MAX;
+	struct mpam_resctrl_res *res;
+	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
+
+	/* Use the max num_pmg among all resources */
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+		rr = r->res;
+		num_pmg = min(num_pmg, rr->num_pmg);
+	}
 
 	mon_init();
 
@@ -74,16 +81,9 @@ void free_pmg(u32 pmg)
 static int mon_free_map;
 void mon_init(void)
 {
-	struct resctrl_resource *r;
-	struct raw_resctrl_resource *rr;
-	int num_mon = INT_MAX;
+	int num_mon;
 
-	for_each_resctrl_resource(r) {
-		if (r->mon_enabled) {
-			rr = r->res;
-			num_mon = min(num_mon, rr->num_mon);
-		}
-	}
+	num_mon = mpam_resctrl_max_mon_num();
 
 	mon_free_map = BIT_MASK(num_mon) - 1;
 }

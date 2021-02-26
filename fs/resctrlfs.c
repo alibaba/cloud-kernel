@@ -182,6 +182,9 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 	unsigned long fflags;
 	char name[32];
 	int ret;
+#ifdef CONFIG_ARM64
+	enum resctrl_resource_level level;
+#endif
 
 	/* create the directory */
 	kn_info = kernfs_create_dir(parent_kn, "info", parent_kn->mode, NULL);
@@ -193,7 +196,14 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 	if (ret)
 		goto out_destroy;
 
+#ifdef CONFIG_ARM64
+	for (level = RDT_RESOURCE_SMMU; level < RDT_NUM_RESOURCES; level++) {
+		r = mpam_resctrl_get_resource(level);
+		if (!r)
+			continue;
+#else
 	for_each_resctrl_resource(r) {
+#endif
 		if (r->alloc_enabled) {
 			fflags =  r->fflags | RF_CTRL_INFO;
 			ret = resctrl_group_mkdir_info_resdir(r, r->name, fflags);
@@ -202,7 +212,14 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 		}
 	}
 
+#ifdef CONFIG_ARM64
+	for (level = RDT_RESOURCE_SMMU; level < RDT_NUM_RESOURCES; level++) {
+		r = mpam_resctrl_get_resource(level);
+		if (!r)
+			continue;
+#else
 	for_each_resctrl_resource(r) {
+#endif
 		if (r->mon_enabled) {
 			fflags =  r->fflags | RF_MON_INFO;
 			snprintf(name, sizeof(name), "%s_MON", r->name);

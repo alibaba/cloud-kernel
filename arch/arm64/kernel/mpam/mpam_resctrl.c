@@ -40,6 +40,7 @@
 #include <asm/resctrl.h>
 #include <asm/io.h>
 
+#include "mpam_device.h"
 #include "mpam_internal.h"
 
 /* Mutex to protect rdtgroup access. */
@@ -65,6 +66,10 @@ int max_name_width, max_data_width;
  */
 bool rdt_alloc_capable;
 
+/*
+ * Indicate the max number of monitor supported.
+ */
+static u32 max_mon_num;
 /*
  * Hi1620 2P Base Address Map
  *
@@ -92,72 +97,55 @@ void mpam_resctrl_clear_default_cpu(unsigned int cpu)
 }
 
 static void
-cat_wrmsr(struct rdt_domain *d, int partid);
+mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
+	struct rdt_domain *d, struct list_head *opt_list, u32 partid);
+
 static void
-bw_wrmsr(struct rdt_domain *d, int partid);
+common_wrmsr(struct resctrl_resource *r, struct rdt_domain *d,
+	struct list_head *opt_list, int partid);
 
-u64 cat_rdmsr(struct rdt_domain *d, int partid);
-u64 bw_rdmsr(struct rdt_domain *d, int partid);
+static u64 cache_rdmsr(struct rdt_domain *d, int partid);
+static u64 mbw_rdmsr(struct rdt_domain *d, int partid);
 
-static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g);
-static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g);
+static u64 cache_rdmon(struct rdt_domain *d, struct rdtgroup *g);
+static u64 mbw_rdmon(struct rdt_domain *d, struct rdtgroup *g);
 
-static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable);
-static int csu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable);
+static int common_wrmon(struct rdt_domain *d, struct rdtgroup *g,
+			bool enable);
 
-#define domain_init(id) LIST_HEAD_INIT(resctrl_resources_all[id].domains)
+static inline bool is_mon_dyn(u32 mon)
+{
+	/*
+	 * if rdtgrp->mon.mon has been tagged with value (max_mon_num),
+	 * allocating a monitor in dynamic when getting monitor data.
+	 */
+	return (mon == mpam_resctrl_max_mon_num()) ? true : false;
+}
 
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 	[RDT_RESOURCE_L3] = {
-		.msr_update		= cat_wrmsr,
-		.msr_read		= cat_rdmsr,
-		.parse_ctrlval		= parse_cbm,
-		.format_str		= "%d=%0*x",
-		.mon_read		= csu_read,
-		.mon_write		= csu_write,
+		.msr_update     = common_wrmsr,
+		.msr_read       = cache_rdmsr,
+		.parse_ctrlval  = parse_cbm,
+		.format_str     = "%d=%0*x",
+		.mon_read       = cache_rdmon,
+		.mon_write      = common_wrmon,
 	},
 	[RDT_RESOURCE_L2] = {
-		.msr_update		= cat_wrmsr,
-		.msr_read		= cat_rdmsr,
-		.parse_ctrlval		= parse_cbm,
-		.format_str		= "%d=%0*x",
-		.mon_read		= csu_read,
-		.mon_write		= csu_write,
+		.msr_update     = common_wrmsr,
+		.msr_read       = cache_rdmsr,
+		.parse_ctrlval  = parse_cbm,
+		.format_str     = "%d=%0*x",
+		.mon_read       = cache_rdmon,
+		.mon_write      = common_wrmon,
 	},
 	[RDT_RESOURCE_MC] = {
-		.msr_update		= bw_wrmsr,
-		.msr_read		= bw_rdmsr,
-		.parse_ctrlval		= parse_bw,	/* add parse_bw() helper */
-		.format_str		= "%d=%0*d",
-		.mon_read		= mbwu_read,
-		.mon_write		= mbwu_write,
-	},
-};
-
-struct resctrl_resource resctrl_resources_all[] = {
-	[RDT_RESOURCE_L3] = {
-		.rid		= RDT_RESOURCE_L3,
-		.name		= "L3",
-		.domains	= domain_init(RDT_RESOURCE_L3),
-		.res		= &raw_resctrl_resources_all[RDT_RESOURCE_L3],
-		.fflags		= RFTYPE_RES_CACHE,
-		.alloc_enabled	= 1,
-	},
-	[RDT_RESOURCE_L2] = {
-		.rid		= RDT_RESOURCE_L2,
-		.name		= "L2",
-		.domains	= domain_init(RDT_RESOURCE_L2),
-		.res		= &raw_resctrl_resources_all[RDT_RESOURCE_L2],
-		.fflags		= RFTYPE_RES_CACHE,
-		.alloc_enabled	= 1,
-	},
-	[RDT_RESOURCE_MC] = {
-		.rid		= RDT_RESOURCE_MC,
-		.name		= "MB",
-		.domains	= domain_init(RDT_RESOURCE_MC),
-		.res		= &raw_resctrl_resources_all[RDT_RESOURCE_MC],
-		.fflags		= RFTYPE_RES_MC,
-		.alloc_enabled	= 1,
+		.msr_update     = common_wrmsr,
+		.msr_read       = mbw_rdmsr,
+		.parse_ctrlval  = parse_bw,
+		.format_str     = "%d=%0*d",
+		.mon_read       = mbw_rdmon,
+		.mon_write      = common_wrmon,
 	},
 };
 
@@ -171,35 +159,51 @@ mpam_get_raw_resctrl_resource(enum resctrl_resource_level level)
 }
 
 static void
-cat_wrmsr(struct rdt_domain *d, int partid)
+common_wrmsr(struct resctrl_resource *r, struct rdt_domain *d,
+			struct list_head *opt_list, int partid)
 {
-	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
-	mpam_writel(d->ctrl_val[partid], d->base + MPAMCFG_CPBM);
+	struct sync_args args;
+	struct mpam_resctrl_dom *dom;
+
+	args.partid = partid;
+
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+
+	mpam_resctrl_update_component_cfg(r, d, opt_list, partid);
+
+	mpam_component_config(dom->comp, &args);
 }
 
-static void
-bw_wrmsr(struct rdt_domain *d, int partid)
+static u64 cache_rdmsr(struct rdt_domain *d, int partid)
 {
-	u64 val = MBW_MAX_SET(d->ctrl_val[partid]);
+	u32 result;
+	struct sync_args args;
+	struct mpam_resctrl_dom *dom;
 
-	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
-	mpam_writel(val, d->base + MPAMCFG_MBW_MAX);
+	args.partid = partid;
+	args.reg = MPAMCFG_CPBM;
+
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+
+	mpam_component_get_config(dom->comp, &args, &result);
+
+	return result;
 }
-
-u64 cat_rdmsr(struct rdt_domain *d, int partid)
-{
-	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
-	return mpam_readl(d->base + MPAMCFG_CPBM);
-}
-
-u64 bw_rdmsr(struct rdt_domain *d, int partid)
+static u64 mbw_rdmsr(struct rdt_domain *d, int partid)
 {
 	u64 max;
+	u32 result;
+	struct sync_args args;
+	struct mpam_resctrl_dom *dom;
 
-	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
-	max = mpam_readl(d->base + MPAMCFG_MBW_MAX);
+	args.partid = partid;
+	args.reg = MPAMCFG_MBW_MAX;
 
-	max = MBW_MAX_GET(max);
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+
+	mpam_component_get_config(dom->comp, &args, &result);
+
+	max = MBW_MAX_GET(result);
 	return roundup((max * 100) / 64, 5);
 }
 
@@ -207,81 +211,116 @@ u64 bw_rdmsr(struct rdt_domain *d, int partid)
  * use pmg as monitor id
  * just use match_pardid only.
  */
-static u64 mbwu_read(struct rdt_domain *d, struct rdtgroup *g)
+static u64 cache_rdmon(struct rdt_domain *d, struct rdtgroup *g)
 {
+	int err;
+	u64 result;
+	struct sync_args args;
+	struct mpam_resctrl_dom *dom;
 	u32 mon = g->mon.mon;
+	unsigned long timeout;
 
-	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
-	return mpam_readl(d->base + MSMON_MBWU);
-}
+	/* Indicates whether allocating a monitor dynamically*/
+	if (is_mon_dyn(mon))
+		mon = alloc_mon();
 
-static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g)
-{
-	u32 mon = g->mon.mon;
+	args.partid = g->closid;
+	args.mon = mon;
+	args.pmg = g->mon.rmid;
+	args.match_pmg = true;
+	args.eventid = QOS_L3_OCCUP_EVENT_ID;
 
-	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
-	return mpam_readl(d->base + MSMON_CSU);
-}
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 
-static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable)
-{
-	u32 mon, partid, pmg, ctl, flt, cur_ctl, cur_flt;
-
-	mon = g->mon.mon;
-	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
-	if (enable) {
-		partid = g->closid;
-		pmg = g->mon.rmid;
-		ctl = MSMON_MATCH_PARTID|MSMON_MATCH_PMG;
-		flt = MSMON_CFG_FLT_SET(pmg, partid);
-		cur_flt = mpam_readl(d->base + MSMON_CFG_MBWU_FLT);
-		cur_ctl = mpam_readl(d->base + MSMON_CFG_MBWU_CTL);
-
-		if (cur_ctl != (ctl | MSMON_CFG_CTL_EN | MSMON_CFG_MBWU_TYPE) ||
-		    cur_flt != flt) {
-			mpam_writel(flt, d->base + MSMON_CFG_MBWU_FLT);
-			mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
-			mpam_writel(0, d->base + MSMON_MBWU);
-			ctl |= MSMON_CFG_CTL_EN;
-			mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
+	/**
+	 * We should judge if return is OK, it is possible affected
+	 * by NRDY bit.
+	 */
+	timeout = READ_ONCE(jiffies) + (1*SEC_CONVERSION);
+	do {
+		if (time_after(READ_ONCE(jiffies), timeout)) {
+			err = -ETIMEDOUT;
+			break;
 		}
-	} else {
-		ctl = 0;
-		mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
-	}
+		err = mpam_component_mon(dom->comp, &args, &result);
+		/* Currently just report it */
+		WARN_ON(err && (err != -EBUSY));
+	} while (err == -EBUSY);
+
+	if (is_mon_dyn(mon))
+		free_mon(mon);
+
+	return result;
+}
+/*
+ * use pmg as monitor id
+ * just use match_pardid only.
+ */
+static u64 mbw_rdmon(struct rdt_domain *d, struct rdtgroup *g)
+{
+	int err;
+	u64 result;
+	struct sync_args args;
+	struct mpam_resctrl_dom *dom;
+	u32 mon = g->mon.mon;
+	unsigned long timeout;
+
+	if (is_mon_dyn(mon))
+		mon = alloc_mon();
+
+	args.partid = g->closid;
+	args.mon = mon;
+	args.pmg = g->mon.rmid;
+	args.match_pmg = true;
+	args.eventid = QOS_L3_MBM_LOCAL_EVENT_ID;
+
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+
+	/**
+	 * We should judge if return is OK, it is possible affected
+	 * by NRDY bit.
+	 */
+	timeout = READ_ONCE(jiffies) + (1*SEC_CONVERSION);
+	do {
+		if (time_after(READ_ONCE(jiffies), timeout)) {
+			err = -ETIMEDOUT;
+			break;
+		}
+		err = mpam_component_mon(dom->comp, &args, &result);
+		/* Currently just report it */
+		WARN_ON(err && (err != -EBUSY));
+	} while (err == -EBUSY);
+
+	if (is_mon_dyn(mon))
+		free_mon(mon);
+	return result;
+}
+
+static int common_wrmon(struct rdt_domain *d, struct rdtgroup *g, bool enable)
+{
+	u64 result;
+	struct sync_args args;
+	struct mpam_resctrl_dom *dom;
+
+	if (!enable)
+		return -EINVAL;
+
+	args.partid = g->closid;
+	args.mon = g->mon.mon;
+	args.pmg = g->mon.rmid;
+	args.match_pmg = true;
+
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+
+	/**
+	 * We needn't judge if return is OK, we just want to configure
+	 * monitor info.
+	 */
+	mpam_component_mon(dom->comp, &args, &result);
 
 	return 0;
 }
 
-static int csu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable)
-{
-	u32 mon, partid, pmg, ctl, flt, cur_ctl, cur_flt;
-
-	mon = g->mon.mon;
-	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
-	if (enable) {
-		partid = g->closid;
-		pmg = g->mon.rmid;
-		ctl = MSMON_MATCH_PARTID|MSMON_MATCH_PMG;
-		flt = MSMON_CFG_FLT_SET(pmg, partid);
-		cur_flt = mpam_readl(d->base + MSMON_CFG_CSU_FLT);
-		cur_ctl = mpam_readl(d->base + MSMON_CFG_CSU_CTL);
-
-		if (cur_ctl != (ctl | MSMON_CFG_CTL_EN | MSMON_CFG_CSU_TYPE) ||
-		    cur_flt != flt) {
-			mpam_writel(flt, d->base + MSMON_CFG_CSU_FLT);
-			mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
-			mpam_writel(0, d->base + MSMON_CSU);
-			ctl |= MSMON_CFG_CTL_EN;
-			mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
-		}
-	} else {
-		ctl = 0;
-		mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
-	}
-
-	return 0;
-}
 /*
  * Trivial allocator for CLOSIDs. Since h/w only supports a small number,
  * we can keep a bitmap of free CLOSIDs in a single integer.
@@ -301,16 +340,10 @@ static int closid_free_map;
 
 void closid_init(void)
 {
-	struct resctrl_resource *r;
-	struct raw_resctrl_resource *rr;
 	int num_closid = INT_MAX;
 
-	for_each_resctrl_resource(r) {
-		if (r->alloc_enabled) {
-			rr = r->res;
-			num_closid = min(num_closid, (int)rr->num_partid);
-		}
-	}
+	num_closid = mpam_sysprops_num_partid();
+
 	closid_free_map = BIT_MASK(num_closid) - 1;
 
 	/* CLOSID 0 is always reserved for the default group */
@@ -340,20 +373,24 @@ void closid_free(int closid)
  */
 static __init void mpam_init_padding(void)
 {
+	int cl;
+	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
 	struct raw_resctrl_resource *rr;
-	int cl;
 
-	for_each_resctrl_resource(r) {
-		if (r->alloc_enabled) {
-			rr = (struct raw_resctrl_resource *)r->res;
-			cl = strlen(r->name);
-			if (cl > max_name_width)
-				max_name_width = cl;
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
 
-			if (rr->data_width > max_data_width)
-				max_data_width = rr->data_width;
-		}
+		cl = strlen(r->name);
+		if (cl > max_name_width)
+			max_name_width = cl;
+
+		rr = r->res;
+		if (!rr)
+			continue;
+		cl = rr->data_width;
+		if (cl > max_data_width)
+			max_data_width = cl;
 	}
 }
 
@@ -375,10 +412,13 @@ static int reset_all_ctrls(struct resctrl_resource *r)
 
 void resctrl_resource_reset(void)
 {
+	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
 
 	/*Put everything back to default values. */
-	for_each_resctrl_resource(r) {
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+
 		if (r->alloc_enabled)
 			reset_all_ctrls(r);
 	}
@@ -635,9 +675,12 @@ static int resctrl_num_partid_show(struct kernfs_open_file *of,
 				   struct seq_file *seq, void *v)
 {
 	struct resctrl_resource *r = of->kn->parent->priv;
-	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+	struct raw_resctrl_resource *rr = r->res;
+	u16 num_partid;
 
-	seq_printf(seq, "%d\n", rr->num_partid);
+	num_partid = rr->num_partid;
+
+	seq_printf(seq, "%d\n", num_partid);
 
 	return 0;
 }
@@ -646,9 +689,12 @@ static int resctrl_num_pmg_show(struct kernfs_open_file *of,
 				struct seq_file *seq, void *v)
 {
 	struct resctrl_resource *r = of->kn->parent->priv;
-	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+	struct raw_resctrl_resource *rr = r->res;
+	u16 num_pmg;
 
-	seq_printf(seq, "%d\n", rr->num_pmg);
+	num_pmg = rr->num_pmg;
+
+	seq_printf(seq, "%d\n", num_pmg);
 
 	return 0;
 }
@@ -657,9 +703,12 @@ static int resctrl_num_mon_show(struct kernfs_open_file *of,
 				struct seq_file *seq, void *v)
 {
 	struct resctrl_resource *r = of->kn->parent->priv;
-	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+	struct raw_resctrl_resource *rr = r->res;
+	u16 num_mon;
 
-	seq_printf(seq, "%d\n", rr->num_mon);
+	num_mon = rr->num_mon;
+
+	seq_printf(seq, "%d\n", num_mon);
 
 	return 0;
 }
@@ -912,7 +961,8 @@ int resctrl_ctrlmon_enable(struct kernfs_node *parent_kn,
 void resctrl_ctrlmon_disable(struct kernfs_node *kn_mondata,
 			    struct resctrl_group *prgrp)
 {
-	struct resctrl_resource *r;
+	struct mpam_resctrl_res *r;
+	struct resctrl_resource *resctrl_res;
 	struct raw_resctrl_resource *rr;
 	struct rdt_domain *dom;
 	int mon = prgrp->mon.mon;
@@ -921,12 +971,13 @@ void resctrl_ctrlmon_disable(struct kernfs_node *kn_mondata,
 	if (prgrp->type == RDTMON_GROUP)
 		return;
 
-	/* disable monitor before free mon */
-	for_each_resctrl_resource(r) {
-		if (r->mon_enabled) {
-			rr = (struct raw_resctrl_resource *)r->res;
+	for_each_supported_resctrl_exports(r) {
+		resctrl_res = &r->resctrl_res;
 
-			list_for_each_entry(dom, &r->domains, list) {
+		if (resctrl_res->mon_enabled) {
+			rr = (struct raw_resctrl_resource *)resctrl_res->res;
+
+			list_for_each_entry(dom, &resctrl_res->domains, list) {
 				rr->mon_write(dom, prgrp, false);
 			}
 		}
@@ -1161,4 +1212,86 @@ void __mpam_sched_in(void)
 		reg = PMG_SET(reg, pmg);
 		mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
 	}
+}
+
+static void
+mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
+			u32 resctrl_cfg, struct mpam_config *mpam_cfg)
+{
+	if (res == &mpam_resctrl_exports[RDT_RESOURCE_MC]) {
+		u64 range;
+
+		/* For MBA cfg is a percentage of .. */
+		if (res->resctrl_mba_uses_mbw_part) {
+			/* .. the number of bits we can set */
+			range = res->class->mbw_pbm_bits;
+			mpam_cfg->mbw_pbm = (resctrl_cfg * range) / MAX_MBA_BW;
+			mpam_set_feature(mpam_feat_mbw_part, &mpam_cfg->valid);
+		} else {
+			/* .. the number of fractions we can represent */
+			mpam_cfg->mbw_max = resctrl_cfg;
+
+			mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
+		}
+	} else {
+		/*
+		 * Nothing clever here as mpam_resctrl_pick_caches()
+		 * capped the size at RESCTRL_MAX_CBM.
+		 */
+		mpam_cfg->cpbm = resctrl_cfg;
+		mpam_set_feature(mpam_feat_cpor_part, &mpam_cfg->valid);
+	}
+}
+
+static void
+mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
+		struct rdt_domain *d, struct list_head *opt_list, u32 partid)
+{
+	struct mpam_resctrl_dom *dom;
+	struct mpam_resctrl_res *res;
+	struct mpam_config *mpam_cfg;
+	u32 resctrl_cfg = d->ctrl_val[partid];
+
+	lockdep_assert_held(&resctrl_group_mutex);
+
+	/* Out of range */
+	if (partid >= mpam_sysprops_num_partid())
+		return;
+
+	res = container_of(r, struct mpam_resctrl_res, resctrl_res);
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+
+	mpam_cfg = &dom->comp->cfg[partid];
+	if (WARN_ON_ONCE(!mpam_cfg))
+		return;
+
+	mpam_cfg->valid = 0;
+	if (partid != mpam_cfg->intpartid) {
+		mpam_cfg->intpartid = partid;
+		mpam_set_feature(mpam_feat_part_nrw, &mpam_cfg->valid);
+	}
+
+	mpam_update_from_resctrl_cfg(res, resctrl_cfg, mpam_cfg);
+}
+
+u16 mpam_resctrl_max_mon_num(void)
+{
+	struct mpam_resctrl_res *res;
+	u16 mon_num = USHRT_MAX;
+	struct raw_resctrl_resource *rr;
+
+	if (max_mon_num)
+		return max_mon_num;
+
+	for_each_supported_resctrl_exports(res) {
+		rr = res->resctrl_res.res;
+		mon_num = min(mon_num, rr->num_mon);
+	}
+
+	if (mon_num == USHRT_MAX)
+		mon_num = 0;
+
+	max_mon_num = mon_num;
+
+	return mon_num;
 }

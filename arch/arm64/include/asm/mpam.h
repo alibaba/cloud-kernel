@@ -118,54 +118,6 @@ DECLARE_STATIC_KEY_FALSE(resctrl_mon_enable_key);
 extern bool rdt_alloc_capable;
 extern bool rdt_mon_capable;
 
-enum rdt_group_type {
-	RDTCTRL_GROUP = 0,
-	RDTMON_GROUP,
-	RDT_NUM_GROUP,
-};
-
-/**
- * struct mongroup - store mon group's data in resctrl fs.
- * @mon_data_kn		kernlfs node for the mon_data directory
- * @parent:			parent rdtgrp
- * @crdtgrp_list:		child rdtgroup node list
- * @rmid:			rmid for this rdtgroup
- * @mon:			monnitor id
- */
-struct mongroup {
-	struct kernfs_node	*mon_data_kn;
-	struct rdtgroup		*parent;
-	struct list_head	crdtgrp_list;
-	u32			rmid;
-	u32			mon;
-	int			init;
-};
-
-/**
- * struct rdtgroup - store rdtgroup's data in resctrl file system.
- * @kn:				kernfs node
- * @resctrl_group_list:		linked list for all rdtgroups
- * @closid:			closid for this rdtgroup
- * #endif
- * @cpu_mask:			CPUs assigned to this rdtgroup
- * @flags:			status bits
- * @waitcount:			how many cpus expect to find this
- *				group when they acquire resctrl_group_mutex
- * @type:			indicates type of this rdtgroup - either
- *				monitor only or ctrl_mon group
- * @mon:			mongroup related data
- */
-struct rdtgroup {
-	struct kernfs_node	*kn;
-	struct list_head	resctrl_group_list;
-	u32			closid;
-	struct cpumask		cpu_mask;
-	int			flags;
-	atomic_t		waitcount;
-	enum rdt_group_type	type;
-	struct mongroup		mon;
-};
-
 extern int max_name_width, max_data_width;
 
 /* rdtgroup.flags */
@@ -284,15 +236,18 @@ struct raw_resctrl_resource {
 	u16                 pri_wd;
 	u16                 hdl_wd;
 
-	void (*msr_update)	(struct rdt_domain *d, int partid);
-	u64  (*msr_read)	(struct rdt_domain *d, int partid);
+	void (*msr_update)(struct resctrl_resource *r, struct rdt_domain *d,
+					struct list_head *opt_list, int partid);
+	u64 (*msr_read)(struct rdt_domain *d, int partid);
+
 	int			data_width;
 	const char		*format_str;
-	int (*parse_ctrlval)	(char *buf, struct raw_resctrl_resource *r,
-				 struct rdt_domain *d);
-	int			num_mon;
-	u64 (*mon_read)		(struct rdt_domain *d, struct rdtgroup *g);
-	int (*mon_write)	(struct rdt_domain *d, struct rdtgroup *g, bool enable);
+	int (*parse_ctrlval)(char *buf, struct raw_resctrl_resource *r,
+				struct rdt_domain *d);
+
+	u16                num_mon;
+	u64 (*mon_read)(struct rdt_domain *d, struct rdtgroup *g);
+	int (*mon_write)(struct rdt_domain *d, struct rdtgroup *g, bool enable);
 };
 
 int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
@@ -320,5 +275,7 @@ void free_mon(u32 mon);
 int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
 				  struct rdtgroup *prgrp,
 				  struct kernfs_node **dest_kn);
+
+u16 mpam_resctrl_max_mon_num(void);
 
 #endif /* _ASM_ARM64_MPAM_H */

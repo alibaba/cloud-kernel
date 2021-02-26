@@ -341,6 +341,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->fflags = RFTYPE_RES_MC;
 		r->mbw.delay_linear = true;
 		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_MC);
+		rr->num_mon = class->num_mbwu_mon;
 		r->res = rr;
 
 		if (mpam_has_feature(mpam_feat_mbw_part, class->features)) {
@@ -385,6 +386,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L3].class) {
 		r->rid = RDT_RESOURCE_L3;
 		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L3);
+		rr->num_mon = class->num_csu_mon;
 		r->res = rr;
 		r->fflags = RFTYPE_RES_CACHE;
 		r->name = "L3";
@@ -417,6 +419,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L2].class) {
 		r->rid = RDT_RESOURCE_L2;
 		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L2);
+		rr->num_mon = class->num_csu_mon;
 		r->res = rr;
 		r->fflags = RFTYPE_RES_CACHE;
 		r->name = "L2";
@@ -488,4 +491,14 @@ int mpam_resctrl_setup(void)
 		return -EOPNOTSUPP;
 
 	return 0;
+}
+
+struct resctrl_resource *
+mpam_resctrl_get_resource(enum resctrl_resource_level level)
+{
+	if (level >= RDT_NUM_RESOURCES ||
+		!mpam_resctrl_exports[level].class)
+		return NULL;
+
+	return &mpam_resctrl_exports[level].resctrl_res;
 }
