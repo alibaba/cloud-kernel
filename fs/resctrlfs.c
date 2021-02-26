@@ -596,7 +596,12 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 
 	if (resctrl_mon_capable) {
 #ifdef CONFIG_ARM64
-		resctrl_mkdir_ctrlmon_mondata(kn, rdtgrp, &rdtgrp->mon.mon_data_kn);
+		ret = resctrl_mkdir_ctrlmon_mondata(kn, rdtgrp, &rdtgrp->mon.mon_data_kn);
+		if (ret < 0) {
+			rdt_last_cmd_puts("out of monitors or PMGs\n");
+			goto out_destroy;
+		}
+
 #else
 		ret = alloc_mon_id();
 		if (ret < 0) {
