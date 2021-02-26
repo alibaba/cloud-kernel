@@ -449,6 +449,33 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 	}
 
 	usage = rr->mon_read(d, md.priv);
+	/*
+	 * if this rdtgroup is ctrlmon group, also collect it's
+	 * mon groups' monitor data.
+	 */
+	if (rdtgrp->type == RDTCTRL_GROUP) {
+		struct list_head *head;
+		struct rdtgroup *entry;
+		hw_closid_t hw_closid;
+		enum resctrl_conf_type type = CDP_CODE;
+
+		resctrl_cdp_map(clos, rdtgrp->closid.reqpartid,
+			CDP_CODE, hw_closid);
+		/* CDP_CODE share the same closid with CDP_BOTH */
+		if (md.u.partid != hw_closid_val(hw_closid))
+			type = CDP_DATA;
+
+		head = &rdtgrp->mon.crdtgrp_list;
+		list_for_each_entry(entry, head, mon.crdtgrp_list) {
+			resctrl_cdp_map(clos, entry->closid.reqpartid,
+				type, hw_closid);
+			md.u.partid = hw_closid_val(hw_closid);
+			md.u.pmg = entry->mon.rmid;
+			md.u.mon = entry->mon.mon;
+			usage += rr->mon_read(d, md.priv);
+		}
+	}
+
 	seq_printf(m, "%llu\n", usage);
 
 out:
