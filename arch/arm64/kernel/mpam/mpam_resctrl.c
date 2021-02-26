@@ -86,9 +86,6 @@ static inline void mpam_node_assign_val(struct mpam_node *n,
 	n->addr = hwpage_address;
 	n->component_id = component_id;
 	n->cpus_list = "0";
-
-	if (n->type == MPAM_RESOURCE_MC)
-		n->default_ctrl = MBA_MAX_WD;
 }
 
 #define MPAM_NODE_NAME_SIZE (10)
@@ -308,7 +305,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 	[MPAM_RESOURCE_MC] = {
 		.msr_update		= bw_wrmsr,
 		.msr_read		= bw_rdmsr,
-		.parse_ctrlval		= parse_bw,	/* [FIXME] add parse_bw() helper */
+		.parse_ctrlval		= parse_bw,	/* add parse_bw() helper */
 		.format_str		= "%d=%0*d",
 		.mon_read		= mbwu_read,
 		.mon_write		= mbwu_write,
@@ -368,7 +365,6 @@ u64 bw_rdmsr(struct rdt_domain *d, int partid)
 }
 
 /*
- * [FIXME]
  * use pmg as monitor id
  * just use match_pardid only.
  */
@@ -505,7 +501,7 @@ static int mpam_online_cpu(unsigned int cpu)
 	return 0;
 }
 
-/* [FIXME] remove related resource when cpu offline */
+/* remove related resource when cpu offline */
 static int mpam_offline_cpu(unsigned int cpu)
 {
 	return 0;
@@ -547,20 +543,6 @@ void post_resctrl_mount(void)
 
 static int reset_all_ctrls(struct resctrl_resource *r)
 {
-	struct raw_resctrl_resource *rr;
-	struct rdt_domain *d;
-	int partid;
-
-	rr = (struct raw_resctrl_resource *)r->res;
-	for (partid = 0; partid < rr->num_partid; partid++) {
-		list_for_each_entry(d, &r->domains, list) {
-			d->new_ctrl = rr->default_ctrl;
-			d->ctrl_val[partid] = rr->default_ctrl;
-			d->have_new_ctrl = true;
-			rr->msr_update(d, partid);
-		}
-	}
-
 	return 0;
 }
 
@@ -858,7 +840,7 @@ static int resctrl_num_mon_show(struct kernfs_open_file *of,
 int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 		   cpumask_var_t tmpmask)
 {
-	rdt_last_cmd_puts("temporarily unsupported write cpus on mon_groups\n");
+	pr_info("unsupported on mon_groups, please use ctrlmon groups\n");
 	return -EINVAL;
 }
 
@@ -1143,12 +1125,11 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 
 	if (!rdtgrp) {
 		ret = -ENOENT;
-		rdt_last_cmd_puts("directory was removed\n");
 		goto unlock;
 	}
 
 	if ((rdtgrp->flags & RDT_CTRLMON) && !ctrlmon) {
-		/* [FIXME] disable & remove mon_data dir */
+		/* disable & remove mon_data dir */
 		rdtgrp->flags &= ~RDT_CTRLMON;
 		resctrl_ctrlmon_disable(rdtgrp->mon.mon_data_kn, rdtgrp);
 	} else if (!(rdtgrp->flags & RDT_CTRLMON) && ctrlmon) {
@@ -1157,10 +1138,6 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 		if (!ret)
 			rdtgrp->flags |= RDT_CTRLMON;
 	} else {
-		if (ctrlmon)
-			rdt_last_cmd_printf("ctrlmon has been enabled\n");
-		else
-			rdt_last_cmd_printf("ctrlmon has been disabled\n");
 		ret = -ENOENT;
 	}
 
