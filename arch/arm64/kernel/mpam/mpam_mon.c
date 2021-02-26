@@ -90,20 +90,28 @@ void mon_init(void)
 
 int alloc_mon(void)
 {
-	u32 mon = ffs(mon_free_map);
+	u32 mon = 0;
+	u32 times, flag;
 
+	hw_alloc_times_validate(mon, times, flag);
+
+	mon = ffs(mon_free_map);
 	if (mon == 0)
 		return -ENOSPC;
 
 	mon--;
-	mon_free_map &= ~(1 << mon);
+	mon_free_map &= ~(GENMASK(mon, mon + times - 1));
 
 	return mon;
 }
 
 void free_mon(u32 mon)
 {
-	mon_free_map |= 1 << mon;
+	u32 times, flag;
+
+	hw_alloc_times_validate(mon, times, flag);
+
+	mon_free_map |= GENMASK(mon, mon + times - 1);
 }
 
 /*
