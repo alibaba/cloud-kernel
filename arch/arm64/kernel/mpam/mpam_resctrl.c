@@ -967,8 +967,44 @@ static int resctrl_num_mon_show(struct kernfs_open_file *of,
 int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 		   cpumask_var_t tmpmask)
 {
-	pr_info("unsupported on mon_groups, please use ctrlmon groups\n");
-	return -EINVAL;
+	struct rdtgroup *prgrp = rdtgrp->mon.parent, *crgrp;
+	struct list_head *head;
+
+	/* Check whether cpus belong to parent ctrl group */
+	cpumask_andnot(tmpmask, newmask, &prgrp->cpu_mask);
+	if (cpumask_weight(tmpmask)) {
+		rdt_last_cmd_puts("can only add CPUs to mongroup that belong to parent\n");
+		return -EINVAL;
+	}
+
+	/* Check whether cpus are dropped from this group */
+	cpumask_andnot(tmpmask, &rdtgrp->cpu_mask, newmask);
+	if (cpumask_weight(tmpmask)) {
+		/* Give any dropped cpus to parent rdtgroup */
+		cpumask_or(&prgrp->cpu_mask, &prgrp->cpu_mask, tmpmask);
+		update_closid_rmid(tmpmask, prgrp);
+	}
+
+	/*
+	 * If we added cpus, remove them from previous group that owned them
+	 * and update per-cpu rmid
+	 */
+	cpumask_andnot(tmpmask, newmask, &rdtgrp->cpu_mask);
+	if (cpumask_weight(tmpmask)) {
+		head = &prgrp->mon.crdtgrp_list;
+		list_for_each_entry(crgrp, head, mon.crdtgrp_list) {
+			if (crgrp == rdtgrp)
+				continue;
+			cpumask_andnot(&crgrp->cpu_mask, &crgrp->cpu_mask,
+				tmpmask);
+		}
+		update_closid_rmid(tmpmask, rdtgrp);
+	}
+
+	/* Done pushing/pulling - update this group with new mask */
+	cpumask_copy(&rdtgrp->cpu_mask, newmask);
+
+	return 0;
 }
 
 static ssize_t resctrl_group_cpus_write(struct kernfs_open_file *of,
