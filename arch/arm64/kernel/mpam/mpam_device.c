@@ -1599,19 +1599,25 @@ static void mpam_component_read_mpamcfg(void *_ctx)
 			val = mpam_read_reg(dev, MPAMCFG_MBW_MAX);
 			val = MBW_MAX_GET_HDL(val);
 			break;
-		case QOS_CAT_PRI_EVENT_ID:
-		case QOS_MBA_PRI_EVENT_ID:
-			if (mpam_has_feature(mpam_feat_intpri_part, dev->features))
-				intpri = MPAMCFG_INTPRI_GET(val);
-			if (mpam_has_feature(mpam_feat_dspri_part, dev->features))
-				dspri = MPAMCFG_DSPRI_GET(val);
-			if (!mpam_has_feature(mpam_feat_intpri_part_0_low,
-				dev->features))
+		case QOS_CAT_INTPRI_EVENT_ID:
+		case QOS_MBA_INTPRI_EVENT_ID:
+			if (!mpam_has_feature(mpam_feat_intpri_part, dev->features))
+				break;
+			val = mpam_read_reg(dev, MPAMCFG_PRI);
+			intpri = MPAMCFG_INTPRI_GET(val);
+			if (!mpam_has_feature(mpam_feat_intpri_part_0_low, dev->features))
 				intpri = GENMASK(dev->intpri_wd - 1, 0) & ~intpri;
-			if (!mpam_has_feature(mpam_feat_dspri_part_0_low,
-				dev->features))
-				dspri = GENMASK(dev->intpri_wd - 1, 0) & ~dspri;
-			val = (dspri > intpri) ? dspri : intpri;
+			val = intpri;
+			break;
+		case QOS_CAT_DSPRI_EVENT_ID:
+		case QOS_MBA_DSPRI_EVENT_ID:
+			if (!mpam_has_feature(mpam_feat_dspri_part, dev->features))
+				break;
+			val = mpam_read_reg(dev, MPAMCFG_PRI);
+			dspri = MPAMCFG_DSPRI_GET(val);
+			if (!mpam_has_feature(mpam_feat_dspri_part_0_low, dev->features))
+				dspri = GENMASK(dev->dspri_wd - 1, 0) & ~dspri;
+			val = dspri;
 			break;
 		default:
 			break;

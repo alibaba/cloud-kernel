@@ -292,57 +292,60 @@ common_wrmsr(struct resctrl_resource *r, struct rdt_domain *d,
 
 static u64 cache_rdmsr(struct rdt_domain *d, struct msr_param *para)
 {
-	u32 result;
+	u32 result, intpri, dspri;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
 
 	args.closid = *para->closid;
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 
 	switch (para->type) {
 	case SCHEMA_COMM:
 		args.eventid = QOS_CAT_CPBM_EVENT_ID;
+		mpam_component_get_config(dom->comp, &args, &result);
 		break;
 	case SCHEMA_PRI:
-		args.eventid = QOS_CAT_PRI_EVENT_ID;
+		args.eventid = QOS_CAT_INTPRI_EVENT_ID;
+		mpam_component_get_config(dom->comp, &args, &intpri);
+		args.eventid = QOS_MBA_DSPRI_EVENT_ID;
+		mpam_component_get_config(dom->comp, &args, &dspri);
+		result = (intpri > dspri) ? intpri : dspri;
 		break;
 	default:
 		return 0;
 	}
-
-	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
-	mpam_component_get_config(dom->comp, &args, &result);
 
 	return result;
 }
 
 static u64 mbw_rdmsr(struct rdt_domain *d, struct msr_param *para)
 {
-	u32 result;
+	u32 result, intpri, dspri;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
 
 	args.closid = *para->closid;
+	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 
-	/*
-	 * software default set memory bandwidth by
-	 * MPAMCFG_MBW_MAX but not MPAMCFG_MBW_PBM.
-	 */
 	switch (para->type) {
 	case SCHEMA_COMM:
 		args.eventid = QOS_MBA_MAX_EVENT_ID;
+		mpam_component_get_config(dom->comp, &args, &result);
+		break;
+	case SCHEMA_PRI:
+		args.eventid = QOS_MBA_INTPRI_EVENT_ID;
+		mpam_component_get_config(dom->comp, &args, &intpri);
+		args.eventid = QOS_MBA_DSPRI_EVENT_ID;
+		mpam_component_get_config(dom->comp, &args, &dspri);
+		result = (intpri > dspri) ? intpri : dspri;
 		break;
 	case SCHEMA_HDL:
 		args.eventid = QOS_MBA_HDL_EVENT_ID;
-		break;
-	case SCHEMA_PRI:
-		args.eventid = QOS_MBA_PRI_EVENT_ID;
+		mpam_component_get_config(dom->comp, &args, &result);
 		break;
 	default:
 		return 0;
 	}
-
-	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
-	mpam_component_get_config(dom->comp, &args, &result);
 
 	return result;
 }

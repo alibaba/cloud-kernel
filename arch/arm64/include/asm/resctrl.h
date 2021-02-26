@@ -23,10 +23,12 @@ enum rdt_event_id {
 	QOS_L3_MBM_LOCAL_EVENT_ID       = 0x03,
 
 	QOS_CAT_CPBM_EVENT_ID           = 0x04,
-	QOS_CAT_PRI_EVENT_ID            = 0x05,
-	QOS_MBA_MAX_EVENT_ID            = 0x06,
-	QOS_MBA_PRI_EVENT_ID            = 0x07,
-	QOS_MBA_HDL_EVENT_ID            = 0x08,
+	QOS_CAT_INTPRI_EVENT_ID         = 0x05,
+	QOS_CAT_DSPRI_EVENT_ID          = 0x06,
+	QOS_MBA_MAX_EVENT_ID            = 0x07,
+	QOS_MBA_INTPRI_EVENT_ID         = 0x08,
+	QOS_MBA_DSPRI_EVENT_ID          = 0x09,
+	QOS_MBA_HDL_EVENT_ID            = 0x0a,
 	/* Must be the last */
 	RESCTRL_NUM_EVENT_IDS,
 };
