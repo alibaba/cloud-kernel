@@ -280,6 +280,56 @@ static struct acpi_pptt_processor *acpi_find_processor_node(struct acpi_table_he
 
 	return NULL;
 }
+
+
+/*
+ * acpi_pptt_find_cache_backwards() - Given a PPTT cache find a processor node
+ * that points to it. This lets us find a cacheinfo node by fw_token, but
+ * is totally broken as many processor node may point at the same PPTT
+ * cache indicating different instances of the cache. (e.g. all the L1
+ * caches are the same shape, but they aren't the same cache).
+ * This only works if you cooked your PPTT table to look like this.
+ */
+struct acpi_pptt_processor *
+acpi_pptt_find_cache_backwards(struct acpi_table_header *table_hdr,
+			       struct acpi_pptt_cache *cache)
+{
+	struct acpi_pptt_processor *cpu_node;
+	struct acpi_subtable_header *entry;
+	struct acpi_subtable_header *res;
+	unsigned long table_end;
+	u32 proc_sz;
+	int i;
+
+	table_end = (unsigned long)table_hdr + table_hdr->length;
+	entry = ACPI_ADD_PTR(struct acpi_subtable_header, table_hdr,
+			     sizeof(struct acpi_table_pptt));
+	proc_sz = sizeof(struct acpi_pptt_processor *);
+
+	/* find the processor structure which points at  with this cpuid */
+	while ((unsigned long)entry + proc_sz < table_end) {
+		if (entry->length == 0) {
+			pr_warn("Invalid zero length subtable\n");
+			break;
+		}
+
+		cpu_node = (struct acpi_pptt_processor *)entry;
+		entry = ACPI_ADD_PTR(struct acpi_subtable_header, entry,
+				     entry->length);
+
+		if (cpu_node->header.type != ACPI_PPTT_TYPE_PROCESSOR)
+			continue;
+
+		for (i = 0; i < cpu_node->number_of_priv_resources; i++) {
+			res = acpi_get_pptt_resource(table_hdr, cpu_node, i);
+			if (&cache->header == res)
+				return cpu_node;
+		}
+	}
+
+	return NULL;
+}
+
 /**
  * acpi_validate_cache_node() - Given an offset in the table, check this is
  * a cache node.
