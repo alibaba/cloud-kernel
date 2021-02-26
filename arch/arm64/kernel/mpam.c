@@ -67,98 +67,38 @@ char *mpam_types_str[] = {
 	"MPAM_RESOURCE_MC",
 };
 
+/*
+ * Hi1620 2P Base Address Map
+ *
+ * AFF2 | NODE | DIE   | Base Address
+ * ------------------------------------
+ *   01 |    0 | P0 TB | 0x000098xxxxxx
+ *   03 |    1 | P0 TA | 0x000090xxxxxx
+ *   05 |    2 | P1 TB | 0x400098xxxxxx
+ *   07 |    3 | P2 TA | 0x400090xxxxxx
+ *
+ *   AFF2: MPIDR.AFF2
+ */
+
+#define MPAM_BASE(suffix, offset) ((suffix) << 24 | (offset) << 16)
+#define MPAM_NODE(n, t, suffix, offset)			\
+	{						\
+		.name	= #n,				\
+		.type	= t,				\
+		.addr	= MPAM_BASE(suffix, (offset)),	\
+		.cpus_list = "0",			\
+	}
+
 struct mpam_node mpam_node_all[] = {
-	/* P0 DIE 0: cluster 0 */
-	{
-		.name			= "L3T0",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x90390000,
-		.cpus_list              = "0-3",
-		.default_ctrl		= 0x7fff,
-	},
+	MPAM_NODE(L3TALL0, MPAM_RESOURCE_CACHE, 0x000098ULL, 0xB9),
+	MPAM_NODE(L3TALL1, MPAM_RESOURCE_CACHE, 0x000090ULL, 0xB9),
+	MPAM_NODE(L3TALL2, MPAM_RESOURCE_CACHE, 0x400098ULL, 0xB9),
+	MPAM_NODE(L3TALL3, MPAM_RESOURCE_CACHE, 0x400090ULL, 0xB9),
 
-	/* P0 DIE 0: cluster 1 */
-	{
-		.name			= "L3T1",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x903a0000,
-		.cpus_list              = "4-7",
-		.default_ctrl		= 0x7fff,
-	},
-
-	/* P0 DIE 0: cluster 2 */
-	{
-		.name			= "L3T2",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x903b0000,
-		.cpus_list              = "8-11",
-		.default_ctrl		= 0x7fff,
-	},
-
-	/* P0 DIE 0: cluster 3 */
-	{
-		.name			= "L3T3",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x903c0000,
-		.cpus_list              = "12-15",
-		.default_ctrl		= 0x7fff,
-	},
-#if 0	// run emu we run 6 clusters 24 cores
-	{
-		.name			= "L3T4",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x903d0000,
-		.cpus_list              = "16-19",
-	},
-	{
-		.name			= "L3T5",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x903e0000,
-		.cpus_list              = "20-23",
-	},
-	{
-		.name			= "L3T6",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x903f0000,
-		.cpus_list              = "24-27",
-	},
-	{
-		.name			= "L3T7",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x90400000,
-		.cpus_list              = "28-31",
-	},
-	{
-		.name			= "L3TALL",
-		.type                   = MPAM_RESOURCE_CACHE,
-		.addr                   = 0x90B90000,
-		.cpus_list              = "0-23",
-		.default_ctrl		= 0x7fff,
-	},
-#endif
-
-	/* P0 DIE 0: HHA0 */
-	{
-		.name			= "HHA0",
-		.type                   = MPAM_RESOURCE_MC,
-		.addr                   = 0x90410000,
-		.cpus_list              = "0-3",
-	},
-
-	/* P0 DIE 0: HHA1 */
-	{
-		.name			= "HHA1",
-		.type                   = MPAM_RESOURCE_MC,
-		.addr                   = 0x90420000,
-		.cpus_list              = "0-3",
-	},
-	{
-		.name			= "HHALL",
-		.type                   = MPAM_RESOURCE_MC,
-		.addr                   = 0x90C10000,
-		.cpus_list              = "0-3",
-	},
-	/* other mpam nodes ... */
+	MPAM_NODE(HHAALL0, MPAM_RESOURCE_MC, 0x000098ULL, 0xC1),
+	MPAM_NODE(HHAALL1, MPAM_RESOURCE_MC, 0x000090ULL, 0xC1),
+	MPAM_NODE(HHAALL2, MPAM_RESOURCE_MC, 0x400098ULL, 0xC1),
+	MPAM_NODE(HHAALL3, MPAM_RESOURCE_MC, 0x400090ULL, 0xC1),
 };
 
 int mpam_nodes_init(void)
