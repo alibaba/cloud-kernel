@@ -200,7 +200,7 @@ static int resctrl_group_create_info_dir(struct kernfs_node *parent_kn)
 	for_each_resctrl_resource(r) {
 		if (r->mon_enabled) {
 			fflags =  r->fflags | RF_MON_INFO;
-			sprintf(name, "%s_MON", r->name);
+			snprintf(name, sizeof(name), "%s_MON", r->name);
 			ret = resctrl_group_mkdir_info_resdir(r, name, fflags);
 			if (ret)
 				goto out_destroy;
