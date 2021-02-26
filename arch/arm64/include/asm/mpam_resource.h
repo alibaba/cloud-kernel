@@ -101,7 +101,7 @@
 /*
  * Set MPAMCFG_PART_SEL internal bit
  */
-#define PART_SEL_SET_INTERNAL(r)    (r | BIT(16))
+#define MPAMCFG_PART_SEL_INTERNAL   BIT(16)
 
 /* MPAM_ESR */
 #define MPAMF_ESR_ERRCODE_MASK  ((BIT(4) - 1) << 24)

@@ -743,7 +743,7 @@ static void mpam_reset_device_config(struct mpam_component *comp,
 	lockdep_assert_held(&dev->lock);
 
 	if (mpam_has_feature(mpam_feat_part_nrw, dev->features))
-		partid = PART_SEL_SET_INTERNAL(partid);
+		partid = partid | MPAMCFG_PART_SEL_INTERNAL;
 	mpam_write_reg(dev, MPAMCFG_PART_SEL, partid);
 	wmb(); /* subsequent writes must be applied to our new partid */
 
@@ -1110,6 +1110,25 @@ static void mpam_device_narrow_map(struct mpam_device *dev, u32 partid,
 	mpam_write_reg(dev, MPAMCFG_INTPARTID, intpartid);
 }
 
+/*
+ * partid should be narrowed to intpartid if this feature implemented,
+ * before writing to register MPAMCFG_PART_SEL should we check this.
+ */
+static int try_to_narrow_device_intpartid(struct mpam_device *dev,
+			u32 *partid, u32 intpartid)
+{
+	if (!mpam_has_part_sel(dev->features))
+		return -EINVAL;
+
+	if (mpam_has_feature(mpam_feat_part_nrw, dev->features)) {
+		mpam_device_narrow_map(dev, *partid, intpartid);
+		/* narrowing intpartid success, then set 16 bit to 1*/
+		*partid = intpartid | MPAMCFG_PART_SEL_INTERNAL;
+	}
+
+	return 0;
+}
+
 static int
 mpam_device_config(struct mpam_device *dev, struct sd_closid *closid,
 					struct mpam_config *cfg)
@@ -1127,19 +1146,8 @@ mpam_device_config(struct mpam_device *dev, struct sd_closid *closid,
 
 	lockdep_assert_held(&dev->lock);
 
-	if (!mpam_has_part_sel(dev->features))
+	if (try_to_narrow_device_intpartid(dev, &partid, intpartid))
 		return -EINVAL;
-
-	/*
-	 * intpartid should be narrowed the first time,
-	 * upstream(resctrl) keep this order
-	 */
-	if (mpam_has_feature(mpam_feat_part_nrw, dev->features)) {
-		if (cfg && mpam_has_feature(mpam_feat_part_nrw, cfg->valid))
-			mpam_device_narrow_map(dev, partid, intpartid);
-		/* intpartid success, set 16 bit to 1*/
-		partid = PART_SEL_SET_INTERNAL(intpartid);
-	}
 
 	mpam_write_reg(dev, MPAMCFG_PART_SEL, partid);
 	wmb(); /* subsequent writes must be applied to our new partid */
@@ -1376,7 +1384,7 @@ static void mpam_component_read_mpamcfg(void *_ctx)
 	struct sync_args *args = ctx->args;
 	u64 val;
 	u16 reg;
-	u32 partid;
+	u32 partid, intpartid;
 
 	if (!args)
 		return;
@@ -1384,6 +1392,7 @@ static void mpam_component_read_mpamcfg(void *_ctx)
 	reg = args->reg;
 
 	partid = args->closid.reqpartid;
+	intpartid = args->closid.intpartid;
 
 	list_for_each_entry(dev, &comp->devices, comp_list) {
 		if (!cpumask_test_cpu(smp_processor_id(),
@@ -1391,13 +1400,11 @@ static void mpam_component_read_mpamcfg(void *_ctx)
 			continue;
 
 		spin_lock_irqsave(&dev->lock, flags);
-		if (mpam_has_feature(mpam_feat_part_nrw, dev->features)) {
-			/*
-			 * partid is possible reqpartid or intpartid,
-			 * if narrow enabled, it should be intpartid.
-			 */
-			partid = PART_SEL_SET_INTERNAL(args->closid.intpartid);
+		if (try_to_narrow_device_intpartid(dev, &partid, intpartid)) {
+			spin_unlock_irqrestore(&dev->lock, flags);
+			return;
 		}
+
 		mpam_write_reg(dev, MPAMCFG_PART_SEL, partid);
 		wmb();
 		val = mpam_read_reg(dev, reg);
