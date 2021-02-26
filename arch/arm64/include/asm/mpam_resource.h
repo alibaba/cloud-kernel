@@ -75,6 +75,11 @@
 #define MBW_MAX_BWA_FRACT(w)        GENMASK(w - 1, 0)
 #define MBW_MAX_SET(v)      (MBW_MAX_HARDLIM|((v) << (16 - BWA_WD)))
 #define MBW_MAX_GET(v)      (((v) & MBW_MAX_MASK) >> (16 - BWA_WD))
+#define MBW_MAX_SET_HDL(r)          (r | MBW_MAX_HARDLIM)
+/* MPAMCFG_MBW_PROP */
+#define MBW_PROP_HARDLIM            BIT(31)
+#define MBW_PROP_SET_HDL(r)         (r | MBW_PROP_HARDLIM)
+/* MPAMCFG_MBW_MAX */
 
 #define MSMON_MATCH_PMG     BIT(17)
 #define MSMON_MATCH_PARTID  BIT(16)
@@ -90,6 +95,10 @@
  * Set MPAMCFG_PART_SEL internal bit
  */
 #define PART_SEL_SET_INTERNAL(r)    (r | BIT(16))
+
+/* MPAM_ESR */
+#define MPAMF_ESR_ERRCODE_MASK  ((BIT(4) - 1) << 24)
+
 /*
  * Size of the memory mapped registers: 4K of feature page then 2 x 4K
  * bitmap registers

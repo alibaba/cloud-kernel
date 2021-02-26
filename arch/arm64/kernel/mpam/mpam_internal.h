@@ -3,6 +3,7 @@
 #define _ASM_ARM64_MPAM_INTERNAL_H
 
 #include <linux/resctrlfs.h>
+#include <asm/resctrl.h>
 
 typedef u32 mpam_features_t;
 
@@ -30,6 +31,31 @@ struct mpam_resctrl_res {
 	bool resctrl_mba_uses_mbw_part;
 
 	struct resctrl_resource resctrl_res;
+};
+
+struct sync_args {
+	u8  domid;
+	u8  pmg;
+	u32 partid;
+	u32 mon;
+	bool match_pmg;
+	enum rdt_event_id eventid;
+	/*for reading msr*/
+	u16 reg;
+};
+
+struct mpam_device_sync {
+	struct mpam_component *comp;
+
+	struct sync_args *args;
+
+	bool config_mon;
+	atomic64_t mon_value;
+
+	struct cpumask updated_on;
+
+	atomic64_t cfg_value;
+	int error;
 };
 
 #define for_each_resctrl_exports(r) \
@@ -115,6 +141,26 @@ static inline void mpam_clear_feature(enum mpam_device_features feat,
 }
 
 #define MPAM_ARCHITECTURE_V1    0x10
+
+static inline bool mpam_has_part_sel(mpam_features_t supported)
+{
+	mpam_features_t mask = (1<<mpam_feat_ccap_part) |
+		(1<<mpam_feat_cpor_part) | (1<<mpam_feat_mbw_part) |
+		(1<<mpam_feat_mbw_max) | (1<<mpam_feat_intpri_part) |
+		(1<<mpam_feat_dspri_part);
+	/* or HAS_PARTID_NRW or HAS_IMPL_IDR */
+
+	return supported & mask;
+}
+
+/**
+ * Reset component devices if args is NULL
+ */
+int mpam_component_config(struct mpam_component *comp,
+			struct sync_args *args);
+
+int mpam_component_mon(struct mpam_component *comp,
+			struct sync_args *args, u64 *result);
 
 u16 mpam_sysprops_num_partid(void);
 u16 mpam_sysprops_num_pmg(void);

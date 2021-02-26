@@ -742,6 +742,7 @@ static void mpam_reset_device_config(struct mpam_component *comp,
 				dev->mbw_pbm_bits);
 	if (mpam_has_feature(mpam_feat_mbw_max, dev->features)) {
 		mbw_max = MBW_MAX_SET(MBW_MAX_BWA_FRACT(dev->bwa_wd));
+		mbw_max = MBW_MAX_SET_HDL(mbw_max);
 		mpam_write_reg(dev, MPAMCFG_MBW_MAX, mbw_max);
 	}
 	if (mpam_has_feature(mpam_feat_mbw_min, dev->features)) {
@@ -944,4 +945,376 @@ u16 mpam_sysprops_num_pmg(void)
 {
 	/* At least one pmg for system width */
 	return mpam_sysprops.max_pmg + 1;
+}
+
+static u32 mpam_device_read_csu_mon(struct mpam_device *dev,
+			struct sync_args *args)
+{
+	u16 mon;
+	u32 clt, flt, cur_clt, cur_flt;
+
+	mon = args->mon;
+
+	mpam_write_reg(dev, MSMON_CFG_MON_SEL, mon);
+	wmb(); /* subsequent writes must be applied to this mon */
+
+	/*
+	 * We don't bother with capture as we don't expose a way of measuring
+	 * multiple partid:pmg with a single capture.
+	 */
+	clt = MSMON_CFG_CTL_MATCH_PARTID | MSMON_CFG_CSU_TYPE;
+	if (args->match_pmg)
+		clt |= MSMON_CFG_CTL_MATCH_PMG;
+	flt = args->partid |
+		(args->pmg << MSMON_CFG_CSU_FLT_PMG_SHIFT);
+
+	/*
+	 * We read the existing configuration to avoid re-writing the same
+	 * values.
+	 */
+	cur_flt = mpam_read_reg(dev, MSMON_CFG_CSU_FLT);
+	cur_clt = mpam_read_reg(dev, MSMON_CFG_CSU_CTL);
+
+	if (cur_flt != flt || cur_clt != (clt | MSMON_CFG_CTL_EN)) {
+		mpam_write_reg(dev, MSMON_CFG_CSU_FLT, flt);
+
+		/*
+		 * Write the ctl with the enable bit cleared, reset the
+		 * counter, then enable counter.
+		 */
+		mpam_write_reg(dev, MSMON_CFG_CSU_CTL, clt);
+		wmb();
+
+		mpam_write_reg(dev, MSMON_CSU, 0);
+		wmb();
+
+		clt |= MSMON_CFG_CTL_EN;
+		mpam_write_reg(dev, MSMON_CFG_CSU_CTL, clt);
+		wmb();
+	}
+
+	return mpam_read_reg(dev, MSMON_CSU);
+}
+
+static u32 mpam_device_read_mbwu_mon(struct mpam_device *dev,
+			struct sync_args *args)
+{
+	u16 mon;
+	u32 clt, flt, cur_clt, cur_flt;
+
+	mon = args->mon;
+
+	mpam_write_reg(dev, MSMON_CFG_MON_SEL, mon);
+	wmb(); /* subsequent writes must be applied to this mon */
+
+	/*
+	 * We don't bother with capture as we don't expose a way of measuring
+	 * multiple partid:pmg with a single capture.
+	 */
+	clt = MSMON_CFG_CTL_MATCH_PARTID | MSMON_CFG_MBWU_TYPE;
+	if (args->match_pmg)
+		clt |= MSMON_CFG_CTL_MATCH_PMG;
+	flt = args->partid |
+		(args->pmg << MSMON_CFG_MBWU_FLT_PMG_SHIFT);
+
+	/*
+	 * We read the existing configuration to avoid re-writing the same
+	 * values.
+	 */
+	cur_flt = mpam_read_reg(dev, MSMON_CFG_MBWU_FLT);
+	cur_clt = mpam_read_reg(dev, MSMON_CFG_MBWU_CTL);
+
+	if (cur_flt != flt || cur_clt != (clt | MSMON_CFG_CTL_EN)) {
+		mpam_write_reg(dev, MSMON_CFG_MBWU_FLT, flt);
+
+		/*
+		 * Write the ctl with the enable bit cleared, reset the
+		 * counter, then enable counter.
+		 */
+		mpam_write_reg(dev, MSMON_CFG_MBWU_CTL, clt);
+		wmb();
+
+		mpam_write_reg(dev, MSMON_MBWU, 0);
+		wmb();
+
+		clt |= MSMON_CFG_CTL_EN;
+		mpam_write_reg(dev, MSMON_CFG_MBWU_CTL, clt);
+		wmb();
+	}
+
+	return mpam_read_reg(dev, MSMON_MBWU);
+}
+
+static int mpam_device_frob_mon(struct mpam_device *dev,
+				struct mpam_device_sync *ctx)
+{
+	struct sync_args *args = ctx->args;
+	u32 val;
+
+	lockdep_assert_held(&dev->lock);
+
+	if (mpam_broken)
+		return -EIO;
+
+	if (!args)
+		return -EINVAL;
+
+	if (args->eventid == QOS_L3_OCCUP_EVENT_ID &&
+		mpam_has_feature(mpam_feat_msmon_csu, dev->features))
+		val = mpam_device_read_csu_mon(dev, args);
+	else if (args->eventid == QOS_L3_MBM_LOCAL_EVENT_ID &&
+		mpam_has_feature(mpam_feat_msmon_mbwu, dev->features))
+		val = mpam_device_read_mbwu_mon(dev, args);
+	else
+		return -EOPNOTSUPP;
+
+	if (val & MSMON___NRDY)
+		return -EBUSY;
+
+	val = val & MSMON___VALUE;
+	atomic64_add(val, &ctx->mon_value);
+	return 0;
+}
+
+static int mpam_device_narrow_map(struct mpam_device *dev, u32 partid,
+					u32 intpartid)
+{
+	return 0;
+}
+
+static int mpam_device_config(struct mpam_device *dev, u32 partid,
+					struct mpam_config *cfg)
+{
+	int ret;
+	u16 cmax = GENMASK(dev->cmax_wd, 0);
+	u32 pri_val = 0;
+	u16 intpri, dspri, max_intpri, max_dspri;
+	u32 mbw_pbm, mbw_max;
+
+	lockdep_assert_held(&dev->lock);
+
+	if (!mpam_has_part_sel(dev->features))
+		return -EINVAL;
+
+	/*
+	 * intpartid should be narrowed the first time,
+	 * upstream(resctrl) keep this order
+	 */
+	if (mpam_has_feature(mpam_feat_part_nrw, dev->features)) {
+		if (cfg && mpam_has_feature(mpam_feat_part_nrw, cfg->valid)) {
+			ret = mpam_device_narrow_map(dev, partid,
+					cfg->intpartid);
+			if (ret)
+				goto out;
+			partid = PART_SEL_SET_INTERNAL(cfg->intpartid);
+		} else {
+			partid = PART_SEL_SET_INTERNAL(cfg->intpartid);
+		}
+	}
+
+	mpam_write_reg(dev, MPAMCFG_PART_SEL, partid);
+	wmb(); /* subsequent writes must be applied to our new partid */
+
+	if (mpam_has_feature(mpam_feat_ccap_part, dev->features))
+		mpam_write_reg(dev, MPAMCFG_CMAX, cmax);
+
+	if (mpam_has_feature(mpam_feat_cpor_part, dev->features)) {
+		if (cfg && mpam_has_feature(mpam_feat_cpor_part, cfg->valid)) {
+			/*
+			 * cpor_part being valid implies the bitmap fits in a
+			 * single write.
+			 */
+			mpam_write_reg(dev, MPAMCFG_CPBM, cfg->cpbm);
+		}
+	}
+
+	if (mpam_has_feature(mpam_feat_mbw_part, dev->features)) {
+		mbw_pbm = cfg->mbw_pbm;
+		if (cfg && mpam_has_feature(mpam_feat_mbw_part, cfg->valid)) {
+			if (!mpam_has_feature(mpam_feat_part_hdl, cfg->valid) ||
+				(mpam_has_feature(mpam_feat_part_hdl, cfg->valid) && cfg->hdl))
+				mbw_pbm = MBW_PROP_SET_HDL(cfg->mbw_pbm);
+			mpam_write_reg(dev, MPAMCFG_MBW_PBM, mbw_pbm);
+		}
+	}
+
+	if (mpam_has_feature(mpam_feat_mbw_max, dev->features)) {
+		if (cfg && mpam_has_feature(mpam_feat_mbw_max, cfg->valid)) {
+			mbw_max = MBW_MAX_SET(cfg->mbw_max);
+			if (!mpam_has_feature(mpam_feat_part_hdl, cfg->valid) ||
+				(mpam_has_feature(mpam_feat_part_hdl, cfg->valid) && cfg->hdl))
+				mbw_max = MBW_MAX_SET_HDL(mbw_max);
+			mpam_write_reg(dev, MPAMCFG_MBW_MAX, mbw_max);
+		}
+	}
+
+	if (mpam_has_feature(mpam_feat_intpri_part, dev->features) ||
+		mpam_has_feature(mpam_feat_dspri_part, dev->features)) {
+		if (mpam_has_feature(mpam_feat_intpri_part, cfg->valid) &&
+			mpam_has_feature(mpam_feat_intpri_part, dev->features)) {
+			max_intpri = GENMASK(dev->intpri_wd - 1, 0);
+			/*
+			 * Each priority portion only occupys a bit, not only that
+			 * we leave lowest priority, which may be not suitable when
+			 * owning large dspri_wd or intpri_wd.
+			 * dspri and intpri are from same input, so if one
+			 * exceeds it's max width, set it to max priority.
+			 */
+			intpri = (cfg->intpri > max_intpri) ? max_intpri : cfg->intpri;
+			if (!mpam_has_feature(mpam_feat_intpri_part_0_low,
+						dev->features))
+				intpri = GENMASK(dev->intpri_wd - 1, 0) & ~intpri;
+			pri_val |= intpri;
+		}
+		if (mpam_has_feature(mpam_feat_dspri_part, cfg->valid) &&
+			mpam_has_feature(mpam_feat_dspri_part, dev->features)) {
+			max_dspri = GENMASK(dev->dspri_wd - 1, 0);
+			dspri = (cfg->dspri > max_dspri) ? max_dspri : cfg->dspri;
+			if (!mpam_has_feature(mpam_feat_dspri_part_0_low,
+						dev->features))
+				dspri = GENMASK(dev->dspri_wd - 1, 0) & ~dspri;
+			pri_val |= (dspri << MPAMCFG_PRI_DSPRI_SHIFT);
+		}
+
+		mpam_write_reg(dev, MPAMCFG_PRI, pri_val);
+	}
+
+	/*
+	 * complete the configuration before the cpu can
+	 * use this partid
+	 */
+	mb();
+
+out:
+	return ret;
+}
+
+static void mpam_component_device_sync(void *__ctx)
+{
+	int err = 0;
+	u32 partid;
+	unsigned long flags;
+	struct mpam_device *dev;
+	struct mpam_device_sync *ctx = (struct mpam_device_sync *)__ctx;
+	struct mpam_component *comp = ctx->comp;
+	struct sync_args *args = ctx->args;
+
+	list_for_each_entry(dev, &comp->devices, comp_list) {
+		if (cpumask_intersects(&dev->online_affinity,
+					&ctx->updated_on))
+			continue;
+
+		/* This device needs updating, can I reach it? */
+		if (!cpumask_test_cpu(smp_processor_id(),
+			&dev->online_affinity))
+			continue;
+
+		/* Apply new configuration to this device */
+		err = 0;
+		spin_lock_irqsave(&dev->lock, flags);
+		if (args) {
+			partid = args->partid;
+			if (ctx->config_mon)
+				err = mpam_device_frob_mon(dev, ctx);
+			else
+				err = mpam_device_config(dev, partid,
+					&comp->cfg[partid]);
+		} else {
+			mpam_reset_device(comp, dev);
+		}
+		spin_unlock_irqrestore(&dev->lock, flags);
+		if (err)
+			cmpxchg(&ctx->error, 0, err);
+	}
+
+	cpumask_set_cpu(smp_processor_id(), &ctx->updated_on);
+}
+
+/**
+ * in some cases/platforms the MSC register access is only possible with
+ * the associated CPUs. And need to check if those CPUS are online before
+ * accessing it. So we use those CPUs dev->online_affinity to apply config.
+ */
+static int do_device_sync(struct mpam_component *comp,
+				struct mpam_device_sync *sync_ctx)
+{
+	int cpu;
+	struct mpam_device *dev;
+
+	lockdep_assert_cpus_held();
+
+	cpu = get_cpu();
+	if (cpumask_test_cpu(cpu, &comp->fw_affinity))
+		mpam_component_device_sync(sync_ctx);
+	put_cpu();
+
+	/*
+	 * Find the set of other CPUs we need to run on to update
+	 * this component
+	 */
+	list_for_each_entry(dev, &comp->devices, comp_list) {
+		if (sync_ctx->error)
+			break;
+
+		if (cpumask_intersects(&dev->online_affinity,
+					&sync_ctx->updated_on))
+			continue;
+
+		/*
+		 * This device needs the config applying, and hasn't been
+		 * reachable by any cpu so far.
+		 */
+		cpu = cpumask_any(&dev->online_affinity);
+		smp_call_function_single(cpu, mpam_component_device_sync,
+					sync_ctx, 1);
+	}
+
+	return sync_ctx->error;
+}
+
+static inline void
+mpam_device_sync_config_prepare(struct mpam_component *comp,
+		struct mpam_device_sync *sync_ctx, struct sync_args *args)
+{
+	sync_ctx->comp = comp;
+	sync_ctx->args = args;
+	sync_ctx->config_mon = false;
+	sync_ctx->error = 0;
+	cpumask_clear(&sync_ctx->updated_on);
+}
+
+int mpam_component_config(struct mpam_component *comp, struct sync_args *args)
+{
+	struct mpam_device_sync sync_ctx;
+
+	mpam_device_sync_config_prepare(comp, &sync_ctx, args);
+
+	return do_device_sync(comp, &sync_ctx);
+}
+
+static inline void
+mpam_device_sync_mon_prepare(struct mpam_component *comp,
+		struct mpam_device_sync *sync_ctx, struct sync_args *args)
+{
+	sync_ctx->comp = comp;
+	sync_ctx->args = args;
+	sync_ctx->error = 0;
+	sync_ctx->config_mon = true;
+	cpumask_clear(&sync_ctx->updated_on);
+	atomic64_set(&sync_ctx->mon_value, 0);
+}
+
+int mpam_component_mon(struct mpam_component *comp,
+				struct sync_args *args, u64 *result)
+{
+	int ret;
+	struct mpam_device_sync sync_ctx;
+
+	mpam_device_sync_mon_prepare(comp, &sync_ctx, args);
+
+	ret = do_device_sync(comp, &sync_ctx);
+	if (!ret && result)
+		*result = atomic64_read(&sync_ctx.mon_value);
+
+	return ret;
 }
