@@ -171,6 +171,9 @@ next:
 			goto next;
 		}
 	}
+
+	rdt_last_cmd_printf("unknown domain (%lu)\n", dom_id);
+
 	return -EINVAL;
 }
 
@@ -224,6 +227,7 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 	if (!rdtgrp) {
 		resctrl_group_kn_unlock(of->kn);
+		rdt_last_cmd_puts("directory was removed\n");
 		return -ENOENT;
 	}
 	rdt_last_cmd_clear();

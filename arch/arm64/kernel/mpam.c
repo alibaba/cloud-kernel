@@ -858,7 +858,7 @@ static int resctrl_num_mon_show(struct kernfs_open_file *of,
 int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 		   cpumask_var_t tmpmask)
 {
-	pr_info("unsupported on mon_groups, please use ctrlmon groups\n");
+	rdt_last_cmd_puts("temporarily unsupported write cpus on mon_groups\n");
 	return -EINVAL;
 }
 
@@ -1143,6 +1143,7 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 
 	if (!rdtgrp) {
 		ret = -ENOENT;
+		rdt_last_cmd_puts("directory was removed\n");
 		goto unlock;
 	}
 
@@ -1156,6 +1157,10 @@ static ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
 		if (!ret)
 			rdtgrp->flags |= RDT_CTRLMON;
 	} else {
+		if (ctrlmon)
+			rdt_last_cmd_printf("ctrlmon has been enabled\n");
+		else
+			rdt_last_cmd_printf("ctrlmon has been disabled\n");
 		ret = -ENOENT;
 	}
 
