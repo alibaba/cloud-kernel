@@ -358,6 +358,25 @@ static void mpam_enable_squash_features(void)
 	}
 }
 
+static int mpam_allocate_config(void)
+{
+	struct mpam_class *class;
+	struct mpam_component *comp;
+
+	lockdep_assert_held(&mpam_devices_lock);
+
+	list_for_each_entry(class, &mpam_classes, classes_list) {
+		list_for_each_entry(comp, &class->components, class_list) {
+			comp->cfg = kcalloc(mpam_sysprops_num_partid(), sizeof(*comp->cfg),
+				GFP_KERNEL);
+			if (!comp->cfg)
+				return -ENOMEM;
+		}
+	}
+
+	return 0;
+}
+
 /*
  * Enable mpam once all devices have been probed.
  * Scheduled by mpam_discovery_complete() once all devices have been created.
@@ -365,6 +384,7 @@ static void mpam_enable_squash_features(void)
  */
 static void __init mpam_enable(struct work_struct *work)
 {
+	int err;
 	unsigned long flags;
 	struct mpam_device *dev;
 	bool all_devices_probed = true;
@@ -387,6 +407,9 @@ static void __init mpam_enable(struct work_struct *work)
 
 	mutex_lock(&mpam_devices_lock);
 	mpam_enable_squash_features();
+	err = mpam_allocate_config();
+	if (err)
+		return;
 	mutex_unlock(&mpam_devices_lock);
 }
 
@@ -511,6 +534,7 @@ static void mpam_class_destroy(struct mpam_class *class)
 	list_for_each_entry_safe(comp, tmp, &class->components, class_list) {
 		mpam_devices_destroy(comp);
 		list_del(&comp->class_list);
+		kfree(comp->cfg);
 		kfree(comp);
 	}
 }

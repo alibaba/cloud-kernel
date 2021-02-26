@@ -4,6 +4,37 @@
 
 typedef u32 mpam_features_t;
 
+/*
+ * MPAM component config Structure
+ */
+struct mpam_config {
+
+	/*
+	 * The biggest config we could pass around is 4K, but resctrl's max
+	 * cbm is u32, so we only need the full-size config during reset.
+	 * Just in case a cache with a >u32 bitmap is exported for another
+	 * reason, we need to track which bits of the configuration are valid.
+	 */
+	mpam_features_t valid;
+
+	u32             cpbm;
+	u32             mbw_pbm;
+	u16             mbw_max;
+
+	/*
+	 *  dspri is downstream priority, intpri is internal priority.
+	 */
+	u16             dspri;
+	u16             intpri;
+
+	/*
+	 * hardlimit or not
+	 */
+	bool            hdl;
+
+	u32             intpartid;
+};
+
 /* Bits for mpam_features_t */
 enum mpam_device_features {
 	mpam_feat_ccap_part = 0,

@@ -7,6 +7,8 @@
 #include <linux/types.h>
 #include "mpam_internal.h"
 
+struct mpam_config;
+
 /*
  * Size of the memory mapped registers: 4K of feature page
  * then 2x 4K bitmap registers
@@ -73,6 +75,8 @@ struct mpam_component {
 	struct list_head        devices;
 
 	struct cpumask          fw_affinity;
+
+	struct mpam_config		*cfg;
 
 	/* member of mpam_class:components */
 	struct list_head        class_list;
