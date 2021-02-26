@@ -324,6 +324,28 @@ out_destroy:
 	return ret;
 }
 
+static void resctrl_cdp_update_cpus_state(struct resctrl_group *r)
+{
+	int cpu;
+
+	/*
+     * If cdp on, tasks in resctrl default group with closid=0
+	 * and rmid=0 don't know how to fill proper partid_i/pmg_i
+	 * and partid_d/pmg_d into MPAMx_ELx sysregs by mpam_sched_in()
+	 * called by __switch_to(), it's because current cpu's default
+	 * closid and rmid are also equal to 0 and to make the operation
+	 * modifying configuration passed. Update per cpu default closid
+	 * of none-zero value, call update_closid_rmid() to update each
+	 * cpu's mpam proper MPAMx_ELx sysregs for setting partid and
+	 * pmg when mounting resctrl sysfs, it looks like a practical
+	 * method.
+	 */
+	for_each_cpu(cpu, &r->cpu_mask)
+		per_cpu(pqr_state.default_closid, cpu) = ~0;
+
+	update_closid_rmid(&r->cpu_mask, NULL);
+}
+
 static int resctrl_get_tree(struct fs_context *fc)
 {
 	int ret;
@@ -380,6 +402,8 @@ static int resctrl_get_tree(struct fs_context *fc)
 	ret = kernfs_get_tree(fc);
 	if (ret < 0)
 		goto out_mondata;
+
+	resctrl_cdp_update_cpus_state(&resctrl_group_default);
 
 	post_resctrl_mount();
 
