@@ -223,13 +223,16 @@ static int poll_ctrl_cpu_online(unsigned int cpu)
 
 	poll_ctl = this_cpu_ptr(&pv_poll_ctl);
 
-	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_POLLCONTROL_SET, poll_ctl, &res);
+	/*
+	 * The KVM will update the defaul polling state, so we do not need to
+	 * set the default value explicitly.
+	 */
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_POLLCONTROL_SET, __pa(poll_ctl), &res);
 	if (res.a0 == SMCCC_RET_NOT_SUPPORTED) {
 		pr_err("Failed to set poll control base\n");
 		return -EINVAL;
 	}
 
-	poll_ctl->poll_ctl = res.a0;
 	return 0;
 }
 
