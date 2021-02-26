@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _RESCTRLFS_H
 #define _RESCTRLFS_H
 

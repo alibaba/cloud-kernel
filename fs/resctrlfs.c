@@ -1,9 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
- * User interface for Resource Alloction in Resource Director Technology(RDT)
+ * User interface for ARM v8 MPAM
  *
- * Copyright (C) 2016 Intel Corporation
+ * Copyright (C) 2018-2019 Huawei Technologies Co., Ltd
  *
- * Author: Fenghua Yu <fenghua.yu@intel.com>
+ * Author: Xie XiuQi <xiexiuqi@huawei.com>
+ *
+ * Code was partially borrowed from arch/x86/kernel/cpu/intel_rdt*.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -14,8 +17,10 @@
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  *
- * More information about RDT be found in the Intel (R) x86 Architecture
- * Software Developer Manual.
+ * More information about MPAM be found in the Arm Architecture Reference
+ * Manual.
+ *
+ * https://static.docs.arm.com/ddi0598/a/DDI0598_MPAM_supp_armv8a.pdf
  */
 
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
