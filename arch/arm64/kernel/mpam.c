@@ -1221,6 +1221,14 @@ static void mpam_domains_init(struct resctrl_resource *r)
 			rr->num_mon = MPAMF_IDR_NUM_MON(val);
 		}
 
+		pr_info("%s: type: %s; alloc = %d %d; mon = %d %d\n",
+			__func__, types[n->type],
+			r->alloc_capable,
+			r->alloc_enabled,
+			r->mon_capable,
+			r->mon_enabled
+			);
+
 		d->cpus_list = n->cpus_list;
 
 		d->ctrl_val = kmalloc_array(rr->num_partid, sizeof(*d->ctrl_val), GFP_KERNEL);
