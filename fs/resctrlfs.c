@@ -341,7 +341,9 @@ static int resctrl_get_tree(struct fs_context *fc)
 	if (ret)
 		goto out;
 #endif
-	resctrl_id_init();
+	ret = resctrl_id_init();
+	if (ret)
+		goto out;
 
 	ret = resctrl_group_create_info_dir(resctrl_group_default.kn);
 	if (ret)

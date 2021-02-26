@@ -102,6 +102,11 @@ void mpam_resctrl_clear_default_cpu(unsigned int cpu)
 	cpumask_clear_cpu(cpu, &resctrl_group_default.cpu_mask);
 }
 
+bool is_resctrl_cdp_enabled(void)
+{
+	return !!resctrl_cdp_enabled;
+}
+
 static void
 mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
 	struct rdt_domain *d, struct list_head *opt_list, u32 partid);
@@ -443,8 +448,8 @@ static int common_wrmon(struct rdt_domain *d, struct rdtgroup *g, bool enable)
 }
 
 /*
- * Trivial allocator for CLOSIDs. Since h/w only supports a small number,
- * we can keep a bitmap of free CLOSIDs in a single integer.
+ * Notifing resctrl_id_init() should be called after calling parse_
+ * resctrl_group_fs_options() to guarantee resctrl_cdp_enabled() active.
  *
  * Using a global CLOSID across all resources has some advantages and
  * some drawbacks:
@@ -457,35 +462,64 @@ static int common_wrmon(struct rdt_domain *d, struct rdtgroup *g, bool enable)
  * - Our choices on how to configure each resource become progressively more
  *   limited as the number of resources grows.
  */
-static int closid_free_map;
 
-void closid_init(void)
+static unsigned long *closid_free_map;
+static int num_closid;
+
+int closid_init(void)
 {
-	int num_closid = INT_MAX;
+	int pos;
+	u32 times, flag;
+
+	if (closid_free_map)
+		kfree(closid_free_map);
 
 	num_closid = mpam_sysprops_num_partid();
+	num_closid = min(num_closid, RESCTRL_MAX_CLOSID);
 
-	closid_free_map = BIT_MASK(num_closid) - 1;
+	hw_alloc_times_validate(clos, times, flag);
+
+	if (flag)
+		num_closid = rounddown(num_closid, 2);
+
+	closid_free_map = bitmap_zalloc(num_closid, GFP_KERNEL);
+	if (!closid_free_map)
+		return -ENOMEM;
+
+	bitmap_set(closid_free_map, 0, num_closid);
 
 	/* CLOSID 0 is always reserved for the default group */
-	closid_free_map &= ~1;
-}
+	pos = find_first_bit(closid_free_map, num_closid);
+	bitmap_clear(closid_free_map, pos, times);
 
+	return 0;
+}
+/*
+ * If cdp enabled, allocate two closid once time, then return first
+ * allocated id.
+ */
 int closid_alloc(void)
 {
-	u32 closid = ffs(closid_free_map);
+	int pos;
+	u32 times, flag;
 
-	if (closid == 0)
+	hw_alloc_times_validate(clos, times, flag);
+
+	pos = find_first_bit(closid_free_map, num_closid);
+	if (pos == num_closid)
 		return -ENOSPC;
-	closid--;
-	closid_free_map &= ~(1 << closid);
 
-	return closid;
+	bitmap_clear(closid_free_map, pos, times);
+
+	return pos;
 }
 
 void closid_free(int closid)
 {
-	closid_free_map |= 1 << closid;
+	u32 times, flag;
+
+	hw_alloc_times_validate(clos, times, flag);
+	bitmap_set(closid_free_map, closid, times);
 }
 
 /*

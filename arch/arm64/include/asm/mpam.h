@@ -168,10 +168,7 @@ do {   \
 		__result = as_hw_t(__name, __closid); \
 } while (0)
 
-static inline bool is_resctrl_cdp_enabled(void)
-{
-	return 0;
-}
+bool is_resctrl_cdp_enabled(void);
 
 #define hw_alloc_times_validate(__name, __times, __flag) \
 do {   \
@@ -269,7 +266,7 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg);
 void rmdir_mondata_subdir_allrdtgrp(struct resctrl_resource *r,
 				    unsigned int dom_id);
 
-void closid_init(void);
+int closid_init(void);
 int closid_alloc(void);
 void closid_free(int closid);
 

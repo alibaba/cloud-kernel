@@ -91,10 +91,18 @@ static inline void free_mon_id(u32 id)
 }
 
 void pmg_init(void);
-static inline void resctrl_id_init(void)
+static inline int resctrl_id_init(void)
 {
-	closid_init();
+	int ret;
+
+	ret = closid_init();
+	if (ret)
+		goto out;
+
 	pmg_init();
+
+out:
+	return ret;
 }
 
 static inline int resctrl_id_alloc(void)
@@ -135,5 +143,7 @@ int resctrl_group_init_alloc(struct rdtgroup *rdtgrp);
 
 struct resctrl_resource *
 mpam_resctrl_get_resource(enum resctrl_resource_level level);
+
+#define RESCTRL_MAX_CLOSID 32
 
 #endif /* _ASM_ARM64_RESCTRL_H */
