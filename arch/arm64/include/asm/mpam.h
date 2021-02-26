@@ -195,6 +195,7 @@ do {   \
  * @new_ctrl:       new ctrl value to be loaded
  * @have_new_ctrl:  did user provide new_ctrl for this domain
  * @new_ctrl_type:  CDP property of the new ctrl
+ * @cdp_both_ctrl:   did cdp both control if cdp enabled
  */
 struct resctrl_staged_config {
 	hw_closid_t     hw_closid;
@@ -202,6 +203,7 @@ struct resctrl_staged_config {
 	bool            have_new_ctrl;
 	enum resctrl_conf_type  conf_type;
 	enum resctrl_ctrl_type  ctrl_type;
+	bool            cdp_both_ctrl;
 };
 
 /* later move to resctrl common directory */
@@ -219,6 +221,7 @@ struct resctrl_schema_ctrl {
  * @conf_type:  Type of configuration, e.g. code/data/both
  * @res:    The rdt_resource for this entry
  * @schemata_ctrl_list:   Type of ctrl configuration. e.g. priority/hardlimit
+ * @cdp_mc_both:   did cdp both mon/ctrl if cdp enabled
  */
 struct resctrl_schema {
 	struct list_head        list;
@@ -226,6 +229,7 @@ struct resctrl_schema {
 	enum resctrl_conf_type      conf_type;
 	struct resctrl_resource     *res;
 	struct list_head        schema_ctrl_list;
+	bool                cdp_mc_both;
 };
 
 /**
@@ -341,6 +345,7 @@ union mon_data_bits {
 		u8	partid;
 		u8	pmg;
 		u8	mon;
+		u8	cdp_both_mon;
 	} u;
 };
 

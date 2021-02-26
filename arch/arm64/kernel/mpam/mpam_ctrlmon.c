@@ -56,6 +56,15 @@ static int add_schema(enum resctrl_conf_type t, struct resctrl_resource *r)
 	s->res = r;
 	s->conf_type = t;
 
+	/*
+	 * code and data is separated for resources LxCache but
+	 * not for MB(Memory Bandwidth), it's necessary to set
+	 * cdp_mc_both to let resctrl know operating the two closid/
+	 * monitor simultaneously when configuring/monitoring.
+	 */
+	if (is_resctrl_cdp_enabled())
+		s->cdp_mc_both = !r->cdp_enable;
+
 	switch (t) {
 	case CDP_CODE:
 		suffix = "CODE";
@@ -164,6 +173,24 @@ void schemata_list_destroy(void)
 	}
 }
 
+static void
+resctrl_dom_ctrl_config(bool cdp_both_ctrl, struct resctrl_resource *r,
+			struct rdt_domain *dom, struct msr_param *para)
+{
+	struct raw_resctrl_resource *rr;
+
+	rr = r->res;
+	rr->msr_update(r, dom, para);
+
+	if (cdp_both_ctrl) {
+		hw_closid_t hw_closid;
+
+		resctrl_cdp_map(clos, para->closid->reqpartid, CDP_DATA, hw_closid);
+		para->closid->reqpartid = hw_closid_val(hw_closid);
+		rr->msr_update(r, dom, para);
+	}
+}
+
 static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 			struct resctrl_resource *r, struct rdt_domain *dom)
 {
@@ -171,15 +198,11 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 	struct resctrl_staged_config *cfg;
 	enum resctrl_ctrl_type type;
 	hw_closid_t hw_closid;
-	struct raw_resctrl_resource *rr;
 	struct sd_closid closid;
 	struct list_head *head;
 	struct rdtgroup *entry;
 	struct msr_param para;
-
-	bool update_on;
-
-	rr = r->res;
+	bool update_on, cdp_both_ctrl;
 
 	cfg = dom->staged_cfg;
 	para.closid = &closid;
@@ -188,6 +211,7 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 		if (!cfg[i].have_new_ctrl)
 			continue;
 		update_on = false;
+		cdp_both_ctrl = cfg[i].cdp_both_ctrl;
 		/*
 		 * for ctrl group configuration, hw_closid of cfg[i] equals
 		 * to rdtgrp->closid.intpartid.
@@ -211,7 +235,7 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 			}
 		}
 		if (update_on)
-			rr->msr_update(r, dom, &para);
+			resctrl_dom_ctrl_config(cdp_both_ctrl, r, dom, &para);
 
 		/*
 		 * we should synchronize all child mon groups'
@@ -221,8 +245,9 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 		list_for_each_entry(entry, head, mon.crdtgrp_list) {
 			resctrl_cdp_map(clos, entry->closid.reqpartid,
 					cfg[i].conf_type, hw_closid);
+
 			closid.reqpartid = hw_closid_val(hw_closid);
-			rr->msr_update(r, dom, &para);
+			resctrl_dom_ctrl_config(cdp_both_ctrl, r, dom, &para);
 		}
 	}
 }
@@ -500,13 +525,33 @@ static inline char *get_resource_name(char *name)
 	return res;
 }
 
+static u64 resctrl_dom_mon_data(struct resctrl_resource *r,
+		struct rdt_domain *d, void *md_priv)
+{
+	u64 ret;
+	union mon_data_bits md;
+	struct raw_resctrl_resource *rr;
+
+	md.priv = md_priv;
+	rr = r->res;
+	ret = rr->mon_read(d, md.priv);
+	if (md.u.cdp_both_mon) {
+		hw_closid_t hw_closid;
+
+		resctrl_cdp_map(clos, md.u.partid, CDP_DATA, hw_closid);
+		md.u.partid = hw_closid_val(hw_closid);
+		ret += rr->mon_read(d, md.priv);
+	}
+
+	return ret;
+}
+
 int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 {
 	struct kernfs_open_file *of = m->private;
 	struct rdtgroup *rdtgrp;
 	struct rdt_domain *d;
 	struct resctrl_resource *r;
-	struct raw_resctrl_resource *rr;
 	union mon_data_bits md;
 	int ret = 0;
 	char *resname = get_resource_name(kernfs_node_name(of));
@@ -524,7 +569,6 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 	md.priv = of->kn->priv;
 
 	r = mpam_resctrl_get_resource(md.u.rid);
-	rr = r->res;
 
 	/* show monitor data */
 	d = mpam_find_domain(r, md.u.domid, NULL);
@@ -534,7 +578,8 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 		goto out;
 	}
 
-	usage = rr->mon_read(d, md.priv);
+	usage = resctrl_dom_mon_data(r, d, md.priv);
+
 	/*
 	 * if this rdtgroup is ctrlmon group, also collect it's
 	 * mon groups' monitor data.
@@ -558,7 +603,7 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 			md.u.partid = hw_closid_val(hw_closid);
 			md.u.pmg = entry->mon.rmid;
 			md.u.mon = entry->mon.mon;
-			usage += rr->mon_read(d, md.priv);
+			usage += resctrl_dom_mon_data(r, d, md.priv);
 		}
 	}
 
@@ -614,6 +659,7 @@ static int resctrl_mkdir_mondata_dom(struct kernfs_node *parent_kn,
 	resctrl_cdp_map(mon, prgrp->mon.mon, s->conf_type, hw_monid);
 	md.u.mon = hw_monid_val(hw_monid);
 	md.u.pmg = prgrp->mon.rmid;
+	md.u.cdp_both_mon = s->cdp_mc_both;
 
 	snprintf(name, sizeof(name), "mon_%s_%02d", s->name, d->id);
 	kn = __kernfs_create_file(parent_kn, name, 0444,
@@ -682,14 +728,20 @@ int resctrl_mkdir_mondata_all_subdir(struct kernfs_node *parent_kn,
 }
 
 /* Initialize MBA resource with default values. */
-static void rdtgroup_init_mba(struct resctrl_resource *r, u32 closid)
+static void rdtgroup_init_mba(struct resctrl_schema *s, u32 closid)
 {
 	struct resctrl_staged_config *cfg;
+	struct resctrl_resource *r;
 	struct rdt_domain *d;
 	enum resctrl_ctrl_type t;
 
-	list_for_each_entry(d, &r->domains, list) {
+	r = s->res;
+	if (WARN_ON(!r))
+		return;
+
+	list_for_each_entry(d, &s->res->domains, list) {
 		cfg = &d->staged_cfg[CDP_BOTH];
+		cfg->cdp_both_ctrl = s->cdp_mc_both;
 		cfg->new_ctrl[SCHEMA_COMM] = r->default_ctrl[SCHEMA_COMM];
 		resctrl_cdp_map(clos, closid, CDP_BOTH, cfg->hw_closid);
 		cfg->have_new_ctrl = true;
@@ -727,6 +779,7 @@ static int rdtgroup_init_cat(struct resctrl_schema *s, u32 closid)
 
 	list_for_each_entry(d, &s->res->domains, list) {
 		cfg = &d->staged_cfg[conf_type];
+		cfg->cdp_both_ctrl = s->cdp_mc_both;
 		cfg->have_new_ctrl = false;
 		cfg->new_ctrl[SCHEMA_COMM] = r->cache.shareable_bits;
 		used_b = r->cache.shareable_bits;
@@ -769,7 +822,7 @@ int resctrl_group_init_alloc(struct rdtgroup *rdtgrp)
 	list_for_each_entry(s, &resctrl_all_schema, list) {
 		r = s->res;
 		if (r->rid == RDT_RESOURCE_MC) {
-			rdtgroup_init_mba(r, rdtgrp->closid.intpartid);
+			rdtgroup_init_mba(s, rdtgrp->closid.intpartid);
 		} else {
 			ret = rdtgroup_init_cat(s, rdtgrp->closid.intpartid);
 			if (ret < 0)
