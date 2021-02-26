@@ -8,6 +8,7 @@
 
 #include <linux/seq_buf.h>
 #include <linux/seq_file.h>
+#include <linux/resctrlfs.h>
 
 /* MPAM register */
 #define SYS_MPAM0_EL1			sys_reg(3, 0, 10, 5, 1)
@@ -97,9 +98,11 @@
  */
 #define VPMR_MAX_BITS			(3)
 #define PARTID_MAX_SHIFT		(0)
+#define PARTID_MAX_MASK		(MPAM_MASK(PARTID_BITS) << PARTID_MAX_SHIFT)
 #define HAS_HCR_SHIFT			(PARTID_MAX_SHIFT + PARTID_BITS + 1)
 #define VPMR_MAX_SHIFT			(HAS_HCR_SHIFT + 1)
 #define PMG_MAX_SHIFT			(VPMR_MAX_SHIFT + VPMR_MAX_BITS + 11)
+#define PMG_MAX_MASK			(MPAM_MASK(PMG_BITS) << PMG_MAX_SHIFT)
 #define VPMR_MASK			MPAM_MASK(VPMR_MAX_BITS)
 
 /*

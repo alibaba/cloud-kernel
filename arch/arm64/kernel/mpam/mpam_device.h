@@ -89,4 +89,11 @@ struct mpam_class {
 	struct list_head        classes_list;
 };
 
+/* System wide properties */
+struct mpam_sysprops_prop {
+	u32 mpam_llc_size;
+	u16 max_partid;
+	u16 max_pmg;
+};
+
 #endif /* _ASM_ARM64_MPAM_DEVICE_H */
