@@ -1728,6 +1728,29 @@ static int resctrl_group_tasks_show(struct kernfs_open_file *of,
 	return ret;
 }
 
+static int resctrl_group_rmid_show(struct kernfs_open_file *of,
+			       struct seq_file *s, void *v)
+{
+	int ret = 0;
+	struct rdtgroup *rdtgrp;
+	u32 flag, times;
+
+	hw_alloc_times_validate(times, flag);
+
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	if (rdtgrp) {
+		if (flag)
+			seq_printf(s, "%u-%u\n", rdtgrp->mon.rmid,
+				rdtgrp->mon.rmid + 1);
+		else
+			seq_printf(s, "%u\n", rdtgrp->mon.rmid);
+	} else
+		ret = -ENOENT;
+	resctrl_group_kn_unlock(of->kn);
+
+	return ret;
+}
+
 /* rdtgroup information files for one cache resource. */
 static struct rftype res_specific_files[] = {
 	{
@@ -1823,6 +1846,13 @@ static struct rftype res_specific_files[] = {
 		.kf_ops		= &resctrl_group_kf_single_ops,
 		.write		= resctrl_group_tasks_write,
 		.seq_show	= resctrl_group_tasks_show,
+		.fflags		= RFTYPE_BASE,
+	},
+	{
+		.name		= "rmid",
+		.mode		= 0444,
+		.kf_ops		= &resctrl_group_kf_single_ops,
+		.seq_show	= resctrl_group_rmid_show,
 		.fflags		= RFTYPE_BASE,
 	},
 	{
