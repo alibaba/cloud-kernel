@@ -1132,6 +1132,11 @@ u16 mpam_sysprops_num_pmg(void)
 	return mpam_sysprops.max_pmg + 1;
 }
 
+u32 mpam_sysprops_llc_size(void)
+{
+	return mpam_sysprops.mpam_llc_size;
+}
+
 static u32 mpam_device_read_csu_mon(struct mpam_device *dev,
 			struct sync_args *args)
 {
@@ -1307,7 +1312,7 @@ mpam_device_config(struct mpam_device *dev, struct sd_closid *closid,
 	u16 cmax = GENMASK(dev->cmax_wd, 0);
 	u32 pri_val = 0;
 	u16 intpri, dspri, max_intpri, max_dspri;
-	u32 mbw_pbm, mbw_max;
+	u32 mbw_pbm, mbw_max, mbw_min;
 	/*
 	 * if dev supports narrowing, narrowing first and then apply this slave's
 	 * configuration.
@@ -1353,6 +1358,13 @@ mpam_device_config(struct mpam_device *dev, struct sd_closid *closid,
 				(mpam_has_feature(mpam_feat_part_hdl, cfg->valid) && cfg->hdl))
 				mbw_max = MBW_MAX_SET_HDL(mbw_max);
 			mpam_write_reg(dev, MPAMCFG_MBW_MAX, mbw_max);
+		}
+	}
+
+	if (mpam_has_feature(mpam_feat_mbw_min, dev->features)) {
+		if (cfg && mpam_has_feature(mpam_feat_mbw_min, cfg->valid)) {
+			mbw_min = MBW_MAX_SET(cfg->mbw_min, dev->bwa_wd);
+			mpam_write_reg(dev, MPAMCFG_MBW_MIN, mbw_min);
 		}
 	}
 
@@ -1586,12 +1598,31 @@ static void mpam_component_read_mpamcfg(void *_ctx)
 				break;
 			val = mpam_read_reg(dev, MPAMCFG_CPBM);
 			break;
+		case QOS_CAT_CMAX_EVENT_ID:
+			if (!mpam_has_feature(mpam_feat_ccap_part, dev->features))
+				break;
+			val = mpam_read_reg(dev, MPAMCFG_CMAX);
+			break;
 		case QOS_MBA_MAX_EVENT_ID:
 			if (!mpam_has_feature(mpam_feat_mbw_max, dev->features))
 				break;
 			val = mpam_read_reg(dev, MPAMCFG_MBW_MAX);
 			range = MBW_MAX_BWA_FRACT(dev->bwa_wd);
 			val = MBW_MAX_GET(val, dev->bwa_wd) * (MAX_MBA_BW - 1) / range;
+			break;
+		case QOS_MBA_MIN_EVENT_ID:
+			if (!mpam_has_feature(mpam_feat_mbw_min, dev->features))
+				break;
+			val = mpam_read_reg(dev, MPAMCFG_MBW_MIN);
+			range = MBW_MAX_BWA_FRACT(dev->bwa_wd);
+			val = MBW_MAX_GET(val, dev->bwa_wd) * (MAX_MBA_BW - 1) / range;
+			break;
+		case QOS_MBA_PBM_EVENT_ID:
+			if (!mpam_has_feature(mpam_feat_mbw_part, dev->features))
+				break;
+			val = mpam_read_reg(dev, MPAMCFG_MBW_PBM);
+			range = dev->mbw_pbm_bits;
+			val = val * MAX_MBA_BW / range;
 			break;
 		case QOS_MBA_HDL_EVENT_ID:
 			if (!mpam_has_feature(mpam_feat_mbw_max, dev->features))

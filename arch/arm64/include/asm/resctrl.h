@@ -27,12 +27,15 @@ enum rdt_event_id {
 	QOS_L3_MBM_LOCAL_EVENT_ID       = 0x03,
 
 	QOS_CAT_CPBM_EVENT_ID           = 0x04,
-	QOS_CAT_INTPRI_EVENT_ID         = 0x05,
-	QOS_CAT_DSPRI_EVENT_ID          = 0x06,
-	QOS_MBA_MAX_EVENT_ID            = 0x07,
-	QOS_MBA_INTPRI_EVENT_ID         = 0x08,
-	QOS_MBA_DSPRI_EVENT_ID          = 0x09,
-	QOS_MBA_HDL_EVENT_ID            = 0x0a,
+	QOS_CAT_CMAX_EVENT_ID           = 0x05,
+	QOS_CAT_INTPRI_EVENT_ID         = 0x06,
+	QOS_CAT_DSPRI_EVENT_ID          = 0x07,
+	QOS_MBA_MAX_EVENT_ID            = 0x08,
+	QOS_MBA_MIN_EVENT_ID            = 0x09,
+	QOS_MBA_PBM_EVENT_ID            = 0x0a,
+	QOS_MBA_INTPRI_EVENT_ID         = 0x0b,
+	QOS_MBA_DSPRI_EVENT_ID          = 0x0c,
+	QOS_MBA_HDL_EVENT_ID            = 0x0d,
 	/* Must be the last */
 	RESCTRL_NUM_EVENT_IDS,
 };
@@ -165,6 +168,9 @@ enum resctrl_ctrl_type {
 	SCHEMA_COMM = 0,
 	SCHEMA_PRI,
 	SCHEMA_HDL,
+	SCHEMA_PBM,
+	SCHEMA_MAX,
+	SCHEMA_MIN,
 	SCHEMA_NUM_CTRL_TYPE
 };
 

@@ -346,18 +346,17 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->res = rr;
 
 		if (mpam_has_feature(mpam_feat_mbw_part, class->features)) {
-			res->resctrl_mba_uses_mbw_part = true;
-
 			/*
 			 * The maximum throttling is the number of bits we can
 			 * unset in the bitmap. We never clear all of them,
 			 * so the minimum is one bit, as a percentage.
 			 */
 			r->mbw.min_bw = MAX_MBA_BW / class->mbw_pbm_bits;
-		} else {
-			/* we're using mpam_feat_mbw_max's */
-			res->resctrl_mba_uses_mbw_part = false;
+			rr->ctrl_features[SCHEMA_PBM].max_wd = MAX_MBA_BW + 1;
+			rr->ctrl_features[SCHEMA_PBM].capable = true;
+		}
 
+		if (mpam_has_feature(mpam_feat_mbw_max, class->features)) {
 			/*
 			 * The maximum throttling is the number of fractions we
 			 * can represent with the implemented bits. We never
@@ -366,21 +365,35 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 			r->mbw.min_bw = MAX_MBA_BW /
 				((1ULL << class->bwa_wd) - 1);
 			/* the largest mbw_max is 100 */
-			rr->ctrl_features[SCHEMA_COMM].default_ctrl = MAX_MBA_BW;
-			rr->ctrl_features[SCHEMA_COMM].max_wd = MAX_MBA_BW + 1;
-			rr->ctrl_features[SCHEMA_COMM].capable = true;
+			rr->ctrl_features[SCHEMA_MAX].default_ctrl = MAX_MBA_BW;
+			rr->ctrl_features[SCHEMA_MAX].max_wd = MAX_MBA_BW + 1;
+			rr->ctrl_features[SCHEMA_MAX].capable = true;
+
+			/* default set max stride MAX as COMMON ctrl feature */
+			rr->ctrl_features[SCHEMA_COMM].default_ctrl =
+				rr->ctrl_features[SCHEMA_MAX].default_ctrl;
+			rr->ctrl_features[SCHEMA_COMM].max_wd =
+				rr->ctrl_features[SCHEMA_MAX].max_wd;
+			rr->ctrl_features[SCHEMA_COMM].capable =
+				rr->ctrl_features[SCHEMA_MAX].capable;
 		}
 
+		if (mpam_has_feature(mpam_feat_mbw_min, class->features)) {
+			rr->ctrl_features[SCHEMA_MIN].max_wd = MAX_MBA_BW + 1;
+			rr->ctrl_features[SCHEMA_MIN].capable = true;
+		}
+
+		/*
+		 * Export priority setting, which represents the max level of
+		 * control we can export. this default priority from hardware,
+		 * no clever here, no need to define additional default value.
+		 */
 		if (mpam_has_feature(mpam_feat_intpri_part, class->features)) {
-			/*
-			 * Export internal priority setting, which represents the
-			 * max level of control we can export to resctrl. this default
-			 * priority is from hardware, no clever here.
-			 */
 			rr->ctrl_features[SCHEMA_PRI].max_wd = 1 << class->intpri_wd;
 			rr->ctrl_features[SCHEMA_PRI].default_ctrl = class->hwdef_intpri;
 			rr->ctrl_features[SCHEMA_PRI].capable = true;
 		}
+
 
 		/* Just in case we have an excessive number of bits */
 		if (!r->mbw.min_bw)
@@ -413,18 +426,26 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 
 		if (mpam_has_feature(mpam_feat_cpor_part, class->features)) {
 			r->cache.cbm_len = class->cpbm_wd;
-			rr->ctrl_features[SCHEMA_COMM].default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
-			rr->ctrl_features[SCHEMA_COMM].max_wd =
-				rr->ctrl_features[SCHEMA_COMM].default_ctrl + 1;
-			rr->ctrl_features[SCHEMA_COMM].capable = true;
+			rr->ctrl_features[SCHEMA_PBM].default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
+			rr->ctrl_features[SCHEMA_PBM].max_wd =
+				rr->ctrl_features[SCHEMA_PBM].default_ctrl + 1;
+			rr->ctrl_features[SCHEMA_PBM].capable = true;
 			/*
 			 * Which bits are shared with other ...things...
 			 * Unknown devices use partid-0 which uses all the bitmap
 			 * fields. Until we configured the SMMU and GIC not to do this
 			 * 'all the bits' is the correct answer here.
 			 */
-			r->cache.shareable_bits = rr->ctrl_features[SCHEMA_COMM].default_ctrl;
+			r->cache.shareable_bits = rr->ctrl_features[SCHEMA_PBM].default_ctrl;
 			r->cache.min_cbm_bits = 1;
+
+			/* default set CPBM as COMMON ctrl feature */
+			rr->ctrl_features[SCHEMA_COMM].default_ctrl =
+				rr->ctrl_features[SCHEMA_PBM].default_ctrl;
+			rr->ctrl_features[SCHEMA_COMM].max_wd =
+				rr->ctrl_features[SCHEMA_PBM].max_wd;
+			rr->ctrl_features[SCHEMA_COMM].capable =
+				rr->ctrl_features[SCHEMA_PBM].capable;
 		}
 
 		if (mpam_has_feature(mpam_feat_intpri_part, class->features)) {
@@ -437,6 +458,12 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 			rr->ctrl_features[SCHEMA_PRI].default_ctrl = class->hwdef_intpri;
 			rr->ctrl_features[SCHEMA_PRI].capable = true;
 		}
+
+		if (mpam_has_feature(mpam_feat_ccap_part, class->features)) {
+			rr->ctrl_features[SCHEMA_MAX].max_wd = mpam_sysprops_llc_size() + 1;
+			rr->ctrl_features[SCHEMA_MAX].capable = true;
+		}
+
 		/*
 		 * Only this resource is allocable can it be picked from
 		 * mpam_resctrl_pick_caches(). So directly set following
@@ -464,10 +491,11 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 
 		if (mpam_has_feature(mpam_feat_cpor_part, class->features)) {
 			r->cache.cbm_len = class->cpbm_wd;
-			rr->ctrl_features[SCHEMA_COMM].default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
-			rr->ctrl_features[SCHEMA_COMM].max_wd =
-				rr->ctrl_features[SCHEMA_COMM].default_ctrl + 1;
-			rr->ctrl_features[SCHEMA_COMM].capable = true;
+			rr->ctrl_features[SCHEMA_PBM].default_ctrl =
+				GENMASK(class->cpbm_wd - 1, 0);
+			rr->ctrl_features[SCHEMA_PBM].max_wd =
+				rr->ctrl_features[SCHEMA_PBM].default_ctrl + 1;
+			rr->ctrl_features[SCHEMA_PBM].capable = true;
 			/*
 			 * Which bits are shared with other ...things...
 			 * Unknown devices use partid-0 which uses all the bitmap
@@ -475,6 +503,18 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 			 * 'all the bits' is the correct answer here.
 			 */
 			r->cache.shareable_bits = rr->ctrl_features[SCHEMA_COMM].default_ctrl;
+			/* default set max stride MAX as COMMON ctrl feature */
+			rr->ctrl_features[SCHEMA_COMM].default_ctrl =
+				rr->ctrl_features[SCHEMA_PBM].default_ctrl;
+			rr->ctrl_features[SCHEMA_COMM].max_wd =
+				rr->ctrl_features[SCHEMA_PBM].max_wd;
+			rr->ctrl_features[SCHEMA_COMM].capable =
+				rr->ctrl_features[SCHEMA_PBM].capable;
+		}
+
+		if (mpam_has_feature(mpam_feat_ccap_part, class->features)) {
+			rr->ctrl_features[SCHEMA_MAX].max_wd = ~0;
+			rr->ctrl_features[SCHEMA_MAX].capable = true;
 		}
 
 		if (mpam_has_feature(mpam_feat_intpri_part, class->features)) {

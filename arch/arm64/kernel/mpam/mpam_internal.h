@@ -225,8 +225,10 @@ struct mpam_config {
 	mpam_features_t valid;
 
 	u32             cpbm;
+	u32             cmax;
 	u32             mbw_pbm;
 	u16             mbw_max;
+	u16             mbw_min;
 
 	/*
 	 *  dspri is downstream priority, intpri is internal priority.
@@ -311,6 +313,7 @@ void mpam_component_get_config(struct mpam_component *comp,
 
 u16 mpam_sysprops_num_partid(void);
 u16 mpam_sysprops_num_pmg(void);
+u32 mpam_sysprops_llc_size(void);
 
 void mpam_class_list_lock_held(void);
 
