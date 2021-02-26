@@ -406,6 +406,10 @@ static int resctrl_get_tree(struct fs_context *fc)
 	if (ret)
 		goto out_schema;
 
+	ret = resctrl_group_init_alloc(&resctrl_group_default);
+	if (ret < 0)
+		goto out_schema;
+
 	ret = resctrl_group_create_info_dir(resctrl_group_default.kn, &kn_info);
 	if (ret)
 		goto out_schema;
