@@ -207,8 +207,8 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 	[MPAM_RESOURCE_MC] = {
 		.msr_update		= bw_wrmsr,
 		.msr_read		= bw_rdmsr,
-		.parse_ctrlval		= parse_cbm,	/* [FIXME] add parse_bw() helper */
-		.format_str		= "%d=%0*x",
+		.parse_ctrlval		= parse_bw,	/* [FIXME] add parse_bw() helper */
+		.format_str		= "%d=%0*d",
 		.mon_read		= mbwu_read,
 		.mon_write		= mbwu_write,
 	},
@@ -270,7 +270,8 @@ u64 bw_rdmsr(struct rdt_domain *d, int partid)
 	mpam_writel(partid, d->base + MPAMCFG_PART_SEL);
 	max = mpam_readl(d->base + MPAMCFG_MBW_MAX);
 
-	return MBW_MAX_GET(max);
+	max = MBW_MAX_GET(max);
+	return roundup((max * 100) / 64, 5);
 }
 
 /*

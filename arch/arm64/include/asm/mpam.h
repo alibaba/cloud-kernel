@@ -336,6 +336,7 @@ struct raw_resctrl_resource {
 };
 
 int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
+int parse_bw(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
 
 union mon_data_bits {
 	void *priv;
