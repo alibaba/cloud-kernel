@@ -128,6 +128,11 @@ static inline bool is_mon_dyn(u32 mon)
 	return (mon == mpam_resctrl_max_mon_num()) ? true : false;
 }
 
+static int parse_cbm(char *buf, struct raw_resctrl_resource *r,
+		struct resctrl_staged_config *cfg, hw_closid_t hw_closid);
+static int parse_bw(char *buf, struct raw_resctrl_resource *r,
+		struct resctrl_staged_config *cfg, hw_closid_t hw_closid);
+
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 	[RDT_RESOURCE_L3] = {
 		.msr_update     = common_wrmsr,
@@ -162,6 +167,116 @@ mpam_get_raw_resctrl_resource(enum resctrl_resource_level level)
 		return NULL;
 
 	return &raw_resctrl_resources_all[level];
+}
+
+/*
+ * Check whether a cache bit mask is valid. for arm64 MPAM,
+ * it seems that there are no restrictions according to MPAM
+ * spec expect for requiring at least one bit.
+ */
+static bool cbm_validate(char *buf, unsigned long *data,
+			struct raw_resctrl_resource *r)
+{
+	u64 val;
+	int ret;
+
+	ret = kstrtou64(buf, 16, &val);
+	if (ret) {
+		rdt_last_cmd_printf("non-hex character in mask %s\n", buf);
+		return false;
+	}
+
+	*data = val;
+	return true;
+}
+
+/*
+ * Read one cache bit mask (hex). Check that it is valid for the current
+ * resource type.
+ */
+static int
+parse_cbm(char *buf, struct raw_resctrl_resource *r,
+		struct resctrl_staged_config *cfg, hw_closid_t hw_closid)
+{
+	unsigned long data;
+
+	if (cfg->have_new_ctrl) {
+		rdt_last_cmd_printf("duplicate domain\n");
+		return -EINVAL;
+	}
+
+	if (!cbm_validate(buf, &data, r))
+		return -EINVAL;
+
+	cfg->new_ctrl = data;
+	cfg->have_new_ctrl = true;
+	cfg->hw_closid = hw_closid;
+
+	return 0;
+}
+
+/* define bw_min as 5 percentage, that are 5% ~ 100% which cresponding masks: */
+static u32 bw_max_mask[20] = {
+	3, /*  3/64:  5% */
+	6, /*  6/64: 10% */
+	10, /* 10/64: 15% */
+	13, /* 13/64: 20% */
+	16, /* 16/64: 25% */
+	19, /* ... */
+	22,
+	26,
+	29,
+	32,
+	35,
+	38,
+	42,
+	45,
+	48,
+	51,
+	54,
+	58,
+	61,
+	63  /* 100% */
+};
+
+static bool bw_validate(char *buf, unsigned long *data,
+			struct raw_resctrl_resource *r)
+{
+	unsigned long bw;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &bw);
+	if (ret) {
+		rdt_last_cmd_printf("non-hex character in mask %s\n", buf);
+		return false;
+	}
+
+	bw = bw < 5 ? 5 : bw;
+	bw = bw > 100 ? 100 : bw;
+	*data = roundup(bw, 5);
+
+	return true;
+}
+
+static int
+parse_bw(char *buf, struct raw_resctrl_resource *r,
+		struct resctrl_staged_config *cfg, hw_closid_t hw_closid)
+{
+	unsigned long data;
+
+	if (cfg->have_new_ctrl) {
+		rdt_last_cmd_printf("duplicate domain\n");
+		return -EINVAL;
+	}
+
+	if (!bw_validate(buf, &data, r))
+		return -EINVAL;
+
+	cfg->new_ctrl = data;
+	cfg->have_new_ctrl = true;
+	cfg->hw_closid = hw_closid;
+
+	return 0;
 }
 
 static void
@@ -1302,7 +1417,8 @@ mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
 			mpam_set_feature(mpam_feat_mbw_part, &mpam_cfg->valid);
 		} else {
 			/* .. the number of fractions we can represent */
-			mpam_cfg->mbw_max = resctrl_cfg;
+			mpam_cfg->mbw_max = bw_max_mask[(resctrl_cfg / 5 - 1) %
+				ARRAY_SIZE(bw_max_mask)];
 
 			mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
 		}

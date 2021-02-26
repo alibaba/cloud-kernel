@@ -251,6 +251,8 @@ struct rdt_domain {
 	struct resctrl_staged_config staged_cfg[CDP_NUM_CONF_TYPE];
 };
 
+#define RESCTRL_SHOW_DOM_MAX_NUM 8
+
 extern struct mutex resctrl_group_mutex;
 
 extern struct resctrl_resource resctrl_resources_all[];
@@ -336,15 +338,12 @@ struct raw_resctrl_resource {
 	int			data_width;
 	const char		*format_str;
 	int (*parse_ctrlval)(char *buf, struct raw_resctrl_resource *r,
-				struct rdt_domain *d);
+			struct resctrl_staged_config *cfg, hw_closid_t closid);
 
 	u16                num_mon;
 	u64 (*mon_read)(struct rdt_domain *d, struct rdtgroup *g);
 	int (*mon_write)(struct rdt_domain *d, struct rdtgroup *g, bool enable);
 };
-
-int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
-int parse_bw(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d);
 
 union mon_data_bits {
 	void *priv;

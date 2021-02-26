@@ -146,123 +146,20 @@ static int resctrl_group_update_domains(struct rdtgroup *rdtgrp,
 }
 
 /*
- * Check whether a cache bit mask is valid. The SDM says:
- *	Please note that all (and only) contiguous '1' combinations
- *	are allowed (e.g. FFFFH, 0FF0H, 003CH, etc.).
- * Additionally Haswell requires at least two bits set.
- */
-static bool cbm_validate(char *buf, unsigned long *data, struct raw_resctrl_resource *r)
-{
-	u64 val;
-	int ret;
-
-	ret = kstrtou64(buf, 16, &val);
-	if (ret) {
-		rdt_last_cmd_printf("non-hex character in mask %s\n", buf);
-		return false;
-	}
-
-	*data = val;
-	return true;
-}
-
-/*
- * Read one cache bit mask (hex). Check that it is valid for the current
- * resource type.
- */
-int parse_cbm(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d)
-{
-	unsigned long data;
-
-	if (d->have_new_ctrl) {
-		rdt_last_cmd_printf("duplicate domain %d\n", d->id);
-		return -EINVAL;
-	}
-
-	if (!cbm_validate(buf, &data, r))
-		return -EINVAL;
-
-	d->new_ctrl = data;
-	d->have_new_ctrl = true;
-
-	return 0;
-}
-
-/* define bw_min as 5 percentage, that are 5% ~ 100% which cresponding masks: */
-static u32 bw_max_mask[20] = {
-	 3,	/*  3/64:  5% */
-	 6,	/*  6/64: 10% */
-	10,	/* 10/64: 15% */
-	13,	/* 13/64: 20% */
-	16,	/* 16/64: 25% */
-	19,	/* ... */
-	22,
-	26,
-	29,
-	32,
-	35,
-	38,
-	42,
-	45,
-	48,
-	51,
-	54,
-	58,
-	61,
-	63	/* 100% */
-};
-
-static bool bw_validate(char *buf, unsigned long *data, struct raw_resctrl_resource *r)
-{
-	unsigned long bw;
-	int ret, idx;
-
-	ret = kstrtoul(buf, 10, &bw);
-	if (ret) {
-		rdt_last_cmd_printf("non-hex character in mask %s\n", buf);
-		return false;
-	}
-
-	bw = bw < 5 ? 5 : bw;
-	bw = bw > 100 ? 100 : bw;
-
-	idx = roundup(bw, 5) / 5 - 1;
-
-	*data = bw_max_mask[idx];
-	return true;
-}
-
-int parse_bw(char *buf, struct raw_resctrl_resource *r, struct rdt_domain *d)
-{
-	unsigned long data;
-
-	if (d->have_new_ctrl) {
-		rdt_last_cmd_printf("duplicate domain %d\n", d->id);
-		return -EINVAL;
-	}
-
-	if (!bw_validate(buf, &data, r))
-		return -EINVAL;
-
-	d->new_ctrl = data;
-	d->have_new_ctrl = true;
-
-	return 0;
-}
-
-/*
  * For each domain in this resource we expect to find a series of:
  * id=mask
  * separated by ";". The "id" is in decimal, and must match one of
  * the "id"s for this resource.
  */
-static int parse_line(char *line, struct resctrl_resource *r)
+static int parse_line(char *line, struct resctrl_resource *r,
+			enum resctrl_conf_type t, u32 closid)
 {
-	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
-	char *dom = NULL, *id;
+	struct raw_resctrl_resource *rr = r->res;
+	char *dom = NULL;
+	char *id;
 	struct rdt_domain *d;
 	unsigned long dom_id;
-
+	hw_closid_t hw_closid;
 
 next:
 	if (!line || line[0] == '\0')
@@ -276,7 +173,8 @@ next:
 	dom = strim(dom);
 	list_for_each_entry(d, &r->domains, list) {
 		if (d->id == dom_id) {
-			if (rr->parse_ctrlval(dom, (struct raw_resctrl_resource *)&r->res, d))
+			resctrl_cdp_map(clos, closid, t, hw_closid);
+			if (rr->parse_ctrlval(dom, rr, &d->staged_cfg[t], hw_closid))
 				return -EINVAL;
 			goto next;
 		}
@@ -284,40 +182,29 @@ next:
 	return -EINVAL;
 }
 
-static int update_domains(struct resctrl_resource *r, struct rdtgroup *g)
+static int
+resctrl_group_parse_schema_resource(char *resname, char *tok, u32 closid)
 {
-	struct raw_resctrl_resource *rr;
-	struct rdt_domain *d;
-	int partid = g->closid;
-
-	rr = (struct raw_resctrl_resource *)r->res;
-	list_for_each_entry(d, &r->domains, list) {
-		if (d->have_new_ctrl && d->new_ctrl != d->ctrl_val[partid]) {
-			d->ctrl_val[partid] = d->new_ctrl;
-			rr->msr_update(r, d, NULL, partid);
-		}
-	}
-
-	return 0;
-}
-
-static int resctrl_group_parse_resource(char *resname, char *tok, int closid)
-{
-	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
-	struct raw_resctrl_resource *rr;
+	struct resctrl_schema *s;
+	enum resctrl_conf_type t;
 
-	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
+	list_for_each_entry(s, &resctrl_all_schema, list) {
+		r = s->res;
+
+		if (!r)
+			continue;
 
 		if (r->alloc_enabled) {
-			rr = (struct raw_resctrl_resource *)r->res;
-			if (!strcmp(resname, r->name) && closid <
-				mpam_sysprops_num_partid())
-				return parse_line(tok, r);
+			if (!strcmp(resname, s->name) &&
+				closid < mpam_sysprops_num_partid()) {
+				t = conf_name_to_conf_type(s->name);
+				return parse_line(tok, r, t, closid);
+			}
 		}
 	}
 	rdt_last_cmd_printf("unknown/unsupported resource name '%s'\n", resname);
+
 	return -EINVAL;
 }
 
@@ -326,10 +213,13 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 {
 	struct rdtgroup *rdtgrp;
 	struct rdt_domain *dom;
-	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
+	struct mpam_resctrl_res *res;
+	enum resctrl_conf_type conf_type;
+	struct resctrl_staged_config *cfg;
 	char *tok, *resname;
-	int closid, ret = 0;
+	u32 closid;
+	int ret = 0;
 
 	/* Valid input requires a trailing newline */
 	if (nbytes == 0 || buf[nbytes - 1] != '\n')
@@ -341,6 +231,7 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 		resctrl_group_kn_unlock(of->kn);
 		return -ENOENT;
 	}
+
 	rdt_last_cmd_clear();
 
 	closid = rdtgrp->closid;
@@ -349,8 +240,13 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 		r = &res->resctrl_res;
 
 		if (r->alloc_enabled) {
-			list_for_each_entry(dom, &r->domains, list)
+			list_for_each_entry(dom, &r->domains, list) {
 				dom->have_new_ctrl = false;
+				for_each_conf_type(conf_type) {
+					cfg = &dom->staged_cfg[conf_type];
+					cfg->have_new_ctrl = false;
+				}
+			}
 		}
 	}
 
@@ -366,16 +262,15 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 			ret = -EINVAL;
 			goto out;
 		}
-		ret = resctrl_group_parse_resource(resname, tok, closid);
+		ret = resctrl_group_parse_schema_resource(resname, tok, closid);
 		if (ret)
 			goto out;
 	}
 
 	for_each_supported_resctrl_exports(res) {
 		r = &res->resctrl_res;
-
 		if (r->alloc_enabled) {
-			ret = update_domains(r, rdtgrp);
+			ret = resctrl_group_update_domains(rdtgrp, r);
 			if (ret)
 				goto out;
 		}
@@ -386,42 +281,73 @@ out:
 	return ret ?: nbytes;
 }
 
-static void show_doms(struct seq_file *s, struct resctrl_resource *r, int partid)
+/**
+ * MPAM resources such as L2 may have too many domains for arm64,
+ * at this time we should rearrange this display for brevity and
+ * harmonious interaction.
+ *
+ * Before rearrangement: L2:0=ff;1=ff;2=fc;3=ff;4=f;....;255=ff
+ * After rearrangement:  L2:S;2=fc;S;4=f;S
+ * Those continuous fully sharable domains will be combined into
+ * a single "S" simply.
+ */
+static void show_doms(struct seq_file *s, struct resctrl_resource *r,
+		char *schema_name, int partid)
 {
-	struct raw_resctrl_resource *rr = (struct raw_resctrl_resource *)r->res;
+	struct raw_resctrl_resource *rr = r->res;
 	struct rdt_domain *dom;
 	bool sep = false;
+	bool rg = false;
+	bool prev_auto_fill = false;
+	u32 reg_val;
 
-	seq_printf(s, "%*s:", max_name_width, r->name);
+	if (r->dom_num > RESCTRL_SHOW_DOM_MAX_NUM)
+		rg = true;
+
+	seq_printf(s, "%*s:", max_name_width, schema_name);
 	list_for_each_entry(dom, &r->domains, list) {
+		reg_val = rr->msr_read(dom, partid);
+
+		if (rg && reg_val == r->default_ctrl &&
+				prev_auto_fill == true)
+			continue;
+
 		if (sep)
 			seq_puts(s, ";");
-		seq_printf(s, rr->format_str, dom->id, max_data_width,
-			   rr->msr_read(dom, partid));
+		if (rg && reg_val == r->default_ctrl) {
+			prev_auto_fill = true;
+			seq_puts(s, "S");
+		} else {
+			seq_printf(s, rr->format_str, dom->id,
+				max_data_width, reg_val);
+		}
 		sep = true;
 	}
 	seq_puts(s, "\n");
 }
 
 int resctrl_group_schemata_show(struct kernfs_open_file *of,
-			   struct seq_file *s, void *v)
+			struct seq_file *s, void *v)
 {
 	struct rdtgroup *rdtgrp;
-	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
-	struct raw_resctrl_resource *rr;
+	struct resctrl_schema *rs;
 	int ret = 0;
+	hw_closid_t hw_closid;
 	u32 partid;
 
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 	if (rdtgrp) {
-		partid = rdtgrp->closid;
-		for_each_supported_resctrl_exports(res) {
-			r = &res->resctrl_res;
+		list_for_each_entry(rs, &resctrl_all_schema, list) {
+			r = rs->res;
+			if (!r)
+				continue;
 			if (r->alloc_enabled) {
-				rr = (struct raw_resctrl_resource *)r->res;
+				resctrl_cdp_map(clos, rdtgrp->closid,
+					rs->conf_type, hw_closid);
+				partid = hw_closid_val(hw_closid);
 				if (partid < mpam_sysprops_num_partid())
-					show_doms(s, r, partid);
+					show_doms(s, r, rs->name, partid);
 			}
 		}
 	} else {
@@ -707,6 +633,7 @@ int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
 		rdt_last_cmd_puts("kernfs subdir error\n");
 		free_mon(ret);
 	}
+
 	return ret;
 }
 
