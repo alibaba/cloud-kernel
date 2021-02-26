@@ -1366,7 +1366,8 @@ int __init mpam_resctrl_init(void)
 void __mpam_sched_in(void)
 {
 	struct intel_pqr_state *state = this_cpu_ptr(&pqr_state);
-	u64 partid = state->default_closid;
+	u64 closid = state->default_closid;
+	u64 partid_d, partid_i;
 	u64 pmg = state->default_rmid;
 
 	/*
@@ -1375,7 +1376,7 @@ void __mpam_sched_in(void)
 	 */
 	if (static_branch_likely(&resctrl_alloc_enable_key)) {
 		if (current->closid)
-			partid = current->closid;
+			closid = current->closid;
 	}
 
 	if (static_branch_likely(&resctrl_mon_enable_key)) {
@@ -1383,22 +1384,56 @@ void __mpam_sched_in(void)
 			pmg = current->rmid;
 	}
 
-	if (partid != state->cur_closid || pmg != state->cur_rmid) {
+	if (closid != state->cur_closid || pmg != state->cur_rmid) {
 		u64 reg;
-		state->cur_closid = partid;
-		state->cur_rmid = pmg;
 
-		/* set in EL0 */
-		reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
-		reg = PARTID_SET(reg, partid);
-		reg = PMG_SET(reg, pmg);
-		mpam_write_sysreg_s(reg, SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
+		if (resctrl_cdp_enabled) {
+			hw_closid_t hw_closid;
 
-		/* set in EL1 */
-		reg = mpam_read_sysreg_s(SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
-		reg = PARTID_SET(reg, partid);
-		reg = PMG_SET(reg, pmg);
-		mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
+			resctrl_cdp_map(clos, closid, CDP_DATA, hw_closid);
+			partid_d = hw_closid_val(hw_closid);
+
+			resctrl_cdp_map(clos, closid, CDP_CODE, hw_closid);
+			partid_i = hw_closid_val(hw_closid);
+
+			/*
+			 * when cdp enabled, we use partid_i to label cur_closid
+			 * of cpu state instead of partid_d, because each task/
+			 * rdtgrp's closid is labeled by CDP_BOTH/CDP_CODE but not
+			 * CDP_DATA.
+			 */
+			state->cur_closid = partid_i;
+			state->cur_rmid = pmg;
+
+			/* set in EL0 */
+			reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
+			reg = PARTID_D_SET(reg, partid_d);
+			reg = PARTID_I_SET(reg, partid_i);
+			reg = PMG_SET(reg, pmg);
+			mpam_write_sysreg_s(reg, SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
+
+			/* set in EL1 */
+			reg = mpam_read_sysreg_s(SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
+			reg = PARTID_D_SET(reg, partid_d);
+			reg = PARTID_I_SET(reg, partid_i);
+			reg = PMG_SET(reg, pmg);
+			mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
+		} else {
+			state->cur_closid = closid;
+			state->cur_rmid = pmg;
+
+			/* set in EL0 */
+			reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
+			reg = PARTID_SET(reg, closid);
+			reg = PMG_SET(reg, pmg);
+			mpam_write_sysreg_s(reg, SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
+
+			/* set in EL1 */
+			reg = mpam_read_sysreg_s(SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
+			reg = PARTID_SET(reg, closid);
+			reg = PMG_SET(reg, pmg);
+			mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
+		}
 	}
 }
 
