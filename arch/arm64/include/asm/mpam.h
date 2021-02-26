@@ -323,7 +323,7 @@ struct raw_resctrl_resource {
 
 	int			data_width;
 	const char		*format_str;
-	int (*parse_ctrlval)(char *buf, struct raw_resctrl_resource *r,
+	int (*parse_ctrlval)(char *buf, struct resctrl_resource *r,
 				struct resctrl_staged_config *cfg,
 				enum resctrl_ctrl_type ctrl_type);
 

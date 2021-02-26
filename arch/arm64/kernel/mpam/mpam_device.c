@@ -753,7 +753,7 @@ static void mpam_reset_device_config(struct mpam_component *comp,
 		mpam_reset_device_bitmap(dev, MPAMCFG_MBW_PBM,
 				dev->mbw_pbm_bits);
 	if (mpam_has_feature(mpam_feat_mbw_max, dev->features)) {
-		mbw_max = MBW_MAX_SET(MBW_MAX_BWA_FRACT(dev->bwa_wd));
+		mbw_max = MBW_MAX_SET(MBW_MAX_BWA_FRACT(dev->bwa_wd), dev->bwa_wd);
 		mbw_max = MBW_MAX_SET_HDL(mbw_max);
 		mpam_write_reg(dev, MPAMCFG_MBW_MAX, mbw_max);
 	}
@@ -1177,7 +1177,7 @@ mpam_device_config(struct mpam_device *dev, struct sd_closid *closid,
 
 	if (mpam_has_feature(mpam_feat_mbw_max, dev->features)) {
 		if (cfg && mpam_has_feature(mpam_feat_mbw_max, cfg->valid)) {
-			mbw_max = MBW_MAX_SET(cfg->mbw_max);
+			mbw_max = MBW_MAX_SET(cfg->mbw_max, dev->bwa_wd);
 			if (!mpam_has_feature(mpam_feat_part_hdl, cfg->valid) ||
 				(mpam_has_feature(mpam_feat_part_hdl, cfg->valid) && cfg->hdl))
 				mbw_max = MBW_MAX_SET_HDL(mbw_max);
@@ -1382,14 +1382,15 @@ static void mpam_component_read_mpamcfg(void *_ctx)
 	struct mpam_device_sync *ctx = (struct mpam_device_sync *)_ctx;
 	struct mpam_component *comp = ctx->comp;
 	struct sync_args *args = ctx->args;
-	u64 val;
-	u16 reg;
+	u64 val = 0;
 	u32 partid, intpartid;
+	u32 dspri = 0;
+	u32 intpri = 0;
+	u64 range;
 
 	if (!args)
 		return;
 
-	reg = args->reg;
 
 	partid = args->closid.reqpartid;
 	intpartid = args->closid.intpartid;
@@ -1407,7 +1408,44 @@ static void mpam_component_read_mpamcfg(void *_ctx)
 
 		mpam_write_reg(dev, MPAMCFG_PART_SEL, partid);
 		wmb();
-		val = mpam_read_reg(dev, reg);
+
+		switch (args->eventid) {
+		case QOS_CAT_CPBM_EVENT_ID:
+			if (!mpam_has_feature(mpam_feat_cpor_part, dev->features))
+				break;
+			val = mpam_read_reg(dev, MPAMCFG_CPBM);
+			break;
+		case QOS_MBA_MAX_EVENT_ID:
+			if (!mpam_has_feature(mpam_feat_mbw_max, dev->features))
+				break;
+			val = mpam_read_reg(dev, MPAMCFG_MBW_MAX);
+			range = MBW_MAX_BWA_FRACT(dev->bwa_wd);
+			val = MBW_MAX_GET(val, dev->bwa_wd) * (MAX_MBA_BW - 1) / range;
+			break;
+		case QOS_MBA_HDL_EVENT_ID:
+			if (!mpam_has_feature(mpam_feat_mbw_max, dev->features))
+				break;
+			val = mpam_read_reg(dev, MPAMCFG_MBW_MAX);
+			val = MBW_MAX_GET_HDL(val);
+			break;
+		case QOS_CAT_PRI_EVENT_ID:
+		case QOS_MBA_PRI_EVENT_ID:
+			if (mpam_has_feature(mpam_feat_intpri_part, dev->features))
+				intpri = MPAMCFG_INTPRI_GET(val);
+			if (mpam_has_feature(mpam_feat_dspri_part, dev->features))
+				dspri = MPAMCFG_DSPRI_GET(val);
+			if (!mpam_has_feature(mpam_feat_intpri_part_0_low,
+				dev->features))
+				intpri = GENMASK(dev->intpri_wd - 1, 0) & ~intpri;
+			if (!mpam_has_feature(mpam_feat_dspri_part_0_low,
+				dev->features))
+				dspri = GENMASK(dev->intpri_wd - 1, 0) & ~dspri;
+			val = (dspri > intpri) ? dspri : intpri;
+			break;
+		default:
+			break;
+		}
+
 		atomic64_add(val, &ctx->cfg_value);
 		spin_unlock_irqrestore(&dev->lock, flags);
 

@@ -69,18 +69,17 @@
 #define CPBM_WD_MASK        0xFFFF
 #define CPBM_MASK           0x7FFF
 
-#define BWA_WD              6		/* hard code for P680 */
-#define MBW_MAX_MASK        0xFC00
-#define MBW_MAX_HARDLIM     BIT(31)
-#define MBW_MAX_BWA_FRACT(w)        GENMASK(w - 1, 0)
-#define MBW_MAX_SET(v)      (MBW_MAX_HARDLIM|((v) << (16 - BWA_WD)))
-#define MBW_MAX_GET(v)      (((v) & MBW_MAX_MASK) >> (16 - BWA_WD))
-#define MBW_MAX_SET_HDL(r)          (r | MBW_MAX_HARDLIM)
-#define MBW_MAX_GET_HDL(r)          (r & MBW_MAX_HARDLIM)
-/* MPAMCFG_MBW_PROP */
+#define MBW_MAX_HARDLIM             BIT(31)
 #define MBW_PROP_HARDLIM            BIT(31)
-#define MBW_PROP_SET_HDL(r)         (r | MBW_PROP_HARDLIM)
+#define MBW_MAX_MASK                GENMASK(15, 0)
+#define MBW_MAX_BWA_FRACT(w)        GENMASK(w - 1, 0)
+#define MBW_MAX_SET(v, w)           (v << (16 - w))
+/* MPAMCFG_MBW_PROP */
+#define MBW_PROP_SET_HDL(r)   (r | MBW_PROP_HARDLIM)
 /* MPAMCFG_MBW_MAX */
+#define MBW_MAX_SET_HDL(r)    (r | MBW_MAX_HARDLIM)
+#define MBW_MAX_GET_HDL(r)    ((r & MBW_MAX_HARDLIM) >> 31)
+#define MBW_MAX_GET(v, w)     (((v) & MBW_MAX_MASK) >> (16 - w))
 
 #define MSMON_MATCH_PMG     BIT(17)
 #define MSMON_MATCH_PARTID  BIT(16)

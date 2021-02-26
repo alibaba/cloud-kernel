@@ -269,7 +269,7 @@ next:
 	list_for_each_entry(d, &r->domains, list) {
 		if (d->id == dom_id) {
 			resctrl_cdp_map(clos, closid, conf_type, hw_closid);
-			if (rr->parse_ctrlval(dom, rr,
+			if (rr->parse_ctrlval(dom, r,
 				&d->staged_cfg[conf_type], ctrl_type))
 				return -EINVAL;
 			d->staged_cfg[conf_type].hw_closid = hw_closid;

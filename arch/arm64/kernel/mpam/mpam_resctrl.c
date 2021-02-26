@@ -137,9 +137,9 @@ static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv);
 
 static int common_wrmon(struct rdt_domain *d, void *md_priv);
 
-static int parse_cache(char *buf, struct raw_resctrl_resource *r,
+static int parse_cache(char *buf, struct resctrl_resource *r,
 	struct resctrl_staged_config *cfg, enum resctrl_ctrl_type ctrl_type);
-static int parse_bw(char *buf, struct raw_resctrl_resource *r,
+static int parse_bw(char *buf, struct resctrl_resource *r,
 	struct resctrl_staged_config *cfg, enum resctrl_ctrl_type ctrl_type);
 
 struct raw_resctrl_resource raw_resctrl_resources_all[] = {
@@ -183,7 +183,7 @@ mpam_get_raw_resctrl_resource(enum resctrl_resource_level level)
  * resource type.
  */
 static int
-parse_cache(char *buf, struct raw_resctrl_resource *r,
+parse_cache(char *buf, struct resctrl_resource *r,
 		struct resctrl_staged_config *cfg,
 		enum resctrl_ctrl_type type)
 {
@@ -217,32 +217,8 @@ parse_cache(char *buf, struct raw_resctrl_resource *r,
 	return 0;
 }
 
-/* define bw_min as 5 percentage, that are 5% ~ 100% which cresponding masks: */
-static u32 bw_max_mask[20] = {
-	3, /*  3/64:  5% */
-	6, /*  6/64: 10% */
-	10, /* 10/64: 15% */
-	13, /* 13/64: 20% */
-	16, /* 16/64: 25% */
-	19, /* ... */
-	22,
-	26,
-	29,
-	32,
-	35,
-	38,
-	42,
-	45,
-	48,
-	51,
-	54,
-	58,
-	61,
-	63  /* 100% */
-};
-
 static bool bw_validate(char *buf, unsigned long *data,
-			struct raw_resctrl_resource *r)
+			struct resctrl_resource *r)
 {
 	unsigned long bw;
 	int ret;
@@ -253,15 +229,15 @@ static bool bw_validate(char *buf, unsigned long *data,
 		return false;
 	}
 
-	bw = bw < 5 ? 5 : bw;
-	bw = bw > 100 ? 100 : bw;
-	*data = roundup(bw, 5);
+	bw = bw > MAX_MBA_BW ? MAX_MBA_BW : bw;
+	bw = bw < r->mbw.min_bw ?  r->mbw.min_bw : bw;
+	*data = roundup(bw, r->mbw.bw_gran);
 
 	return true;
 }
 
 static int
-parse_bw(char *buf, struct raw_resctrl_resource *r,
+parse_bw(char *buf, struct resctrl_resource *r,
 		struct resctrl_staged_config *cfg,
 		enum resctrl_ctrl_type type)
 {
@@ -324,24 +300,17 @@ static u64 cache_rdmsr(struct rdt_domain *d, struct msr_param *para)
 
 	switch (para->type) {
 	case SCHEMA_COMM:
-		args.reg = MPAMCFG_CPBM;
+		args.eventid = QOS_CAT_CPBM_EVENT_ID;
 		break;
 	case SCHEMA_PRI:
-		args.reg = MPAMCFG_PRI;
+		args.eventid = QOS_CAT_PRI_EVENT_ID;
+		break;
 	default:
 		return 0;
 	}
 
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 	mpam_component_get_config(dom->comp, &args, &result);
-
-	switch (para->type) {
-	case SCHEMA_PRI:
-		result = MPAMCFG_PRI_GET(result);
-		break;
-	default:
-		break;
-	}
 
 	return result;
 }
@@ -360,13 +329,13 @@ static u64 mbw_rdmsr(struct rdt_domain *d, struct msr_param *para)
 	 */
 	switch (para->type) {
 	case SCHEMA_COMM:
-		args.reg = MPAMCFG_MBW_MAX;
+		args.eventid = QOS_MBA_MAX_EVENT_ID;
 		break;
 	case SCHEMA_HDL:
-		args.reg = MPAMCFG_MBW_MAX;
+		args.eventid = QOS_MBA_HDL_EVENT_ID;
 		break;
 	case SCHEMA_PRI:
-		args.reg = MPAMCFG_PRI;
+		args.eventid = QOS_MBA_PRI_EVENT_ID;
 		break;
 	default:
 		return 0;
@@ -374,20 +343,6 @@ static u64 mbw_rdmsr(struct rdt_domain *d, struct msr_param *para)
 
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 	mpam_component_get_config(dom->comp, &args, &result);
-
-	switch (para->type) {
-	case SCHEMA_COMM:
-		result = roundup((MBW_MAX_GET(result) * 100) / 64, 5);
-		break;
-	case SCHEMA_PRI:
-		result = MPAMCFG_PRI_GET(result);
-		break;
-	case SCHEMA_HDL:
-		result = MBW_MAX_GET_HDL(result);
-		break;
-	default:
-		break;
-	}
 
 	return result;
 }
@@ -1563,10 +1518,10 @@ mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
 				mpam_set_feature(mpam_feat_mbw_part, &mpam_cfg->valid);
 			} else {
 				/* .. the number of fractions we can represent */
+				range = MBW_MAX_BWA_FRACT(res->class->bwa_wd);
+				mpam_cfg->mbw_max = (resctrl_cfg * range) / (MAX_MBA_BW - 1);
 				mpam_cfg->mbw_max =
-					bw_max_mask[(resctrl_cfg / 5 - 1) %
-					ARRAY_SIZE(bw_max_mask)];
-
+					(mpam_cfg->mbw_max > range) ? range : mpam_cfg->mbw_max;
 				mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
 			}
 		} else {

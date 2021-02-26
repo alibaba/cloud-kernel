@@ -41,8 +41,6 @@ struct sync_args {
 	u32 mon;
 	bool match_pmg;
 	enum rdt_event_id eventid;
-	/*for reading msr*/
-	u16 reg;
 };
 
 struct mpam_device_sync {
