@@ -404,11 +404,11 @@ static int resctrl_get_tree(struct fs_context *fc)
 
 	ret = resctrl_id_init();
 	if (ret)
-		goto out;
+		goto out_schema;
 
 	ret = resctrl_group_create_info_dir(resctrl_group_default.kn, &kn_info);
 	if (ret)
-		goto out;
+		goto out_schema;
 
 	if (resctrl_mon_capable) {
 		ret = mongroup_create_dir(resctrl_group_default.kn,
@@ -450,6 +450,8 @@ out_mongrp:
 		kernfs_remove(kn_mongrp);
 out_info:
 	kernfs_remove(kn_info);
+out_schema:
+	schemata_list_destroy();
 out:
 	rdt_last_cmd_clear();
 	mutex_unlock(&resctrl_group_mutex);
