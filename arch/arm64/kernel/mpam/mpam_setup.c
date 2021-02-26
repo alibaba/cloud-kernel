@@ -59,12 +59,14 @@ mpam_get_domain_from_cpu(int cpu, struct mpam_resctrl_res *res)
 static int mpam_resctrl_setup_domain(unsigned int cpu,
 				struct mpam_resctrl_res *res)
 {
+	struct rdt_domain *d;
 	struct mpam_resctrl_dom *dom;
 	struct mpam_class *class = res->class;
 	struct mpam_component *comp_iter, *comp;
 	u32 num_partid;
 	u32 **ctrlval_ptr;
 	enum resctrl_ctrl_type type;
+	struct list_head *tmp;
 
 	num_partid = mpam_sysprops_num_partid();
 
@@ -99,8 +101,17 @@ static int mpam_resctrl_setup_domain(unsigned int cpu,
 		}
 	}
 
-	/* TODO: this list should be sorted */
-	list_add_tail(&dom->resctrl_dom.list, &res->resctrl_res.domains);
+	tmp = &res->resctrl_res.domains;
+	/* insert domains in id ascending order */
+	list_for_each_entry(d, &res->resctrl_res.domains, list) {
+		/* find the last domain with id greater than this domain */
+		if (dom->resctrl_dom.id > d->id)
+			tmp = &d->list;
+		if (dom->resctrl_dom.id < d->id)
+			break;
+	}
+	list_add(&dom->resctrl_dom.list, tmp);
+
 	res->resctrl_res.dom_num++;
 
 	return 0;
