@@ -73,7 +73,7 @@ struct mpam_node mpam_node_all[] = {
 		.name			= "L3T0",
 		.type                   = MPAM_RESOURCE_CACHE,
 		.addr                   = 0x90390000,
-		.cpus_list              = "0",
+		.cpus_list              = "0-3",
 		.default_ctrl		= 0x7fff,
 	},
 
@@ -82,7 +82,7 @@ struct mpam_node mpam_node_all[] = {
 		.name			= "L3T1",
 		.type                   = MPAM_RESOURCE_CACHE,
 		.addr                   = 0x903a0000,
-		.cpus_list              = "1",
+		.cpus_list              = "4-7",
 		.default_ctrl		= 0x7fff,
 	},
 
@@ -91,7 +91,7 @@ struct mpam_node mpam_node_all[] = {
 		.name			= "L3T2",
 		.type                   = MPAM_RESOURCE_CACHE,
 		.addr                   = 0x903b0000,
-		.cpus_list              = "2",
+		.cpus_list              = "8-11",
 		.default_ctrl		= 0x7fff,
 	},
 
@@ -100,16 +100,42 @@ struct mpam_node mpam_node_all[] = {
 		.name			= "L3T3",
 		.type                   = MPAM_RESOURCE_CACHE,
 		.addr                   = 0x903c0000,
-		.cpus_list              = "3",
+		.cpus_list              = "12-15",
 		.default_ctrl		= 0x7fff,
+	},
+#if 0	// run emu we run 6 clusters 24 cores
+	{
+		.name			= "L3T4",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x903d0000,
+		.cpus_list              = "16-19",
+	},
+	{
+		.name			= "L3T5",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x903e0000,
+		.cpus_list              = "20-23",
+	},
+	{
+		.name			= "L3T6",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x903f0000,
+		.cpus_list              = "24-27",
+	},
+	{
+		.name			= "L3T7",
+		.type                   = MPAM_RESOURCE_CACHE,
+		.addr                   = 0x90400000,
+		.cpus_list              = "28-31",
 	},
 	{
 		.name			= "L3TALL",
 		.type                   = MPAM_RESOURCE_CACHE,
 		.addr                   = 0x90B90000,
-		.cpus_list              = "0-3",
+		.cpus_list              = "0-23",
 		.default_ctrl		= 0x7fff,
 	},
+#endif
 
 	/* P0 DIE 0: HHA0 */
 	{
@@ -126,7 +152,6 @@ struct mpam_node mpam_node_all[] = {
 		.addr                   = 0x90420000,
 		.cpus_list              = "0-3",
 	},
-
 	{
 		.name			= "HHALL",
 		.type                   = MPAM_RESOURCE_MC,
