@@ -65,11 +65,6 @@ int max_name_width, max_data_width;
 bool rdt_alloc_capable;
 
 /*
- * Indicate the max number of monitor supported.
- */
-static u32 max_mon_num;
-
-/*
  * Indicate if had mount cdpl2/cdpl3 option.
  */
 static bool resctrl_cdp_enabled;
@@ -774,8 +769,11 @@ static int rmid_remap_matrix_init(void)
 
 	STRIDE_CHK_AND_WARN(stride);
 
-	return 0;
+	ret = rmid_mon_ptrs_init(rmid_remap_matrix.nr_usage);
+	if (ret)
+		goto out;
 
+	return 0;
 out:
 	return ret;
 }
@@ -788,13 +786,7 @@ int resctrl_id_init(void)
 	if (ret)
 		return ret;
 
-	ret = rmid_remap_matrix_init();
-	if (ret)
-		return ret;
-
-	mon_init();
-
-	return 0;
+	return rmid_remap_matrix_init();
 }
 
 static int is_rmid_valid(int rmid)
@@ -869,6 +861,10 @@ static int __rmid_alloc(int partid)
 		goto out;
 	}
 
+	ret = assoc_rmid_with_mon(rmid[0]);
+	if (ret)
+		goto out;
+
 	return rmid[0];
 
 out:
@@ -908,6 +904,8 @@ void rmid_free(int rmid)
 	}
 
 	STRIDE_CHK_AND_WARN(stride);
+
+	deassoc_rmid_with_mon(rmid);
 }
 
 int mpam_rmid_to_partid_pmg(int rmid, int *partid, int *pmg)
@@ -1983,26 +1981,4 @@ void resctrl_resource_reset(void)
 	 * reset CDP configuration used in recreating schema list nodes.
 	 */
 	resctrl_cdp_enabled = false;
-}
-
-u16 mpam_resctrl_max_mon_num(void)
-{
-	struct mpam_resctrl_res *res;
-	u16 mon_num = USHRT_MAX;
-	struct raw_resctrl_resource *rr;
-
-	if (max_mon_num)
-		return max_mon_num;
-
-	for_each_supported_resctrl_exports(res) {
-		rr = res->resctrl_res.res;
-		mon_num = min(mon_num, rr->num_mon);
-	}
-
-	if (mon_num == USHRT_MAX)
-		mon_num = 0;
-
-	max_mon_num = mon_num;
-
-	return mon_num;
 }

@@ -589,6 +589,7 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 		struct list_head *head;
 		struct rdtgroup *entry;
 		hw_closid_t hw_closid;
+		hw_monid_t hw_monid;
 		enum resctrl_conf_type type = CDP_CODE;
 
 		resctrl_cdp_map(clos, rdtgrp->closid.reqpartid,
@@ -609,7 +610,10 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 				return ret;
 
 			md.u.pmg = pmg;
-			md.u.mon = entry->mon.mon;
+			resctrl_cdp_map(mon, get_rmid_mon(entry->mon.rmid,
+				r->rid), type, hw_monid);
+			md.u.mon = hw_monid_val(hw_monid);
+
 			usage += resctrl_dom_mon_data(r, d, md.priv);
 		}
 	}
@@ -664,7 +668,8 @@ static int resctrl_mkdir_mondata_dom(struct kernfs_node *parent_kn,
 	/* monitoring use reqpartid (reqpartid) */
 	resctrl_cdp_map(clos, prgrp->closid.reqpartid, s->conf_type, hw_closid);
 	md.u.partid = hw_closid_val(hw_closid);
-	resctrl_cdp_map(mon, prgrp->mon.mon, s->conf_type, hw_monid);
+	resctrl_cdp_map(mon, get_rmid_mon(prgrp->mon.rmid, r->rid),
+			s->conf_type, hw_monid);
 	md.u.mon = hw_monid_val(hw_monid);
 
 	ret = mpam_rmid_to_partid_pmg(prgrp->mon.rmid, NULL, &pmg);

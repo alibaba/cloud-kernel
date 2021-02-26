@@ -53,7 +53,6 @@ struct mongroup {
 	struct rdtgroup     *parent;
 	struct list_head    crdtgrp_list;
 	u32         rmid;
-	u32         mon;
 	int         init;
 };
 

@@ -196,4 +196,8 @@ int __init mpam_resctrl_init(void);
 int mpam_resctrl_set_default_cpu(unsigned int cpu);
 void mpam_resctrl_clear_default_cpu(unsigned int cpu);
 
+int assoc_rmid_with_mon(u32 rmid);
+void deassoc_rmid_with_mon(u32 rmid);
+u32 get_rmid_mon(u32 rmid, enum resctrl_resource_level rid);
+int rmid_mon_ptrs_init(u32 nr_rmids);
 #endif

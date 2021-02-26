@@ -353,25 +353,14 @@ static void mkdir_mondata_all_prepare_clean(struct resctrl_group *prgrp)
 
 static int mkdir_mondata_all_prepare(struct resctrl_group *rdtgrp)
 {
-	int ret = 0;
-	int mon;
 	struct resctrl_group *prgrp;
-
-	mon = resctrl_lru_request_mon();
-	if (mon < 0) {
-		rdt_last_cmd_puts("out of monitors\n");
-		ret = -EINVAL;
-		goto out;
-	}
-	rdtgrp->mon.mon = mon;
 
 	if (rdtgrp->type == RDTMON_GROUP) {
 		prgrp = rdtgrp->mon.parent;
 		rdtgrp->closid.intpartid = prgrp->closid.intpartid;
 	}
 
-out:
-	return ret;
+	return 0;
 }
 
 /*
