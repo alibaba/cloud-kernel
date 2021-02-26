@@ -185,7 +185,7 @@ struct resctrl_staged_config {
 	hw_closid_t     hw_closid;
 	u32             new_ctrl;
 	bool            have_new_ctrl;
-	enum resctrl_conf_type  new_ctrl_type;
+	enum resctrl_conf_type  conf_type;
 };
 
 /* later move to resctrl common directory */
@@ -257,14 +257,10 @@ void post_resctrl_mount(void);
 #define mpam_readl(addr) readl(addr)
 #define mpam_writel(v, addr) writel(v, addr)
 
-/**
- * struct msr_param - set a range of MSRs from a domain
- * @res:	The resource to use
- * @value:	value
- */
+struct sd_closid;
+
 struct msr_param {
-	struct resctrl_resource	*res;
-	u64			value;
+	struct sd_closid *closid;
 };
 
 /**
@@ -299,13 +295,13 @@ struct raw_resctrl_resource {
 	u16                 hdl_wd;
 
 	void (*msr_update)(struct resctrl_resource *r, struct rdt_domain *d,
-					struct list_head *opt_list, int partid);
-	u64 (*msr_read)(struct rdt_domain *d, int partid);
+			struct list_head *opt_list, struct msr_param *para);
+	u64 (*msr_read)(struct rdt_domain *d, struct msr_param *para);
 
 	int			data_width;
 	const char		*format_str;
 	int (*parse_ctrlval)(char *buf, struct raw_resctrl_resource *r,
-			struct resctrl_staged_config *cfg, hw_closid_t closid);
+			struct resctrl_staged_config *cfg);
 
 	u16                num_mon;
 	u64 (*mon_read)(struct rdt_domain *d, void *md_priv);

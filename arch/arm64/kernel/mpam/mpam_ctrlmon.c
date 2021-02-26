@@ -115,10 +115,16 @@ static int resctrl_group_update_domains(struct rdtgroup *rdtgrp,
 			struct resctrl_resource *r)
 {
 	int i;
-	u32 partid;
 	struct rdt_domain *d;
 	struct raw_resctrl_resource *rr;
 	struct resctrl_staged_config *cfg;
+	hw_closid_t hw_closid;
+	struct sd_closid closid;
+	struct list_head *head;
+	struct rdtgroup *entry;
+	struct msr_param para;
+
+	para.closid = &closid;
 
 	rr = r->res;
 	list_for_each_entry(d, &r->domains, list) {
@@ -127,15 +133,38 @@ static int resctrl_group_update_domains(struct rdtgroup *rdtgrp,
 			if (!cfg[i].have_new_ctrl)
 				continue;
 
-			partid = hw_closid_val(cfg[i].hw_closid);
-			/* apply cfg */
-			if (d->ctrl_val[partid] == cfg[i].new_ctrl)
-				continue;
+			/*
+			 * for ctrl group configuration, hw_closid of cfg[i]
+			 * equals to rdtgrp->closid.intpartid.
+			 */
+			closid.intpartid = hw_closid_val(cfg[i].hw_closid);
 
-			d->ctrl_val[partid] = cfg[i].new_ctrl;
-			d->have_new_ctrl = true;
+			/* if ctrl group's config has changed, refresh it first. */
+			if (d->ctrl_val[closid.intpartid] != cfg[i].new_ctrl) {
+				/*
+				 * duplicate ctrl group's configuration indexed
+				 * by intpartid from domain ctrl_val array.
+				 */
+				resctrl_cdp_map(clos, rdtgrp->closid.reqpartid,
+						cfg[i].conf_type, hw_closid);
+				closid.reqpartid = hw_closid_val(hw_closid);
 
-			rr->msr_update(r, d, NULL, partid);
+				d->ctrl_val[closid.intpartid] = cfg[i].new_ctrl;
+				d->have_new_ctrl = true;
+				rr->msr_update(r, d, NULL, &para);
+			}
+			/*
+			 * we should synchronize all child mon groups'
+			 * configuration from this ctrl rdtgrp
+			 */
+			head = &rdtgrp->mon.crdtgrp_list;
+			list_for_each_entry(entry, head, mon.crdtgrp_list) {
+				resctrl_cdp_map(clos, entry->closid.reqpartid,
+					cfg[i].conf_type, hw_closid);
+				closid.reqpartid = hw_closid_val(hw_closid);
+
+				rr->msr_update(r, d, NULL, &para);
+			}
 		}
 	}
 
@@ -171,8 +200,10 @@ next:
 	list_for_each_entry(d, &r->domains, list) {
 		if (d->id == dom_id) {
 			resctrl_cdp_map(clos, closid, t, hw_closid);
-			if (rr->parse_ctrlval(dom, rr, &d->staged_cfg[t], hw_closid))
+			if (rr->parse_ctrlval(dom, rr, &d->staged_cfg[t]))
 				return -EINVAL;
+			d->staged_cfg[t].hw_closid = hw_closid;
+			d->staged_cfg[t].conf_type = t;
 			goto next;
 		}
 	}
@@ -231,7 +262,7 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 
 	rdt_last_cmd_clear();
 
-	closid = rdtgrp->closid;
+	closid = rdtgrp->closid.intpartid;
 
 	for_each_supported_resctrl_exports(res) {
 		r = &res->resctrl_res;
@@ -264,15 +295,7 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 			goto out;
 	}
 
-	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
-		if (r->alloc_enabled) {
-			ret = resctrl_group_update_domains(rdtgrp, r);
-			if (ret)
-				goto out;
-		}
-	}
-
+	ret = resctrl_update_groups_config(rdtgrp);
 out:
 	resctrl_group_kn_unlock(of->kn);
 	return ret ?: nbytes;
@@ -289,21 +312,24 @@ out:
  * a single "S" simply.
  */
 static void show_doms(struct seq_file *s, struct resctrl_resource *r,
-		char *schema_name, int partid)
+		char *schema_name, struct sd_closid *closid)
 {
 	struct raw_resctrl_resource *rr = r->res;
 	struct rdt_domain *dom;
+	struct msr_param para;
 	bool sep = false;
 	bool rg = false;
 	bool prev_auto_fill = false;
 	u32 reg_val;
+
+	para.closid = closid;
 
 	if (r->dom_num > RESCTRL_SHOW_DOM_MAX_NUM)
 		rg = true;
 
 	seq_printf(s, "%*s:", max_name_width, schema_name);
 	list_for_each_entry(dom, &r->domains, list) {
-		reg_val = rr->msr_read(dom, partid);
+		reg_val = rr->msr_read(dom, &para);
 
 		if (rg && reg_val == r->default_ctrl &&
 				prev_auto_fill == true)
@@ -331,7 +357,7 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 	struct resctrl_schema *rs;
 	int ret = 0;
 	hw_closid_t hw_closid;
-	u32 partid;
+	struct sd_closid closid;
 
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 	if (rdtgrp) {
@@ -340,11 +366,15 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 			if (!r)
 				continue;
 			if (r->alloc_enabled) {
-				resctrl_cdp_map(clos, rdtgrp->closid,
+				resctrl_cdp_map(clos, rdtgrp->closid.intpartid,
 					rs->conf_type, hw_closid);
-				partid = hw_closid_val(hw_closid);
-				if (partid < mpam_sysprops_num_partid())
-					show_doms(s, r, rs->name, partid);
+				closid.intpartid = hw_closid_val(hw_closid);
+
+				resctrl_cdp_map(clos, rdtgrp->closid.reqpartid,
+					rs->conf_type, hw_closid);
+				closid.reqpartid = hw_closid_val(hw_closid);
+
+				show_doms(s, r, rs->name, &closid);
 			}
 		}
 	} else {
@@ -465,7 +495,8 @@ static int resctrl_mkdir_mondata_dom(struct kernfs_node *parent_kn,
 
 	md.u.rid = r->rid;
 	md.u.domid = d->id;
-	resctrl_cdp_map(clos, prgrp->closid, s->conf_type, hw_closid);
+	/* monitoring use reqpartid (reqpartid) */
+	resctrl_cdp_map(clos, prgrp->closid.reqpartid, s->conf_type, hw_closid);
 	md.u.partid = hw_closid_val(hw_closid);
 	resctrl_cdp_map(mon, prgrp->mon.mon, s->conf_type, hw_monid);
 	md.u.mon = hw_monid_val(hw_monid);
@@ -611,9 +642,9 @@ int resctrl_group_init_alloc(struct rdtgroup *rdtgrp)
 	list_for_each_entry(s, &resctrl_all_schema, list) {
 		r = s->res;
 		if (r->rid == RDT_RESOURCE_MC) {
-			rdtgroup_init_mba(r, rdtgrp->closid);
+			rdtgroup_init_mba(r, rdtgrp->closid.intpartid);
 		} else {
-			ret = rdtgroup_init_cat(s, rdtgrp->closid);
+			ret = rdtgroup_init_cat(s, rdtgrp->closid.intpartid);
 			if (ret < 0)
 				return ret;
 		}
@@ -626,4 +657,22 @@ int resctrl_group_init_alloc(struct rdtgroup *rdtgrp)
 	}
 
 	return 0;
+}
+
+int resctrl_update_groups_config(struct rdtgroup *rdtgrp)
+{
+	int ret = 0;
+	struct resctrl_resource *r;
+	struct mpam_resctrl_res *res;
+
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+		if (r->alloc_enabled) {
+			ret = resctrl_group_update_domains(rdtgrp, r);
+			if (ret)
+				break;
+		}
+	}
+
+	return ret;
 }

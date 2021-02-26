@@ -50,11 +50,19 @@ struct mongroup {
 };
 
 /**
+ * struct sd_closid - software defined closid
+ * @intpartid:  closid for this rdtgroup only for allocation
+ * @weak_closid:    closid for synchronizing configuration and monitoring
+ */
+struct sd_closid {
+	u32         intpartid;
+	u32         reqpartid;
+};
+
+/**
  * struct rdtgroup - store rdtgroup's data in resctrl file system.
  * @kn:             kernfs node
  * @resctrl_group_list:     linked list for all rdtgroups
- * @closid:         closid for this rdtgroup
- * #endif
  * @cpu_mask:           CPUs assigned to this rdtgroup
  * @flags:          status bits
  * @waitcount:          how many cpus expect to find this
@@ -66,7 +74,7 @@ struct mongroup {
 struct rdtgroup {
 	struct kernfs_node  *kn;
 	struct list_head    resctrl_group_list;
-	u32         closid;
+	struct sd_closid    closid;
 	struct cpumask      cpu_mask;
 	int         flags;
 	atomic_t        waitcount;
@@ -80,12 +88,17 @@ void schemata_list_destroy(void);
 
 int resctrl_lru_request_mon(void);
 
-int alloc_mon_id(void);
-void free_mon_id(u32 id);
+int alloc_rmid(void);
+void free_rmid(u32 id);
 
+enum closid_type {
+	CLOSID_INT    = 0x1,
+	CLOSID_REQ      = 0x2,
+	CLOSID_NUM_TYPES,
+};
 int resctrl_id_init(void);
-int resctrl_id_alloc(void);
-void resctrl_id_free(int id);
+int resctrl_id_alloc(enum closid_type);
+void resctrl_id_free(enum closid_type, int id);
 
 void update_cpu_closid_rmid(void *info);
 void update_closid_rmid(const struct cpumask *cpu_mask, struct resctrl_group *r);
@@ -127,6 +140,25 @@ int resctrl_mkdir_mondata_all_subdir(struct kernfs_node *parent_kn,
 struct resctrl_resource *
 mpam_resctrl_get_resource(enum resctrl_resource_level level);
 
+int resctrl_update_groups_config(struct rdtgroup *rdtgrp);
+
 #define RESCTRL_MAX_CLOSID 32
+
+/*
+ * left 16 bits of closid store parent(master)'s
+ * closid, the reset store current group's closid,
+ * this used for judging if tasks are allowed to move
+ * another ctrlmon/mon group, it is because when
+ * a mon group is permited to allocated another
+ * closid different from it's parent, only closid
+ * is not sufficient to do that.
+ */
+#define TASK_CLOSID_SET(prclosid, closid)    \
+		((prclosid << 16) | closid)
+
+#define TASK_CLOSID_CUR_GET(closid)   \
+		(closid & GENMASK(15, 0))
+#define TASK_CLOSID_PR_GET(closid)    \
+		((closid & GENMASK(31, 16)) >> 16)
 
 #endif /* _ASM_ARM64_RESCTRL_H */

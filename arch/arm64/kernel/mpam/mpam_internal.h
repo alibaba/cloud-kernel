@@ -37,7 +37,7 @@ struct mpam_resctrl_res {
 struct sync_args {
 	u8  domid;
 	u8  pmg;
-	u32 partid;
+	struct sd_closid closid;
 	u32 mon;
 	bool match_pmg;
 	enum rdt_event_id eventid;
@@ -95,8 +95,6 @@ struct mpam_config {
 	 * hardlimit or not
 	 */
 	bool            hdl;
-
-	u32             intpartid;
 };
 
 /* Bits for mpam_features_t */

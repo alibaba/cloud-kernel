@@ -73,12 +73,12 @@ static void free_pmg(u32 pmg)
 	pmg_free_map |= 1 << pmg;
 }
 
-int alloc_mon_id(void)
+int alloc_rmid(void)
 {
 	return alloc_pmg();
 }
 
-void free_mon_id(u32 id)
+void free_rmid(u32 id)
 {
 	free_pmg(id);
 }

@@ -343,21 +343,26 @@ out_destroy:
 	return ret;
 }
 
+static inline void free_mon_id(struct resctrl_group *rdtgrp)
+{
+	if (rdtgrp->mon.rmid)
+		free_rmid(rdtgrp->mon.rmid);
+	else if (rdtgrp->closid.reqpartid)
+		resctrl_id_free(CLOSID_REQ, rdtgrp->closid.reqpartid);
+}
+
 static void mkdir_mondata_all_prepare_clean(struct resctrl_group *prgrp)
 {
-	if (prgrp->type == RDTCTRL_GROUP)
-		return;
-
-	if (prgrp->closid)
-		resctrl_id_free(prgrp->closid);
-	if (prgrp->mon.rmid)
-		free_mon_id(prgrp->mon.rmid);
+	if (prgrp->type == RDTCTRL_GROUP && prgrp->closid.intpartid)
+		resctrl_id_free(CLOSID_INT, prgrp->closid.intpartid);
+	free_mon_id(prgrp);
 }
 
 static int mkdir_mondata_all_prepare(struct resctrl_group *rdtgrp)
 {
 	int ret = 0;
-	int mon, mon_id, closid;
+	int mon, rmid, reqpartid;
+	struct resctrl_group *prgrp;
 
 	mon = resctrl_lru_request_mon();
 	if (mon < 0) {
@@ -367,25 +372,40 @@ static int mkdir_mondata_all_prepare(struct resctrl_group *rdtgrp)
 	}
 	rdtgrp->mon.mon = mon;
 
+	prgrp = rdtgrp->mon.parent;
+
 	if (rdtgrp->type == RDTMON_GROUP) {
-		mon_id = alloc_mon_id();
-		if (mon_id < 0) {
-			closid = resctrl_id_alloc();
-			if (closid < 0) {
+		/*
+		 * this for mon id allocation, for mpam, rmid
+		 * (pmg) is just reserved for creating monitoring
+		 * group, it has the same effect with reqpartid
+		 * (reqpartid) except for config allocation, but
+		 * for some fuzzy reasons, we keep it until spec
+		 * changes. We also allocate rmid first if it's
+		 * available.
+		 */
+		rmid = alloc_rmid();
+		if (rmid < 0) {
+			reqpartid = resctrl_id_alloc(CLOSID_REQ);
+			if (reqpartid < 0) {
 				rdt_last_cmd_puts("out of closID\n");
-				free_mon_id(mon_id);
 				ret = -EINVAL;
 				goto out;
 			}
-			rdtgrp->closid = closid;
+			rdtgrp->closid.reqpartid = reqpartid;
 			rdtgrp->mon.rmid = 0;
 		} else {
-			struct resctrl_group *prgrp;
-
-			prgrp = rdtgrp->mon.parent;
-			rdtgrp->closid = prgrp->closid;
-			rdtgrp->mon.rmid = mon_id;
+			/*
+			 * this time copy reqpartid from father group,
+			 * as rmid is sufficient to monitoring.
+			 */
+			rdtgrp->closid.reqpartid = prgrp->closid.reqpartid;
+			rdtgrp->mon.rmid = rmid;
 		}
+		/*
+		 * establish relationship from ctrl to mon group.
+		 */
+		rdtgrp->closid.intpartid = prgrp->closid.intpartid;
 	}
 
 out:
@@ -516,16 +536,10 @@ out:
 	return ret;
 }
 
-static bool is_closid_match(struct task_struct *t, struct resctrl_group *r)
+static inline bool
+is_task_match_resctrl_group(struct task_struct *t, struct resctrl_group *r)
 {
-	return (resctrl_alloc_capable &&
-		(r->type == RDTCTRL_GROUP) && (t->closid == r->closid));
-}
-
-static bool is_rmid_match(struct task_struct *t, struct resctrl_group *r)
-{
-	return (resctrl_mon_capable &&
-		(r->type == RDTMON_GROUP) && (t->rmid == r->mon.rmid));
+	return (TASK_CLOSID_PR_GET(t->closid) == r->closid.intpartid);
 }
 
 /*
@@ -543,9 +557,9 @@ static void resctrl_move_group_tasks(struct resctrl_group *from, struct resctrl_
 
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
-		if (!from || is_closid_match(t, from) ||
-		    is_rmid_match(t, from)) {
-			t->closid = to->closid;
+		if (!from || is_task_match_resctrl_group(t, from)) {
+			t->closid = TASK_CLOSID_SET(to->closid.intpartid,
+				to->closid.reqpartid);
 			t->rmid = to->mon.rmid;
 
 #ifdef CONFIG_SMP
@@ -573,7 +587,8 @@ static void free_all_child_rdtgrp(struct resctrl_group *rdtgrp)
 
 	head = &rdtgrp->mon.crdtgrp_list;
 	list_for_each_entry_safe(sentry, stmp, head, mon.crdtgrp_list) {
-		free_mon_id(sentry->mon.rmid);
+		/* rmid may not be used */
+		free_mon_id(sentry);
 		list_del(&sentry->mon.crdtgrp_list);
 		kfree(sentry);
 	}
@@ -605,7 +620,7 @@ static void rmdir_all_sub(void)
 		cpumask_or(&resctrl_group_default.cpu_mask,
 			   &resctrl_group_default.cpu_mask, &rdtgrp->cpu_mask);
 
-		free_mon_id(rdtgrp->mon.rmid);
+		free_mon_id(rdtgrp);
 
 		kernfs_remove(rdtgrp->kn);
 		list_del(&rdtgrp->resctrl_group_list);
@@ -715,13 +730,25 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	rdtgrp->mon.parent = prdtgrp;
 	rdtgrp->type = rtype;
 
+	/*
+	 * for ctrlmon group, intpartid is used for
+	 * applying configuration, reqpartid is
+	 * used for following this configuration and
+	 * getting monitoring for child mon groups.
+	 */
 	if (rdtgrp->type == RDTCTRL_GROUP) {
-		ret = resctrl_id_alloc();
+		ret = resctrl_id_alloc(CLOSID_INT);
 		if (ret < 0) {
 			rdt_last_cmd_puts("out of CLOSIDs\n");
 			goto out_unlock;
 		}
-		rdtgrp->closid = ret;
+		rdtgrp->closid.intpartid = ret;
+		ret = resctrl_id_alloc(CLOSID_REQ);
+		if (ret < 0) {
+			rdt_last_cmd_puts("out of SLAVE CLOSIDs\n");
+			goto out_unlock;
+		}
+		rdtgrp->closid.reqpartid = ret;
 		ret = 0;
 	}
 
@@ -769,6 +796,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 			goto out_prepare_clean;
 		}
 	}
+
 	kernfs_activate(kn);
 
 	/*
@@ -817,6 +845,12 @@ static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
 	 * ctrl_mon group has to track.
 	 */
 	list_add_tail(&rdtgrp->mon.crdtgrp_list, &prgrp->mon.crdtgrp_list);
+
+	/*
+	 * update all mon group's configuration under this parent group
+	 * for master-slave model.
+	 */
+	ret = resctrl_update_groups_config(prgrp);
 
 	resctrl_group_kn_unlock(prgrp_kn);
 	return ret;
@@ -920,9 +954,11 @@ static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
 	/* Give any tasks back to the parent group */
 	resctrl_move_group_tasks(rdtgrp, prdtgrp, tmpmask);
 
-	/* Update per cpu rmid of the moved CPUs first */
-	for_each_cpu(cpu, &rdtgrp->cpu_mask)
+	/* Update per cpu closid and rmid of the moved CPUs first */
+	for_each_cpu(cpu, &rdtgrp->cpu_mask) {
+		per_cpu(pqr_state.default_closid, cpu) = prdtgrp->closid.reqpartid;
 		per_cpu(pqr_state.default_rmid, cpu) = prdtgrp->mon.rmid;
+	}
 	/*
 	 * Update the MSR on moved CPUs and CPUs which have moved
 	 * task running on them.
@@ -931,7 +967,8 @@ static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
 	update_closid_rmid(tmpmask, NULL);
 
 	rdtgrp->flags |= RDT_DELETED;
-	free_mon_id(rdtgrp->mon.rmid);
+
+	free_mon_id(rdtgrp);
 
 	/*
 	 * Remove the rdtgrp from the parent ctrl_mon group's list
@@ -968,8 +1005,10 @@ static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tm
 
 	/* Update per cpu closid and rmid of the moved CPUs first */
 	for_each_cpu(cpu, &rdtgrp->cpu_mask) {
-		per_cpu(pqr_state.default_closid, cpu) = resctrl_group_default.closid;
-		per_cpu(pqr_state.default_rmid, cpu) = resctrl_group_default.mon.rmid;
+		per_cpu(pqr_state.default_closid, cpu) =
+			resctrl_group_default.closid.reqpartid;
+		per_cpu(pqr_state.default_rmid, cpu) =
+			resctrl_group_default.mon.rmid;
 	}
 
 	/*
@@ -980,8 +1019,8 @@ static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tm
 	update_closid_rmid(tmpmask, NULL);
 
 	rdtgrp->flags |= RDT_DELETED;
-	resctrl_id_free(rdtgrp->closid);
-	free_mon_id(rdtgrp->mon.rmid);
+	resctrl_id_free(CLOSID_INT, rdtgrp->closid.intpartid);
+	resctrl_id_free(CLOSID_REQ, rdtgrp->closid.reqpartid);
 
 	/*
 	 * Free all the child monitor group rmids.
@@ -1056,7 +1095,8 @@ static struct kernfs_syscall_ops resctrl_group_kf_syscall_ops = {
 
 static void resctrl_group_default_init(struct resctrl_group *r)
 {
-	r->closid = 0;
+	r->closid.intpartid = 0;
+	r->closid.reqpartid = 0;
 	r->mon.rmid = 0;
 	r->type = RDTCTRL_GROUP;
 }
