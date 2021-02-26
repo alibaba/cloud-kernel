@@ -355,6 +355,12 @@ union mon_data_bits {
 struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
 		struct list_head **pos);
 
+ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
+		char *buf, size_t nbytes, loff_t off);
+
+int resctrl_group_ctrlmon_show(struct kernfs_open_file *of,
+		struct seq_file *s, void *v);
+
 int resctrl_group_alloc_mon(struct rdtgroup *grp);
 
 void mon_init(void);
