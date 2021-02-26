@@ -162,6 +162,9 @@ int mpam_component_config(struct mpam_component *comp,
 int mpam_component_mon(struct mpam_component *comp,
 			struct sync_args *args, u64 *result);
 
+void mpam_component_get_config(struct mpam_component *comp,
+			struct sync_args *args, u32 *result);
+
 u16 mpam_sysprops_num_partid(void);
 u16 mpam_sysprops_num_pmg(void);
 

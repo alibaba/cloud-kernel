@@ -1318,3 +1318,76 @@ int mpam_component_mon(struct mpam_component *comp,
 
 	return ret;
 }
+
+static void mpam_component_read_mpamcfg(void *_ctx)
+{
+	unsigned long flags;
+	struct mpam_device *dev;
+	struct mpam_device_sync *ctx = (struct mpam_device_sync *)_ctx;
+	struct mpam_component *comp = ctx->comp;
+	struct sync_args *args = ctx->args;
+	u64 val;
+	u16 reg;
+	u32 partid;
+
+	if (!args)
+		return;
+
+	reg = args->reg;
+	/*
+	 * args->partid is possible reqpartid or intpartid,
+	 * if narrow enabled, it should be intpartid.
+	 */
+	partid = args->partid;
+
+	list_for_each_entry(dev, &comp->devices, comp_list) {
+		if (!cpumask_test_cpu(smp_processor_id(),
+			&dev->online_affinity))
+			continue;
+
+		spin_lock_irqsave(&dev->lock, flags);
+		if (mpam_has_feature(mpam_feat_part_nrw, dev->features))
+			partid = PART_SEL_SET_INTERNAL(partid);
+		mpam_write_reg(dev, MPAMCFG_PART_SEL, partid);
+		wmb();
+		val = mpam_read_reg(dev, reg);
+		atomic64_add(val, &ctx->cfg_value);
+		spin_unlock_irqrestore(&dev->lock, flags);
+
+		break;
+	}
+}
+
+/*
+ * reading first device of the this component is enough
+ * for getting configuration.
+ */
+static void
+mpam_component_get_config_local(struct mpam_component *comp,
+				struct sync_args *args, u32 *result)
+{
+	int cpu;
+	struct mpam_device *dev;
+	struct mpam_device_sync sync_ctx;
+
+	sync_ctx.args = args;
+	sync_ctx.comp = comp;
+	atomic64_set(&sync_ctx.cfg_value, 0);
+
+	dev = list_first_entry_or_null(&comp->devices,
+				struct mpam_device, comp_list);
+	if (WARN_ON(!dev))
+		return;
+
+	cpu = cpumask_any(&dev->online_affinity);
+	smp_call_function_single(cpu, mpam_component_read_mpamcfg, &sync_ctx, 1);
+
+	if (result)
+		*result = atomic64_read(&sync_ctx.cfg_value);
+}
+
+void mpam_component_get_config(struct mpam_component *comp,
+			struct sync_args *args, u32 *result)
+{
+	mpam_component_get_config_local(comp, args, result);
+}
