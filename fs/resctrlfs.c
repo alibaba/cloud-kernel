@@ -671,9 +671,6 @@ static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
 	 */
 	list_add_tail(&rdtgrp->mon.crdtgrp_list, &prgrp->mon.crdtgrp_list);
 
-	/* [FIXME] post_mkdir_mon */
-	// post_resctrl_group_mkdir_mon(struct resctrl_group *g);
-
 	resctrl_group_kn_unlock(prgrp_kn);
 	return ret;
 }
