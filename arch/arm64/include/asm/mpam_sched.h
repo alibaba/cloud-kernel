@@ -40,14 +40,6 @@ static inline void mpam_sched_in(void)
 		__mpam_sched_in();
 }
 
-enum mpam_enable_type {
-	enable_denied = 0,
-	enable_default,
-	enable_acpi,
-};
-
-extern enum mpam_enable_type __read_mostly mpam_enabled;
-
 #else
 
 static inline void mpam_sched_in(void) {}

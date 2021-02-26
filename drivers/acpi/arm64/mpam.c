@@ -30,7 +30,7 @@
 #include <linux/cacheinfo.h>
 #include <linux/string.h>
 #include <linux/nodemask.h>
-#include <asm/mpam_resource.h>
+#include <linux/arm_mpam.h>
 
 /**
  * acpi_mpam_label_cache_component_id() - Recursivly find @min_physid
@@ -95,6 +95,7 @@ static int __init acpi_mpam_parse_memory(struct acpi_mpam_header *h)
 {
 	int ret = 0;
 	u32 component_id;
+	struct mpam_device *dev;
 	struct acpi_mpam_node_memory *node = (struct acpi_mpam_node_memory *)h;
 
 	ret = acpi_mpam_label_memory_component_id(node->proximity_domain,
@@ -104,9 +105,9 @@ static int __init acpi_mpam_parse_memory(struct acpi_mpam_header *h)
 		return -EINVAL;
 	}
 
-	ret = mpam_create_memory_node(component_id,
+	dev = mpam_device_create_memory(component_id,
 					node->header.base_address);
-	if (ret) {
+	if (IS_ERR(dev)) {
 		pr_err("Failed to create memory node\n");
 		return -EINVAL;
 	}
@@ -118,7 +119,10 @@ static int __init acpi_mpam_parse_cache(struct acpi_mpam_header *h,
 						struct acpi_table_header *pptt)
 {
 	int ret = 0;
+	int level;
 	u32 component_id;
+	struct mpam_device *dev;
+	struct cacheinfo *ci;
 	struct acpi_pptt_cache *pptt_cache;
 	struct acpi_pptt_processor *pptt_cpu_node;
 	struct acpi_mpam_node_cache *node = (struct acpi_mpam_node_cache *)h;
@@ -148,9 +152,28 @@ static int __init acpi_mpam_parse_cache(struct acpi_mpam_header *h,
 		return -EINVAL;
 	}
 
-	ret = mpam_create_cache_node(component_id,
-					node->header.base_address);
-	if (ret) {
+	cpus_read_lock();
+	ci = cacheinfo_shared_cpu_map_search(pptt_cpu_node);
+	if (!ci) {
+		pr_err_once("No CPU has cache with PPTT reference 0x%x",
+				node->PPTT_ref);
+		pr_err_once("All CPUs must be online to probe mpam.\n");
+		cpus_read_unlock();
+		return -ENODEV;
+	}
+
+	level = ci->level;
+	ci = NULL;
+	cpus_read_unlock();
+
+	/*
+	 * Possible we can get cpu-affinity in next MPAM ACPI version,
+	 * now we have to set it to NULL and use default possible_aff-
+	 * inity.
+	 */
+	dev = mpam_device_create_cache(level, component_id, NULL,
+				node->header.base_address);
+	if (IS_ERR(dev)) {
 		pr_err("Failed to create cache node\n");
 		return -EINVAL;
 	}
@@ -166,7 +189,8 @@ static int __init acpi_mpam_parse_table(struct acpi_table_header *table,
 	struct acpi_mpam_header *node_hdr;
 	int ret = 0;
 
-	ret = mpam_nodes_discovery_start();
+	ret = mpam_discovery_start();
+
 	if (ret)
 		return ret;
 
@@ -200,9 +224,9 @@ static int __init acpi_mpam_parse_table(struct acpi_table_header *table,
 
 	if (ret) {
 		pr_err("discovery failed: %d\n", ret);
-		mpam_nodes_discovery_failed();
+		mpam_discovery_failed();
 	} else {
-		ret = mpam_nodes_discovery_complete();
+		ret = mpam_discovery_complete();
 		if (!ret)
 			pr_info("Successfully init mpam by ACPI.\n");
 	}
@@ -219,11 +243,7 @@ int __init acpi_mpam_parse(void)
 	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
 		return 0;
 
-	ret = mpam_force_init();
-	if (ret)
-		return 0;
-
-	if (acpi_disabled)
+	if (acpi_disabled || mpam_enabled != MPAM_ENABLE_ACPI)
 		return 0;
 
 	status = acpi_get_table(ACPI_SIG_MPAM, 0, &mpam);

@@ -31,7 +31,7 @@
 #include <linux/types.h>
 #include <linux/cpu.h>
 #include <linux/cacheinfo.h>
-#include <asm/mpam.h>
+#include <linux/arm_mpam.h>
 #include <asm/mpam_resource.h>
 #include <asm/mpam.h>
 

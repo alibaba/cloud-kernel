@@ -5,6 +5,7 @@
 #include <linux/err.h>
 #include <linux/cpumask.h>
 #include <linux/types.h>
+#include <linux/arm_mpam.h>
 #include "mpam_internal.h"
 
 struct mpam_config;
@@ -14,13 +15,6 @@ struct mpam_config;
  * then 2x 4K bitmap registers
  */
 #define SZ_MPAM_DEVICE  (3 * SZ_4K)
-
-enum mpam_class_types {
-	MPAM_CLASS_SMMU,
-	MPAM_CLASS_CACHE,   /* Well known caches, e.g. L2 */
-	MPAM_CLASS_MEMORY,  /* Main memory */
-	MPAM_CLASS_UNKNOWN, /* Everything else, e.g. TLBs etc */
-};
 
 /*
  * An mpam_device corresponds to an MSC, an interface to a component's cache
