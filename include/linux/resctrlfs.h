@@ -106,4 +106,6 @@ static inline struct resctrl_fs_context *resctrl_fc2context(struct fs_context *f
 
 void post_resctrl_mount(void);
 
+#define RESCTRL_MAX_CBM 32
+
 #endif /* _RESCTRLFS_H */

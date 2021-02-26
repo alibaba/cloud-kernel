@@ -2,7 +2,41 @@
 #ifndef _ASM_ARM64_MPAM_INTERNAL_H
 #define _ASM_ARM64_MPAM_INTERNAL_H
 
+#include <linux/resctrlfs.h>
+
 typedef u32 mpam_features_t;
+
+struct mpam_component;
+struct rdt_domain;
+struct mpam_class;
+
+extern bool rdt_alloc_capable;
+extern bool rdt_mon_capable;
+
+extern struct list_head mpam_classes;
+
+struct mpam_resctrl_dom {
+	struct mpam_component   *comp;
+
+	struct rdt_domain   resctrl_dom;
+};
+
+struct mpam_resctrl_res {
+	struct mpam_class   *class;
+
+	bool resctrl_mba_uses_mbw_part;
+
+	struct resctrl_resource resctrl_res;
+};
+
+#define for_each_resctrl_exports(r) \
+		for (r = &mpam_resctrl_exports[0]; \
+			r < &mpam_resctrl_exports[0] + \
+			ARRAY_SIZE(mpam_resctrl_exports); r++)
+
+#define for_each_supported_resctrl_exports(r) \
+		for_each_resctrl_exports(r) \
+			if (r->class)
 
 /*
  * MPAM component config Structure
@@ -81,5 +115,9 @@ static inline void mpam_clear_feature(enum mpam_device_features feat,
 
 u16 mpam_sysprops_num_partid(void);
 u16 mpam_sysprops_num_pmg(void);
+
+void mpam_class_list_lock_held(void);
+
+int mpam_resctrl_setup(void);
 
 #endif

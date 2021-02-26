@@ -33,6 +33,7 @@
 #include <linux/cacheinfo.h>
 #include <asm/mpam.h>
 #include <asm/mpam_resource.h>
+#include <asm/mpam.h>
 
 #include "mpam_device.h"
 
@@ -70,6 +71,11 @@ static struct work_struct mpam_enable_work;
  */
 static int mpam_broken;
 static struct work_struct mpam_failed_work;
+
+void mpam_class_list_lock_held(void)
+{
+	lockdep_assert_held(&mpam_devices_lock);
+}
 
 static inline u32 mpam_read_reg(struct mpam_device *dev, u16 reg)
 {
@@ -410,6 +416,25 @@ static void __init mpam_enable(struct work_struct *work)
 	err = mpam_allocate_config();
 	if (err)
 		return;
+	mutex_unlock(&mpam_devices_lock);
+
+	/*
+	 * mpam_enable() runs in parallel with cpuhp callbacks bringing other
+	 * CPUs online, as we eagerly schedule the work. To give resctrl a
+	 * clean start, we make all cpus look offline, set resctrl_registered,
+	 * and then bring them back.
+	 */
+	mutex_lock(&mpam_cpuhp_lock);
+	if (!mpam_cpuhp_state) {
+		/* We raced with mpam_failed(). */
+		mutex_unlock(&mpam_cpuhp_lock);
+		return;
+	}
+	cpuhp_remove_state(mpam_cpuhp_state);
+	mutex_unlock(&mpam_cpuhp_lock);
+
+	mutex_lock(&mpam_devices_lock);
+	err = mpam_resctrl_setup();
 	mutex_unlock(&mpam_devices_lock);
 }
 

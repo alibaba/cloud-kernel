@@ -39,6 +39,8 @@
 #include <asm/resctrl.h>
 #include <asm/io.h>
 
+#include "mpam_internal.h"
+
 /* Mutex to protect rdtgroup access. */
 DEFINE_MUTEX(resctrl_group_mutex);
 

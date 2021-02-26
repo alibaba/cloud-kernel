@@ -26,8 +26,9 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/resctrlfs.h>
-
 #include <asm/resctrl.h>
+
+#include "mpam_internal.h"
 
 /*
  * Global boolean for rdt_monitor which is true if any

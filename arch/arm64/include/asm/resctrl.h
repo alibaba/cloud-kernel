@@ -8,6 +8,25 @@
 #define resctrl_alloc_capable rdt_alloc_capable
 #define resctrl_mon_capable rdt_mon_capable
 
+enum resctrl_resource_level {
+	RDT_RESOURCE_SMMU,
+	RDT_RESOURCE_L3,
+	RDT_RESOURCE_L2,
+	RDT_RESOURCE_MC,
+
+	/* Must be the last */
+	RDT_NUM_RESOURCES,
+};
+
+enum rdt_event_id {
+	QOS_L3_OCCUP_EVENT_ID           = 0x01,
+	QOS_L3_MBM_TOTAL_EVENT_ID       = 0x02,
+	QOS_L3_MBM_LOCAL_EVENT_ID       = 0x03,
+
+	/* Must be the last */
+	RESCTRL_NUM_EVENT_IDS,
+};
+
 static inline int alloc_mon_id(void)
 {
 
