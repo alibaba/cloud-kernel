@@ -476,8 +476,8 @@ common_wrmon(struct rdt_domain *d, void *md_priv)
  *   limited as the number of resources grows.
  */
 
-static unsigned long *intpartid_free_map, *reqpartid_free_map;
 static int num_intpartid, num_reqpartid;
+static unsigned long *intpartid_free_map;
 
 static void mpam_resctrl_closid_collect(void)
 {
@@ -513,83 +513,435 @@ static void mpam_resctrl_closid_collect(void)
 	}
 }
 
-static inline int local_closid_bitmap_init(int bits_num, unsigned long **ptr)
+int closid_bitmap_init(void)
 {
 	int pos;
 	u32 times, flag;
-
-	hw_alloc_times_validate(times, flag);
-
-	if (flag)
-		bits_num = rounddown(bits_num, 2);
-
-	if (!*ptr) {
-		*ptr = bitmap_zalloc(bits_num, GFP_KERNEL);
-		if (!*ptr)
-			return -ENOMEM;
-	}
-
-	bitmap_set(*ptr, 0, bits_num);
-
-	/* CLOSID 0 is always reserved for the default group */
-	pos = find_first_bit(*ptr, bits_num);
-	bitmap_clear(*ptr, pos, times);
-
-	return 0;
-}
-
-int closid_bitmap_init(void)
-{
-	int ret;
+	u32 bits_num;
 
 	mpam_resctrl_closid_collect();
-	if (!num_intpartid || !num_reqpartid)
+	bits_num = num_intpartid;
+	hw_alloc_times_validate(times, flag);
+	bits_num = rounddown(bits_num, times);
+	if (!bits_num)
 		return -EINVAL;
 
 	if (intpartid_free_map)
 		kfree(intpartid_free_map);
-	if (reqpartid_free_map)
-		kfree(reqpartid_free_map);
 
-	ret = local_closid_bitmap_init(num_intpartid, &intpartid_free_map);
-	if (ret)
-		goto out;
+	intpartid_free_map = bitmap_zalloc(bits_num, GFP_KERNEL);
+	if (!intpartid_free_map)
+		return -ENOMEM;
 
-	ret = local_closid_bitmap_init(num_reqpartid, &reqpartid_free_map);
-	if (ret)
-		goto out;
+	bitmap_set(intpartid_free_map, 0, bits_num);
+
+	/* CLOSID 0 is always reserved for the default group */
+	pos = find_first_bit(intpartid_free_map, bits_num);
+	bitmap_clear(intpartid_free_map, pos, times);
 
 	return 0;
+}
+
+/**
+ * struct rmid_transform - Matrix for transforming rmid to partid and pmg
+ * @rows:           Number of bits for remap_body[:] bitmap
+ * @clos:           Number of bitmaps
+ * @nr_usage:       Number rmid we have
+ * @stride:         Step stride from transforming rmid to partid and pmg
+ * @remap_body:     Storing bitmaps' entry and itself
+ * @remap_enabled:  Does remap_body init done
+ */
+struct rmid_transform {
+	u32 rows;
+	u32 cols;
+	u32 nr_usage;
+	int stride;
+	unsigned long **remap_body;
+	bool remap_enabled;
+};
+static struct rmid_transform rmid_remap_matrix;
+
+/*
+ * a rmid remap matrix is delivered for transforming partid pmg to rmid,
+ * this matrix is organized like this:
+ *
+ *                  [bitmap entry indexed by partid]
+ *
+ *                  [0]   [1]  [2]  [3]   [4]  [5]
+ *             occ   1     0    0    1     1    1
+ *      bitmap[:0]   1     0    0    1     1    1
+ *      bitmap[:1]   1     1    1    1     1    1
+ *      bitmap[:2]   1     1    1    1     1    1
+ *     [pos is pmg]
+ *
+ * Calculate rmid = partid + NR_partid * pmg
+ *
+ * occ represents if this bitmap has been used by a partid, it is because
+ * a certain partid should not be accompany with a duplicated pmg for
+ * monitoring, this design easily saves a lot of space, and can also decrease
+ * time complexity of allocating and free rmid process from O(NR_partid)*
+ * O(NR_pmg) to O(NR_partid) + O(log(NR_pmg)) compared with using list.
+ */
+static int set_rmid_remap_matrix(u32 rows, u32 cols)
+{
+	u32 times, flag;
+	int ret, col;
+
+	/*
+	 * cols stands for partid, so if cdp enabled we must
+	 * keep at least two partid for LxCODE and LxDATA
+	 * respectively once time.
+	 */
+	hw_alloc_times_validate(times, flag);
+	rmid_remap_matrix.cols = rounddown(cols, times);
+	rmid_remap_matrix.stride = times;
+	if (times > rmid_remap_matrix.cols)
+		return -EINVAL;
+
+	/*
+	 * first row of rmid remap matrix is used for indicating
+	 * if remap bitmap is occupied by a col index.
+	 */
+	rmid_remap_matrix.rows = rows + 1;
+
+	if (rows == 0 || cols == 0)
+		return -EINVAL;
+
+	rmid_remap_matrix.nr_usage = rows * cols;
+
+	/* free history pointer for matrix recreation */
+	if (rmid_remap_matrix.remap_body) {
+		for (col = 0; col < cols; col++) {
+			if (!rmid_remap_matrix.remap_body[col])
+				continue;
+			kfree(rmid_remap_matrix.remap_body[col]);
+		}
+		kfree(rmid_remap_matrix.remap_body);
+	}
+
+	rmid_remap_matrix.remap_body = kcalloc(rmid_remap_matrix.cols,
+			sizeof(*rmid_remap_matrix.remap_body), GFP_KERNEL);
+	if (!rmid_remap_matrix.remap_body)
+		return -ENOMEM;
+
+	for (col = 0; col < cols; col++) {
+		if (rmid_remap_matrix.remap_body[col])
+			kfree(rmid_remap_matrix.remap_body[col]);
+
+		rmid_remap_matrix.remap_body[col] =
+				bitmap_zalloc(rmid_remap_matrix.rows,
+				GFP_KERNEL);
+		if (!rmid_remap_matrix.remap_body[col]) {
+			ret = -ENOMEM;
+			goto clean;
+		}
+
+		bitmap_set(rmid_remap_matrix.remap_body[col],
+				0, rmid_remap_matrix.rows);
+	}
+
+	rmid_remap_matrix.remap_enabled = 1;
+
+	return 0;
+clean:
+	for (col = 0; col < cols; col++) {
+		if (!rmid_remap_matrix.remap_body[col])
+			continue;
+		kfree(rmid_remap_matrix.remap_body[col]);
+		rmid_remap_matrix.remap_body[col] = NULL;
+	}
+	if (rmid_remap_matrix.remap_body) {
+		kfree(rmid_remap_matrix.remap_body);
+		rmid_remap_matrix.remap_body = NULL;
+	}
+
+	return ret;
+}
+
+static u32 probe_rmid_remap_matrix_cols(void)
+{
+	return (u32)num_reqpartid;
+}
+
+static u32 probe_rmid_remap_matrix_rows(void)
+{
+	return (u32)mpam_sysprops_num_pmg();
+}
+
+static inline unsigned long **__rmid_remap_bmp(int col)
+{
+	if (!rmid_remap_matrix.remap_enabled)
+		return NULL;
+
+	if ((u32)col >= rmid_remap_matrix.cols)
+		return NULL;
+
+	return rmid_remap_matrix.remap_body + col;
+}
+
+#define for_each_rmid_remap_bmp(bmp)	\
+	for (bmp = __rmid_remap_bmp(0);	\
+		bmp <= __rmid_remap_bmp(rmid_remap_matrix.cols - 1); \
+		bmp++)
+
+#define for_each_valid_rmid_remap_bmp(bmp)	\
+		for_each_rmid_remap_bmp(bmp)	\
+			if (bmp && *bmp)
+
+#define STRIDE_CHK(stride)	\
+		(stride == rmid_remap_matrix.stride)
+
+#define STRIDE_INC_CHK(stride)	\
+		(++stride == rmid_remap_matrix.stride)
+
+#define STRIDE_CHK_AND_WARN(stride)	\
+do {	\
+	if (!STRIDE_CHK(stride))	\
+		WARN_ON_ONCE("Unexpected stride\n");	\
+} while (0)
+
+static void set_rmid_remap_bmp_occ(unsigned long *bmp)
+{
+	clear_bit(0, bmp);
+}
+
+static void unset_rmid_remap_bmp_occ(unsigned long *bmp)
+{
+	set_bit(0, bmp);
+}
+
+static void rmid_remap_bmp_bdr_set(unsigned long *bmp, int b)
+{
+	set_bit(b + 1, bmp);
+}
+
+static void rmid_remap_bmp_bdr_clear(unsigned long *bmp, int b)
+{
+	clear_bit(b + 1, bmp);
+}
+
+static int is_rmid_remap_bmp_occ(unsigned long *bmp)
+{
+	return (find_first_bit(bmp, rmid_remap_matrix.rows) == 0) ? 0 : 1;
+}
+
+static int is_rmid_remap_bmp_full(unsigned long *bmp)
+{
+	return ((is_rmid_remap_bmp_occ(bmp) &&
+			bitmap_weight(bmp, rmid_remap_matrix.rows) ==
+			(rmid_remap_matrix.rows-1)) ||
+			bitmap_full(bmp, rmid_remap_matrix.rows));
+}
+
+static int rmid_remap_bmp_alloc_pmg(unsigned long *bmp)
+{
+	int pos;
+
+	pos = find_first_bit(bmp, rmid_remap_matrix.rows);
+	if (pos == rmid_remap_matrix.rows)
+		return -ENOSPC;
+
+	clear_bit(pos, bmp);
+	return pos - 1;
+}
+
+static int rmid_remap_matrix_init(void)
+{
+	int stride = 0;
+	int ret;
+	u32 cols, rows;
+	unsigned long **bmp;
+
+	cols = probe_rmid_remap_matrix_cols();
+	rows = probe_rmid_remap_matrix_rows();
+
+	ret = set_rmid_remap_matrix(rows, cols);
+	if (ret)
+		goto out;
+
+	/*
+	 * if CDP disabled, drop partid = 0, pmg = 0
+	 * from bitmap for root resctrl group reserving
+	 * default rmid, otherwise drop partid = 0 and
+	 * partid = 1 for LxCACHE, LxDATA reservation.
+	 */
+	for_each_valid_rmid_remap_bmp(bmp) {
+		set_rmid_remap_bmp_occ(*bmp);
+		rmid_remap_bmp_bdr_clear(*bmp, 0);
+		if (STRIDE_INC_CHK(stride))
+			break;
+	}
+
+	STRIDE_CHK_AND_WARN(stride);
+
+	return 0;
+
 out:
 	return ret;
 }
+
+int resctrl_id_init(void)
+{
+	int ret;
+
+	ret = closid_bitmap_init();
+	if (ret)
+		return ret;
+
+	ret = rmid_remap_matrix_init();
+	if (ret)
+		return ret;
+
+	mon_init();
+
+	return 0;
+}
+
+static int is_rmid_valid(int rmid)
+{
+	return ((u32)rmid >= rmid_remap_matrix.nr_usage) ? 0 : 1;
+}
+
+static int to_rmid(int partid, int pmg)
+{
+	return (partid + (rmid_remap_matrix.cols * pmg));
+}
+
+static int rmid_to_partid_pmg(int rmid, int *partid, int *pmg)
+{
+	if (!is_rmid_valid(rmid))
+		return -EINVAL;
+
+	if (pmg)
+		*pmg = rmid / rmid_remap_matrix.cols;
+	if (partid)
+		*partid = rmid % rmid_remap_matrix.cols;
+	return 0;
+}
+
+static int __rmid_alloc(int partid)
+{
+	int stride = 0;
+	int partid_sel = 0;
+	int ret, pmg;
+	int rmid[2] = {-1, -1};
+	unsigned long **cmp, **bmp;
+
+	if (partid >= 0) {
+		cmp = __rmid_remap_bmp(partid);
+		if (!cmp) {
+			ret = -EINVAL;
+			goto out;
+		}
+		for_each_valid_rmid_remap_bmp(bmp) {
+			if (bmp < cmp)
+				continue;
+			set_rmid_remap_bmp_occ(*bmp);
+
+			ret = rmid_remap_bmp_alloc_pmg(*bmp);
+			if (ret < 0)
+				goto out;
+			pmg = ret;
+			rmid[stride] = to_rmid(partid + stride, pmg);
+			if (STRIDE_INC_CHK(stride))
+				break;
+		}
+	} else {
+		for_each_valid_rmid_remap_bmp(bmp) {
+			partid_sel++;
+
+			if (is_rmid_remap_bmp_occ(*bmp))
+				continue;
+			set_rmid_remap_bmp_occ(*bmp);
+
+			ret = rmid_remap_bmp_alloc_pmg(*bmp);
+			if (ret < 0)
+				goto out;
+			pmg = ret;
+			rmid[stride] = to_rmid(partid_sel - 1, pmg);
+			if (STRIDE_INC_CHK(stride))
+				break;
+		}
+	}
+
+	if (!STRIDE_CHK(stride)) {
+		ret = -ENOSPC;
+		goto out;
+	}
+
+	return rmid[0];
+
+out:
+	rmid_free(rmid[0]);
+	return ret;
+}
+
+int rmid_alloc(int partid)
+{
+	return __rmid_alloc(partid);
+}
+
+void rmid_free(int rmid)
+{
+	int stride = 0;
+	int partid, pmg;
+	unsigned long **bmp, **cmp;
+
+	if (rmid_to_partid_pmg(rmid, &partid, &pmg))
+		return;
+
+	cmp = __rmid_remap_bmp(partid);
+	if (!cmp)
+		return;
+
+	for_each_valid_rmid_remap_bmp(bmp) {
+		if (bmp < cmp)
+			continue;
+
+		rmid_remap_bmp_bdr_set(*bmp, pmg);
+
+		if (is_rmid_remap_bmp_full(*bmp))
+			unset_rmid_remap_bmp_occ(*bmp);
+
+		if (STRIDE_INC_CHK(stride))
+			break;
+	}
+
+	STRIDE_CHK_AND_WARN(stride);
+}
+
+int mpam_rmid_to_partid_pmg(int rmid, int *partid, int *pmg)
+{
+	return rmid_to_partid_pmg(rmid, partid, pmg);
+}
+EXPORT_SYMBOL(mpam_rmid_to_partid_pmg);
 
 /*
  * If cdp enabled, allocate two closid once time, then return first
  * allocated id.
  */
-static int closid_bitmap_alloc(int bits_num, unsigned long *ptr)
+int closid_alloc(void)
 {
 	int pos;
 	u32 times, flag;
 
 	hw_alloc_times_validate(times, flag);
 
-	pos = find_first_bit(ptr, bits_num);
-	if (pos == bits_num)
+	pos = find_first_bit(intpartid_free_map, num_intpartid);
+	if (pos == num_intpartid)
 		return -ENOSPC;
 
-	bitmap_clear(ptr, pos, times);
+	bitmap_clear(intpartid_free_map, pos, times);
 
 	return pos;
 }
 
-static void closid_bitmap_free(int pos, unsigned long *ptr)
+void closid_free(int closid)
 {
 	u32 times, flag;
 
 	hw_alloc_times_validate(times, flag);
-	bitmap_set(ptr, pos, times);
+	bitmap_set(intpartid_free_map, closid, times);
 }
 
 /*
@@ -773,8 +1125,8 @@ void update_cpu_closid_rmid(void *info)
 	struct rdtgroup *r = info;
 
 	if (r) {
-		this_cpu_write(pqr_state.default_closid, r->closid.reqpartid);
-		this_cpu_write(pqr_state.default_rmid, r->mon.rmid);
+		this_cpu_write(pqr_state.default_closid, resctrl_navie_closid(r->closid));
+		this_cpu_write(pqr_state.default_rmid, resctrl_navie_rmid(r->mon.rmid));
 	}
 
 	/*
@@ -868,15 +1220,12 @@ int __resctrl_group_move_task(struct task_struct *tsk,
 		 * their parent CTRL group.
 		 */
 		if (rdtgrp->type == RDTCTRL_GROUP) {
-			tsk->closid = TASK_CLOSID_SET(rdtgrp->closid.intpartid,
-				rdtgrp->closid.reqpartid);
-			tsk->rmid = rdtgrp->mon.rmid;
+			tsk->closid = resctrl_navie_closid(rdtgrp->closid);
+			tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
 		} else if (rdtgrp->type == RDTMON_GROUP) {
-			if (rdtgrp->mon.parent->closid.intpartid ==
-				TASK_CLOSID_PR_GET(tsk->closid)) {
-				tsk->closid = TASK_CLOSID_SET(rdtgrp->closid.intpartid,
-					rdtgrp->closid.reqpartid);
-				tsk->rmid = rdtgrp->mon.rmid;
+			if (rdtgrp->mon.parent->closid.intpartid == tsk->closid) {
+				tsk->closid = resctrl_navie_closid(rdtgrp->closid);
+				tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
 			} else {
 				rdt_last_cmd_puts("Can't move task to different control group\n");
 				ret = -EINVAL;
@@ -1274,13 +1623,10 @@ static void show_resctrl_tasks(struct rdtgroup *r, struct seq_file *s)
 	rcu_read_lock();
 	for_each_process_thread(p, t) {
 		if ((r->type == RDTMON_GROUP &&
-			TASK_CLOSID_CUR_GET(t->closid) == r->closid.reqpartid &&
-			t->rmid == r->mon.rmid) ||
+			t->rmid == resctrl_navie_rmid(r->mon.rmid)) ||
 			(r->type == RDTCTRL_GROUP &&
-			TASK_CLOSID_PR_GET(t->closid) == r->closid.intpartid))
-			seq_printf(s, "group:(gid:%d mon:%d) task:(pid:%d gid:%d rmid:%d)\n",
-				r->closid.reqpartid, r->mon.mon, t->pid,
-				(int)TASK_CLOSID_CUR_GET(t->closid), t->rmid);
+			t->closid == resctrl_navie_closid(r->closid)))
+			seq_printf(s, "%d\n", t->pid);
 	}
 	rcu_read_unlock();
 }
@@ -1431,9 +1777,11 @@ int __init mpam_resctrl_init(void)
 void __mpam_sched_in(void)
 {
 	struct intel_pqr_state *state = this_cpu_ptr(&pqr_state);
-	u64 closid = state->default_closid;
 	u64 partid_d, partid_i;
-	u64 pmg = state->default_rmid;
+	u64 rmid = state->default_rmid;
+	u64 closid = state->default_closid;
+	u64 reqpartid = 0;
+	u64 pmg = 0;
 
 	/*
 	 * If this task has a closid/rmid assigned, use it.
@@ -1441,34 +1789,27 @@ void __mpam_sched_in(void)
 	 */
 	if (static_branch_likely(&resctrl_alloc_enable_key)) {
 		if (current->closid)
-			closid = TASK_CLOSID_CUR_GET(current->closid);
+			closid = current->closid;
 	}
 
 	if (static_branch_likely(&resctrl_mon_enable_key)) {
 		if (current->rmid)
-			pmg = current->rmid;
+			rmid = current->rmid;
 	}
 
-	if (closid != state->cur_closid || pmg != state->cur_rmid) {
+	if (closid != state->cur_closid || rmid != state->cur_rmid) {
 		u64 reg;
+
+		resctrl_navie_rmid_partid_pmg(rmid, (int *)&reqpartid, (int *)&pmg);
 
 		if (resctrl_cdp_enabled) {
 			hw_closid_t hw_closid;
 
-			resctrl_cdp_map(clos, closid, CDP_DATA, hw_closid);
+			resctrl_cdp_map(clos, reqpartid, CDP_DATA, hw_closid);
 			partid_d = hw_closid_val(hw_closid);
 
-			resctrl_cdp_map(clos, closid, CDP_CODE, hw_closid);
+			resctrl_cdp_map(clos, reqpartid, CDP_CODE, hw_closid);
 			partid_i = hw_closid_val(hw_closid);
-
-			/*
-			 * when cdp enabled, we use partid_i to label cur_closid
-			 * of cpu state instead of partid_d, because each task/
-			 * rdtgrp's closid is labeled by CDP_BOTH/CDP_CODE but not
-			 * CDP_DATA.
-			 */
-			state->cur_closid = partid_i;
-			state->cur_rmid = pmg;
 
 			/* set in EL0 */
 			reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
@@ -1484,21 +1825,21 @@ void __mpam_sched_in(void)
 			reg = PMG_SET(reg, pmg);
 			mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
 		} else {
-			state->cur_closid = closid;
-			state->cur_rmid = pmg;
-
 			/* set in EL0 */
 			reg = mpam_read_sysreg_s(SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
-			reg = PARTID_SET(reg, closid);
+			reg = PARTID_SET(reg, reqpartid);
 			reg = PMG_SET(reg, pmg);
 			mpam_write_sysreg_s(reg, SYS_MPAM0_EL1, "SYS_MPAM0_EL1");
 
 			/* set in EL1 */
 			reg = mpam_read_sysreg_s(SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
-			reg = PARTID_SET(reg, closid);
+			reg = PARTID_SET(reg, reqpartid);
 			reg = PMG_SET(reg, pmg);
 			mpam_write_sysreg_s(reg, SYS_MPAM1_EL1, "SYS_MPAM1_EL1");
 		}
+
+		state->cur_rmid = rmid;
+		state->cur_closid = closid;
 	}
 }
 
@@ -1664,37 +2005,4 @@ u16 mpam_resctrl_max_mon_num(void)
 	max_mon_num = mon_num;
 
 	return mon_num;
-}
-
-int resctrl_id_init(void)
-{
-	int ret;
-
-	ret = closid_bitmap_init();
-	if (ret)
-		goto out;
-
-	pmg_init();
-	mon_init();
-
-out:
-	return ret;
-}
-
-int resctrl_id_alloc(enum closid_type type)
-{
-	if (type == CLOSID_INT)
-		return closid_bitmap_alloc(num_intpartid, intpartid_free_map);
-	else if (type == CLOSID_REQ)
-		return closid_bitmap_alloc(num_reqpartid, reqpartid_free_map);
-
-	return -ENOSPC;
-}
-
-void resctrl_id_free(enum closid_type type, int id)
-{
-	if (type == CLOSID_INT)
-		return closid_bitmap_free(id, intpartid_free_map);
-	else if (type == CLOSID_REQ)
-		return closid_bitmap_free(id, reqpartid_free_map);
 }

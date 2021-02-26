@@ -34,55 +34,6 @@
  */
 bool rdt_mon_capable;
 
-static int pmg_free_map;
-void pmg_init(void)
-{
-	u16 num_pmg = USHRT_MAX;
-	struct mpam_resctrl_res *res;
-	struct resctrl_resource *r;
-	struct raw_resctrl_resource *rr;
-
-	/* Use the max num_pmg among all resources */
-	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
-		rr = r->res;
-		num_pmg = min(num_pmg, rr->num_pmg);
-	}
-
-	pmg_free_map = BIT_MASK(num_pmg) - 1;
-
-	/* pmg 0 is always reserved for the default group */
-	pmg_free_map &= ~1;
-}
-
-static int alloc_pmg(void)
-{
-	u32 pmg = ffs(pmg_free_map);
-
-	if (pmg == 0)
-		return -ENOSPC;
-
-	pmg--;
-	pmg_free_map &= ~(1 << pmg);
-
-	return pmg;
-}
-
-static void free_pmg(u32 pmg)
-{
-	pmg_free_map |= 1 << pmg;
-}
-
-int alloc_rmid(void)
-{
-	return alloc_pmg();
-}
-
-void free_rmid(u32 id)
-{
-	free_pmg(id);
-}
-
 /*
  * A simple LRU monitor allocation machanism, each
  * monitor free map occupies two section, one for

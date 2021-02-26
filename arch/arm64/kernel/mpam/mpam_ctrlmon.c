@@ -556,6 +556,7 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 	int ret = 0;
 	char *resname = get_resource_name(kernfs_node_name(of));
 	u64 usage;
+	int pmg;
 
 	if (!resname)
 		return -ENOMEM;
@@ -601,7 +602,13 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 			resctrl_cdp_map(clos, entry->closid.reqpartid,
 				type, hw_closid);
 			md.u.partid = hw_closid_val(hw_closid);
-			md.u.pmg = entry->mon.rmid;
+
+			ret = mpam_rmid_to_partid_pmg(entry->mon.rmid,
+				NULL, &pmg);
+			if (ret)
+				return ret;
+
+			md.u.pmg = pmg;
 			md.u.mon = entry->mon.mon;
 			usage += resctrl_dom_mon_data(r, d, md.priv);
 		}
@@ -647,6 +654,7 @@ static int resctrl_mkdir_mondata_dom(struct kernfs_node *parent_kn,
 	struct kernfs_node *kn;
 	char name[32];
 	int ret = 0;
+	int pmg;
 
 	r = s->res;
 	rr = r->res;
@@ -658,7 +666,12 @@ static int resctrl_mkdir_mondata_dom(struct kernfs_node *parent_kn,
 	md.u.partid = hw_closid_val(hw_closid);
 	resctrl_cdp_map(mon, prgrp->mon.mon, s->conf_type, hw_monid);
 	md.u.mon = hw_monid_val(hw_monid);
-	md.u.pmg = prgrp->mon.rmid;
+
+	ret = mpam_rmid_to_partid_pmg(prgrp->mon.rmid, NULL, &pmg);
+	if (ret)
+		return ret;
+	md.u.pmg = pmg;
+
 	md.u.cdp_both_mon = s->cdp_mc_both;
 
 	snprintf(name, sizeof(name), "mon_%s_%02d", s->name, d->id);

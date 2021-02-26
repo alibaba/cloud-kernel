@@ -362,7 +362,8 @@ int resctrl_group_alloc_mon(struct rdtgroup *grp);
 
 u16 mpam_resctrl_max_mon_num(void);
 
-void pmg_init(void);
 void mon_init(void);
+
+extern int mpam_rmid_to_partid_pmg(int rmid, int *partid, int *pmg);
 
 #endif /* _ASM_ARM64_MPAM_H */

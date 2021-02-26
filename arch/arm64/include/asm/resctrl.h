@@ -2,6 +2,7 @@
 #define _ASM_ARM64_RESCTRL_H
 
 #include <asm/mpam_sched.h>
+#include <asm/mpam.h>
 
 #define resctrl_group rdtgroup
 #define resctrl_alloc_capable rdt_alloc_capable
@@ -95,17 +96,12 @@ void schemata_list_destroy(void);
 
 int resctrl_lru_request_mon(void);
 
-int alloc_rmid(void);
-void free_rmid(u32 id);
+int rmid_alloc(int entry_idx);
+void rmid_free(int rmid);
 
-enum closid_type {
-	CLOSID_INT    = 0x1,
-	CLOSID_REQ      = 0x2,
-	CLOSID_NUM_TYPES,
-};
 int resctrl_id_init(void);
-int resctrl_id_alloc(enum closid_type);
-void resctrl_id_free(enum closid_type, int id);
+int closid_alloc(void);
+void closid_free(int closid);
 
 void update_cpu_closid_rmid(void *info);
 void update_closid_rmid(const struct cpumask *cpu_mask, struct resctrl_group *r);
@@ -152,20 +148,35 @@ int resctrl_update_groups_config(struct rdtgroup *rdtgrp);
 #define RESCTRL_MAX_CLOSID 32
 
 /*
- * left 16 bits of closid store parent(master)'s
- * closid, the reset store current group's closid,
- * this used for judging if tasks are allowed to move
- * another ctrlmon/mon group, it is because when
- * a mon group is permited to allocated another
- * closid different from it's parent, only closid
- * is not sufficient to do that.
+ * This is only for avoiding unnecessary cost in mpam_sched_in()
+ *  called by __switch_to() if using mpam_rmid_to_partid_pmg()
+ * to get partid and pmg, we just simply shift and get their
+ * two easily when we want.
  */
-#define TASK_CLOSID_SET(prclosid, closid)    \
-		((prclosid << 16) | closid)
+static inline void resctrl_navie_rmid_partid_pmg(u32 rmid, int *partid, int *pmg)
+{
+	*partid = rmid >> 16;
+	*pmg = (rmid << 16) >> 16;
+}
 
-#define TASK_CLOSID_CUR_GET(closid)   \
-		(closid & GENMASK(15, 0))
-#define TASK_CLOSID_PR_GET(closid)    \
-		((closid & GENMASK(31, 16)) >> 16)
+static inline u32 resctrl_navie_rmid(u32 rmid)
+{
+	int ret, partid, pmg;
+
+	ret = mpam_rmid_to_partid_pmg(rmid, (int *)&partid, (int *)&pmg);
+	if (ret)
+		return 0;
+
+	return (partid << 16) | pmg;
+}
+
+/*
+ * closid.reqpartid is used as part of mapping to rmid, now
+ * we only need to map intpartid to closid.
+ */
+static inline u32 resctrl_navie_closid(struct sd_closid closid)
+{
+	return closid.intpartid;
+}
 
 #endif /* _ASM_ARM64_RESCTRL_H */
