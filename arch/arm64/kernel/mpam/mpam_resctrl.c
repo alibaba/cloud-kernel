@@ -70,6 +70,12 @@ bool rdt_alloc_capable;
  * Indicate the max number of monitor supported.
  */
 static u32 max_mon_num;
+
+/*
+ * Indicate if had mount cdpl2/cdpl3 option.
+ */
+static bool resctrl_cdp_enabled;
+
 /*
  * Hi1620 2P Base Address Map
  *
@@ -428,9 +434,76 @@ void release_rdtgroupfs_options(void)
 {
 }
 
+static void disable_cdp(void)
+{
+	struct mpam_resctrl_res *res;
+	struct resctrl_resource *r;
+
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+		r->cdp_enable = false;
+	}
+
+	resctrl_cdp_enabled = false;
+}
+
+static int try_to_enable_cdp(enum resctrl_resource_level level)
+{
+	struct resctrl_resource *r = mpam_resctrl_get_resource(level);
+
+	if (!r || !r->cdp_capable)
+		return -EINVAL;
+
+	r->cdp_enable = true;
+
+	resctrl_cdp_enabled = true;
+	return 0;
+}
+
+static int cdpl3_enable(void)
+{
+	return try_to_enable_cdp(RDT_RESOURCE_L3);
+}
+
+static int cdpl2_enable(void)
+{
+	return try_to_enable_cdp(RDT_RESOURCE_L2);
+}
+
 int parse_rdtgroupfs_options(char *data)
 {
+	char *token;
+	char *o = data;
+	int ret = 0;
+
+	disable_cdp();
+
+	while ((token = strsep(&o, ",")) != NULL) {
+		if (!*token) {
+			ret = -EINVAL;
+			goto out;
+		}
+
+		if (!strcmp(token, "cdpl3")) {
+			ret = cdpl3_enable();
+			if (ret)
+				goto out;
+		} else if (!strcmp(token, "cdpl2")) {
+			ret = cdpl2_enable();
+			if (ret)
+				goto out;
+		} else {
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+
 	return 0;
+
+out:
+	pr_err("Invalid mount option \"%s\"\n", token);
+
+	return ret;
 }
 
 /*
