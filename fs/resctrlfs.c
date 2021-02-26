@@ -352,8 +352,8 @@ out_mondata:
 #ifndef CONFIG_ARM64 /* [FIXME] arch specific code */
 	if (resctrl_mon_capable)
 		kernfs_remove(kn_mondata);
-#endif
 out_mongrp:
+#endif
 	if (resctrl_mon_capable)
 		kernfs_remove(kn_mongrp);
 out_info:
