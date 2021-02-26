@@ -48,6 +48,7 @@ struct resctrl_resource {
 	bool			mon_capable;
 	char			*name;
 	struct list_head	domains;
+	u32			dom_num;
 	struct list_head	evt_list;
 	unsigned long		fflags;
 

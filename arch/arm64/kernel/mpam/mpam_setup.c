@@ -41,15 +41,132 @@
 struct mpam_resctrl_res mpam_resctrl_exports[RDT_NUM_RESOURCES];
 struct mpam_resctrl_res mpam_resctrl_events[RESCTRL_NUM_EVENT_IDS];
 
+/* Like resctrl_get_domain_from_cpu(), but for offline CPUs */
+static struct mpam_resctrl_dom *
+mpam_get_domain_from_cpu(int cpu, struct mpam_resctrl_res *res)
+{
+	struct rdt_domain *d;
+	struct mpam_resctrl_dom *dom;
+
+	list_for_each_entry(d, &res->resctrl_res.domains, list) {
+		dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+
+		if (cpumask_test_cpu(cpu, &dom->comp->fw_affinity))
+			return dom;
+	}
+
+	return NULL;
+}
+
+static int mpam_resctrl_setup_domain(unsigned int cpu,
+				struct mpam_resctrl_res *res)
+{
+	struct mpam_resctrl_dom *dom;
+	struct mpam_class *class = res->class;
+	struct mpam_component *comp_iter, *comp;
+	u32 num_partid;
+	u32 **ctrlval_ptr;
+
+	num_partid = mpam_sysprops_num_partid();
+
+	comp = NULL;
+	list_for_each_entry(comp_iter, &class->components, class_list) {
+		if (cpumask_test_cpu(cpu, &comp_iter->fw_affinity)) {
+			comp = comp_iter;
+			break;
+		}
+	}
+
+	/* cpu with unknown exported component? */
+	if (WARN_ON_ONCE(!comp))
+		return 0;
+
+	dom = kzalloc_node(sizeof(*dom), GFP_KERNEL, cpu_to_node(cpu));
+	if (!dom)
+		return -ENOMEM;
+
+	dom->comp = comp;
+	INIT_LIST_HEAD(&dom->resctrl_dom.list);
+	dom->resctrl_dom.id = comp->comp_id;
+	cpumask_set_cpu(cpu, &dom->resctrl_dom.cpu_mask);
+
+	ctrlval_ptr = &dom->resctrl_dom.ctrl_val;
+	*ctrlval_ptr = kmalloc_array(num_partid,
+			sizeof(**ctrlval_ptr), GFP_KERNEL);
+	if (!*ctrlval_ptr) {
+		kfree(dom);
+		return -ENOMEM;
+	}
+
+	/* TODO: this list should be sorted */
+	list_add_tail(&dom->resctrl_dom.list, &res->resctrl_res.domains);
+	res->resctrl_res.dom_num++;
+
+	return 0;
+}
+
 int mpam_resctrl_cpu_online(unsigned int cpu)
 {
-	return 0;
+	int ret;
+	struct mpam_resctrl_dom *dom;
+	struct mpam_resctrl_res *res;
+
+	for_each_supported_resctrl_exports(res) {
+		dom = mpam_get_domain_from_cpu(cpu, res);
+		if (dom) {
+			cpumask_set_cpu(cpu, &dom->resctrl_dom.cpu_mask);
+		} else {
+			ret = mpam_resctrl_setup_domain(cpu, res);
+			if (ret)
+				return ret;
+		}
+	}
+
+	return mpam_resctrl_set_default_cpu(cpu);
+}
+
+static inline struct rdt_domain *
+resctrl_get_domain_from_cpu(int cpu, struct resctrl_resource *r)
+{
+	struct rdt_domain *d;
+
+	list_for_each_entry(d, &r->domains, list) {
+		/* Find the domain that contains this CPU */
+		if (cpumask_test_cpu(cpu, &d->cpu_mask))
+			return d;
+	}
+
+	return NULL;
 }
 
 int mpam_resctrl_cpu_offline(unsigned int cpu)
 {
+	struct rdt_domain *d;
+	struct mpam_resctrl_res *res;
+	struct mpam_resctrl_dom *dom;
+
+	for_each_supported_resctrl_exports(res) {
+		 d = resctrl_get_domain_from_cpu(cpu, &res->resctrl_res);
+
+		/* cpu with unknown exported component? */
+		if (WARN_ON_ONCE(!d))
+			continue;
+
+		cpumask_clear_cpu(cpu, &d->cpu_mask);
+
+		if (!cpumask_empty(&d->cpu_mask))
+			continue;
+
+		list_del(&d->list);
+		dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+		kfree(dom);
+	}
+
+	mpam_resctrl_clear_default_cpu(cpu);
+
 	return 0;
 }
+
 
 /* Test whether we can export MPAM_CLASS_CACHE:{2,3}? */
 static void mpam_resctrl_pick_caches(void)

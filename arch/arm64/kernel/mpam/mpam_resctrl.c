@@ -77,6 +77,19 @@ bool rdt_alloc_capable;
  *   AFF2: MPIDR.AFF2
  */
 
+int mpam_resctrl_set_default_cpu(unsigned int cpu)
+{
+    /* The cpu is set in default rdtgroup after online. */
+	cpumask_set_cpu(cpu, &resctrl_group_default.cpu_mask);
+	return 0;
+}
+
+void mpam_resctrl_clear_default_cpu(unsigned int cpu)
+{
+	/* The cpu is set in default rdtgroup after online. */
+	cpumask_clear_cpu(cpu, &resctrl_group_default.cpu_mask);
+}
+
 static inline void mpam_node_assign_val(struct mpam_node *n,
 				char *name,
 				u8 type,
@@ -524,13 +537,14 @@ void closid_free(int closid)
 
 static int mpam_online_cpu(unsigned int cpu)
 {
-	cpumask_set_cpu(cpu, &resctrl_group_default.cpu_mask);
-	return 0;
+	return mpam_resctrl_set_default_cpu(cpu);
 }
 
 /* remove related resource when cpu offline */
 static int mpam_offline_cpu(unsigned int cpu)
 {
+	mpam_resctrl_clear_default_cpu(cpu);
+
 	return 0;
 }
 

@@ -132,4 +132,7 @@ mpam_get_raw_resctrl_resource(u32 level);
 
 int __init mpam_resctrl_init(void);
 
+int mpam_resctrl_set_default_cpu(unsigned int cpu);
+void mpam_resctrl_clear_default_cpu(unsigned int cpu);
+
 #endif
