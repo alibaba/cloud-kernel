@@ -54,6 +54,10 @@
 #define MPAMF_IDR_PMG_MAX_GET(v)	((v & MPAMF_IDR_PMG_MAX_MASK) >> 16)
 #define MPAMF_IDR_PARTID_MAX_GET(v)	(v & MPAMF_IDR_PARTID_MAX_MASK)
 
+/* MPAMF_x_IDR */
+#define NUM_MON_MASK			(BIT(16) - 1)
+#define MPAMF_IDR_NUM_MON(v)		((v) & NUM_MON_MASK)
+
 /* TODO */
 
 #define CPBM_WD_MASK		0xFFFF
