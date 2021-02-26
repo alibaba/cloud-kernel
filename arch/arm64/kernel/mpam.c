@@ -245,44 +245,63 @@ static u64 csu_read(struct rdt_domain *d, struct rdtgroup *g)
 
 static int mbwu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable)
 {
-	u32 mon, pmg, partid, flt, ctl = 0;
+	u32 mon, partid, pmg, ctl, flt, cur_ctl, cur_flt;
 
 	mon = g->mon.mon;
 	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
 	if (enable) {
-		pmg = g->mon.rmid;
 		partid = g->closid;
+		pmg = g->mon.rmid;
+		ctl = MSMON_MATCH_PARTID|MSMON_MATCH_PMG;
 		flt = MSMON_CFG_FLT_SET(pmg, partid);
-		ctl = MSMON_CFG_MBWU_CTL_SET(MSMON_MATCH_PMG|MSMON_MATCH_PARTID);
+		cur_flt = mpam_readl(d->base + MSMON_CFG_MBWU_FLT);
+		cur_ctl = mpam_readl(d->base + MSMON_CFG_MBWU_CTL);
 
-		mpam_writel(flt, d->base + MSMON_CFG_MBWU_FLT);
+		if (cur_ctl != (ctl | MSMON_CFG_CTL_EN | MSMON_CFG_MBWU_TYPE) ||
+		    cur_flt != flt) {
+			mpam_writel(flt, d->base + MSMON_CFG_MBWU_FLT);
+			mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
+			mpam_writel(0, d->base + MSMON_MBWU);
+			ctl |= MSMON_CFG_CTL_EN;
+			mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
+		}
+	} else {
+		ctl = 0;
+		mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
 	}
-
-	mpam_writel(ctl, d->base + MSMON_CFG_MBWU_CTL);
 
 	return 0;
 }
 
 static int csu_write(struct rdt_domain *d, struct rdtgroup *g, bool enable)
 {
-	u32 mon, pmg, partid, flt, ctl = 0;
+	u32 mon, partid, pmg, ctl, flt, cur_ctl, cur_flt;
 
 	mon = g->mon.mon;
 	mpam_writel(mon, d->base + MSMON_CFG_MON_SEL);
 	if (enable) {
-		pmg = g->mon.rmid;
 		partid = g->closid;
+		pmg = g->mon.rmid;
+		ctl = MSMON_MATCH_PARTID|MSMON_MATCH_PMG;
 		flt = MSMON_CFG_FLT_SET(pmg, partid);
-		ctl = MSMON_CFG_CSU_CTL_SET(MSMON_MATCH_PMG|MSMON_MATCH_PARTID);
+		cur_flt = mpam_readl(d->base + MSMON_CFG_CSU_FLT);
+		cur_ctl = mpam_readl(d->base + MSMON_CFG_CSU_CTL);
 
-		mpam_writel(flt, d->base + MSMON_CFG_CSU_FLT);
+		if (cur_ctl != (ctl | MSMON_CFG_CTL_EN | MSMON_CFG_CSU_TYPE) ||
+		    cur_flt != flt) {
+			mpam_writel(flt, d->base + MSMON_CFG_CSU_FLT);
+			mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
+			mpam_writel(0, d->base + MSMON_CSU);
+			ctl |= MSMON_CFG_CTL_EN;
+			mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
+		}
+	} else {
+		ctl = 0;
+		mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
 	}
-
-	mpam_writel(ctl, d->base + MSMON_CFG_CSU_CTL);
 
 	return 0;
 }
-
 /*
  * Trivial allocator for CLOSIDs. Since h/w only supports a small number,
  * we can keep a bitmap of free CLOSIDs in a single integer.
