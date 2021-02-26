@@ -280,6 +280,44 @@ static struct acpi_pptt_processor *acpi_find_processor_node(struct acpi_table_he
 
 	return NULL;
 }
+/**
+ * acpi_validate_cache_node() - Given an offset in the table, check this is
+ * a cache node.
+ * Used for cross-table pointers.
+ *
+ * Return the cache pointer for a valid cache, or NULL.
+ */
+struct acpi_pptt_cache *
+acpi_pptt_validate_cache_node(struct acpi_table_header *table_hdr, u32 offset)
+{
+	struct acpi_subtable_header *entry, *cache;
+	unsigned long table_end;
+
+	if ((offset < sizeof(*table_hdr)) || (offset >= table_hdr->length))
+		return NULL;
+
+	table_end = (unsigned long)table_hdr + table_hdr->length;
+	entry = ACPI_ADD_PTR(struct acpi_subtable_header, table_hdr,
+			     sizeof(struct acpi_table_pptt));
+
+	cache = ACPI_ADD_PTR(struct acpi_subtable_header, table_hdr, offset);
+
+	/* Walk every node to check offset is on a node boundary */
+	while ((unsigned long)(entry + 1) < table_end) {
+		if (entry->length == 0) {
+			pr_err("Invalid zero length subtable\n");
+			break;
+		}
+		if ((entry->type == ACPI_PPTT_TYPE_CACHE) && (entry == cache))
+			return (struct acpi_pptt_cache *)entry;
+
+		entry = ACPI_ADD_PTR(struct acpi_subtable_header, entry,
+				     entry->length);
+	}
+
+	return NULL;
+}
+
 
 static int acpi_find_cache_levels(struct acpi_table_header *table_hdr,
 				  u32 acpi_cpu_id)
