@@ -92,8 +92,8 @@ static int add_schema(enum resctrl_conf_type t, struct resctrl_resource *r)
 	rr = r->res;
 	INIT_LIST_HEAD(&s->schema_ctrl_list);
 	for_each_extend_ctrl_type(type) {
-		if (!resctrl_ctrl_extend_bits_match(r->ctrl_extend_bits, type) ||
-			!rr->extend_ctrls_wd[type])
+		if (!rr->ctrl_features[type].enabled ||
+			!rr->ctrl_features[type].max_wd)
 			continue;
 
 		sc = kzalloc(sizeof(*sc), GFP_KERNEL);
@@ -281,6 +281,9 @@ parse_line(char *line, struct resctrl_resource *r,
 	unsigned long dom_id;
 	hw_closid_t hw_closid;
 
+	if (!rr->ctrl_features[ctrl_type].enabled)
+		return -EINVAL;
+
 next:
 	if (!line || line[0] == '\0')
 		return 0;
@@ -428,6 +431,9 @@ static void show_doms(struct seq_file *s, struct resctrl_resource *r,
 	bool prev_auto_fill = false;
 	u32 reg_val;
 
+	if (!rr->ctrl_features[type].enabled)
+		return;
+
 	para.closid = closid;
 	para.type = type;
 
@@ -436,15 +442,15 @@ static void show_doms(struct seq_file *s, struct resctrl_resource *r,
 
 	seq_printf(s, "%*s:", max_name_width, schema_name);
 	list_for_each_entry(dom, &r->domains, list) {
-		reg_val = rr->msr_read(dom, &para);
+		reg_val = rr->msr_read(r, dom, &para);
 
-		if (rg && reg_val == r->default_ctrl[SCHEMA_COMM] &&
-				prev_auto_fill == true)
+		if (reg_val == rr->ctrl_features[SCHEMA_COMM].default_ctrl &&
+			rg && prev_auto_fill == true)
 			continue;
 
 		if (sep)
 			seq_puts(s, ";");
-		if (rg && reg_val == r->default_ctrl[SCHEMA_COMM]) {
+		if (rg && reg_val == rr->ctrl_features[SCHEMA_COMM].default_ctrl) {
 			prev_auto_fill = true;
 			seq_puts(s, "S");
 		} else {
@@ -750,22 +756,24 @@ static void rdtgroup_init_mba(struct resctrl_schema *s, u32 closid)
 {
 	struct resctrl_staged_config *cfg;
 	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
 	struct rdt_domain *d;
 	enum resctrl_ctrl_type t;
 
 	r = s->res;
 	if (WARN_ON(!r))
 		return;
+	rr = r->res;
 
 	list_for_each_entry(d, &s->res->domains, list) {
 		cfg = &d->staged_cfg[CDP_BOTH];
 		cfg->cdp_both_ctrl = s->cdp_mc_both;
-		cfg->new_ctrl[SCHEMA_COMM] = r->default_ctrl[SCHEMA_COMM];
+		cfg->new_ctrl[SCHEMA_COMM] = rr->ctrl_features[SCHEMA_COMM].default_ctrl;
 		resctrl_cdp_map(clos, closid, CDP_BOTH, cfg->hw_closid);
 		cfg->have_new_ctrl = true;
 		/* Set extension ctrl default value, e.g. priority/hardlimit */
 		for_each_extend_ctrl_type(t) {
-			cfg->new_ctrl[t] = r->default_ctrl[t];
+			cfg->new_ctrl[t] = rr->ctrl_features[t].default_ctrl;
 		}
 	}
 }
@@ -787,6 +795,7 @@ static int rdtgroup_init_cat(struct resctrl_schema *s, u32 closid)
 	enum resctrl_ctrl_type ctrl_type;
 	struct rdt_domain *d;
 	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
 	u32 used_b = 0;
 	u32 unused_b = 0;
 	unsigned long tmp_cbm;
@@ -794,6 +803,7 @@ static int rdtgroup_init_cat(struct resctrl_schema *s, u32 closid)
 	r = s->res;
 	if (WARN_ON(!r))
 		return -EINVAL;
+	rr = r->res;
 
 	list_for_each_entry(d, &s->res->domains, list) {
 		cfg = &d->staged_cfg[conf_type];
@@ -823,7 +833,8 @@ static int rdtgroup_init_cat(struct resctrl_schema *s, u32 closid)
 		 * with MPAM capabilities.
 		 */
 		for_each_extend_ctrl_type(ctrl_type) {
-			cfg->new_ctrl[ctrl_type] = r->default_ctrl[ctrl_type];
+			cfg->new_ctrl[ctrl_type] =
+				rr->ctrl_features[ctrl_type].default_ctrl;
 		}
 	}
 

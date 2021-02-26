@@ -124,13 +124,27 @@ enum resctrl_ctrl_type {
 	SCHEMA_NUM_CTRL_TYPE
 };
 
+struct resctrl_ctrl_feature {
+	enum resctrl_ctrl_type type;
+	int        flags;
+	const char *name;
+
+	u32        max_wd;
+
+	int        base;
+	int        evt;
+
+	int        default_ctrl;
+
+	bool       capable;
+	bool       enabled;
+};
+
 #define for_each_ctrl_type(t)	\
 		for (t = SCHEMA_COMM; t != SCHEMA_NUM_CTRL_TYPE; t++)
 
 #define for_each_extend_ctrl_type(t)	\
 		for (t = SCHEMA_PRI; t != SCHEMA_NUM_CTRL_TYPE; t++)
-
-bool resctrl_ctrl_extend_bits_match(u32 bitmap, enum resctrl_ctrl_type type);
 
 enum resctrl_conf_type {
 	CDP_BOTH = 0,
@@ -319,11 +333,10 @@ struct raw_resctrl_resource {
 	u16                 num_intpartid;
 	u16                 num_pmg;
 
-	u16                 extend_ctrls_wd[SCHEMA_NUM_CTRL_TYPE];
-
 	void (*msr_update)(struct resctrl_resource *r, struct rdt_domain *d,
 				struct msr_param *para);
-	u64 (*msr_read)(struct rdt_domain *d, struct msr_param *para);
+	u64 (*msr_read)(struct resctrl_resource *r, struct rdt_domain *d,
+				struct msr_param *para);
 
 	int			data_width;
 	const char		*format_str;
@@ -334,6 +347,8 @@ struct raw_resctrl_resource {
 	u16                num_mon;
 	u64 (*mon_read)(struct rdt_domain *d, void *md_priv);
 	int (*mon_write)(struct rdt_domain *d, void *md_priv);
+
+	struct resctrl_ctrl_feature ctrl_features[SCHEMA_NUM_CTRL_TYPE];
 };
 
 /* 64bit arm64 specified */

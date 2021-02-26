@@ -101,22 +101,6 @@ bool is_resctrl_cdp_enabled(void)
 }
 
 static void
-resctrl_ctrl_extend_bits_set(u32 *bitmap, enum resctrl_ctrl_type type)
-{
-	*bitmap |= BIT(type);
-}
-
-static void resctrl_ctrl_extend_bits_clear(u32 *bitmap)
-{
-	*bitmap = 0;
-}
-
-bool resctrl_ctrl_extend_bits_match(u32 bitmap, enum resctrl_ctrl_type type)
-{
-	return bitmap & BIT(type);
-}
-
-static void
 mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
 	struct rdt_domain *d, struct sd_closid *closid);
 
@@ -124,8 +108,10 @@ static void
 common_wrmsr(struct resctrl_resource *r, struct rdt_domain *d,
 	struct msr_param *para);
 
-static u64 cache_rdmsr(struct rdt_domain *d, struct msr_param *para);
-static u64 mbw_rdmsr(struct rdt_domain *d, struct msr_param *para);
+static u64 cache_rdmsr(struct resctrl_resource *r, struct rdt_domain *d,
+	struct msr_param *para);
+static u64 mbw_rdmsr(struct resctrl_resource *r, struct rdt_domain *d,
+	struct msr_param *para);
 
 static u64 cache_rdmon(struct rdt_domain *d, void *md_priv);
 static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv);
@@ -145,6 +131,23 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.format_str     = "%d=%0*x",
 		.mon_read       = cache_rdmon,
 		.mon_write      = common_wrmon,
+		.ctrl_features  = {
+			[SCHEMA_COMM] = {
+				.type = SCHEMA_COMM,
+				.flags = SCHEMA_COMM,
+				.name = "comm",
+				.base = 16,
+				.evt = QOS_CAT_CPBM_EVENT_ID,
+				.capable = 1,
+			},
+			[SCHEMA_PRI] = {
+				.type = SCHEMA_PRI,
+				.flags = SCHEMA_PRI,
+				.name = "caPrio",
+				.base = 10,
+				.evt = QOS_CAT_INTPRI_EVENT_ID,
+			},
+		},
 	},
 	[RDT_RESOURCE_L2] = {
 		.msr_update     = common_wrmsr,
@@ -153,6 +156,23 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.format_str     = "%d=%0*x",
 		.mon_read       = cache_rdmon,
 		.mon_write      = common_wrmon,
+		.ctrl_features  = {
+			[SCHEMA_COMM] = {
+				.type = SCHEMA_COMM,
+				.flags = SCHEMA_COMM,
+				.name = "comm",
+				.base = 16,
+				.evt = QOS_CAT_CPBM_EVENT_ID,
+				.capable = 1,
+			},
+			[SCHEMA_PRI] = {
+				.type = SCHEMA_PRI,
+				.flags = SCHEMA_PRI,
+				.name = "caPrio",
+				.base = 10,
+				.evt = QOS_CAT_INTPRI_EVENT_ID,
+			},
+		},
 	},
 	[RDT_RESOURCE_MC] = {
 		.msr_update     = common_wrmsr,
@@ -161,6 +181,30 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 		.format_str     = "%d=%0*d",
 		.mon_read       = mbw_rdmon,
 		.mon_write      = common_wrmon,
+		.ctrl_features  = {
+			[SCHEMA_COMM] = {
+				.type = SCHEMA_COMM,
+				.flags = SCHEMA_COMM,
+				.name = "comm",
+				.base = 10,
+				.evt = QOS_MBA_MAX_EVENT_ID,
+				.capable = 1,
+			},
+			[SCHEMA_PRI] = {
+				.type = SCHEMA_PRI,
+				.flags = SCHEMA_PRI,
+				.name = "mbPrio",
+				.base = 10,
+				.evt = QOS_MBA_INTPRI_EVENT_ID,
+			},
+			[SCHEMA_HDL] = {
+				.type = SCHEMA_HDL,
+				.flags = SCHEMA_HDL,
+				.name = "mbHdl",
+				.base = 10,
+				.evt = QOS_MBA_HDL_EVENT_ID,
+			},
+		},
 	},
 };
 
@@ -183,52 +227,23 @@ parse_cache(char *buf, struct resctrl_resource *r,
 		enum resctrl_ctrl_type type)
 {
 	unsigned long data;
+	struct raw_resctrl_resource *rr = r->res;
 
 	if (cfg->have_new_ctrl) {
 		rdt_last_cmd_printf("duplicate domain\n");
 		return -EINVAL;
 	}
 
-	switch (type) {
-	case SCHEMA_COMM:
-		if (kstrtoul(buf, 16, &data))
-			return -EINVAL;
-		break;
-	case SCHEMA_PRI:
-		if (kstrtoul(buf, 10, &data))
-			return -EINVAL;
-		break;
-	case SCHEMA_HDL:
-		if (kstrtoul(buf, 10, &data))
-			return -EINVAL;
-		break;
-	default:
+	if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
 		return -EINVAL;
-	}
+
+	if (data >= rr->ctrl_features[type].max_wd)
+		return -EINVAL;
 
 	cfg->new_ctrl[type] = data;
 	cfg->have_new_ctrl = true;
 
 	return 0;
-}
-
-static bool bw_validate(char *buf, unsigned long *data,
-			struct resctrl_resource *r)
-{
-	unsigned long bw;
-	int ret;
-
-	ret = kstrtoul(buf, 10, &bw);
-	if (ret) {
-		rdt_last_cmd_printf("non-hex character in mask %s\n", buf);
-		return false;
-	}
-
-	bw = bw > MAX_MBA_BW ? MAX_MBA_BW : bw;
-	bw = bw < r->mbw.min_bw ?  r->mbw.min_bw : bw;
-	*data = roundup(bw, r->mbw.bw_gran);
-
-	return true;
 }
 
 static int
@@ -237,28 +252,28 @@ parse_bw(char *buf, struct resctrl_resource *r,
 		enum resctrl_ctrl_type type)
 {
 	unsigned long data;
+	struct raw_resctrl_resource *rr = r->res;
 
 	if (cfg->have_new_ctrl) {
 		rdt_last_cmd_printf("duplicate domain\n");
 		return -EINVAL;
 	}
 
-	switch (type) {
-	case SCHEMA_COMM:
-		if (!bw_validate(buf, &data, r))
+	switch (rr->ctrl_features[type].evt) {
+	case QOS_MBA_MAX_EVENT_ID:
+		if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
 			return -EINVAL;
-		break;
-	case SCHEMA_PRI:
-		if (kstrtoul(buf, 10, &data))
-			return -EINVAL;
-		break;
-	case SCHEMA_HDL:
-		if (kstrtoul(buf, 10, &data))
-			return -EINVAL;
+		data = (data < r->mbw.min_bw) ? r->mbw.min_bw : data;
+		data = roundup(data, r->mbw.bw_gran);
 		break;
 	default:
-		return -EINVAL;
+		if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
+			return -EINVAL;
+		break;
 	}
+
+	if (data >= rr->ctrl_features[type].max_wd)
+		return -EINVAL;
 
 	cfg->new_ctrl[type] = data;
 	cfg->have_new_ctrl = true;
@@ -285,61 +300,43 @@ common_wrmsr(struct resctrl_resource *r, struct rdt_domain *d,
 	mpam_component_config(dom->comp, &args);
 }
 
-static u64 cache_rdmsr(struct rdt_domain *d, struct msr_param *para)
+static u64 cache_rdmsr(struct resctrl_resource *r, struct rdt_domain *d,
+			struct msr_param *para)
 {
-	u32 result, intpri, dspri;
+	u32 result;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
+	struct raw_resctrl_resource *rr = r->res;
 
 	args.closid = *para->closid;
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 
-	switch (para->type) {
-	case SCHEMA_COMM:
-		args.eventid = QOS_CAT_CPBM_EVENT_ID;
-		mpam_component_get_config(dom->comp, &args, &result);
-		break;
-	case SCHEMA_PRI:
-		args.eventid = QOS_CAT_INTPRI_EVENT_ID;
-		mpam_component_get_config(dom->comp, &args, &intpri);
-		args.eventid = QOS_MBA_DSPRI_EVENT_ID;
-		mpam_component_get_config(dom->comp, &args, &dspri);
-		result = (intpri > dspri) ? intpri : dspri;
-		break;
-	default:
-		return 0;
-	}
+	args.eventid = rr->ctrl_features[para->type].evt;
+	mpam_component_get_config(dom->comp, &args, &result);
 
 	return result;
 }
 
-static u64 mbw_rdmsr(struct rdt_domain *d, struct msr_param *para)
+static u64 mbw_rdmsr(struct resctrl_resource *r, struct rdt_domain *d,
+			struct msr_param *para)
 {
-	u32 result, intpri, dspri;
+	u32 result;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
+	struct raw_resctrl_resource *rr = r->res;
 
 	args.closid = *para->closid;
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 
-	switch (para->type) {
-	case SCHEMA_COMM:
-		args.eventid = QOS_MBA_MAX_EVENT_ID;
-		mpam_component_get_config(dom->comp, &args, &result);
-		break;
-	case SCHEMA_PRI:
-		args.eventid = QOS_MBA_INTPRI_EVENT_ID;
-		mpam_component_get_config(dom->comp, &args, &intpri);
-		args.eventid = QOS_MBA_DSPRI_EVENT_ID;
-		mpam_component_get_config(dom->comp, &args, &dspri);
-		result = (intpri > dspri) ? intpri : dspri;
-		break;
-	case SCHEMA_HDL:
-		args.eventid = QOS_MBA_HDL_EVENT_ID;
-		mpam_component_get_config(dom->comp, &args, &result);
+	args.eventid = rr->ctrl_features[para->type].evt;
+	mpam_component_get_config(dom->comp, &args, &result);
+
+	switch (rr->ctrl_features[para->type].evt) {
+	case QOS_MBA_MAX_EVENT_ID:
+		result = roundup(result, r->mbw.bw_gran);
 		break;
 	default:
-		return 0;
+		break;
 	}
 
 	return result;
@@ -1023,27 +1020,25 @@ static int cdpl2_enable(void)
 static void basic_ctrl_enable(void)
 {
 	struct mpam_resctrl_res *res;
-	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
 
 	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
+		rr = res->resctrl_res.res;
 		/* At least SCHEMA_COMM is supported */
-		resctrl_ctrl_extend_bits_set(&r->ctrl_extend_bits, SCHEMA_COMM);
+		rr->ctrl_features[SCHEMA_COMM].enabled = true;
 	}
 }
 
 static int extend_ctrl_enable(enum resctrl_ctrl_type type)
 {
 	bool match = false;
-	struct resctrl_resource *r;
 	struct raw_resctrl_resource *rr;
 	struct mpam_resctrl_res *res;
 
 	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
-		rr = r->res;
-		if (rr->extend_ctrls_wd[type]) {
-			resctrl_ctrl_extend_bits_set(&r->ctrl_extend_bits, type);
+		rr = res->resctrl_res.res;
+		if (rr->ctrl_features[type].capable) {
+			rr->ctrl_features[type].enabled = true;
 			match = true;
 		}
 	}
@@ -1056,12 +1051,13 @@ static int extend_ctrl_enable(enum resctrl_ctrl_type type)
 
 static void extend_ctrl_disable(void)
 {
-	struct resctrl_resource *r;
+	struct raw_resctrl_resource *rr;
 	struct mpam_resctrl_res *res;
 
 	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
-		resctrl_ctrl_extend_bits_clear(&r->ctrl_extend_bits);
+		rr = res->resctrl_res.res;
+		rr->ctrl_features[SCHEMA_PRI].enabled = false;
+		rr->ctrl_features[SCHEMA_HDL].enabled = false;
 	}
 }
 
@@ -1843,47 +1839,31 @@ void __mpam_sched_in(void)
 
 static void
 mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
-			u32 resctrl_cfg, enum resctrl_ctrl_type ctrl_type,
+			u32 resctrl_cfg, enum rdt_event_id evt,
 			struct mpam_config *mpam_cfg)
 {
-	switch (ctrl_type) {
-	case SCHEMA_COMM:
-		if (res == &mpam_resctrl_exports[RDT_RESOURCE_MC]) {
-			u64 range;
+	u64 range;
 
-			/* For MBA cfg is a percentage of .. */
-			if (res->resctrl_mba_uses_mbw_part) {
-				/* .. the number of bits we can set */
-				range = res->class->mbw_pbm_bits;
-				mpam_cfg->mbw_pbm =
-					(resctrl_cfg * range) / MAX_MBA_BW;
-				mpam_set_feature(mpam_feat_mbw_part, &mpam_cfg->valid);
-			} else {
-				/* .. the number of fractions we can represent */
-				range = MBW_MAX_BWA_FRACT(res->class->bwa_wd);
-				mpam_cfg->mbw_max = (resctrl_cfg * range) / (MAX_MBA_BW - 1);
-				mpam_cfg->mbw_max =
-					(mpam_cfg->mbw_max > range) ? range : mpam_cfg->mbw_max;
-				mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
-			}
-		} else {
-			/*
-			 * Nothing clever here as mpam_resctrl_pick_caches()
-			 * capped the size at RESCTRL_MAX_CBM.
-			 */
-			mpam_cfg->cpbm = resctrl_cfg;
-			mpam_set_feature(mpam_feat_cpor_part, &mpam_cfg->valid);
-		}
+	switch (evt) {
+	case QOS_MBA_MAX_EVENT_ID:
+		/* .. the number of fractions we can represent */
+		range = MBW_MAX_BWA_FRACT(res->class->bwa_wd);
+		mpam_cfg->mbw_max = (resctrl_cfg * range) / (MAX_MBA_BW - 1);
+		mpam_cfg->mbw_max =
+			(mpam_cfg->mbw_max > range) ? range : mpam_cfg->mbw_max;
+		mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
 		break;
-	case SCHEMA_PRI:
-		mpam_cfg->dspri = resctrl_cfg;
-		mpam_cfg->intpri = resctrl_cfg;
-		mpam_set_feature(mpam_feat_dspri_part, &mpam_cfg->valid);
-		mpam_set_feature(mpam_feat_intpri_part, &mpam_cfg->valid);
-		break;
-	case SCHEMA_HDL:
+	case QOS_MBA_HDL_EVENT_ID:
 		mpam_cfg->hdl = resctrl_cfg;
 		mpam_set_feature(mpam_feat_part_hdl, &mpam_cfg->valid);
+		break;
+	case QOS_CAT_CPBM_EVENT_ID:
+		mpam_cfg->cpbm = resctrl_cfg;
+		mpam_set_feature(mpam_feat_cpor_part, &mpam_cfg->valid);
+		break;
+	case QOS_CAT_INTPRI_EVENT_ID:
+		mpam_cfg->intpri = resctrl_cfg;
+		mpam_set_feature(mpam_feat_intpri_part, &mpam_cfg->valid);
 		break;
 	default:
 		break;
@@ -1903,6 +1883,7 @@ mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
 	struct mpam_resctrl_dom *dom;
 	struct mpam_resctrl_res *res;
 	struct mpam_config *slave_mpam_cfg;
+	struct raw_resctrl_resource *rr = r->res;
 	enum resctrl_ctrl_type type;
 	u32 intpartid = closid->intpartid;
 	u32 reqpartid = closid->reqpartid;
@@ -1930,11 +1911,9 @@ mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
 	slave_mpam_cfg->valid = 0;
 
 	for_each_ctrl_type(type) {
-		/*
-		 * we don't need check if we have enabled this ctrl type, because
-		 * this ctrls also should be applied an default configuration and
-		 * this feature type would be rechecked when configuring mpam devices.
-		 */
+		if (!rr->ctrl_features[type].enabled)
+			continue;
+
 		resctrl_cfg = d->ctrl_val[type][intpartid];
 		mpam_update_from_resctrl_cfg(res, resctrl_cfg,
 			type, slave_mpam_cfg);
@@ -1947,13 +1926,15 @@ static void mpam_reset_cfg(struct mpam_resctrl_res *res,
 {
 	int i;
 	struct resctrl_resource *r = &res->resctrl_res;
+	struct raw_resctrl_resource *rr = r->res;
 	enum resctrl_ctrl_type type;
 
 	for (i = 0; i != mpam_sysprops_num_partid(); i++) {
 		for_each_ctrl_type(type) {
-			mpam_update_from_resctrl_cfg(res, r->default_ctrl[type],
-				type, &dom->comp->cfg[i]);
-			d->ctrl_val[type][i] = r->default_ctrl[type];
+			mpam_update_from_resctrl_cfg(res,
+				rr->ctrl_features[type].default_ctrl,
+				rr->ctrl_features[type].evt, &dom->comp->cfg[i]);
+			d->ctrl_val[type][i] = rr->ctrl_features[type].default_ctrl;
 		}
 	}
 }

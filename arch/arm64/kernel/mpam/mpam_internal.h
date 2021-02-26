@@ -19,6 +19,7 @@ extern bool rdt_mon_capable;
 extern struct list_head mpam_classes;
 
 #define MAX_MBA_BW  100u
+#define GRAN_MBA_BW 2u
 
 #define MPAM_ERRCODE_NONE                       0
 #define MPAM_ERRCODE_PARTID_SEL_RANGE           1

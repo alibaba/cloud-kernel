@@ -59,9 +59,6 @@ struct resctrl_resource {
 
 	bool cdp_capable;
 	bool cdp_enable;
-	u32 *default_ctrl;
-
-	u32 ctrl_extend_bits;
 
 	void *res;
 };

@@ -334,13 +334,6 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 	struct resctrl_resource *r = &res->resctrl_res;
 	struct raw_resctrl_resource *rr = NULL;
 
-	if (class && !r->default_ctrl) {
-		r->default_ctrl = kmalloc_array(SCHEMA_NUM_CTRL_TYPE,
-			sizeof(*r->default_ctrl), GFP_KERNEL);
-		if (!r->default_ctrl)
-			return -ENOMEM;
-	}
-
 	if (class == mpam_resctrl_exports[RDT_RESOURCE_SMMU].class) {
 		return 0;
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_MC].class) {
@@ -373,17 +366,32 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 			r->mbw.min_bw = MAX_MBA_BW /
 				((1ULL << class->bwa_wd) - 1);
 			/* the largest mbw_max is 100 */
-			r->default_ctrl[SCHEMA_COMM] = 100;
+			rr->ctrl_features[SCHEMA_COMM].default_ctrl = MAX_MBA_BW;
+			rr->ctrl_features[SCHEMA_COMM].max_wd = MAX_MBA_BW + 1;
+			rr->ctrl_features[SCHEMA_COMM].capable = true;
 		}
+
+		if (mpam_has_feature(mpam_feat_intpri_part, class->features)) {
+			/*
+			 * Export internal priority setting, which represents the
+			 * max level of control we can export to resctrl. this default
+			 * priority is from hardware, no clever here.
+			 */
+			rr->ctrl_features[SCHEMA_PRI].max_wd = 1 << class->intpri_wd;
+			rr->ctrl_features[SCHEMA_PRI].default_ctrl = class->hwdef_intpri;
+			rr->ctrl_features[SCHEMA_PRI].capable = true;
+		}
+
 		/* Just in case we have an excessive number of bits */
 		if (!r->mbw.min_bw)
 			r->mbw.min_bw = 1;
 
 		/*
-		 * because its linear with no offset, the granule is the same
-		 * as the smallest value
+		 * james said because its linear with no offset, the granule is the same
+		 * as the smallest value. It is a little fuzzy here because a granularity
+		 * of 1 would appear too fine to make percentage conversions.
 		 */
-		r->mbw.bw_gran = r->mbw.min_bw;
+		r->mbw.bw_gran = GRAN_MBA_BW;
 
 		/* We will only pick a class that can monitor and control */
 		r->alloc_capable = true;
@@ -392,8 +400,9 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->mon_capable = true;
 		r->mon_enabled = true;
 		/* Export memory bandwidth hardlimit, default active hardlimit */
-		rr->extend_ctrls_wd[SCHEMA_HDL] = 2;
-		r->default_ctrl[SCHEMA_HDL] = 1;
+		rr->ctrl_features[SCHEMA_HDL].default_ctrl = 1;
+		rr->ctrl_features[SCHEMA_HDL].max_wd = 2;
+		rr->ctrl_features[SCHEMA_HDL].capable = true;
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L3].class) {
 		r->rid = RDT_RESOURCE_L3;
 		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L3);
@@ -402,22 +411,40 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->fflags = RFTYPE_RES_CACHE;
 		r->name = "L3";
 
-		r->cache.cbm_len = class->cpbm_wd;
-		r->default_ctrl[SCHEMA_COMM] = GENMASK(class->cpbm_wd - 1, 0);
-		/*
-		 * Which bits are shared with other ...things...
-		 * Unknown devices use partid-0 which uses all the bitmap
-		 * fields. Until we configured the SMMU and GIC not to do this
-		 * 'all the bits' is the correct answer here.
-		 */
-		r->cache.shareable_bits = r->default_ctrl[SCHEMA_COMM];
-		r->cache.min_cbm_bits = 1;
-
 		if (mpam_has_feature(mpam_feat_cpor_part, class->features)) {
-			r->alloc_capable = true;
-			r->alloc_enabled = true;
-			rdt_alloc_capable = true;
+			r->cache.cbm_len = class->cpbm_wd;
+			rr->ctrl_features[SCHEMA_COMM].default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
+			rr->ctrl_features[SCHEMA_COMM].max_wd =
+				rr->ctrl_features[SCHEMA_COMM].default_ctrl + 1;
+			rr->ctrl_features[SCHEMA_COMM].capable = true;
+			/*
+			 * Which bits are shared with other ...things...
+			 * Unknown devices use partid-0 which uses all the bitmap
+			 * fields. Until we configured the SMMU and GIC not to do this
+			 * 'all the bits' is the correct answer here.
+			 */
+			r->cache.shareable_bits = rr->ctrl_features[SCHEMA_COMM].default_ctrl;
+			r->cache.min_cbm_bits = 1;
 		}
+
+		if (mpam_has_feature(mpam_feat_intpri_part, class->features)) {
+			/*
+			 * Export internal priority setting, which represents the
+			 * max level of control we can export to resctrl. this default
+			 * priority is from hardware, no clever here.
+			 */
+			rr->ctrl_features[SCHEMA_PRI].max_wd = 1 << class->intpri_wd;
+			rr->ctrl_features[SCHEMA_PRI].default_ctrl = class->hwdef_intpri;
+			rr->ctrl_features[SCHEMA_PRI].capable = true;
+		}
+		/*
+		 * Only this resource is allocable can it be picked from
+		 * mpam_resctrl_pick_caches(). So directly set following
+		 * fields to true.
+		 */
+		r->alloc_capable = true;
+		r->alloc_enabled = true;
+		rdt_alloc_capable = true;
 		/*
 		 * While this is a CPU-interface feature of MPAM, we only tell
 		 * resctrl about it for caches, as that seems to be how x86
@@ -435,21 +462,39 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->fflags = RFTYPE_RES_CACHE;
 		r->name = "L2";
 
-		r->cache.cbm_len = class->cpbm_wd;
-		r->default_ctrl[SCHEMA_COMM] = GENMASK(class->cpbm_wd - 1, 0);
-		/*
-		 * Which bits are shared with other ...things...
-		 * Unknown devices use partid-0 which uses all the bitmap
-		 * fields. Until we configured the SMMU and GIC not to do this
-		 * 'all the bits' is the correct answer here.
-		 */
-		r->cache.shareable_bits = r->default_ctrl[SCHEMA_COMM];
-
 		if (mpam_has_feature(mpam_feat_cpor_part, class->features)) {
-			r->alloc_capable = true;
-			r->alloc_enabled = true;
-			rdt_alloc_capable = true;
+			r->cache.cbm_len = class->cpbm_wd;
+			rr->ctrl_features[SCHEMA_COMM].default_ctrl = GENMASK(class->cpbm_wd - 1, 0);
+			rr->ctrl_features[SCHEMA_COMM].max_wd =
+				rr->ctrl_features[SCHEMA_COMM].default_ctrl + 1;
+			rr->ctrl_features[SCHEMA_COMM].capable = true;
+			/*
+			 * Which bits are shared with other ...things...
+			 * Unknown devices use partid-0 which uses all the bitmap
+			 * fields. Until we configured the SMMU and GIC not to do this
+			 * 'all the bits' is the correct answer here.
+			 */
+			r->cache.shareable_bits = rr->ctrl_features[SCHEMA_COMM].default_ctrl;
 		}
+
+		if (mpam_has_feature(mpam_feat_intpri_part, class->features)) {
+			/*
+			 * Export internal priority setting, which represents the
+			 * max level of control we can export to resctrl. this default
+			 * priority is from hardware, no clever here.
+			 */
+			rr->ctrl_features[SCHEMA_PRI].max_wd = 1 << class->intpri_wd;
+			rr->ctrl_features[SCHEMA_PRI].default_ctrl = class->hwdef_intpri;
+			rr->ctrl_features[SCHEMA_PRI].capable = true;
+		}
+		/*
+		 * Only this resource is allocable can it be picked from
+		 * mpam_resctrl_pick_caches(). So directly set following
+		 * fields to true.
+		 */
+		r->alloc_capable = true;
+		r->alloc_enabled = true;
+		rdt_alloc_capable = true;
 
 		/*
 		 * While this is a CPU-interface feature of MPAM, we only tell
@@ -464,17 +509,6 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		rr->num_partid = class->num_partid;
 		rr->num_intpartid = class->num_intpartid;
 		rr->num_pmg = class->num_pmg;
-
-		/*
-		 * Export priority setting, extend_ctrls_wd represents the
-		 * max level of control we can export. this default priority
-		 * is just from hardware, no need to define another default
-		 * value.
-		 */
-		rr->extend_ctrls_wd[SCHEMA_PRI] = 1 << max(class->intpri_wd,
-			class->dspri_wd);
-		r->default_ctrl[SCHEMA_PRI] = max(class->hwdef_intpri,
-			class->hwdef_dspri);
 	}
 
 	return 0;
