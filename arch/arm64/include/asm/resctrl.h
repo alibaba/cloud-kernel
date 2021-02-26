@@ -78,48 +78,14 @@ int schemata_list_init(void);
 
 void schemata_list_destroy(void);
 
-int alloc_rmid(void);
-void free_rmid(u32 rmid);
+int resctrl_lru_request_mon(void);
 
-static inline int alloc_mon_id(void)
-{
+int alloc_mon_id(void);
+void free_mon_id(u32 id);
 
-	return alloc_rmid();
-}
-
-static inline void free_mon_id(u32 id)
-{
-	free_rmid(id);
-}
-
-int closid_init(void);
-int closid_alloc(void);
-void closid_free(int closid);
-void pmg_init(void);
-
-static inline int resctrl_id_init(void)
-{
-	int ret;
-
-	ret = closid_init();
-	if (ret)
-		goto out;
-
-	pmg_init();
-
-out:
-	return ret;
-}
-
-static inline int resctrl_id_alloc(void)
-{
-	return closid_alloc();
-}
-
-static inline void resctrl_id_free(int id)
-{
-	closid_free(id);
-}
+int resctrl_id_init(void);
+int resctrl_id_alloc(void);
+void resctrl_id_free(int id);
 
 void update_cpu_closid_rmid(void *info);
 void update_closid_rmid(const struct cpumask *cpu_mask, struct resctrl_group *r);
@@ -131,7 +97,6 @@ extern bool rdt_mon_capable;
 
 /* rdtgroup.flags */
 #define	RDT_DELETED		BIT(0)
-#define	RDT_CTRLMON		BIT(1)
 
 void rdt_last_cmd_clear(void);
 void rdt_last_cmd_puts(const char *s);
@@ -142,23 +107,12 @@ extern struct mutex resctrl_group_mutex;
 void release_rdtgroupfs_options(void);
 int parse_rdtgroupfs_options(char *data);
 
-int alloc_mon(void);
-void free_mon(u32 mon);
-
 void resctrl_resource_reset(void);
 
 #define release_resctrl_group_fs_options release_rdtgroupfs_options
 #define parse_resctrl_group_fs_options parse_rdtgroupfs_options
 
 int mpam_get_mon_config(struct resctrl_resource *r);
-
-int mkdir_mondata_all(struct kernfs_node *parent_kn,
-			     struct resctrl_group *prgrp,
-			     struct kernfs_node **dest_kn);
-
-int
-mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
-		    char *name, struct kernfs_node **dest_kn);
 
 int resctrl_group_init_alloc(struct rdtgroup *rdtgrp);
 
@@ -167,9 +121,8 @@ static inline int __resctrl_group_show_options(struct seq_file *seq)
 	return 0;
 }
 
-int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
-				  struct rdtgroup *prgrp,
-				  struct kernfs_node **dest_kn);
+int resctrl_mkdir_mondata_all_subdir(struct kernfs_node *parent_kn,
+			struct resctrl_group *prgrp);
 
 struct resctrl_resource *
 mpam_resctrl_get_resource(enum resctrl_resource_level level);

@@ -167,7 +167,7 @@ do {   \
 
 bool is_resctrl_cdp_enabled(void);
 
-#define hw_alloc_times_validate(__name, __times, __flag) \
+#define hw_alloc_times_validate(__times, __flag) \
 do {   \
 	__flag = is_resctrl_cdp_enabled();	\
 	__times = flag ? 2 : 1;	\
@@ -309,7 +309,7 @@ struct raw_resctrl_resource {
 
 	u16                num_mon;
 	u64 (*mon_read)(struct rdt_domain *d, void *md_priv);
-	int (*mon_write)(struct rdt_domain *d, void *md_priv, bool enable);
+	int (*mon_write)(struct rdt_domain *d, void *md_priv);
 };
 
 /* 64bit arm64 specified */
@@ -333,14 +333,11 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
 		struct list_head **pos);
 
-ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
-		char *buf, size_t nbytes, loff_t off);
-
-int resctrl_group_ctrlmon_show(struct kernfs_open_file *of,
-		struct seq_file *s, void *v);
-
 int resctrl_group_alloc_mon(struct rdtgroup *grp);
 
 u16 mpam_resctrl_max_mon_num(void);
+
+void pmg_init(void);
+void mon_init(void);
 
 #endif /* _ASM_ARM64_MPAM_H */

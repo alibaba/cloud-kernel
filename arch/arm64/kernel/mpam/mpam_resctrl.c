@@ -119,16 +119,7 @@ static u64 mbw_rdmsr(struct rdt_domain *d, int partid);
 static u64 cache_rdmon(struct rdt_domain *d, void *md_priv);
 static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv);
 
-static int common_wrmon(struct rdt_domain *d, void *md_priv, bool enable);
-
-static inline bool is_mon_dyn(u32 mon)
-{
-	/*
-	 * if rdtgrp->mon.mon has been tagged with value (max_mon_num),
-	 * allocating a monitor in dynamic when getting monitor data.
-	 */
-	return (mon == mpam_resctrl_max_mon_num()) ? true : false;
-}
+static int common_wrmon(struct rdt_domain *d, void *md_priv);
 
 static int parse_cbm(char *buf, struct raw_resctrl_resource *r,
 		struct resctrl_staged_config *cfg, hw_closid_t hw_closid);
@@ -341,19 +332,12 @@ static u64 cache_rdmon(struct rdt_domain *d, void *md_priv)
 	union mon_data_bits md;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
-	u32 mon;
 	unsigned long timeout;
 
 	md.priv = md_priv;
 
-	mon = md.u.mon;
-
-	/* Indicates whether allocating a monitor dynamically*/
-	if (is_mon_dyn(mon))
-		mon = alloc_mon();
-
 	args.partid = md.u.partid;
-	args.mon = mon;
+	args.mon = md.u.mon;
 	args.pmg = md.u.pmg;
 	args.match_pmg = true;
 	args.eventid = QOS_L3_OCCUP_EVENT_ID;
@@ -375,9 +359,6 @@ static u64 cache_rdmon(struct rdt_domain *d, void *md_priv)
 		WARN_ON(err && (err != -EBUSY));
 	} while (err == -EBUSY);
 
-	if (is_mon_dyn(mon))
-		free_mon(mon);
-
 	return result;
 }
 /*
@@ -391,18 +372,12 @@ static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv)
 	union mon_data_bits md;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
-	u32 mon;
 	unsigned long timeout;
 
 	md.priv = md_priv;
 
-	mon = md.u.mon;
-
-	if (is_mon_dyn(mon))
-		mon = alloc_mon();
-
 	args.partid = md.u.partid;
-	args.mon = mon;
+	args.mon = md.u.mon;
 	args.pmg = md.u.pmg;
 	args.match_pmg = true;
 	args.eventid = QOS_L3_MBM_LOCAL_EVENT_ID;
@@ -424,21 +399,16 @@ static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv)
 		WARN_ON(err && (err != -EBUSY));
 	} while (err == -EBUSY);
 
-	if (is_mon_dyn(mon))
-		free_mon(mon);
 	return result;
 }
 
 static int
-common_wrmon(struct rdt_domain *d, void *md_priv, bool enable)
+common_wrmon(struct rdt_domain *d, void *md_priv)
 {
 	u64 result;
 	union mon_data_bits md;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
-
-	if (!enable)
-		return -EINVAL;
 
 	md.priv = md_priv;
 	args.partid = md.u.partid;
@@ -488,7 +458,7 @@ int closid_init(void)
 	num_closid = mpam_sysprops_num_partid();
 	num_closid = min(num_closid, RESCTRL_MAX_CLOSID);
 
-	hw_alloc_times_validate(clos, times, flag);
+	hw_alloc_times_validate(times, flag);
 
 	if (flag)
 		num_closid = rounddown(num_closid, 2);
@@ -514,7 +484,7 @@ int closid_alloc(void)
 	int pos;
 	u32 times, flag;
 
-	hw_alloc_times_validate(clos, times, flag);
+	hw_alloc_times_validate(times, flag);
 
 	pos = find_first_bit(closid_free_map, num_closid);
 	if (pos == num_closid)
@@ -529,7 +499,7 @@ void closid_free(int closid)
 {
 	u32 times, flag;
 
-	hw_alloc_times_validate(clos, times, flag);
+	hw_alloc_times_validate(times, flag);
 	bitmap_set(closid_free_map, closid, times);
 }
 
@@ -1206,15 +1176,7 @@ static struct rftype res_specific_files[] = {
 		.write		= resctrl_group_schemata_write,
 		.seq_show	= resctrl_group_schemata_show,
 		.fflags		= RF_CTRL_BASE,
-	},
-	{
-		.name		= "ctrlmon",
-		.mode		= 0644,
-		.kf_ops		= &resctrl_group_kf_single_ops,
-		.write		= resctrl_group_ctrlmon_write,
-		.seq_show	= resctrl_group_ctrlmon_show,
-		.fflags		= RF_CTRL_BASE,
-	},
+	}
 };
 
 struct rdt_domain *mpam_find_domain(struct resctrl_resource *r, int id,
@@ -1473,4 +1435,29 @@ u16 mpam_resctrl_max_mon_num(void)
 	max_mon_num = mon_num;
 
 	return mon_num;
+}
+
+int resctrl_id_init(void)
+{
+	int ret;
+
+	ret = closid_init();
+	if (ret)
+		goto out;
+
+	pmg_init();
+	mon_init();
+
+out:
+	return ret;
+}
+
+int resctrl_id_alloc(void)
+{
+	return closid_alloc();
+}
+
+void resctrl_id_free(int id)
+{
+	closid_free(id);
 }

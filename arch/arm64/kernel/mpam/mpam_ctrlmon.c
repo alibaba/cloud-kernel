@@ -446,7 +446,7 @@ static int resctrl_group_kn_set_ugid(struct kernfs_node *kn)
 	return kernfs_setattr(kn, &iattr);
 }
 
-static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
+static int resctrl_mkdir_mondata_dom(struct kernfs_node *parent_kn,
 			struct rdt_domain *d, struct resctrl_schema *s,
 			struct resctrl_group *prgrp)
 
@@ -486,121 +486,12 @@ static int mkdir_mondata_subdir(struct kernfs_node *parent_kn,
 	}
 
 	/* Could we remove the MATCH_* param ? */
-	rr->mon_write(d, md.priv, true);
+	rr->mon_write(d, md.priv);
 
 	return ret;
 }
 
-int resctrl_ctrlmon_enable(struct kernfs_node *parent_kn,
-			  struct resctrl_group *prgrp,
-			  struct kernfs_node **dest_kn)
-{
-	int ret;
-
-	/* only for RDTCTRL_GROUP */
-	if (prgrp->type == RDTMON_GROUP)
-		return 0;
-
-	ret = alloc_mon();
-	if (ret < 0) {
-		rdt_last_cmd_puts("out of monitors\n");
-		pr_info("out of monitors: ret %d\n", ret);
-		return ret;
-	}
-	prgrp->mon.mon = ret;
-	prgrp->mon.rmid = 0;
-
-	ret = mkdir_mondata_all(parent_kn, prgrp, dest_kn);
-	if (ret) {
-		rdt_last_cmd_puts("kernfs subdir error\n");
-		free_mon(ret);
-	}
-
-	return ret;
-}
-
-void resctrl_ctrlmon_disable(struct kernfs_node *kn_mondata,
-			    struct resctrl_group *prgrp)
-{
-	struct mpam_resctrl_res *r;
-	struct resctrl_resource *resctrl_res;
-	struct raw_resctrl_resource *rr;
-	struct rdt_domain *dom;
-	int mon = prgrp->mon.mon;
-
-	/* only for RDTCTRL_GROUP */
-	if (prgrp->type == RDTMON_GROUP)
-		return;
-
-	for_each_resctrl_exports(r) {
-		resctrl_res = &r->resctrl_res;
-
-		if (resctrl_res->mon_enabled) {
-			rr = (struct raw_resctrl_resource *)resctrl_res->res;
-
-			list_for_each_entry(dom, &resctrl_res->domains, list) {
-				rr->mon_write(dom, prgrp, false);
-			}
-		}
-	}
-
-	free_mon(mon);
-	kernfs_remove(kn_mondata);
-}
-
-ssize_t resctrl_group_ctrlmon_write(struct kernfs_open_file *of,
-				    char *buf, size_t nbytes, loff_t off)
-{
-	struct rdtgroup *rdtgrp;
-	int ret = 0;
-	int ctrlmon;
-
-	if (kstrtoint(strstrip(buf), 0, &ctrlmon) || ctrlmon < 0)
-		return -EINVAL;
-	rdtgrp = resctrl_group_kn_lock_live(of->kn);
-	rdt_last_cmd_clear();
-
-	if (!rdtgrp) {
-		ret = -ENOENT;
-		goto unlock;
-	}
-
-	if ((rdtgrp->flags & RDT_CTRLMON) && !ctrlmon) {
-		/* disable & remove mon_data dir */
-		rdtgrp->flags &= ~RDT_CTRLMON;
-		resctrl_ctrlmon_disable(rdtgrp->mon.mon_data_kn, rdtgrp);
-	} else if (!(rdtgrp->flags & RDT_CTRLMON) && ctrlmon) {
-		ret = resctrl_ctrlmon_enable(rdtgrp->kn, rdtgrp,
-					     &rdtgrp->mon.mon_data_kn);
-		if (!ret)
-			rdtgrp->flags |= RDT_CTRLMON;
-	} else {
-		ret = -ENOENT;
-	}
-
-unlock:
-	resctrl_group_kn_unlock(of->kn);
-	return ret ?: nbytes;
-}
-
-int resctrl_group_ctrlmon_show(struct kernfs_open_file *of,
-			       struct seq_file *s, void *v)
-{
-	struct rdtgroup *rdtgrp;
-	int ret = 0;
-
-	rdtgrp = resctrl_group_kn_lock_live(of->kn);
-	if (rdtgrp)
-		seq_printf(s, "%d", !!(rdtgrp->flags & RDT_CTRLMON));
-	else
-		ret = -ENOENT;
-	resctrl_group_kn_unlock(of->kn);
-
-	return ret;
-}
-
-
-static int mkdir_mondata_subdir_alldom(struct kernfs_node *parent_kn,
+static int resctrl_mkdir_mondata_subdir_alldom(struct kernfs_node *parent_kn,
 			struct resctrl_schema *s, struct resctrl_group *prgrp)
 {
 	struct resctrl_resource *r;
@@ -609,7 +500,7 @@ static int mkdir_mondata_subdir_alldom(struct kernfs_node *parent_kn,
 
 	r = s->res;
 	list_for_each_entry(dom, &r->domains, list) {
-		ret = mkdir_mondata_subdir(parent_kn, dom, s, prgrp);
+		ret = resctrl_mkdir_mondata_dom(parent_kn, dom, s, prgrp);
 		if (ret)
 			return ret;
 	}
@@ -617,78 +508,12 @@ static int mkdir_mondata_subdir_alldom(struct kernfs_node *parent_kn,
 	return 0;
 }
 
-int
-mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
-		    char *name, struct kernfs_node **dest_kn)
-{
-	struct kernfs_node *kn;
-	int ret;
-
-	/* create the directory */
-	kn = kernfs_create_dir(parent_kn, name, parent_kn->mode, prgrp);
-	if (IS_ERR(kn)) {
-		pr_info("%s: create dir %s, error\n", __func__, name);
-		return PTR_ERR(kn);
-	}
-
-	if (dest_kn)
-		*dest_kn = kn;
-
-	/*
-	 * This extra ref will be put in kernfs_remove() and guarantees
-	 * that @rdtgrp->kn is always accessible.
-	 */
-	kernfs_get(kn);
-
-	ret = resctrl_group_kn_set_ugid(kn);
-	if (ret)
-		goto out_destroy;
-
-	kernfs_activate(kn);
-
-	return 0;
-
-out_destroy:
-	kernfs_remove(kn);
-	return ret;
-}
-
-
-/*
- * This creates a directory mon_data which contains the monitored data.
- *
- * mon_data has one directory for each domain whic are named
- * in the format mon_<domain_name>_<domain_id>. For ex: A mon_data
- * with L3 domain looks as below:
- * ./mon_data:
- * mon_L3_00
- * mon_L3_01
- * mon_L3_02
- * ...
- *
- * Each domain directory has one file per event:
- * ./mon_L3_00/:
- * llc_occupancy
- *
- */
-int mkdir_mondata_all(struct kernfs_node *parent_kn,
-			     struct resctrl_group *prgrp,
-			     struct kernfs_node **dest_kn)
+int resctrl_mkdir_mondata_all_subdir(struct kernfs_node *parent_kn,
+			struct resctrl_group *prgrp)
 {
 	struct resctrl_schema *s;
 	struct resctrl_resource *r;
-	struct kernfs_node *kn;
 	int ret;
-
-	/*
-	 * Create the mon_data directory first.
-	 */
-	ret = mongroup_create_dir(parent_kn, prgrp, "mon_data", &kn);
-	if (ret)
-		return ret;
-
-	if (dest_kn)
-		*dest_kn = kn;
 
 	/*
 	 * Create the subdirectories for each domain. Note that all events
@@ -701,59 +526,12 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 			struct raw_resctrl_resource *rr;
 
 			rr = r->res;
-			/*
-			 * num pmg of different resources varies, we just
-			 * skip creating those unqualified ones.
-			 */
-			if ((prgrp->type == RDTMON_GROUP) &&
-				(prgrp->mon.rmid >= rr->num_pmg))
-				continue;
 
-			ret = mkdir_mondata_subdir_alldom(kn, s, prgrp);
+			ret = resctrl_mkdir_mondata_subdir_alldom(parent_kn,
+					s, prgrp);
 			if (ret)
-				goto out_destroy;
+				break;
 		}
-	}
-
-	kernfs_activate(kn);
-
-	return 0;
-
-out_destroy:
-	kernfs_remove(kn);
-	return ret;
-}
-
-int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
-				  struct resctrl_group *prgrp,
-				  struct kernfs_node **dest_kn)
-{
-	int ret;
-
-	/* disalbe monitor by default for mpam. */
-	if (prgrp->type == RDTCTRL_GROUP)
-		return 0;
-
-	ret = alloc_mon();
-	if (ret < 0) {
-		rdt_last_cmd_puts("out of monitors\n");
-		return ret;
-	}
-	prgrp->mon.mon = ret;
-
-	ret = alloc_mon_id();
-	if (ret < 0) {
-		rdt_last_cmd_puts("out of PMGs\n");
-		free_mon(prgrp->mon.mon);
-		return ret;
-	}
-
-	prgrp->mon.rmid = ret;
-
-	ret = mkdir_mondata_all(parent_kn, prgrp, dest_kn);
-	if (ret) {
-		rdt_last_cmd_puts("kernfs subdir error\n");
-		free_mon(ret);
 	}
 
 	return ret;

@@ -317,6 +317,138 @@ static int resctrl_enable_ctx(struct resctrl_fs_context *ctx)
 	return 0;
 }
 
+static int
+mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
+		    char *name, struct kernfs_node **dest_kn)
+{
+	struct kernfs_node *kn;
+	int ret;
+
+	/* create the directory */
+	kn = kernfs_create_dir(parent_kn, name, parent_kn->mode, prgrp);
+	if (IS_ERR(kn)) {
+		pr_info("%s: create dir %s, error\n", __func__, name);
+		return PTR_ERR(kn);
+	}
+
+	if (dest_kn)
+		*dest_kn = kn;
+
+	/*
+	 * This extra ref will be put in kernfs_remove() and guarantees
+	 * that @rdtgrp->kn is always accessible.
+	 */
+	kernfs_get(kn);
+
+	ret = resctrl_group_kn_set_ugid(kn);
+	if (ret)
+		goto out_destroy;
+
+	kernfs_activate(kn);
+
+	return 0;
+
+out_destroy:
+	kernfs_remove(kn);
+	return ret;
+}
+
+static void mkdir_mondata_all_prepare_clean(struct resctrl_group *prgrp)
+{
+	if (prgrp->type == RDTCTRL_GROUP)
+		return;
+
+	if (prgrp->closid)
+		resctrl_id_free(prgrp->closid);
+	if (prgrp->mon.rmid)
+		free_mon_id(prgrp->mon.rmid);
+}
+
+static int mkdir_mondata_all_prepare(struct resctrl_group *rdtgrp)
+{
+	int ret = 0;
+	int mon, mon_id, closid;
+
+	mon = resctrl_lru_request_mon();
+	if (mon < 0) {
+		rdt_last_cmd_puts("out of monitors\n");
+		ret = -EINVAL;
+		goto out;
+	}
+	rdtgrp->mon.mon = mon;
+
+	if (rdtgrp->type == RDTMON_GROUP) {
+		mon_id = alloc_mon_id();
+		if (mon_id < 0) {
+			closid = resctrl_id_alloc();
+			if (closid < 0) {
+				rdt_last_cmd_puts("out of closID\n");
+				free_mon_id(mon_id);
+				ret = -EINVAL;
+				goto out;
+			}
+			rdtgrp->closid = closid;
+			rdtgrp->mon.rmid = 0;
+		} else {
+			struct resctrl_group *prgrp;
+
+			prgrp = rdtgrp->mon.parent;
+			rdtgrp->closid = prgrp->closid;
+			rdtgrp->mon.rmid = mon_id;
+		}
+	}
+
+out:
+	return ret;
+}
+
+/*
+ * This creates a directory mon_data which contains the monitored data.
+ *
+ * mon_data has one directory for each domain whic are named
+ * in the format mon_<domain_name>_<domain_id>. For ex: A mon_data
+ * with L3 domain looks as below:
+ * ./mon_data:
+ * mon_L3_00
+ * mon_L3_01
+ * mon_L3_02
+ * ...
+ *
+ * Each domain directory has one file per event:
+ * ./mon_L3_00/:
+ * llc_occupancy
+ *
+ */
+static int mkdir_mondata_all(struct kernfs_node *parent_kn,
+			     struct resctrl_group *prgrp,
+			     struct kernfs_node **dest_kn)
+{
+	struct kernfs_node *kn;
+	int ret;
+
+	/*
+	 * Create the mon_data directory first.
+	 */
+	ret = mongroup_create_dir(parent_kn, prgrp, "mon_data", &kn);
+	if (ret)
+		return ret;
+
+	if (dest_kn)
+		*dest_kn = kn;
+
+	ret = resctrl_mkdir_mondata_all_subdir(kn, prgrp);
+	if (ret)
+		goto out_destroy;
+
+	kernfs_activate(kn);
+
+	return 0;
+
+out_destroy:
+	kernfs_remove(kn);
+	return ret;
+}
+
 static int resctrl_get_tree(struct fs_context *fc)
 {
 	int ret;
@@ -359,6 +491,10 @@ static int resctrl_get_tree(struct fs_context *fc)
 		kernfs_get(kn_mongrp);
 
 #ifndef CONFIG_ARM64 /* [FIXME] arch specific code */
+		ret = mkdir_mondata_all_prepare(&resctrl_group_default);
+		if (ret < 0)
+			goto out_mongrp;
+
 		ret = mkdir_mondata_all(resctrl_group_default.kn,
 					&resctrl_group_default, &kn_mondata);
 		if (ret)
@@ -594,6 +730,17 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	*r = rdtgrp;
 	rdtgrp->mon.parent = prdtgrp;
 	rdtgrp->type = rtype;
+
+	if (rdtgrp->type == RDTCTRL_GROUP) {
+		ret = resctrl_id_alloc();
+		if (ret < 0) {
+			rdt_last_cmd_puts("out of CLOSIDs\n");
+			goto out_unlock;
+		}
+		rdtgrp->closid = ret;
+		ret = 0;
+	}
+
 	INIT_LIST_HEAD(&rdtgrp->mon.crdtgrp_list);
 
 	/* kernfs creates the directory for rdtgrp */
@@ -627,27 +774,16 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	}
 
 	if (resctrl_mon_capable) {
-#ifdef CONFIG_ARM64
-		ret = resctrl_mkdir_ctrlmon_mondata(kn, rdtgrp, &rdtgrp->mon.mon_data_kn);
+		ret = mkdir_mondata_all_prepare(rdtgrp);
 		if (ret < 0) {
-			rdt_last_cmd_puts("out of monitors or PMGs\n");
 			goto out_destroy;
 		}
-
-#else
-		ret = alloc_mon_id();
-		if (ret < 0) {
-			rdt_last_cmd_puts("out of RMIDs\n");
-			goto out_destroy;
-		}
-		rdtgrp->mon.rmid = ret;
 
 		ret = mkdir_mondata_all(kn, rdtgrp, &rdtgrp->mon.mon_data_kn);
 		if (ret) {
 			rdt_last_cmd_puts("kernfs subdir error\n");
-			goto out_idfree;
+			goto out_prepare_clean;
 		}
-#endif
 	}
 	kernfs_activate(kn);
 
@@ -656,10 +792,8 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	 */
 	return 0;
 
-#ifndef CONFIG_ARM64
-out_idfree:
-	free_mon_id(rdtgrp->mon.rmid);
-#endif
+out_prepare_clean:
+	mkdir_mondata_all_prepare_clean(rdtgrp);
 out_destroy:
 	kernfs_remove(rdtgrp->kn);
 out_free_rgrp:
@@ -672,7 +806,6 @@ out_unlock:
 static void mkdir_resctrl_prepare_clean(struct resctrl_group *rgrp)
 {
 	kernfs_remove(rgrp->kn);
-	free_mon_id(rgrp->mon.rmid);
 	kfree(rgrp);
 }
 
@@ -695,8 +828,6 @@ static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
 		return ret;
 
 	prgrp = rdtgrp->mon.parent;
-	rdtgrp->closid = prgrp->closid;
-
 	/*
 	 * Add the rdtgrp to the list of rdtgrps the parent
 	 * ctrl_mon group has to track.
@@ -717,7 +848,6 @@ static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 {
 	struct resctrl_group *rdtgrp;
 	struct kernfs_node *kn;
-	u32 closid;
 	int ret;
 
 	ret = mkdir_resctrl_prepare(parent_kn, prgrp_kn, name, mode, RDTCTRL_GROUP,
@@ -726,19 +856,10 @@ static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 		return ret;
 
 	kn = rdtgrp->kn;
-	ret = resctrl_id_alloc();
-	if (ret < 0) {
-		rdt_last_cmd_puts("out of CLOSIDs\n");
-		goto out_common_fail;
-	}
-	closid = ret;
-	ret = 0;
-
-	rdtgrp->closid = closid;
 
 	ret = resctrl_group_init_alloc(rdtgrp);
 	if (ret < 0)
-		goto out_id_free;
+		goto out_common_fail;
 
 	list_add(&rdtgrp->resctrl_group_list, &resctrl_all_groups);
 
@@ -750,14 +871,13 @@ static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 		ret = mongroup_create_dir(kn, NULL, "mon_groups", NULL);
 		if (ret) {
 			rdt_last_cmd_puts("kernfs subdir error\n");
-			goto out_id_free;
+			goto out_list_del;
 		}
 	}
 
 	goto out_unlock;
 
-out_id_free:
-	resctrl_id_free(closid);
+out_list_del:
 	list_del(&rdtgrp->resctrl_group_list);
 out_common_fail:
 	mkdir_resctrl_prepare_clean(rdtgrp);
@@ -812,10 +932,6 @@ static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
 {
 	struct resctrl_group *prdtgrp = rdtgrp->mon.parent;
 	int cpu;
-
-#ifdef CONFIG_ARM64 /* [FIXME] arch specific code */
-	free_mon(rdtgrp->mon.mon);
-#endif
 
 	/* Give any tasks back to the parent group */
 	resctrl_move_group_tasks(rdtgrp, prdtgrp, tmpmask);
@@ -894,11 +1010,6 @@ static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tm
 static int resctrl_group_rmdir_ctrl(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
 			       cpumask_var_t tmpmask)
 {
-#ifdef CONFIG_ARM64 /* [FIXME] arch specific code */
-	if (rdtgrp->flags & RDT_CTRLMON)
-		return -EPERM;
-#endif
-
 	resctrl_group_rm_ctrl(rdtgrp, tmpmask);
 
 	/*

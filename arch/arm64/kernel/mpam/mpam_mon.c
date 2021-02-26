@@ -35,7 +35,6 @@
 bool rdt_mon_capable;
 
 static int pmg_free_map;
-void mon_init(void);
 void pmg_init(void)
 {
 	u16 num_pmg = USHRT_MAX;
@@ -50,15 +49,13 @@ void pmg_init(void)
 		num_pmg = min(num_pmg, rr->num_pmg);
 	}
 
-	mon_init();
-
 	pmg_free_map = BIT_MASK(num_pmg) - 1;
 
 	/* pmg 0 is always reserved for the default group */
 	pmg_free_map &= ~1;
 }
 
-int alloc_pmg(void)
+static int alloc_pmg(void)
 {
 	u32 pmg = ffs(pmg_free_map);
 
@@ -71,58 +68,66 @@ int alloc_pmg(void)
 	return pmg;
 }
 
-void free_pmg(u32 pmg)
+static void free_pmg(u32 pmg)
 {
 	pmg_free_map |= 1 << pmg;
 }
 
-static int mon_free_map;
-void mon_init(void)
-{
-	int num_mon;
-
-	num_mon = mpam_resctrl_max_mon_num();
-
-	mon_free_map = BIT_MASK(num_mon) - 1;
-}
-
-int alloc_mon(void)
-{
-	u32 mon = 0;
-	u32 times, flag;
-
-	hw_alloc_times_validate(mon, times, flag);
-
-	mon = ffs(mon_free_map);
-	if (mon == 0)
-		return -ENOSPC;
-
-	mon--;
-	mon_free_map &= ~(GENMASK(mon, mon + times - 1));
-
-	return mon;
-}
-
-void free_mon(u32 mon)
-{
-	u32 times, flag;
-
-	hw_alloc_times_validate(mon, times, flag);
-
-	mon_free_map |= GENMASK(mon, mon + times - 1);
-}
-
-/*
- * As of now the RMIDs allocation is global.
- * However we keep track of which packages the RMIDs
- * are used to optimize the limbo list management.
- */
-int alloc_rmid(void)
+int alloc_mon_id(void)
 {
 	return alloc_pmg();
 }
 
-void free_rmid(u32 pmg)
+void free_mon_id(u32 id)
 {
-	free_pmg(pmg);
+	free_pmg(id);
+}
+
+/*
+ * A simple LRU monitor allocation machanism, each
+ * monitor free map occupies two section, one for
+ * allocation and another for recording.
+ */
+static int mon_free_map[2];
+static u8 alloc_idx, record_idx;
+
+void mon_init(void)
+{
+	int num_mon;
+	u32 times, flag;
+
+	num_mon = mpam_resctrl_max_mon_num();
+
+	hw_alloc_times_validate(times, flag);
+	/* for cdp on or off */
+	num_mon = rounddown(num_mon, times);
+
+	mon_free_map[0] = BIT_MASK(num_mon) - 1;
+	mon_free_map[1] = 0;
+
+	alloc_idx = 0;
+	record_idx = 1;
+}
+
+int resctrl_lru_request_mon(void)
+{
+	u32 mon = 0;
+	u32 times, flag;
+
+	hw_alloc_times_validate(times, flag);
+
+	mon = ffs(mon_free_map[alloc_idx]);
+	if (mon == 0)
+		return -ENOSPC;
+
+	mon--;
+	mon_free_map[alloc_idx] &= ~(GENMASK(mon + times - 1, mon));
+	mon_free_map[record_idx] |= GENMASK(mon + times - 1, mon);
+
+	if (!mon_free_map[alloc_idx]) {
+		alloc_idx = record_idx;
+		record_idx ^= 0x1;
+	}
+
+	return mon;
 }
