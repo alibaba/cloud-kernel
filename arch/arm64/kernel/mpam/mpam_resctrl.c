@@ -308,7 +308,7 @@ void closid_init(void)
 	for_each_resctrl_resource(r) {
 		if (r->alloc_enabled) {
 			rr = r->res;
-			num_closid = min(num_closid, rr->num_partid);
+			num_closid = min(num_closid, (int)rr->num_partid);
 		}
 	}
 	closid_free_map = BIT_MASK(num_closid) - 1;

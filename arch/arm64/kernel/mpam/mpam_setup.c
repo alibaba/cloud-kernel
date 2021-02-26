@@ -331,6 +331,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 {
 	struct mpam_class *class = res->class;
 	struct resctrl_resource *r = &res->resctrl_res;
+	struct raw_resctrl_resource *rr = NULL;
 
 	if (class == mpam_resctrl_exports[RDT_RESOURCE_SMMU].class) {
 		return 0;
@@ -339,7 +340,8 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->name = "MB";
 		r->fflags = RFTYPE_RES_MC;
 		r->mbw.delay_linear = true;
-		r->res = mpam_get_raw_resctrl_resource(RDT_RESOURCE_MC);
+		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_MC);
+		r->res = rr;
 
 		if (mpam_has_feature(mpam_feat_mbw_part, class->features)) {
 			res->resctrl_mba_uses_mbw_part = true;
@@ -382,7 +384,8 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->mon_enabled = true;
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L3].class) {
 		r->rid = RDT_RESOURCE_L3;
-		r->res = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L3);
+		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L3);
+		r->res = rr;
 		r->fflags = RFTYPE_RES_CACHE;
 		r->name = "L3";
 
@@ -413,7 +416,8 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 
 	} else if (class == mpam_resctrl_exports[RDT_RESOURCE_L2].class) {
 		r->rid = RDT_RESOURCE_L2;
-		r->res = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L2);
+		rr = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L2);
+		r->res = rr;
 		r->fflags = RFTYPE_RES_CACHE;
 		r->name = "L2";
 
@@ -440,6 +444,15 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		 */
 		r->cdp_capable = true;
 		r->mon_capable = false;
+	}
+
+	if (rr && class) {
+		rr->num_partid = class->num_partid;
+		rr->num_intpartid = class->num_intpartid;
+		rr->num_pmg = class->num_pmg;
+
+		rr->pri_wd = max(class->intpri_wd, class->dspri_wd);
+		rr->hdl_wd = 2;
 	}
 
 	return 0;

@@ -590,7 +590,6 @@ int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
 int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 {
 	struct resctrl_resource *r;
-	struct raw_resctrl_resource *rr;
 	struct rdt_domain *d;
 	int ret;
 
@@ -598,9 +597,8 @@ int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 		if (!r->alloc_enabled)
 			continue;
 
-		rr = (struct raw_resctrl_resource *)r->res;
 		list_for_each_entry(d, &r->domains, list) {
-			d->new_ctrl = rr->default_ctrl;
+			d->new_ctrl = r->default_ctrl;
 			d->have_new_ctrl = true;
 		}
 

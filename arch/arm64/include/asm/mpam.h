@@ -263,7 +263,6 @@ struct msr_param {
  * @name:		Name to use in "schemata" file
  * @num_closid:		Number of CLOSIDs available
  * @cache_level:	Which cache level defines scope of this resource
- * @default_ctrl:	Specifies default cache cbm or memory B/W percent.
  * @msr_base:		Base MSR address for CBMs
  * @msr_update:		Function pointer to update QOS MSRs
  * @data_width:		Character width of data when displaying
@@ -278,15 +277,19 @@ struct msr_param {
  */
 
 struct raw_resctrl_resource {
-	int			num_partid;
-	u32			default_ctrl;
+	u16                 num_partid;
+	u16                 num_intpartid;
+	u16                 num_pmg;
+
+	u16                 pri_wd;
+	u16                 hdl_wd;
+
 	void (*msr_update)	(struct rdt_domain *d, int partid);
 	u64  (*msr_read)	(struct rdt_domain *d, int partid);
 	int			data_width;
 	const char		*format_str;
 	int (*parse_ctrlval)	(char *buf, struct raw_resctrl_resource *r,
 				 struct rdt_domain *d);
-	int			num_pmg;
 	int			num_mon;
 	u64 (*mon_read)		(struct rdt_domain *d, struct rdtgroup *g);
 	int (*mon_write)	(struct rdt_domain *d, struct rdtgroup *g, bool enable);
