@@ -5,6 +5,7 @@
 #include <linux/err.h>
 #include <linux/cpumask.h>
 #include <linux/types.h>
+#include "mpam_internal.h"
 
 /*
  * Size of the memory mapped registers: 4K of feature page
@@ -44,6 +45,20 @@ struct mpam_device {
 
 	phys_addr_t             hwpage_address;
 	void __iomem            *mapped_hwpage;
+
+	u32         features;
+
+	u16         cmax_wd;
+	u16         cpbm_wd;
+	u16         mbw_pbm_bits;
+	u16         bwa_wd;
+	u16         intpri_wd;
+	u16         dspri_wd;
+	u16         num_partid;
+	u16         num_intpartid;
+	u16         num_pmg;
+	u16         num_csu_mon;
+	u16         num_mbwu_mon;
 };
 
 /*

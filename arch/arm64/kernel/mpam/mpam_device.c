@@ -32,6 +32,7 @@
 #include <linux/cpu.h>
 #include <linux/cacheinfo.h>
 #include <asm/mpam.h>
+#include <asm/mpam_resource.h>
 
 #include "mpam_device.h"
 
@@ -70,8 +71,184 @@ static struct work_struct mpam_enable_work;
 static int mpam_broken;
 static struct work_struct mpam_failed_work;
 
+static inline u32 mpam_read_reg(struct mpam_device *dev, u16 reg)
+{
+	WARN_ON_ONCE(reg > SZ_MPAM_DEVICE);
+	assert_spin_locked(&dev->lock);
+
+	/*
+	 * If we touch a device that isn't accessible from this CPU we may get
+	 * an external-abort.
+	 */
+	WARN_ON_ONCE(preemptible());
+	WARN_ON_ONCE(!cpumask_test_cpu(smp_processor_id(), &dev->fw_affinity));
+
+	return readl_relaxed(dev->mapped_hwpage + reg);
+}
+
+static inline void mpam_write_reg(struct mpam_device *dev, u16 reg, u32 val)
+{
+	WARN_ON_ONCE(reg > SZ_MPAM_DEVICE);
+	assert_spin_locked(&dev->lock);
+
+	/*
+	 * If we touch a device that isn't accessible from this CPU we may get
+	 * an external-abort. If we're lucky, we corrupt another mpam:component.
+	 */
+	WARN_ON_ONCE(preemptible());
+	WARN_ON_ONCE(!cpumask_test_cpu(smp_processor_id(), &dev->fw_affinity));
+
+	writel_relaxed(val, dev->mapped_hwpage + reg);
+}
+
+static void
+mpam_probe_update_sysprops(u16 max_partid, u16 max_pmg)
+{
+	lockdep_assert_held(&mpam_devices_lock);
+
+	mpam_sysprops.max_partid =
+				(mpam_sysprops.max_partid < max_partid) ?
+				mpam_sysprops.max_partid : max_partid;
+	mpam_sysprops.max_pmg =
+				(mpam_sysprops.max_pmg < max_pmg) ?
+				mpam_sysprops.max_pmg : max_pmg;
+}
+
 static int mpam_device_probe(struct mpam_device *dev)
 {
+	u32 hwfeatures;
+	u16 max_intpartid = 0;
+	u16 max_partid, max_pmg;
+
+	if (mpam_read_reg(dev, MPAMF_AIDR) != MPAM_ARCHITECTURE_V1) {
+		pr_err_once("device at 0x%llx does not match MPAM architecture v1.0\n",
+			dev->hwpage_address);
+		return -EIO;
+	}
+
+	hwfeatures = mpam_read_reg(dev, MPAMF_IDR);
+	max_partid = hwfeatures & MPAMF_IDR_PARTID_MAX_MASK;
+	max_pmg = (hwfeatures & MPAMF_IDR_PMG_MAX_MASK) >> MPAMF_IDR_PMG_MAX_SHIFT;
+
+	dev->num_partid = max_partid + 1;
+	dev->num_pmg = max_pmg + 1;
+
+    /* Partid Narrowing*/
+	if (MPAMF_IDR_HAS_PARTID_NRW(hwfeatures)) {
+		u32 partid_nrw_features = mpam_read_reg(dev, MPAMF_PARTID_NRW_IDR);
+
+		max_intpartid = partid_nrw_features & MPAMF_PARTID_NRW_IDR_MASK;
+		dev->num_intpartid = max_intpartid + 1;
+		mpam_set_feature(mpam_feat_part_nrw, &dev->features);
+	}
+
+	mpam_probe_update_sysprops(max_partid, max_pmg);
+
+	/* Cache Capacity Partitioning */
+	if (MPAMF_IDR_HAS_CCAP_PART(hwfeatures)) {
+		u32 ccap_features = mpam_read_reg(dev, MPAMF_CCAP_IDR);
+
+		pr_debug("probe: probed CCAP_PART\n");
+
+		dev->cmax_wd = ccap_features & MPAMF_CCAP_IDR_CMAX_WD;
+		if (dev->cmax_wd)
+			mpam_set_feature(mpam_feat_ccap_part, &dev->features);
+	}
+
+	/* Cache Portion partitioning */
+	if (MPAMF_IDR_HAS_CPOR_PART(hwfeatures)) {
+		u32 cpor_features = mpam_read_reg(dev, MPAMF_CPOR_IDR);
+
+		pr_debug("probe: probed CPOR_PART\n");
+
+		dev->cpbm_wd = cpor_features & MPAMF_CPOR_IDR_CPBM_WD;
+		if (dev->cpbm_wd)
+			mpam_set_feature(mpam_feat_cpor_part, &dev->features);
+	}
+
+	/* Memory bandwidth partitioning */
+	if (MPAMF_IDR_HAS_MBW_PART(hwfeatures)) {
+		u32 mbw_features = mpam_read_reg(dev, MPAMF_MBW_IDR);
+
+		pr_debug("probe: probed MBW_PART\n");
+
+		/* portion bitmap resolution */
+		dev->mbw_pbm_bits = (mbw_features & MPAMF_MBW_IDR_BWPBM_WD) >>
+				MPAMF_MBW_IDR_BWPBM_WD_SHIFT;
+		if (dev->mbw_pbm_bits && (mbw_features &
+				MPAMF_MBW_IDR_HAS_PBM))
+			mpam_set_feature(mpam_feat_mbw_part, &dev->features);
+
+		dev->bwa_wd = (mbw_features & MPAMF_MBW_IDR_BWA_WD);
+		if (dev->bwa_wd && (mbw_features & MPAMF_MBW_IDR_HAS_MAX)) {
+			mpam_set_feature(mpam_feat_mbw_max, &dev->features);
+			/* we want to export MBW hardlimit support */
+			mpam_set_feature(mpam_feat_part_hdl, &dev->features);
+		}
+
+		if (dev->bwa_wd && (mbw_features & MPAMF_MBW_IDR_HAS_MIN))
+			mpam_set_feature(mpam_feat_mbw_min, &dev->features);
+
+		if (dev->bwa_wd && (mbw_features & MPAMF_MBW_IDR_HAS_PROP)) {
+			mpam_set_feature(mpam_feat_mbw_prop, &dev->features);
+			/* we want to export MBW hardlimit support */
+			mpam_set_feature(mpam_feat_part_hdl, &dev->features);
+		}
+	}
+
+	/* Priority partitioning */
+	if (MPAMF_IDR_HAS_PRI_PART(hwfeatures)) {
+		u32 pri_features = mpam_read_reg(dev, MPAMF_PRI_IDR);
+
+		pr_debug("probe: probed PRI_PART\n");
+
+		dev->intpri_wd = (pri_features & MPAMF_PRI_IDR_INTPRI_WD) >>
+				MPAMF_PRI_IDR_INTPRI_WD_SHIFT;
+		if (dev->intpri_wd && (pri_features &
+				MPAMF_PRI_IDR_HAS_INTPRI)) {
+			mpam_set_feature(mpam_feat_intpri_part, &dev->features);
+			if (pri_features & MPAMF_PRI_IDR_INTPRI_0_IS_LOW)
+				mpam_set_feature(mpam_feat_intpri_part_0_low,
+					&dev->features);
+		}
+
+		dev->dspri_wd = (pri_features & MPAMF_PRI_IDR_DSPRI_WD) >>
+				MPAMF_PRI_IDR_DSPRI_WD_SHIFT;
+		if (dev->dspri_wd && (pri_features & MPAMF_PRI_IDR_HAS_DSPRI)) {
+			mpam_set_feature(mpam_feat_dspri_part, &dev->features);
+			if (pri_features & MPAMF_PRI_IDR_DSPRI_0_IS_LOW)
+				mpam_set_feature(mpam_feat_dspri_part_0_low,
+					&dev->features);
+		}
+	}
+
+	/* Performance Monitoring */
+	if (MPAMF_IDR_HAS_MSMON(hwfeatures)) {
+		u32 msmon_features = mpam_read_reg(dev, MPAMF_MSMON_IDR);
+
+		pr_debug("probe: probed MSMON\n");
+
+		if (msmon_features & MPAMF_MSMON_IDR_MSMON_CSU) {
+			u32 csumonidr;
+
+			csumonidr = mpam_read_reg(dev, MPAMF_CSUMON_IDR);
+			dev->num_csu_mon = csumonidr & MPAMF_CSUMON_IDR_NUM_MON;
+			if (dev->num_csu_mon)
+				mpam_set_feature(mpam_feat_msmon_csu,
+					&dev->features);
+		}
+		if (msmon_features & MPAMF_MSMON_IDR_MSMON_MBWU) {
+			u32 mbwumonidr = mpam_read_reg(dev, MPAMF_MBWUMON_IDR);
+
+			dev->num_mbwu_mon = mbwumonidr &
+					MPAMF_MBWUMON_IDR_NUM_MON;
+			if (dev->num_mbwu_mon)
+				mpam_set_feature(mpam_feat_msmon_mbwu,
+					&dev->features);
+		}
+	}
+	dev->probed = true;
+
 	return 0;
 }
 
