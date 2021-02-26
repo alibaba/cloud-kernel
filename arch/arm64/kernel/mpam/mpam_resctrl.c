@@ -526,25 +526,6 @@ void post_resctrl_mount(void)
 		static_branch_enable_cpuslocked(&resctrl_enable_key);
 }
 
-static int reset_all_ctrls(struct resctrl_resource *r)
-{
-	return 0;
-}
-
-void resctrl_resource_reset(void)
-{
-	struct mpam_resctrl_res *res;
-	struct resctrl_resource *r;
-
-	/*Put everything back to default values. */
-	for_each_supported_resctrl_exports(res) {
-		r = &res->resctrl_res;
-
-		if (r->alloc_enabled)
-			reset_all_ctrls(r);
-	}
-}
-
 void release_rdtgroupfs_options(void)
 {
 }
@@ -1496,6 +1477,45 @@ mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
 	}
 
 	mpam_update_from_resctrl_cfg(res, resctrl_cfg, mpam_cfg);
+}
+
+static void mpam_reset_cfg(struct mpam_resctrl_res *res,
+		struct mpam_resctrl_dom *dom, struct rdt_domain *d)
+
+{
+	int i;
+	struct resctrl_resource *r = &res->resctrl_res;
+
+	for (i = 0; i != mpam_sysprops_num_partid(); i++) {
+		mpam_update_from_resctrl_cfg(res, r->default_ctrl,
+			&dom->comp->cfg[i]);
+		d->ctrl_val[i] = r->default_ctrl;
+	}
+}
+
+void resctrl_resource_reset(void)
+{
+	struct mpam_resctrl_res *res;
+	struct mpam_resctrl_dom *dom;
+	struct rdt_domain *d;
+
+	for_each_supported_resctrl_exports(res) {
+		if (!res->resctrl_res.alloc_capable)
+			continue;
+
+		list_for_each_entry(d, &res->resctrl_res.domains, list) {
+			dom = container_of(d, struct mpam_resctrl_dom,
+					resctrl_dom);
+			mpam_reset_cfg(res, dom, d);
+		}
+	}
+
+	mpam_reset_devices();
+
+	/*
+	 * reset CDP configuration used in recreating schema list nodes.
+	 */
+	resctrl_cdp_enabled = false;
 }
 
 u16 mpam_resctrl_max_mon_num(void)

@@ -159,6 +159,8 @@ static inline bool mpam_has_part_sel(mpam_features_t supported)
 int mpam_component_config(struct mpam_component *comp,
 			struct sync_args *args);
 
+void mpam_reset_devices(void);
+
 int mpam_component_mon(struct mpam_component *comp,
 			struct sync_args *args, u64 *result);
 

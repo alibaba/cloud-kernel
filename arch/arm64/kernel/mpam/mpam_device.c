@@ -1292,6 +1292,22 @@ int mpam_component_config(struct mpam_component *comp, struct sync_args *args)
 	return do_device_sync(comp, &sync_ctx);
 }
 
+/*
+ * Reset every component, configuring every partid unrestricted.
+ */
+void mpam_reset_devices(void)
+{
+	struct mpam_class *class;
+	struct mpam_component *comp;
+
+	mutex_lock(&mpam_devices_lock);
+	list_for_each_entry(class, &mpam_classes, classes_list) {
+		list_for_each_entry(comp, &class->components, class_list)
+			mpam_component_config(comp, NULL);
+	}
+	mutex_unlock(&mpam_devices_lock);
+}
+
 static inline void
 mpam_device_sync_mon_prepare(struct mpam_component *comp,
 		struct mpam_device_sync *sync_ctx, struct sync_args *args)
