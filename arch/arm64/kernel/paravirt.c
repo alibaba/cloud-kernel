@@ -21,6 +21,7 @@
 
 #include <asm/paravirt.h>
 #include <asm/pvclock-abi.h>
+#include <asm/pvlock-abi.h>
 #include <asm/smp_plat.h>
 #include <asm/pvpoll-abi.h>
 
@@ -296,3 +297,91 @@ static int __init pv_poll_control_init(void)
 	return 0;
 }
 arch_initcall(pv_poll_control_init);
+
+static DEFINE_PER_CPU(struct pv_vcpu_preempted, pv_preempted);
+
+static bool kvm_vcpu_is_preempted(int cpu)
+{
+	struct pv_vcpu_preempted *pp = per_cpu_ptr(&pv_preempted, cpu);
+
+	return !!le64_to_cpu(READ_ONCE(pp->preempted));
+}
+
+static int pv_vcpu_state_dying_cpu(unsigned int cpu)
+{
+	struct pv_vcpu_preempted *pp = per_cpu_ptr(&pv_preempted, cpu);
+
+	memset(pp, 0, sizeof(*pp));
+
+	return 0;
+}
+
+static int init_pv_vcpu_state(unsigned int cpu)
+{
+	struct pv_vcpu_preempted *pp;
+	struct arm_smccc_res res;
+
+	pp = (void *)__pa(this_cpu_ptr(&pv_preempted));
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_LOCK_PREEMPTED, pp, &res);
+
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED) {
+		pr_warn("Failed to init PV lock data structure\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int kvm_arm_init_pvlock(void)
+{
+	int ret;
+
+	ret = cpuhp_setup_state(CPUHP_AP_ARM_KVM_PVLOCK_STARTING,
+			"hypervisor/arm/pvlock:starting",
+			init_pv_vcpu_state,
+			pv_vcpu_state_dying_cpu);
+	if (ret < 0) {
+		pr_warn("PV-lock init failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static bool has_kvm_pvlock(void)
+{
+	struct arm_smccc_res res;
+
+	/* To detect the presence of PV lock support we require SMCCC 1.1+ */
+	if (arm_smccc_1_1_get_conduit() == SMCCC_CONDUIT_NONE)
+		return false;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
+			ARM_SMCCC_HV_PV_LOCK_FEATURES, &res);
+
+	if (res.a0 != SMCCC_RET_SUCCESS)
+		return false;
+
+	return true;
+}
+
+int __init pv_lock_init(void)
+{
+	int ret;
+
+	if (is_hyp_mode_available())
+		return 0;
+
+	if (!has_kvm_pvlock())
+		return 0;
+
+	ret = kvm_arm_init_pvlock();
+	if (ret)
+		return ret;
+
+	pv_ops.lock.vcpu_is_preempted = kvm_vcpu_is_preempted;
+	pr_info("using PV-lock preempted\n");
+
+	return 0;
+}
