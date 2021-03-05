@@ -95,7 +95,7 @@
 #define SMMU_PMCG_PA_SHIFT              12
 
 #define SMMU_PMCG_EVCNTR_RDONLY         BIT(0)
-
+#define SMMU_PMCG_GLOBAL_FILTER_MANY_EVT BIT(1)
 static int cpuhp_state_num;
 
 struct smmu_pmu {
@@ -282,6 +282,12 @@ static int smmu_pmu_apply_event_filter(struct smmu_pmu *smmu_pmu,
 			   SMMU_PMCG_DEFAULT_FILTER_SPAN;
 	sid = filter_en ? get_filter_stream_id(event) :
 			   SMMU_PMCG_DEFAULT_FILTER_SID;
+
+	if ((smmu_pmu->options & SMMU_PMCG_GLOBAL_FILTER_MANY_EVT)
+			&& smmu_pmu->global_filter) {
+		smmu_pmu_set_event_filter(event, idx, span, sid);
+		return 0;
+	}
 
 	cur_idx = find_first_bit(smmu_pmu->used_counters, num_ctrs);
 	/*
@@ -720,6 +726,11 @@ static void smmu_pmu_get_acpi_options(struct smmu_pmu *smmu_pmu)
 	case IORT_SMMU_V3_PMCG_HISI_HIP08:
 		/* HiSilicon Erratum 162001800 */
 		smmu_pmu->options |= SMMU_PMCG_EVCNTR_RDONLY;
+		break;
+
+	case IORT_SMMU_V3_PMCG_BABA_MPTG1:
+		/* Alibaba PTG */
+		smmu_pmu->options |= SMMU_PMCG_GLOBAL_FILTER_MANY_EVT;
 		break;
 	}
 
