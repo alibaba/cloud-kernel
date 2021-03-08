@@ -58,6 +58,8 @@ irqreturn_t hibmc_drm_interrupt(int irq, void *arg)
 static struct drm_driver hibmc_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET |
 				  DRIVER_ATOMIC | DRIVER_HAVE_IRQ,
+	.load			= hibmc_load,
+	.unload			= hibmc_unload,
 	.fops			= &hibmc_fops,
 	.name			= "hibmc",
 	.date			= "20160828",
@@ -284,7 +286,7 @@ static int hibmc_hw_init(struct hibmc_drm_private *priv)
 	return 0;
 }
 
-static int hibmc_unload(struct drm_device *dev)
+void hibmc_unload(struct drm_device *dev)
 {
 	struct hibmc_drm_private *priv = dev->dev_private;
 
@@ -301,10 +303,9 @@ static int hibmc_unload(struct drm_device *dev)
 	hibmc_mm_fini(priv);
 	hibmc_hw_unmap(priv);
 	dev->dev_private = NULL;
-	return 0;
 }
 
-static int hibmc_load(struct drm_device *dev)
+int hibmc_load(struct drm_device *dev, unsigned long flags)
 {
 	struct hibmc_drm_private *priv;
 	int ret;
@@ -366,56 +367,15 @@ err:
 static int hibmc_pci_probe(struct pci_dev *pdev,
 			   const struct pci_device_id *ent)
 {
-	struct drm_device *dev;
-	int ret;
-
-	dev = drm_dev_alloc(&hibmc_driver, &pdev->dev);
-	if (IS_ERR(dev)) {
-		DRM_ERROR("failed to allocate drm_device\n");
-		return PTR_ERR(dev);
-	}
-
-	dev->pdev = pdev;
-	pci_set_drvdata(pdev, dev);
-
-	ret = pci_enable_device(pdev);
-	if (ret) {
-		DRM_ERROR("failed to enable pci device: %d\n", ret);
-		goto err_free;
-	}
-
-	ret = hibmc_load(dev);
-	if (ret) {
-		DRM_ERROR("failed to load hibmc: %d\n", ret);
-		goto err_disable;
-	}
-
-	ret = drm_dev_register(dev, 0);
-	if (ret) {
-		DRM_ERROR("failed to register drv for userspace access: %d\n",
-			  ret);
-		goto err_unload;
-	}
-	return 0;
-
-err_unload:
-	hibmc_unload(dev);
-err_disable:
-	pci_disable_device(pdev);
-err_free:
-	drm_dev_unref(dev);
-
-	return ret;
+	return drm_get_pci_dev(pdev, ent, &hibmc_driver);
 }
 
 static void hibmc_pci_remove(struct pci_dev *pdev)
 {
 	struct drm_device *dev = pci_get_drvdata(pdev);
 
-	drm_dev_unregister(dev);
-	hibmc_unload(dev);
+	drm_put_dev(dev);
 	pci_disable_device(pdev);
-	drm_dev_unref(dev);
 }
 
 static void hibmc_pci_shutdown(struct pci_dev *pdev)

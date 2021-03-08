@@ -85,6 +85,8 @@ void hibmc_set_power_mode(struct hibmc_drm_private *priv,
 			  unsigned int power_mode);
 void hibmc_set_current_gate(struct hibmc_drm_private *priv,
 			    unsigned int gate);
+int hibmc_load(struct drm_device *dev, unsigned long flags);
+void hibmc_unload(struct drm_device *dev);
 
 int hibmc_de_init(struct hibmc_drm_private *priv);
 int hibmc_vdac_init(struct hibmc_drm_private *priv);
