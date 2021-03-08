@@ -55,6 +55,22 @@ irqreturn_t hibmc_drm_interrupt(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
+static void hibmc_remove_framebuffers(struct pci_dev *pdev)
+{
+	struct apertures_struct *ap;
+
+	ap = alloc_apertures(1);
+	if (!ap)
+		return;
+
+	ap->ranges[0].base = pci_resource_start(pdev, 0);
+	ap->ranges[0].size = pci_resource_len(pdev, 0);
+
+	drm_fb_helper_remove_conflicting_framebuffers(ap, "hibmcdrmfb", false);
+
+	kfree(ap);
+}
+
 static struct drm_driver hibmc_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET |
 				  DRIVER_ATOMIC | DRIVER_HAVE_IRQ,
@@ -367,6 +383,8 @@ err:
 static int hibmc_pci_probe(struct pci_dev *pdev,
 			   const struct pci_device_id *ent)
 {
+	hibmc_remove_framebuffers(pdev);
+
 	return drm_get_pci_dev(pdev, ent, &hibmc_driver);
 }
 
