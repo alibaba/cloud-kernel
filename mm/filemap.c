@@ -38,6 +38,8 @@
 #include <linux/rmap.h>
 #include <linux/delayacct.h>
 #include <linux/psi.h>
+
+#include <linux/pfn_t.h>
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -3040,7 +3042,26 @@ struct page *read_cache_page(struct address_space *mapping,
 				int (*filler)(void *, struct page *),
 				void *data)
 {
-	return do_read_cache_page(mapping, index, filler, data, mapping_gfp_mask(mapping));
+	struct inode *inode = mapping->host;
+
+	if (IS_DAX(inode)) {
+		int ret;
+		pfn_t pfn;
+		struct page *page;
+
+		ret = mapping->a_ops->readpfn(mapping, index, &pfn);
+		if (ret)
+			return ERR_PTR(ret);
+
+		page = pfn_t_to_page(pfn);
+		BUG_ON(page_ref_count(page) < 1);
+
+		get_page(page);
+		return page;
+	}
+
+	return do_read_cache_page(mapping, index, filler, data,
+				  mapping_gfp_mask(mapping));
 }
 EXPORT_SYMBOL(read_cache_page);
 

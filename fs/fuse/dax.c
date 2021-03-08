@@ -778,6 +778,13 @@ out:
 	return ret;
 }
 
+static int fuse_dax_readpfn(struct address_space *mapping, pgoff_t index, pfn_t *pfnp)
+{
+	struct inode *inode = mapping->host;
+
+	return dax_read_one_pfn(inode, index, pfnp, &fuse_iomap_ops);
+}
+
 static int fuse_dax_writepages(struct address_space *mapping,
 			       struct writeback_control *wbc)
 {
@@ -1330,6 +1337,7 @@ bool fuse_dax_inode_alloc(struct super_block *sb, struct fuse_inode *fi)
 }
 
 static const struct address_space_operations fuse_dax_file_aops  = {
+	.readpfn	= fuse_dax_readpfn,
 	.writepages	= fuse_dax_writepages,
 	.direct_IO	= noop_direct_IO,
 	.set_page_dirty	= noop_set_page_dirty,
