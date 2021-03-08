@@ -123,6 +123,7 @@ hibmc_connector_init(struct hibmc_drm_private *priv)
 	}
 	drm_connector_helper_add(connector,
 				 &hibmc_connector_helper_funcs);
+	drm_connector_register(connector);
 
 	return connector;
 }
