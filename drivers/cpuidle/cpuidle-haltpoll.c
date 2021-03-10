@@ -18,7 +18,7 @@
 #include <linux/kvm_para.h>
 #include <linux/cpuidle_haltpoll.h>
 
-static bool force __read_mostly;
+__read_mostly static bool force = true;
 module_param(force, bool, 0444);
 MODULE_PARM_DESC(force, "Load unconditionally");
 
@@ -96,11 +96,7 @@ static void haltpoll_uninit(void)
 
 static bool haltpoll_want(void)
 {
-#ifdef CONFIG_ARM64
-	return true;
-#else
-	return kvm_para_has_hint(KVM_HINTS_REALTIME) || force;
-#endif
+	return force;
 }
 
 static int __init haltpoll_init(void)
