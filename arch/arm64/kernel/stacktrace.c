@@ -219,4 +219,12 @@ noinline notrace void arch_stack_walk(stack_trace_consume_fn consume_entry,
 	walk_stackframe(task, &frame, consume_entry, cookie);
 }
 
+int arch_stack_walk_reliable(stack_trace_consume_fn consume_entry,
+			     void *cookie, struct task_struct *task)
+{
+	arch_stack_walk(consume_entry, cookie, task, NULL);
+
+	return 0;
+}
+
 #endif
