@@ -7,3 +7,4 @@ x86 architecture specifics
 
    mds
    tsx_async_abort
+   sgx
