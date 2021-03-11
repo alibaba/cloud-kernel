@@ -508,6 +508,26 @@ static ssize_t queue_wb_lat_store(struct request_queue *q, const char *page,
 	return count;
 }
 
+static ssize_t queue_hang_threshold_show(struct request_queue *q, char *page)
+{
+	return sprintf(page, "%u\n", q->rq_hang_threshold);
+}
+
+static ssize_t queue_hang_threshold_store(struct request_queue *q, const char *page,
+				size_t count)
+{
+	unsigned int hang_threshold;
+	int err;
+
+	err = kstrtou32(page, 10, &hang_threshold);
+	if (err || hang_threshold == 0)
+		return -EINVAL;
+
+	blk_queue_rq_hang_threshold(q, hang_threshold);
+
+	return count;
+}
+
 static ssize_t queue_wc_show(struct request_queue *q, char *page)
 {
 	if (test_bit(QUEUE_FLAG_WC, &q->queue_flags))
@@ -600,6 +620,7 @@ QUEUE_RO_ENTRY(queue_fua, "fua");
 QUEUE_RO_ENTRY(queue_dax, "dax");
 QUEUE_RW_ENTRY(queue_io_timeout, "io_timeout");
 QUEUE_RW_ENTRY(queue_wb_lat, "wbt_lat_usec");
+QUEUE_RW_ENTRY(queue_hang_threshold, "hang_threshold");
 
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 QUEUE_RW_ENTRY(blk_throtl_sample_time, "throttle_sample_time");
@@ -654,6 +675,7 @@ static struct attribute *queue_attrs[] = {
 	&queue_fua_entry.attr,
 	&queue_dax_entry.attr,
 	&queue_wb_lat_entry.attr,
+	&queue_hang_threshold_entry.attr,
 	&queue_poll_delay_entry.attr,
 	&queue_io_timeout_entry.attr,
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW

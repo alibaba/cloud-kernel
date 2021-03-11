@@ -99,6 +99,11 @@ struct mq_inflight {
 	unsigned int inflight[2];
 };
 
+struct mq_hang {
+	struct hd_struct *part;
+	unsigned int hang[2];
+};
+
 static bool blk_mq_check_inflight(struct blk_mq_hw_ctx *hctx,
 				  struct request *rq, void *priv,
 				  bool reserved)
@@ -129,6 +134,31 @@ void blk_mq_in_flight_rw(struct request_queue *q, struct hd_struct *part,
 	blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight, &mi);
 	inflight[0] = mi.inflight[0];
 	inflight[1] = mi.inflight[1];
+}
+
+static bool blk_mq_check_hang(struct blk_mq_hw_ctx *hctx,
+				  struct request *rq, void *priv,
+				  bool reserved)
+{
+	struct mq_hang *mh = priv;
+	u64 now = ktime_get_ns(), duration;
+
+	duration = div_u64(now - rq->start_time_ns, NSEC_PER_MSEC);
+	if ((duration >= rq->q->rq_hang_threshold) &&
+	    (!mh->part->partno || rq->part == mh->part))
+		mh->hang[rq_data_dir(rq)]++;
+
+	return true;
+}
+
+void blk_mq_in_hang_rw(struct request_queue *q, struct hd_struct *part,
+			 unsigned int hang[2])
+{
+	struct mq_hang mh = { .part = part };
+
+	blk_mq_queue_tag_busy_iter(q, blk_mq_check_hang, &mh);
+	hang[0] = mh.hang[0];
+	hang[1] = mh.hang[1];
 }
 
 void blk_freeze_queue_start(struct request_queue *q)
@@ -484,7 +514,7 @@ out_queue_exit:
 }
 EXPORT_SYMBOL_GPL(blk_mq_alloc_request_hctx);
 
-static void __blk_mq_free_request(struct request *rq)
+void __blk_mq_free_request(struct request *rq)
 {
 	struct request_queue *q = rq->q;
 	struct blk_mq_ctx *ctx = rq->mq_ctx;
