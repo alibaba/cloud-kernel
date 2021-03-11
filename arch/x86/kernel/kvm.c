@@ -608,6 +608,22 @@ static void __init kvm_smp_prepare_boot_cpu(void)
 	kvm_guest_cpu_init();
 	native_smp_prepare_boot_cpu();
 	kvm_spinlock_init();
+
+	/*
+	 * Determine whether we use CAS spinlock or qspinlock.
+	 * There are two cases when we will disable CAS spinlock.
+	 * 1. KVM_HINTS_REALTIME is passed
+	 * 2. KVM_FEATURE_PV_UNHALT is not passed
+	 * Both cases indicates it's a dedicated guest. The 2nd case is a
+	 * supplement to the 1st case, because in our environment, the 1st
+	 * is not passed yet.
+	 *
+	 * kvm_spinlock_init only works when CONFIG_PARAVIRT_SPINLOCK=y,
+	 * so these two checks are not redundant.
+	 */
+	if (kvm_para_has_hint(KVM_HINTS_REALTIME) ||
+	    !kvm_para_has_feature(KVM_FEATURE_PV_UNHALT))
+		static_branch_disable(&virt_spin_lock_key);
 }
 
 static int kvm_cpu_down_prepare(unsigned int cpu)
