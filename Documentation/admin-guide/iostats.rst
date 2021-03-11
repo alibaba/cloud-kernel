@@ -131,6 +131,12 @@ Field 16 -- # of flush requests completed
 Field 17 -- # of milliseconds spent flushing
     This is the total number of milliseconds spent by all flush requests.
 
+Field 18 -- # of milliseconds spent reading on device driver's side
+
+Field 19 -- # of milliseconds spent writing on device driver's side
+
+Field 20 -- # of milliseconds spent discarding on device driver's side
+
 To avoid introducing performance bottlenecks, no locks are held while
 modifying these counters.  This implies that minor inaccuracies may be
 introduced when changes collide, so (for instance) adding up all the

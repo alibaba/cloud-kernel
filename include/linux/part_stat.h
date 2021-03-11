@@ -6,6 +6,7 @@
 
 struct disk_stats {
 	u64 nsecs[NR_STAT_GROUPS];
+	u64 d2c_nsecs[NR_STAT_GROUPS];
 	unsigned long sectors[NR_STAT_GROUPS];
 	unsigned long ios[NR_STAT_GROUPS];
 	unsigned long merges[NR_STAT_GROUPS];
