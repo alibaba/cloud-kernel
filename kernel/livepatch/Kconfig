@@ -18,3 +18,30 @@ config LIVEPATCH
 	  module uses the interface provided by this option to register
 	  a patch, causing calls to patched functions to be redirected
 	  to new function code contained in the patch module.
+
+choice
+	prompt "live patch consistency model"
+	depends on LIVEPATCH
+	default LIVEPATCH_STOP_MACHINE_MODEL
+	help
+	  Livepatch consistency model configuration.
+	  There are two kinds of consistency model for kernel hotfix:
+	  1. stop machine model for Kpatch (Red Hat)
+		2. per-task model for kGraft (SUSE)
+
+config LIVEPATCH_PER_TASK_MODEL
+	bool "per task consistency model"
+	help
+	  Use per-task consistency model
+	  Kernel livepatch chooses per-task model to manage hotfix state
+	  conistency. Howerver, per-task model is much complicated, and not
+	  be widely verified on product environment.
+
+config LIVEPATCH_STOP_MACHINE_MODEL
+	bool "stop machine consistency model"
+	help
+	  Use stop machine consistency model
+	  stop machine model is simple, less chances to make mistakes
+	  stop machine model is widely used by Kpatch, which is proved to be
+	  safe and robust enough.
+endchoice
