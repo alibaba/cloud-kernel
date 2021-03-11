@@ -1314,6 +1314,10 @@ void blk_account_io_done(struct request *req, u64 now)
 		update_io_ticks(part, jiffies, true);
 		part_stat_inc(part, ios[sgrp]);
 		part_stat_add(part, nsecs[sgrp], now - req->start_time_ns);
+		if (req->io_start_time_ns) {
+			part_stat_add(part, d2c_nsecs[sgrp],
+				      now - req->io_start_time_ns);
+		}
 		part_stat_unlock();
 
 		hd_struct_put(part);
