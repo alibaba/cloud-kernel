@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/x86 5.10.12 Kernel Configuration
+# Linux/x86 5.10.18 Kernel Configuration
 #
 CONFIG_CC_VERSION_TEXT="gcc (GCC) 10.2.1 20200825 (Alibaba 10.2.1-3 2.30)"
 CONFIG_CC_IS_GCC=y
@@ -485,6 +485,8 @@ CONFIG_LEGACY_VSYSCALL_EMULATE=y
 CONFIG_MODIFY_LDT_SYSCALL=y
 CONFIG_HAVE_LIVEPATCH=y
 CONFIG_LIVEPATCH=y
+# CONFIG_LIVEPATCH_PER_TASK_MODEL is not set
+CONFIG_LIVEPATCH_STOP_MACHINE_MODEL=y
 # end of Processor type and features
 
 CONFIG_ARCH_HAS_ADD_PAGES=y
