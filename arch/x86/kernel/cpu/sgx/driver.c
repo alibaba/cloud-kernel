@@ -17,13 +17,24 @@ u32 sgx_misc_reserved_mask;
 static int sgx_open(struct inode *inode, struct file *file)
 {
 	struct sgx_encl *encl;
+	int ret;
 
 	encl = kzalloc(sizeof(*encl), GFP_KERNEL);
 	if (!encl)
 		return -ENOMEM;
 
+	kref_init(&encl->refcount);
 	INIT_RADIX_TREE(&encl->page_tree, GFP_KERNEL);
 	mutex_init(&encl->lock);
+	INIT_LIST_HEAD(&encl->va_pages);
+	INIT_LIST_HEAD(&encl->mm_list);
+	spin_lock_init(&encl->mm_lock);
+
+	ret = init_srcu_struct(&encl->srcu);
+	if (ret) {
+		kfree(encl);
+		return ret;
+	}
 
 	file->private_data = encl;
 
@@ -33,35 +44,37 @@ static int sgx_open(struct inode *inode, struct file *file)
 static int sgx_release(struct inode *inode, struct file *file)
 {
 	struct sgx_encl *encl = file->private_data;
-	struct sgx_encl_page *entry;
-	struct radix_tree_iter iter;
-	void **slot;
+	struct sgx_encl_mm *encl_mm;
 
-	radix_tree_for_each_slot(slot, &encl->page_tree, &iter, 0) {
-		entry = *slot;
+	/*
+	 * Drain the remaining mm_list entries. At this point the list contains
+	 * entries for processes, which have closed the enclave file but have
+	 * not exited yet. The processes, which have exited, are gone from the
+	 * list by sgx_mmu_notifier_release().
+	 */
+	for ( ; ; )  {
+		spin_lock(&encl->mm_lock);
 
-		if (entry->epc_page) {
-			sgx_free_epc_page(entry->epc_page);
-			encl->secs_child_cnt--;
-			entry->epc_page = NULL;
+		if (list_empty(&encl->mm_list)) {
+			encl_mm = NULL;
+		} else {
+			encl_mm = list_first_entry(&encl->mm_list,
+						   			   struct sgx_encl_mm, list);
+			list_del_rcu(&encl_mm->list);
 		}
-		
-		radix_tree_delete(&entry->encl->page_tree,
-						  PFN_DOWN(entry->desc));
 
-		kfree(entry);
+		spin_unlock(&encl->mm_lock);
+
+		/* The enclave is no longer mapped by any mm. */
+		if (!encl_mm)
+			break;
+
+		synchronize_srcu(&encl->srcu);
+		mmu_notifier_unregister(&encl_mm->mmu_notifier, encl_mm->mm);
+		kfree(encl_mm);
 	}
 
-	if (!encl->secs_child_cnt && encl->secs.epc_page) {
-		sgx_free_epc_page(encl->secs.epc_page);
-		encl->secs.epc_page = NULL;
-	}
-
-	/* Detect EPC page leaks. */
-	WARN_ON_ONCE(encl->secs_child_cnt);
-	WARN_ON_ONCE(encl->secs.epc_page);
-
-	kfree(encl);
+	kref_put(&encl->refcount, sgx_encl_release);
 	return 0;
 }
 
@@ -71,6 +84,10 @@ static int sgx_mmap(struct file *file, struct vm_area_struct *vma)
 	int ret;
 
 	ret = sgx_encl_may_map(encl, vma->vm_start, vma->vm_end, vma->vm_flags);
+	if (ret)
+		return ret;
+
+	ret = sgx_encl_mm_add(encl, vma->vm_mm);
 	if (ret)
 		return ret;
 
