@@ -1349,6 +1349,23 @@ ssize_t part_inflight_show(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%8u %8u\n", inflight[0], inflight[1]);
 }
 
+ssize_t part_hang_show(struct device *dev, struct device_attribute *attr,
+		       char *buf)
+{
+	struct hd_struct *p = dev_to_part(dev);
+	struct request_queue *q = part_to_disk(p)->queue;
+	unsigned int hang[2] = {0, 0};
+
+	/*
+	 * For now, we only support mq device, since don't find a generic method
+	 * to track reqs in single queue device.
+	 */
+	if (queue_is_mq(q))
+		blk_mq_in_hang_rw(q, p, hang);
+
+	return sprintf(buf, "%8u %8u\n", hang[0], hang[1]);
+}
+
 static ssize_t disk_capability_show(struct device *dev,
 				    struct device_attribute *attr, char *buf)
 {
@@ -1386,6 +1403,7 @@ static DEVICE_ATTR(discard_alignment, 0444, disk_discard_alignment_show, NULL);
 static DEVICE_ATTR(capability, 0444, disk_capability_show, NULL);
 static DEVICE_ATTR(stat, 0444, part_stat_show, NULL);
 static DEVICE_ATTR(inflight, 0444, part_inflight_show, NULL);
+static DEVICE_ATTR(hang, 0444, part_hang_show, NULL);
 static DEVICE_ATTR(badblocks, 0644, disk_badblocks_show, disk_badblocks_store);
 
 #ifdef CONFIG_FAIL_MAKE_REQUEST
@@ -1431,6 +1449,7 @@ static struct attribute *disk_attrs[] = {
 	&dev_attr_capability.attr,
 	&dev_attr_stat.attr,
 	&dev_attr_inflight.attr,
+	&dev_attr_hang.attr,
 	&dev_attr_badblocks.attr,
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 	&dev_attr_fail.attr,

@@ -225,6 +225,8 @@ ssize_t part_stat_show(struct device *dev, struct device_attribute *attr,
 		char *buf);
 ssize_t part_inflight_show(struct device *dev, struct device_attribute *attr,
 		char *buf);
+ssize_t part_hang_show(struct device *dev, struct device_attribute *attr,
+		char *buf);
 ssize_t part_fail_show(struct device *dev, struct device_attribute *attr,
 		char *buf);
 ssize_t part_fail_store(struct device *dev, struct device_attribute *attr,

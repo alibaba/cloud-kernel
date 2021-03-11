@@ -404,6 +404,12 @@ static inline int blkdev_zone_mgmt_ioctl(struct block_device *bdev,
 
 #endif /* CONFIG_BLK_DEV_ZONED */
 
+/*
+ * default request hang threshold, unit is millisecond. If one request does
+ * not complete in this threashold time, consider this request as hang.
+ */
+#define BLK_REQ_HANG_THRESHOLD	5000
+
 struct request_queue {
 	struct request		*last_merge;
 	struct elevator_queue	*elevator;
@@ -489,6 +495,7 @@ struct request_queue {
 #endif
 
 	unsigned int		rq_timeout;
+	unsigned int		rq_hang_threshold;
 	int			poll_nsec;
 
 	struct blk_stat_callback	*poll_cb;
@@ -1202,6 +1209,8 @@ extern void blk_queue_required_elevator_features(struct request_queue *q,
 						 unsigned int features);
 extern bool blk_queue_can_use_dma_map_merging(struct request_queue *q,
 					      struct device *dev);
+extern void blk_queue_rq_hang_threshold(struct request_queue *q,
+					unsigned int hang_threshold);
 
 /*
  * Number of physical segments as sent to the device.

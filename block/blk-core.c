@@ -525,6 +525,7 @@ struct request_queue *blk_alloc_queue(int node_id)
 		return NULL;
 
 	q->last_merge = NULL;
+	q->rq_hang_threshold = BLK_REQ_HANG_THRESHOLD;
 
 	q->id = ida_simple_get(&blk_queue_ida, 0, 0, GFP_KERNEL);
 	if (q->id < 0)
