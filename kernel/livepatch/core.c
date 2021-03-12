@@ -1043,17 +1043,13 @@ static int klp_try_disable_patch(void *data)
 	 */
 	smp_wmb();
 
-	klp_for_each_object(patch, obj) {
-		if (!klp_is_object_loaded(obj))
-			continue;
-		klp_post_unpatch_callback(obj);
-	}
 
 	return ret;
 }
 static int __klp_disable_patch(struct klp_patch *patch)
 {
 	int ret;
+	struct klp_object *obj;
 
 	if (WARN_ON(!patch->enabled))
 		return -EINVAL;
@@ -1074,9 +1070,16 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	smp_wmb();
 
 	ret = stop_machine(klp_try_disable_patch, patch, NULL);
-	if (ret)
+	if (ret) {
 		pr_warn("failed to disable patch '%s'\n", patch->mod->name);
+	} else {
+		klp_for_each_object(patch, obj) {
+			if (!klp_is_object_loaded(obj))
+				continue;
 
+			klp_post_unpatch_callback(obj);
+		}
+	}
 
 	klp_unpatch_objects(patch);
 
@@ -1106,14 +1109,6 @@ static int klp_try_enable_patch(void *data)
 	if (ret)
 		return ret;
 
-	klp_for_each_object(patch, obj) {
-		ret = klp_pre_patch_callback(obj);
-		if (ret) {
-			pr_warn("pre-patch callback failed for object '%s'\n",
-				klp_is_module(obj) ? obj->name : "vmlinux");
-			return ret;
-		}
-	}
 
 	/* enable patch */
 	klp_for_each_object(patch, obj)
@@ -1175,10 +1170,19 @@ static int __klp_enable_patch(struct klp_patch *patch)
 				klp_is_module(obj) ? obj->name : "vmlinux");
 			goto err;
 		}
+		ret = klp_pre_patch_callback(obj);
+		if (ret) {
+			pr_warn("pre-patch callback failed for object '%s'\n",
+				klp_is_module(obj) ? obj->name : "vmlinux");
+			klp_unpatch_objects(patch);
+			goto err;
+		}
 	}
 
 	ret = stop_machine(klp_try_enable_patch, patch, NULL);
 	if (ret) {
+		klp_for_each_object(patch, obj)
+			klp_post_unpatch_callback(obj);
 		klp_unpatch_objects(patch);
 		goto err;
 	}
