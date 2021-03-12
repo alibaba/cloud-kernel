@@ -675,6 +675,10 @@ static void klp_free_patch_start(struct klp_patch *patch)
  */
 static void klp_free_patch_finish(struct klp_patch *patch)
 {
+	int func_force = 0;
+	struct klp_object *obj;
+	struct klp_func *func;
+
 	/*
 	 * Avoid deadlock with enabled_store() sysfs callback by
 	 * calling this outside klp_mutex. It is safe because
@@ -684,8 +688,17 @@ static void klp_free_patch_finish(struct klp_patch *patch)
 	kobject_put(&patch->kobj);
 	wait_for_completion(&patch->finish);
 
+	klp_for_each_object(patch, obj)
+		klp_for_each_func(obj, func) {
+			if (func->force) {
+				func_force = 1;
+				goto done;
+			}
+	}
+done:
+
 	/* Put the module after the last access to struct klp_patch. */
-	if (!patch->forced)
+	if (!patch->forced && (!func_force))
 		module_put(patch->mod);
 }
 

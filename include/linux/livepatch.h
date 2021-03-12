@@ -76,6 +76,7 @@ struct klp_func {
 	bool nop;
 	bool patched;
 	bool transition;
+	int force;
 };
 
 struct klp_object;
