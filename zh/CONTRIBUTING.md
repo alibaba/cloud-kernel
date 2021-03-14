@@ -90,7 +90,13 @@ sudo make install
 
 在您日常使用 Cloud Kernel 过程中，您或许发现了一些内核 BUG，并且找到了修复它的方法。欢迎将修复整理成补丁发送给我们。
 
-Cloud Kernel 的开发和 Linux 内核社区开发模式基本一致，您可以参阅 kernel.org 上的 "[submitting patches guide](https://www.kernel.org/doc/html/latest/process/submitting-patches.html)" 一文。此外，我们还有一些特殊的开发规约如下：
+Cloud Kernel 的开发和 Linux 内核社区开发模式基本一致，您可以参阅 kernel.org 上的 "[submitting patches guide](https://www.kernel.org/doc/html/latest/process/submitting-patches.html)" 一文，在这篇文章中，提到了一些非常有用的建议，比如：
+
+- (1) `描述你的改动` ：无论是只改了一行代码的 bug 修复补丁，还是 5000 多行的新特性补丁，都应该在 commit log 中添加一些注释，告诉大家这个补丁的背景和其他信息。如果只有一个空的 commit log 提交，我们会拒绝该次合并请求；
+- (2) `合理拆分补丁` ：这个需要一些经验，不过基本原则是按照逻辑来拆分补丁，然后按照整个补丁集(patchset)提交，而不是把一大堆关联逻辑都塞到一个巨无霸补丁中。原文中给了一些样例建议，也可以多学习一下 LKML 社区中的补丁集是怎么写的；
+- (3) `用工具检查代码` : 内核代码目录下的 `scripts/checkpatch.pl` 这个工具，可以用来检查你的补丁，如果检查不过就提交补丁，我们很可能会拒绝你的补丁。
+
+此外，我们还有一些特殊的开发规约如下：
 
 #### 2.3.1 回合(Backport)补丁的规则
 
