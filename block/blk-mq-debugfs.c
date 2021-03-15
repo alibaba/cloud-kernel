@@ -440,7 +440,6 @@ static void blk_mq_debugfs_rq_hang_show(struct seq_file *m, struct request *rq)
 			seq_printf(m, "%px ", page);
 		}
 		seq_puts(m, "}");
-		bio = bio->bi_next;
 	}
 	if (mq_ops->show_rq)
 		mq_ops->show_rq(m, rq);
