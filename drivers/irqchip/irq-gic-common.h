@@ -38,4 +38,6 @@ void gic_enable_quirks(u32 iidr, const struct gic_quirk *quirks,
 
 void gic_set_kvm_info(const struct gic_kvm_info *info);
 
+int its_init_v4(struct irq_domain *domain,
+		       const struct irq_domain_ops *ops);
 #endif /* _IRQ_GIC_COMMON_H */

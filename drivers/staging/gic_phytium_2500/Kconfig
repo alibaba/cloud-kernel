@@ -1,0 +1,9 @@
+config ARM_GIC_PHYTIUM_2500
+       bool "Add phytium2500 chip gic support"
+       depends on STAGING && ARCH_PHYTIUM
+       select IRQ_DOMAIN
+       select GENERIC_IRQ_MULTI_HANDLER
+       select IRQ_DOMAIN_HIERARCHY
+       select PARTITION_PERCPU
+       select GENERIC_IRQ_EFFECTIVE_AFF_MASK
+       select GENERIC_MSI_IRQ_DOMAIN
