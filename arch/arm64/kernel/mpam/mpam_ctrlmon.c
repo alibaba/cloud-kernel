@@ -74,6 +74,7 @@ static int add_schema(enum resctrl_conf_type t, struct resctrl_resource *r)
 		suffix = "";
 		break;
 	default:
+		kfree(s);
 		return -EINVAL;
 	}
 
