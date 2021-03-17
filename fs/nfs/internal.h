@@ -150,7 +150,7 @@ struct nfs_mount_info {
 	struct nfs_fh *mntfh;
 };
 
-extern int nfs_mount(struct nfs_mount_request *info);
+extern int nfs_mount(struct nfs_mount_request *info, int timeo, int retrans);
 extern void nfs_umount(const struct nfs_mount_request *info);
 
 /* client.c */

@@ -1789,7 +1789,7 @@ static int nfs_request_mount(struct nfs_parsed_mount_data *args,
 	 * Now ask the mount server to map our export path
 	 * to a file handle.
 	 */
-	status = nfs_mount(&request);
+	status = nfs_mount(&request, args->timeo, args->retrans);
 	if (status != 0) {
 		dfprintk(MOUNT, "NFS: unable to mount server %s, error %d\n",
 				request.hostname, status);
