@@ -358,13 +358,15 @@ out:
 static struct rpc_clnt *rpcb_create(struct net *net, const char *nodename,
 				    const char *hostname,
 				    struct sockaddr *srvaddr, size_t salen,
-				    int proto, u32 version)
+				    int proto, u32 version,
+				    const struct rpc_timeout *timeo)
 {
 	struct rpc_create_args args = {
 		.net		= net,
 		.protocol	= proto,
 		.address	= srvaddr,
 		.addrsize	= salen,
+		.timeout	= timeo,
 		.servername	= hostname,
 		.nodename	= nodename,
 		.program	= &rpcb_program,
@@ -744,7 +746,8 @@ void rpcb_getport_async(struct rpc_task *task)
 	rpcb_clnt = rpcb_create(xprt->xprt_net,
 				clnt->cl_nodename,
 				xprt->servername, sap, salen,
-				xprt->prot, bind_version);
+				xprt->prot, bind_version,
+				task->tk_client->cl_timeout);
 	if (IS_ERR(rpcb_clnt)) {
 		status = PTR_ERR(rpcb_clnt);
 		dprintk("RPC: %5u %s: rpcb_create failed, error %ld\n",
