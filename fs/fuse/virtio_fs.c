@@ -16,6 +16,12 @@
 #include <linux/uio.h>
 #include "fuse_i.h"
 
+/* Used to help calculate the FUSE connection's max_pages limit for a request's
+ * size. Parts of the struct fuse_req are sliced into scattergather lists in
+ * addition to the pages used, so this can help account for that overhead.
+ */
+#define FUSE_HEADER_OVERHEAD    4
+
 /* List of virtio-fs device instances and a lock for the list. Also provides
  * mutual exclusion in device removal and mounting path
  */
@@ -1250,6 +1256,7 @@ static int virtio_fs_fill_super(struct super_block *sb, void *data,
 	struct fuse_req *init_req;
 	struct virtio_fs_mount_info *info = (struct virtio_fs_mount_info *)data;
 	const char *tag = NULL;
+	unsigned int virtqueue_size;
 
 	mutex_lock(&virtio_fs_mutex);
 	err = -EINVAL;
@@ -1274,6 +1281,12 @@ static int virtio_fs_fill_super(struct super_block *sb, void *data,
 	if (!fs) {
 		pr_err("virtio-fs: tag not found\n");
 		err = -ENOENT;
+		goto err;
+	}
+
+	virtqueue_size = virtqueue_get_vring_size(fs->vqs[VQ_REQUEST].vq);
+	if (WARN_ON(virtqueue_size <= FUSE_HEADER_OVERHEAD)) {
+		err = -EIO;
 		goto err;
 	}
 
@@ -1310,6 +1323,10 @@ static int virtio_fs_fill_super(struct super_block *sb, void *data,
 		goto err_free_init_req;
 
 	fc = fs->vqs[VQ_REQUEST].fud->fc;
+
+	/* Tell FUSE to split requests that exceed the virtqueue's size */
+	fc->max_pages_limit = min_t(unsigned int, fc->max_pages_limit,
+				    virtqueue_size - FUSE_HEADER_OVERHEAD);
 
 	/* TODO take fuse_mutex around this loop? */
 	for (i = 0; i < fs->nvqs; i++) {
