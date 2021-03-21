@@ -349,6 +349,12 @@ For 32-bit we have the following conventions - kernel is built with
 
 #endif /* CONFIG_X86_64 */
 
+.macro SAVE_AND_SET_GSBASE scratch_reg:req save_reg:req
+        rdgsbase \save_reg
+        GET_PERCPU_BASE \scratch_reg
+        wrgsbase \scratch_reg
+.endm
+
 /*
  * This does 'call enter_from_user_mode' unless we can avoid it based on
  * kernel config or using the static jump infrastructure.
