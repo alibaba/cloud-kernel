@@ -58,6 +58,7 @@
 #define AZX_DCAPS_CORBRP_SELF_CLEAR (1 << 28)	/* CORBRP clears itself after reset */
 #define AZX_DCAPS_NO_MSI64      (1 << 29)	/* Stick to 32-bit MSIs */
 #define AZX_DCAPS_SEPARATE_STREAM_TAG	(1 << 30) /* capture and playback use separate stream tag */
+#define AZX_DCAPS_RIRB_PRE_DELAY  (1 << 31)
 
 enum {
 	AZX_SNOOP_TYPE_NONE,
@@ -167,6 +168,7 @@ struct azx {
 
 	/* GTS present */
 	unsigned int gts_present:1;
+	void __iomem *remap_diu_addr;
 
 #ifdef CONFIG_SND_HDA_DSP_LOADER
 	struct azx_dev saved_azx_dev;

@@ -251,7 +251,8 @@ MODULE_SUPPORTED_DEVICE("{{Intel, ICH6},"
 			 "{VIA, VT8237A},"
 			 "{SiS, SIS966},"
 			 "{ULI, M5461},"
-			 "{ZX, ZhaoxinHDA}}");
+			 "{ZX, ZhaoxinHDA},"
+			 "{ZX, ZhaoxinHDMI}}");
 MODULE_DESCRIPTION("Intel HDA driver");
 
 #if defined(CONFIG_PM) && defined(CONFIG_VGA_SWITCHEROO)
@@ -283,6 +284,7 @@ enum {
 	AZX_DRIVER_CTHDA,
 	AZX_DRIVER_CMEDIA,
 	AZX_DRIVER_ZHAOXIN,
+	AZX_DRIVER_ZXHDMI,
 	AZX_DRIVER_GENERIC,
 	AZX_NUM_DRIVERS, /* keep this as last entry */
 };
@@ -404,6 +406,7 @@ static char *driver_short_names[] = {
 	[AZX_DRIVER_CTHDA] = "HDA Creative",
 	[AZX_DRIVER_CMEDIA] = "HDA C-Media",
 	[AZX_DRIVER_ZHAOXIN] = "HDA Zhaoxin",
+	[AZX_DRIVER_ZXHDMI] = "HDA Zhaoxin GFX",
 	[AZX_DRIVER_GENERIC] = "HD-Audio Generic",
 };
 
@@ -478,6 +481,29 @@ static void update_pci_byte(struct pci_dev *pci, unsigned int reg,
 	data &= ~mask;
 	data |= (val & mask);
 	pci_write_config_byte(pci, reg, data);
+}
+
+static int azx_init_chip_zx(struct azx *chip)
+{
+	struct snd_card *card = chip->card;
+	unsigned int diu_reg;
+	struct pci_dev *diu_pci = NULL;
+
+	diu_pci = pci_get_device(0x1d17, 0x3a03, NULL);
+	if (!diu_pci) {
+		dev_err(card->dev, "hda no chx001 device. \n");
+		return -ENXIO;
+	}
+	pci_read_config_dword(diu_pci, PCI_BASE_ADDRESS_0, &diu_reg);
+	chip->remap_diu_addr = ioremap_nocache(diu_reg, 0x50000);
+	dev_info(card->dev, "hda %x %p \n", diu_reg, chip->remap_diu_addr);
+	return 0;
+}
+
+static void azx_free_chip_zx(struct azx *chip)
+{
+	if (chip->remap_diu_addr)
+		iounmap(chip->remap_diu_addr);
 }
 
 static void azx_init_pci(struct azx *chip)
@@ -1450,6 +1476,10 @@ static int azx_free(struct azx *chip)
 	hda->init_failed = 1; /* to be sure */
 	complete_all(&hda->probe_wait);
 
+	if (chip->driver_type == AZX_DRIVER_ZXHDMI) {
+		azx_free_chip_zx(chip);
+	}
+
 	if (use_vga_switcheroo(hda)) {
 		if (chip->disabled && hda->probe_continued)
 			snd_hda_unlock_devices(&chip->bus);
@@ -1793,6 +1823,8 @@ static int default_bdl_pos_adj(struct azx *chip)
 	case AZX_DRIVER_ICH:
 	case AZX_DRIVER_PCH:
 		return 1;
+	case AZX_DRIVER_ZXHDMI:
+		return 128;
 	default:
 		return 32;
 	}
@@ -1911,6 +1943,12 @@ static int azx_first_init(struct azx *chip)
 	}
 #endif
 
+	chip->remap_diu_addr = NULL;
+
+	if (chip->driver_type == AZX_DRIVER_ZXHDMI) {
+		azx_init_chip_zx(chip);
+	}
+
 	err = pci_request_regions(pci, "ICH HD audio");
 	if (err < 0)
 		return err;
@@ -2020,6 +2058,7 @@ static int azx_first_init(struct azx *chip)
 			chip->playback_streams = ATIHDMI_NUM_PLAYBACK;
 			chip->capture_streams = ATIHDMI_NUM_CAPTURE;
 			break;
+		case AZX_DRIVER_ZXHDMI:
 		case AZX_DRIVER_GENERIC:
 		default:
 			chip->playback_streams = ICH6_NUM_PLAYBACK;
@@ -2752,6 +2791,11 @@ static const struct pci_device_id azx_ids[] = {
 	{ PCI_DEVICE(0x1106, 0x9170), .driver_data = AZX_DRIVER_GENERIC },
 	/* VIA GFX VT6122/VX11 */
 	{ PCI_DEVICE(0x1106, 0x9140), .driver_data = AZX_DRIVER_GENERIC },
+	{ PCI_DEVICE(0x1106, 0x9141), .driver_data = AZX_DRIVER_GENERIC  },
+	{ PCI_DEVICE(0x1106, 0x9142),
+	  .driver_data = AZX_DRIVER_ZXHDMI | AZX_DCAPS_POSFIX_LPIB | AZX_DCAPS_NO_MSI | AZX_DCAPS_RIRB_PRE_DELAY },
+	{ PCI_DEVICE(0x1106, 0x9144),
+	  .driver_data = AZX_DRIVER_ZXHDMI | AZX_DCAPS_POSFIX_LPIB | AZX_DCAPS_NO_MSI | AZX_DCAPS_RIRB_PRE_DELAY },
 	/* SIS966 */
 	{ PCI_DEVICE(0x1039, 0x7502), .driver_data = AZX_DRIVER_SIS },
 	/* ULI M5461 */
@@ -2807,6 +2851,11 @@ static const struct pci_device_id azx_ids[] = {
 	  .driver_data = AZX_DRIVER_GENERIC | AZX_DCAPS_PRESET_ATI_HDMI },
 	/* Zhaoxin */
 	{ PCI_DEVICE(0x1d17, 0x3288), .driver_data = AZX_DRIVER_ZHAOXIN  },
+	{ PCI_DEVICE(0x1d17, 0x9141), .driver_data = AZX_DRIVER_GENERIC  },
+	{ PCI_DEVICE(0x1d17, 0x9142),
+	  .driver_data = AZX_DRIVER_ZXHDMI | AZX_DCAPS_POSFIX_LPIB | AZX_DCAPS_NO_MSI | AZX_DCAPS_RIRB_PRE_DELAY },
+	{ PCI_DEVICE(0x1d17, 0x9144),
+	  .driver_data = AZX_DRIVER_ZXHDMI | AZX_DCAPS_POSFIX_LPIB | AZX_DCAPS_NO_MSI | AZX_DCAPS_RIRB_PRE_DELAY },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, azx_ids);
