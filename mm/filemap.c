@@ -859,6 +859,7 @@ static int __add_to_page_cache_locked(struct page *page,
 {
 	int huge = PageHuge(page);
 	int error;
+	bool charged = false;
 
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	VM_BUG_ON_PAGE(PageSwapBacked(page), page);
@@ -874,12 +875,15 @@ static int __add_to_page_cache_locked(struct page *page,
 			put_page(page);
 			return error;
 		}
+		charged = true;
 	}
 
 	error = radix_tree_maybe_preload(gfp_mask & GFP_RECLAIM_MASK);
 	if (error) {
 		page->mapping = NULL;
 		put_page(page);
+		if (charged)
+			mem_cgroup_uncharge(page);
 		return error;
 	}
 
@@ -899,6 +903,8 @@ err_insert:
 	page->mapping = NULL;
 	/* Leave page->index set: truncation relies upon it */
 	xa_unlock_irq(&mapping->i_pages);
+	if (charged)
+		mem_cgroup_uncharge(page);
 	put_page(page);
 	return error;
 }
