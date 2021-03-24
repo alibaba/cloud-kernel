@@ -301,7 +301,7 @@ static int remove_memprotect(unsigned long addr)
 		set_pmd(pmd, __pmd(pmd_val(pmdd) & ~PMD_SECT_RDONLY));
 	} else {
 		pte = pte_offset_kernel(pmd, addr);
-		pted = pte_wrprotect(*pte);
+		pted = pte_mkwrite(*pte);
 		set_pte(pte, pted);
 	}
 
