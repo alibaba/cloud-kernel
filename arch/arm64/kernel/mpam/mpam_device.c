@@ -560,8 +560,10 @@ static void __init mpam_enable(struct work_struct *work)
 	mutex_lock(&mpam_devices_lock);
 	mpam_enable_squash_features();
 	err = mpam_allocate_config();
-	if (err)
+	if (err) {
+		mutex_unlock(&mpam_devices_lock);
 		return;
+	}
 	mutex_unlock(&mpam_devices_lock);
 
 	mpam_enable_irqs();
