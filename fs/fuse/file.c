@@ -1028,9 +1028,6 @@ static size_t fuse_send_write_pages(struct fuse_req *req, struct kiocb *iocb,
 	unsigned i;
 	struct fuse_io_priv io = FUSE_IO_PRIV_SYNC(iocb);
 
-	for (i = 0; i < req->num_pages; i++)
-		fuse_wait_on_page_writeback(inode, req->pages[i]->index);
-
 	res = fuse_send_write(req, &io, pos, count, NULL);
 
 	offset = req->page_descs[0].offset;
@@ -1059,6 +1056,7 @@ static ssize_t fuse_fill_write_pages(struct fuse_req *req,
 			       struct iov_iter *ii, loff_t pos)
 {
 	struct fuse_conn *fc = get_fuse_conn(mapping->host);
+	struct inode *inode = mapping->host;
 	unsigned offset = pos & (PAGE_SIZE - 1);
 	size_t count = 0;
 	int err;
@@ -1084,6 +1082,8 @@ static ssize_t fuse_fill_write_pages(struct fuse_req *req,
 		page = grab_cache_page_write_begin(mapping, index, 0);
 		if (!page)
 			break;
+
+		fuse_wait_on_page_writeback(inode, page->index);
 
 		if (mapping_writably_mapped(mapping))
 			flush_dcache_page(page);
