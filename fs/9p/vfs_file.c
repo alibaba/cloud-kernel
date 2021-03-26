@@ -431,6 +431,10 @@ v9fs_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	if (retval <= 0)
 		return retval;
 
+	err = file_update_time(file);
+	if (err)
+		return err;
+
 	origin = iocb->ki_pos;
 	retval = p9_client_write(file->private_data, iocb->ki_pos, from, &err);
 	if (retval > 0) {
