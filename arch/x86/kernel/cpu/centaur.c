@@ -116,6 +116,13 @@ static void early_init_centaur(struct cpuinfo_x86 *c)
 		set_cpu_cap(c, X86_FEATURE_NONSTOP_TSC);
 	}
 
+	/*
+	 * These CPUs declare support SSE4.2 instruction sets but
+	 * having low performance CRC32C instruction implementation.
+	 */
+	if (c->x86 == 0x6 || (c->x86 == 0x7 && c->x86_model <= 0x3b))
+		set_cpu_cap(c, X86_FEATURE_CRC32C_LOW_PERF);
+
 	if (c->cpuid_level >= 0x00000001) {
 		u32 eax, ebx, ecx, edx;
 

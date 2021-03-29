@@ -85,6 +85,13 @@ static void early_init_zhaoxin(struct cpuinfo_x86 *c)
 			c->x86_coreid_bits = get_count_order((ebx >> 16) & 0xff);
 	}
 
+	/*
+	 * These CPUs declare support SSE4.2 instruction sets but
+	 * having low performance CRC32C instruction implementation.
+	 */
+	if (c->x86 == 0x6 || (c->x86 == 0x7 && c->x86_model <= 0x3b))
+		set_cpu_cap(c, X86_FEATURE_CRC32C_LOW_PERF);
+
 	if (detect_extended_topology_early(c) < 0)
 		detect_ht_early(c);
 }
