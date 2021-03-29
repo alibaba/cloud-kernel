@@ -1585,6 +1585,7 @@ static void balance_dirty_pages(struct bdi_writeback *wb,
 		unsigned long m_dirty = 0;	/* stop bogus uninit warnings */
 		unsigned long m_thresh = 0;
 		unsigned long m_bg_thresh = 0;
+		u64 start;
 
 		/*
 		 * Unstable writes are a feature of certain networked
@@ -1776,7 +1777,9 @@ pause:
 					  start_time);
 		__set_current_state(TASK_KILLABLE);
 		wb->dirty_sleep = now;
+		memcg_lat_stat_start(&start);
 		io_schedule_timeout(pause);
+		memcg_lat_stat_end(MEM_LAT_DIRTY_THROTTLE, start);
 
 		current->dirty_paused_when = now + pause;
 		current->nr_dirtied = 0;

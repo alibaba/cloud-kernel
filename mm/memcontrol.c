@@ -4811,6 +4811,7 @@ MEMCG_LAT_STAT_SMP_WRITE(direct_compact, MEM_LAT_DIRECT_COMPACT);
 MEMCG_LAT_STAT_SMP_WRITE(global_direct_swapout, MEM_LAT_GLOBAL_DIRECT_SWAPOUT);
 MEMCG_LAT_STAT_SMP_WRITE(memcg_direct_swapout, MEM_LAT_MEMCG_DIRECT_SWAPOUT);
 MEMCG_LAT_STAT_SMP_WRITE(direct_swapin, MEM_LAT_DIRECT_SWAPIN);
+MEMCG_LAT_STAT_SMP_WRITE(dirty_throttle, MEM_LAT_DIRTY_THROTTLE);
 
 smp_call_func_t smp_memcg_lat_write_funcs[] = {
 	smp_write_global_direct_reclaim,
@@ -4819,6 +4820,7 @@ smp_call_func_t smp_memcg_lat_write_funcs[] = {
 	smp_write_global_direct_swapout,
 	smp_write_memcg_direct_swapout,
 	smp_write_direct_swapin,
+	smp_write_dirty_throttle,
 };
 
 static int memcg_lat_stat_write(struct cgroup_subsys_state *css,
@@ -6036,6 +6038,13 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write_u64 = memcg_lat_stat_write,
 		.seq_show =  memcg_lat_stat_show,
 	},
+	{
+		.name = "dirty_throttle_latency",
+		.private = MEM_LAT_DIRTY_THROTTLE,
+		.write_u64 = memcg_lat_stat_write,
+		.seq_show =  memcg_lat_stat_show,
+	},
+
 #endif /* CONFIG_MEMSLI */
 	{
 		.name = "force_empty",
