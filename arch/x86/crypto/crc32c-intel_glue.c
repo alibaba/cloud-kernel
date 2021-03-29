@@ -244,6 +244,11 @@ static int __init crc32c_intel_mod_init(void)
 {
 	if (!x86_match_cpu(crc32c_cpu_id))
 		return -ENODEV;
+
+	/* Don't merit use low performance CRC32C instruction */
+	if (boot_cpu_has(X86_FEATURE_CRC32C_LOW_PERF))
+		return -ENODEV;
+
 #ifdef CONFIG_X86_64
 	if (boot_cpu_has(X86_FEATURE_PCLMULQDQ)) {
 		alg.update = crc32c_pcl_intel_update;
