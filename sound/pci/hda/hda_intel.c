@@ -250,7 +250,8 @@ MODULE_SUPPORTED_DEVICE("{{Intel, ICH6},"
 			 "{VIA, VT8251},"
 			 "{VIA, VT8237A},"
 			 "{SiS, SIS966},"
-			 "{ULI, M5461}}");
+			 "{ULI, M5461},"
+			 "{ZX, ZhaoxinHDA}}");
 MODULE_DESCRIPTION("Intel HDA driver");
 
 #if defined(CONFIG_PM) && defined(CONFIG_VGA_SWITCHEROO)
@@ -281,6 +282,7 @@ enum {
 	AZX_DRIVER_CTX,
 	AZX_DRIVER_CTHDA,
 	AZX_DRIVER_CMEDIA,
+	AZX_DRIVER_ZHAOXIN,
 	AZX_DRIVER_GENERIC,
 	AZX_NUM_DRIVERS, /* keep this as last entry */
 };
@@ -401,6 +403,7 @@ static char *driver_short_names[] = {
 	[AZX_DRIVER_CTX] = "HDA Creative", 
 	[AZX_DRIVER_CTHDA] = "HDA Creative",
 	[AZX_DRIVER_CMEDIA] = "HDA C-Media",
+	[AZX_DRIVER_ZHAOXIN] = "HDA Zhaoxin",
 	[AZX_DRIVER_GENERIC] = "HD-Audio Generic",
 };
 
@@ -1591,7 +1594,8 @@ static int check_position_fix(struct azx *chip, int fix)
 	}
 
 	/* Check VIA/ATI HD Audio Controller exist */
-	if (chip->driver_type == AZX_DRIVER_VIA) {
+	if (chip->driver_type == AZX_DRIVER_VIA ||
+		chip->driver_type == AZX_DRIVER_ZHAOXIN) {
 		dev_dbg(chip->card->dev, "Using VIACOMBO position fix\n");
 		return POS_FIX_VIACOMBO;
 	}
@@ -1744,7 +1748,8 @@ static void azx_check_snoop_available(struct azx *chip)
 
 	snoop = true;
 	if (azx_get_snoop_type(chip) == AZX_SNOOP_TYPE_NONE &&
-	    chip->driver_type == AZX_DRIVER_VIA) {
+	    ((chip->driver_type == AZX_DRIVER_VIA) ||
+		 (chip->driver_type == AZX_DRIVER_ZHAOXIN))) {
 		/* force to non-snoop mode for a new VIA controller
 		 * when BIOS is set
 		 */
@@ -2800,6 +2805,8 @@ static const struct pci_device_id azx_ids[] = {
 	  .class = PCI_CLASS_MULTIMEDIA_HD_AUDIO << 8,
 	  .class_mask = 0xffffff,
 	  .driver_data = AZX_DRIVER_GENERIC | AZX_DCAPS_PRESET_ATI_HDMI },
+	/* Zhaoxin */
+	{ PCI_DEVICE(0x1d17, 0x3288), .driver_data = AZX_DRIVER_ZHAOXIN  },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, azx_ids);
