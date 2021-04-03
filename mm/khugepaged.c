@@ -2435,6 +2435,8 @@ next:
 
 	if (!IS_ERR_OR_NULL(hpage))
 		put_page(hpage);
+	else if (wait && IS_ERR(hpage))
+		khugepaged_alloc_sleep();
 }
 
 static bool khugepaged_should_wakeup(void)
