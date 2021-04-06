@@ -19,14 +19,6 @@
 
 #include "blk.h"
 
-static inline sector_t blk_zone_start(struct request_queue *q,
-				      sector_t sector)
-{
-	sector_t zone_mask = blk_queue_zone_sectors(q) - 1;
-
-	return sector & ~zone_mask;
-}
-
 /*
  * Return true if a request is a write requests that needs zone write locking.
  */
