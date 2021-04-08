@@ -299,13 +299,13 @@ static int remove_memprotect(unsigned long addr)
 	// remove the pmd wirte protect attr if huge page
 	if (pmd_huge(pmdd)) {
 		set_pmd(pmd, __pmd(pmd_val(pmdd) & ~PMD_SECT_RDONLY));
+		flush_tlb_kernel_range(addr_aligned, addr_aligned + PMD_SIZE);
 	} else {
 		pte = pte_offset_kernel(pmd, addr);
 		pted = pte_mkwrite(*pte);
 		set_pte(pte, pted);
+		flush_tlb_kernel_range(addr_aligned, addr_aligned + PAGE_SIZE);
 	}
-
-	flush_tlb_kernel_range(addr_aligned, addr_aligned + PAGE_SIZE);
 
 	return 0;
 }
@@ -333,13 +333,13 @@ static int set_memprotect(unsigned long addr)
 
 	if (pmd_huge(pmdd)) {
 		set_pmd(pmd, __pmd(pmd_val(pmdd) | PMD_SECT_RDONLY));
+		flush_tlb_kernel_range(addr_aligned, addr_aligned + PMD_SIZE);
 	} else {
 		pte = pte_offset_kernel(pmd, addr);
 		pted = pte_wrprotect(*pte);
 		set_pte(pte, pted);
+		flush_tlb_kernel_range(addr_aligned, addr_aligned + PAGE_SIZE);
 	}
-
-	flush_tlb_kernel_range(addr_aligned, addr_aligned + PAGE_SIZE);
 
 	return 0;
 }
