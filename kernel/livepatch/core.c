@@ -1063,6 +1063,7 @@ static int __klp_disable_patch(struct klp_patch *patch)
 {
 	int ret;
 	struct klp_object *obj;
+	struct klp_func *func;
 
 	if (WARN_ON(!patch->enabled))
 		return -EINVAL;
@@ -1103,8 +1104,16 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	 * removed function.
 	 */
 	klp_synchronize_transition();
-	klp_free_patch_start(patch);
-	schedule_work(&patch->free_work);
+
+	klp_for_each_object(klp_transition_patch, obj)
+		klp_for_each_func(obj, func)
+			func->transition = false;
+
+	if (!patch->enabled)
+		klp_free_patch_async(patch);
+	else if (patch->replace)
+		klp_free_replaced_patches_async(patch);
+
 	klp_transition_patch = NULL;
 
 	return ret;
@@ -1121,7 +1130,6 @@ static int klp_try_enable_patch(void *data)
 	ret = klp_check_all_stack();
 	if (ret)
 		return ret;
-
 
 	/* enable patch */
 	klp_for_each_object(patch, obj)
@@ -1200,7 +1208,18 @@ static int __klp_enable_patch(struct klp_patch *patch)
 		goto err;
 	}
 
+	if (klp_transition_patch->replace) {
+		klp_unpatch_replaced_patches(klp_transition_patch);
+		klp_discard_nops(klp_transition_patch);
+	}
+
 	klp_transition_patch = NULL;
+
+	if (!patch->enabled)
+		klp_free_patch_async(patch);
+	else if (patch->replace)
+		klp_free_replaced_patches_async(patch);
+
 	return 0;
 
 err:
