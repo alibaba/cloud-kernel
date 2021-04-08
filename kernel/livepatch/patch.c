@@ -107,16 +107,17 @@ static void notrace klp_ftrace_handler(unsigned long ip,
 		}
 	}
 
+#else
+	if (unlikely(func->transition))
+		goto unlock;
+#endif
+
 	/*
 	 * NOPs are used to replace existing patches with original code.
 	 * Do nothing! Setting pc would cause an infinite loop.
 	 */
 	if (func->nop)
 		goto unlock;
-#else
-	if (unlikely(func->transition))
-		goto unlock;
-#endif
 
 	klp_arch_set_pc(regs, (unsigned long)func->new_func);
 
