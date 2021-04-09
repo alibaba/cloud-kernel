@@ -26,6 +26,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/moduleparam.h>
 #include <xen/xen.h>
+#include <linux/mem_encrypt.h>
 
 static bool vring_force_dma_api = false;
 
@@ -179,6 +180,9 @@ static bool vring_use_dma_api(struct virtio_device *vdev)
 	 * all of the sensible Xen configurations to work correctly.
 	 */
 	if (xen_domain())
+		return true;
+
+	if (sev_active())
 		return true;
 
 	return false;
