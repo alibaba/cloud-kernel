@@ -1022,6 +1022,7 @@ bool is_swiotlb_active(void)
 	 */
 	return io_tlb_end != 0;
 }
+EXPORT_SYMBOL(is_swiotlb_active);
 
 void *swiotlb_alloc(struct device *dev, size_t size, dma_addr_t *dma_handle,
 		gfp_t gfp, unsigned long attrs)

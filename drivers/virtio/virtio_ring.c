@@ -1047,8 +1047,12 @@ size_t virtio_max_dma_size(struct virtio_device *vdev)
 {
 	size_t max_segment_size = SIZE_MAX;
 
-	if (vring_use_dma_api(vdev))
-		max_segment_size = dma_max_mapping_size(&vdev->dev);
+	if (vring_use_dma_api(vdev)) {
+		if (is_swiotlb_active())
+			max_segment_size = swiotlb_max_mapping_size(&vdev->dev);
+		else
+			max_segment_size = dma_max_mapping_size(&vdev->dev);
+	}
 
 	return max_segment_size;
 }
