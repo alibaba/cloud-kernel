@@ -1156,6 +1156,30 @@ static struct file_system_type virtio_fs_type = {
 	.kill_sb	= virtio_kill_sb,
 };
 
+/* Accept 'virtio_fs' as well to be compatible with old kangaroo runtime */
+static struct file_system_type comp_fs_type = {
+	.owner		= THIS_MODULE,
+	.name		= "virtio_fs",
+	.mount		= virtio_fs_mount,
+	.kill_sb	= virtio_kill_sb,
+};
+MODULE_ALIAS_FS("virtio_fs");
+MODULE_ALIAS("virtio_fs");
+
+static inline void register_as_virtio_fs(void)
+{
+	int err = register_filesystem(&comp_fs_type);
+
+	if (err)
+		pr_warn("virtiofs: Unable to register as virtio_fs (%d)\n",
+			err);
+}
+
+static inline void unregister_as_virtio_fs(void)
+{
+	unregister_filesystem(&comp_fs_type);
+}
+
 static int __init virtio_fs_init(void)
 {
 	int ret;
@@ -1164,8 +1188,10 @@ static int __init virtio_fs_init(void)
 	if (ret < 0)
 		return ret;
 
+	register_as_virtio_fs();
 	ret = register_filesystem(&virtio_fs_type);
 	if (ret < 0) {
+		unregister_as_virtio_fs();
 		unregister_virtio_driver(&virtio_fs_driver);
 		return ret;
 	}
@@ -1176,6 +1202,7 @@ module_init(virtio_fs_init);
 
 static void __exit virtio_fs_exit(void)
 {
+	unregister_as_virtio_fs();
 	unregister_filesystem(&virtio_fs_type);
 	unregister_virtio_driver(&virtio_fs_driver);
 }
