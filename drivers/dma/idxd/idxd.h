@@ -194,7 +194,7 @@ struct idxd_device {
 
 	spinlock_t dev_lock;	/* spinlock for device */
 	struct completion *cmd_done;
-	struct idxd_group *groups;
+	struct idxd_group **groups;
 	struct idxd_wq **wqs;
 	struct idxd_engine **engines;
 
@@ -261,6 +261,7 @@ extern struct device_type dsa_device_type;
 extern struct device_type iax_device_type;
 extern struct device_type idxd_wq_device_type;
 extern struct device_type idxd_engine_device_type;
+extern struct device_type idxd_group_device_type;
 
 static inline bool is_dsa_dev(struct device *dev)
 {
