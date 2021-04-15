@@ -4904,7 +4904,7 @@ void memcg_lat_stat_start(u64 *start)
 {
 	if (!static_branch_unlikely(&cgroup_memory_nosli) &&
 	    !mem_cgroup_disabled())
-		*start = ktime_get_ns();
+		*start = sched_clock();
 	else
 		*start = 0;
 }
@@ -4913,7 +4913,7 @@ void memcg_lat_stat_end(enum mem_lat_stat_item sidx, u64 start)
 {
 	struct mem_cgroup *memcg, *iter;
 	enum mem_lat_count_t cidx;
-	u64 duration;
+	u64 duration, end;
 
 	if (static_branch_unlikely(&cgroup_memory_nosli) ||
 	    mem_cgroup_disabled())
@@ -4922,7 +4922,12 @@ void memcg_lat_stat_end(enum mem_lat_stat_item sidx, u64 start)
 	if (start == 0)
 		return;
 
-	duration = ktime_get_ns() - start;
+	end = sched_clock();
+	/* Could be on different cpus, judge it in case */
+	if (unlikely(end <= start))
+		return;
+
+	duration = end - start;
 	cidx = get_mem_lat_count_idx(duration);
 	memcg = get_mem_cgroup_from_mm(current->mm);
 	for (iter = memcg; iter; iter = parent_mem_cgroup(iter)) {
