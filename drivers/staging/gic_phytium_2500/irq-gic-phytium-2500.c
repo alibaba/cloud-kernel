@@ -22,6 +22,7 @@
 #include <linux/acpi.h>
 #include <linux/cpu.h>
 #include <linux/cpu_pm.h>
+#include <linux/crash_dump.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/irqdomain.h>
@@ -799,10 +800,6 @@ static void gic_cpu_init(void)
 		}
 	}
 
-	/* Give LPIs a spin */
-	if (gic_dist_supports_lpis())
-		phytium_its_cpu_init();
-
 	/* initialise system registers */
 	gic_cpu_sys_reg_init();
 }
@@ -815,6 +812,10 @@ static void gic_cpu_init(void)
 static int gic_starting_cpu(unsigned int cpu)
 {
 	gic_cpu_init();
+
+	if (gic_dist_supports_lpis())
+		phytium_its_cpu_init();
+
 	return 0;
 }
 
@@ -922,6 +923,21 @@ static int gic_cpumask_select(struct irq_data *d, const struct cpumask *mask_val
 	if ((cpu > cpus) && (cpu < (cpus + skt_cpu_cnt[irq_skt])))
 		cpus = cpu;
 
+	if (is_kdump_kernel()) {
+		skt = (cpu_logical_map(cpu) >> 16) & 0xff;
+		if (irq_skt == skt)
+			return cpu;
+
+		for (i = 0; i < nr_cpu_ids; i++) {
+			skt = (cpu_logical_map(i) >> 16) & 0xff;
+			if ((skt >= 0) && (skt < MAX_MARS3_SOC_COUNT)) {
+				if (irq_skt == skt)
+					return i;
+			} else if (skt != 0xff) {
+				pr_err("socket address: %d is out of range.", skt);
+			}
+		}
+	}
 	return cpus;
 }
 
@@ -1276,13 +1292,15 @@ static int __init gic_init_bases(void __iomem *dist_base,
 
 	gic_update_vlpi_properties();
 
-	if (gic_dist_supports_lpis())
-		phytium_its_init(handle, &gic_data.rdists, gic_data.domain);
-
 	gic_smp_init();
 	gic_dist_init();
 	gic_cpu_init();
 	gic_cpu_pm_init();
+
+	if (gic_dist_supports_lpis()) {
+		phytium_its_init(handle, &gic_data.rdists, gic_data.domain);
+		phytium_its_cpu_init();
+	}
 
 	return 0;
 
@@ -1441,7 +1459,6 @@ static int __init gic_of_init(struct device_node *node, struct device_node *pare
 	}
 
 	if (of_address_to_resource(node, 0, &res)) {
-		printk("Error: No GIC Distributor in FDT\n");
 		goto out_unmap_dist;
 	}
 
@@ -1802,6 +1819,10 @@ gic_acpi_init(struct acpi_subtable_header *header, const unsigned long end)
 	mars3_gic_dists[0].dist_base = acpi_data.dist_base;
 
 	mars3_sockets_bitmap = gic_mars3_sockets_bitmap();
+	if (is_kdump_kernel()) {
+		mars3_sockets_bitmap = 0x3;
+	}
+
 	if (mars3_sockets_bitmap == 0) {
 		mars3_sockets_bitmap = 0x1;
 		pr_err("No socket, please check cpus MPIDR_AFFINITY_LEVEL!");
