@@ -21,7 +21,6 @@
 #include <linux/eventfd.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/uio.h>
 
 DEFINE_PER_CPU(int, eventfd_wake_count);
 
@@ -210,32 +209,32 @@ int eventfd_ctx_remove_wait_queue(struct eventfd_ctx *ctx, wait_queue_entry_t *w
 }
 EXPORT_SYMBOL_GPL(eventfd_ctx_remove_wait_queue);
 
-static ssize_t eventfd_read(struct kiocb *iocb, struct iov_iter *to)
+static ssize_t eventfd_read(struct file *file, char __user *buf, size_t count,
+			    loff_t *ppos)
 {
-	struct file *file = iocb->ki_filp;
 	struct eventfd_ctx *ctx = file->private_data;
+	ssize_t res;
 	__u64 ucnt = 0;
 	DECLARE_WAITQUEUE(wait, current);
 
-	if (iov_iter_count(to) < sizeof(ucnt))
+	if (count < sizeof(ucnt))
 		return -EINVAL;
+
 	spin_lock_irq(&ctx->wqh.lock);
-	if (!ctx->count) {
-		if ((file->f_flags & O_NONBLOCK) ||
-		    (iocb->ki_flags & IOCB_NOWAIT)) {
-			spin_unlock_irq(&ctx->wqh.lock);
-			return -EAGAIN;
-		}
+	res = -EAGAIN;
+	if (ctx->count > 0)
+		res = sizeof(ucnt);
+	else if (!(file->f_flags & O_NONBLOCK)) {
 		__add_wait_queue(&ctx->wqh, &wait);
 		for (;;) {
 			set_current_state(TASK_INTERRUPTIBLE);
-			if (ctx->count)
+			if (ctx->count > 0) {
+				res = sizeof(ucnt);
 				break;
+			}
 			if (signal_pending(current)) {
-				__remove_wait_queue(&ctx->wqh, &wait);
-				__set_current_state(TASK_RUNNING);
-				spin_unlock_irq(&ctx->wqh.lock);
-				return -ERESTARTSYS;
+				res = -ERESTARTSYS;
+				break;
 			}
 			spin_unlock_irq(&ctx->wqh.lock);
 			schedule();
@@ -244,14 +243,17 @@ static ssize_t eventfd_read(struct kiocb *iocb, struct iov_iter *to)
 		__remove_wait_queue(&ctx->wqh, &wait);
 		__set_current_state(TASK_RUNNING);
 	}
-	eventfd_ctx_do_read(ctx, &ucnt);
-	if (waitqueue_active(&ctx->wqh))
-		wake_up_locked_poll(&ctx->wqh, EPOLLOUT);
+	if (likely(res > 0)) {
+		eventfd_ctx_do_read(ctx, &ucnt);
+		if (waitqueue_active(&ctx->wqh))
+			wake_up_locked_poll(&ctx->wqh, EPOLLOUT);
+	}
 	spin_unlock_irq(&ctx->wqh.lock);
-	if (unlikely(copy_to_iter(&ucnt, sizeof(ucnt), to) != sizeof(ucnt)))
+
+	if (res > 0 && put_user(ucnt, (__u64 __user *)buf))
 		return -EFAULT;
 
-	return sizeof(ucnt);
+	return res;
 }
 
 static ssize_t eventfd_write(struct file *file, const char __user *buf, size_t count,
@@ -319,7 +321,7 @@ static const struct file_operations eventfd_fops = {
 #endif
 	.release	= eventfd_release,
 	.poll		= eventfd_poll,
-	.read_iter	= eventfd_read,
+	.read		= eventfd_read,
 	.write		= eventfd_write,
 	.llseek		= noop_llseek,
 };
@@ -396,7 +398,6 @@ EXPORT_SYMBOL_GPL(eventfd_ctx_fileget);
 static int do_eventfd(unsigned int count, int flags)
 {
 	struct eventfd_ctx *ctx;
-	struct file *file;
 	int fd;
 
 	/* Check the EFD_* constants for consistency.  */
@@ -415,24 +416,11 @@ static int do_eventfd(unsigned int count, int flags)
 	ctx->count = count;
 	ctx->flags = flags;
 
-	flags &= EFD_SHARED_FCNTL_FLAGS;
-	flags |= O_RDWR;
-	fd = get_unused_fd_flags(flags);
+	fd = anon_inode_getfd("[eventfd]", &eventfd_fops, ctx,
+			      O_RDWR | (flags & EFD_SHARED_FCNTL_FLAGS));
 	if (fd < 0)
-		goto err;
+		eventfd_free_ctx(ctx);
 
-	file = anon_inode_getfile("[eventfd]", &eventfd_fops, ctx, flags);
-	if (IS_ERR(file)) {
-		put_unused_fd(fd);
-		fd = PTR_ERR(file);
-		goto err;
-	}
-
-	file->f_mode |= FMODE_NOWAIT;
-	fd_install(fd, file);
-	return fd;
-err:
-	eventfd_free_ctx(ctx);
 	return fd;
 }
 
