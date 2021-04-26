@@ -8191,7 +8191,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		a3 &= 0xFFFFFFFF;
 	}
 
-	if (kvm_x86_ops.get_cpl(vcpu) != 0) {
+	if (kvm_x86_ops.get_cpl(vcpu) != 0 && nr != KVM_HC_VM_ATTESTATION) {
 		ret = -KVM_EPERM;
 		goto out;
 	}
@@ -8227,6 +8227,11 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 
 		kvm_sched_yield(vcpu->kvm, a0);
 		ret = 0;
+		break;
+	case KVM_HC_VM_ATTESTATION:
+		ret = -KVM_ENOSYS;
+		if (kvm_x86_ops.vm_attestation)
+			ret = kvm_x86_ops.vm_attestation(vcpu->kvm, a0, a1);
 		break;
 	default:
 		ret = -KVM_ENOSYS;
