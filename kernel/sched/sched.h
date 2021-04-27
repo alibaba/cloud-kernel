@@ -1006,6 +1006,7 @@ struct rq {
 	unsigned int		nr_high_running;
 	unsigned int		nr_under_running;
 	unsigned int		nr_expel_immune;
+	bool			skip_make_up;
 	bool			smt_expeller;
 	bool			smt_expellee;
 	bool			on_expel;
