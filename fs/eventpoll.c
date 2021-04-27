@@ -702,10 +702,6 @@ static __poll_t ep_scan_ready_list(struct eventpoll *ep,
 	 * in a lockless way.
 	 */
 	write_lock_irq(&ep->lock);
-#ifdef CONFIG_ARM64
-	/* workaround for ev lost on Ampere */
-	smp_mb();
-#endif
 	list_splice_init(&ep->rdllist, &txlist);
 	WRITE_ONCE(ep->ovflist, NULL);
 	write_unlock_irq(&ep->lock);
@@ -716,10 +712,6 @@ static __poll_t ep_scan_ready_list(struct eventpoll *ep,
 	res = (*sproc)(ep, &txlist, priv);
 
 	write_lock_irq(&ep->lock);
-#ifdef CONFIG_ARM64
-	/* workaround for ev lost on Ampere */
-	smp_mb();
-#endif
 	/*
 	 * During the time we spent inside the "sproc" callback, some
 	 * other events might have been queued by the poll callback.
