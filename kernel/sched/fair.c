@@ -927,6 +927,31 @@ id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 }
 
 static __always_inline void
+id_make_up_nr_running(struct task_group *tg, struct rq *rq, long delta)
+{
+	struct sched_entity *se = tg->se[cpu_of(rq)];
+
+	/*
+	 * The only case we should skip make up is
+	 * when enqueue_entity() triggered throttle.
+	 *
+	 * At that point the new arrived task has
+	 * not yet been accounted into rq, and will
+	 * not until unthrottled, so just skip the
+	 * make up and let unthrottle process do the
+	 * job.
+	 */
+	if (rq->skip_make_up || !delta)
+		return;
+
+	if (is_highclass(se))
+		rq->nr_high_running += delta;
+
+	if (is_underclass(se))
+		rq->nr_under_running += delta;
+}
+
+static __always_inline void
 id_update_nr_running(struct task_group *tg, struct rq *rq, long delta)
 {
 	struct sched_entity *se;
@@ -969,13 +994,18 @@ update_nr_expel_immune(struct cfs_rq *cfs_rq, struct sched_entity *se,
 	}
 }
 
+static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq);
+
 static inline void
 hierarchy_update_nr_expel_immune(struct sched_entity *se, long delta)
 {
 	bool immune = true;
 
-	for_each_sched_entity(se)
+	for_each_sched_entity(se) {
 		update_nr_expel_immune(cfs_rq_of(se), se, &immune, delta);
+		if (cfs_rq_throttled(cfs_rq_of(se)))
+			break;
+	}
 }
 #else
 static inline u64 get_expel_spread(struct cfs_rq *cfs_rq)
@@ -1006,6 +1036,7 @@ static void update_min_vruntime(struct cfs_rq *cfs_rq);
 static void update_curr(struct cfs_rq *cfs_rq);
 static inline u64
 id_min_vruntime(struct cfs_rq *cfs_rq, struct sched_entity *se);
+static inline int throttled_hierarchy(struct cfs_rq *cfs_rq);
 
 static void __update_identity(struct task_group *tg, int flags)
 {
@@ -1016,7 +1047,7 @@ static void __update_identity(struct task_group *tg, int flags)
 
 	for_each_online_cpu(cpu) {
 		bool on_rq;
-		unsigned int delta, ei_delta;
+		long delta, ei_delta;
 		struct cfs_rq *cfs_rq;
 		struct sched_entity *se;
 		struct rq *rq = cpu_rq(cpu);
@@ -1034,7 +1065,8 @@ static void __update_identity(struct task_group *tg, int flags)
 			if (se != cfs_rq->curr)
 				__dequeue_entity(cfs_rq, se);
 			hierarchy_update_nr_expel_immune(se, -ei_delta);
-			id_update_nr_running(tg, rq, -delta);
+			if (!throttled_hierarchy(cfs_rq))
+				id_update_nr_running(tg, rq, -delta);
 
 			update_curr(cfs_rq);
 			se->vruntime -= id_min_vruntime(cfs_rq, se);
@@ -1048,7 +1080,8 @@ static void __update_identity(struct task_group *tg, int flags)
 			if (se != cfs_rq->curr)
 				__enqueue_entity(cfs_rq, se);
 			hierarchy_update_nr_expel_immune(se, ei_delta);
-			id_update_nr_running(tg, rq, delta);
+			if (!throttled_hierarchy(cfs_rq))
+				id_update_nr_running(tg, rq, delta);
 
 			update_min_vruntime(cfs_rq);
 		}
@@ -1694,6 +1727,11 @@ static inline int
 id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
 {
 	return 0;
+}
+
+static __always_inline
+void id_make_up_nr_running(struct task_group *tg, struct rq *rq, long delta)
+{
 }
 
 static __always_inline void
@@ -5782,6 +5820,9 @@ static int tg_unthrottle_up(struct task_group *tg, void *data)
 		/* Add cfs_rq with already running entity in the list */
 		if (cfs_rq->nr_running >= 1)
 			list_add_leaf_cfs_rq(cfs_rq);
+#ifdef CONFIG_GROUP_IDENTITY
+		id_make_up_nr_running(tg, rq, cfs_rq->nr_tasks);
+#endif
 	}
 
 	return 0;
@@ -5796,6 +5837,9 @@ static int tg_throttle_down(struct task_group *tg, void *data)
 	if (!cfs_rq->throttle_count) {
 		cfs_rq->throttled_clock_task = rq_clock_task(rq);
 		list_del_leaf_cfs_rq(cfs_rq);
+#ifdef CONFIG_GROUP_IDENTITY
+		id_make_up_nr_running(tg, rq, -(cfs_rq->nr_tasks));
+#endif
 	}
 	cfs_rq->throttle_count++;
 
@@ -5837,10 +5881,8 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 			dequeue = 0;
 	}
 
-	if (!se) {
+	if (!se)
 		sub_nr_running(rq, task_delta);
-		id_update_nr_running(tg, rq, -task_delta);
-	}
 
 	cfs_rq->throttled = 1;
 	cfs_rq->throttled_clock = rq_clock(rq);
@@ -5916,10 +5958,9 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	SCHED_WARN_ON(rq->tmp_alone_branch != &rq->leaf_cfs_rq_list);
 
-	if (!se) {
+	if (!se)
 		add_nr_running(rq, task_delta);
-		id_update_nr_running(tg, rq, task_delta);
-	}
+
 	/* Determine whether we need to wake up potentially idle CPU: */
 	if (rq->curr == rq->idle && rq->cfs.nr_running)
 		resched_curr(rq);
@@ -6172,8 +6213,15 @@ static void check_enqueue_throttle(struct cfs_rq *cfs_rq)
 
 	/* update runtime allocation */
 	account_cfs_rq_runtime(cfs_rq, 0);
-	if (cfs_rq->runtime_remaining <= 0)
+	if (cfs_rq->runtime_remaining <= 0) {
+#ifdef CONFIG_GROUP_IDENTITY
+		rq_of(cfs_rq)->skip_make_up = true;
+#endif
 		throttle_cfs_rq(cfs_rq);
+#ifdef CONFIG_GROUP_IDENTITY
+		rq_of(cfs_rq)->skip_make_up = false;
+#endif
+	}
 }
 
 static void sync_throttle(struct task_group *tg, int cpu)
