@@ -247,7 +247,7 @@ static int poll_ctrl_cpu_down_prepare(unsigned int cpu)
 	poll_ctl = this_cpu_ptr(&pv_poll_ctl);
 
 	poll_ctl->poll_ctl = cpu_to_le64(0);
-	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_POLLCONTROL_SET, -1, &res);
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_POLLCONTROL_SET, -1UL, &res);
 	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
 		pr_warn("Failed to clear poll control base\n");
 
