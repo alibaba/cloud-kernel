@@ -1116,6 +1116,7 @@ static void *jbd2_seq_stats_start(struct seq_file *seq, loff_t *pos)
 
 static void *jbd2_seq_stats_next(struct seq_file *seq, void *v, loff_t *pos)
 {
+	(*pos)++;
 	return NULL;
 }
 
