@@ -8878,7 +8878,6 @@ void memcg_meminfo(struct mem_cgroup *memcg,
 	unsigned long pagecache, memcg_wmark, swap_size;
 	int i;
 
-	ext->cached = memcg_page_state(memcg, NR_FILE_PAGES);
 	ext->file_dirty = memcg_page_state(memcg, NR_FILE_DIRTY);
 	ext->writeback = memcg_page_state(memcg, NR_WRITEBACK);
 	ext->anon_mapped = memcg_page_state(memcg, NR_ANON_MAPPED);
@@ -8942,5 +8941,7 @@ void memcg_meminfo(struct mem_cgroup *memcg,
 	ext->available = info->freeram + pagecache;
 	ext->available += ext->slab_reclaimable -
 		min(ext->slab_reclaimable / 2, memcg_wmark);
+	ext->cached = usage - ext->lrupages[LRU_INACTIVE_ANON] -
+				  ext->lrupages[LRU_ACTIVE_ANON];
 }
 #endif
