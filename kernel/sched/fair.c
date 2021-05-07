@@ -926,7 +926,7 @@ id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 	return avg_idle >= sysctl_sched_idle_saver_wmark;
 }
 
-static __always_inline void
+static noinline void
 id_make_up_nr_running(struct task_group *tg, struct rq *rq, long delta)
 {
 	struct sched_entity *se = tg->se[cpu_of(rq)];
@@ -1046,7 +1046,7 @@ static void __update_identity(struct task_group *tg, int flags)
 	tg->id_flags = flags;
 
 	for_each_online_cpu(cpu) {
-		bool on_rq;
+		bool on_rq, throttled;
 		long delta, ei_delta;
 		struct cfs_rq *cfs_rq;
 		struct sched_entity *se;
@@ -1060,12 +1060,13 @@ static void __update_identity(struct task_group *tg, int flags)
 		delta = se->my_q->nr_tasks;
 		ei_delta = get_h_nr_expel_immune(se);
 		on_rq = se->on_rq;
+		throttled = throttled_hierarchy(cfs_rq);
 
 		if (on_rq) {
 			if (se != cfs_rq->curr)
 				__dequeue_entity(cfs_rq, se);
 			hierarchy_update_nr_expel_immune(se, -ei_delta);
-			if (!throttled_hierarchy(cfs_rq))
+			if (!throttled)
 				id_update_nr_running(tg, rq, -delta);
 
 			update_curr(cfs_rq);
@@ -1080,7 +1081,7 @@ static void __update_identity(struct task_group *tg, int flags)
 			if (se != cfs_rq->curr)
 				__enqueue_entity(cfs_rq, se);
 			hierarchy_update_nr_expel_immune(se, ei_delta);
-			if (!throttled_hierarchy(cfs_rq))
+			if (!throttled)
 				id_update_nr_running(tg, rq, delta);
 
 			update_min_vruntime(cfs_rq);
@@ -1729,8 +1730,8 @@ id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
 	return 0;
 }
 
-static __always_inline
-void id_make_up_nr_running(struct task_group *tg, struct rq *rq, long delta)
+static inline void
+id_make_up_nr_running(struct task_group *tg, struct rq *rq, long delta)
 {
 }
 
@@ -4368,8 +4369,6 @@ static long calc_group_runnable(struct cfs_rq *cfs_rq, long shares)
 	return clamp_t(long, runnable, MIN_SHARES, shares);
 }
 #endif /* CONFIG_SMP */
-
-static inline int throttled_hierarchy(struct cfs_rq *cfs_rq);
 
 /*
  * Recomputes the group entity based on the current state of its group
