@@ -360,6 +360,7 @@ struct sq_thread_percpu {
 	struct list_head ctx_new_list;
 	struct task_struct *sqo_thread;
 	unsigned int sq_thread_idle;
+	bool idle_mode_us;
 };
 
 static struct sq_thread_percpu __percpu *percpu_threads;
@@ -6744,12 +6745,34 @@ static void io_sqd_update_thread_idle(struct sq_thread_percpu *t)
 	struct io_ring_ctx *ctx;
 	unsigned int sq_thread_idle = 0;
 
+	t->idle_mode_us = false;
 	list_for_each_entry(ctx, &t->ctx_list, sqd_list) {
-		if (sq_thread_idle < ctx->sq_thread_idle)
-			sq_thread_idle = ctx->sq_thread_idle;
+		bool idle_mode_us = ctx->flags & IORING_SETUP_IDLE_US;
+		unsigned int tmp_idle = idle_mode_us ? ctx->sq_thread_idle :
+			jiffies_to_usecs(ctx->sq_thread_idle);
+
+		if (idle_mode_us && !t->idle_mode_us)
+			t->idle_mode_us = true;
+
+		if (sq_thread_idle < tmp_idle)
+			sq_thread_idle = tmp_idle;
 	}
 
+	if (!t->idle_mode_us)
+		sq_thread_idle = usecs_to_jiffies(sq_thread_idle);
 	t->sq_thread_idle = sq_thread_idle;
+}
+
+static inline u64 io_current_time(bool idle_mode_us)
+{
+	return idle_mode_us ? (ktime_get_ns() >> 10) : get_jiffies_64();
+}
+
+static inline bool io_time_after(bool idle_mode_us, u64 timeout)
+{
+	u64 now = io_current_time(idle_mode_us);
+
+	return time_after64(now, timeout);
 }
 
 static void io_sqd_init_new(struct sq_thread_percpu *t)
@@ -6774,7 +6797,7 @@ static int io_sq_thread_percpu(void *data)
 	const struct cred *old_cred = NULL;
 	mm_segment_t old_fs;
 	DEFINE_WAIT(wait);
-	unsigned long timeout = 0;
+	u64 timeout = 0;
 
 	task_lock(current);
 	current->files = NULL;
@@ -6805,7 +6828,7 @@ static int io_sq_thread_percpu(void *data)
 
 		if (unlikely(!list_empty(&t->ctx_new_list))) {
 			io_sqd_init_new(t);
-			timeout = jiffies + t->sq_thread_idle;
+			timeout = io_current_time(t->idle_mode_us) + t->sq_thread_idle;
 		}
 
 		sqt_spin = false;
@@ -6821,7 +6844,7 @@ static int io_sq_thread_percpu(void *data)
 				sqt_spin = true;
 		}
 
-		if (sqt_spin || !time_after(jiffies, timeout)) {
+		if (sqt_spin || !io_time_after(t->idle_mode_us, timeout)) {
 			if (current->task_works)
 				task_work_run();
 			cond_resched();
@@ -6829,7 +6852,7 @@ static int io_sq_thread_percpu(void *data)
 			 * only drom mm while we're busy looping in sq_thred_idle periods.
 			 */
 			if (sqt_spin)
-				timeout = jiffies + t->sq_thread_idle;
+				timeout = io_current_time(t->idle_mode_us) + t->sq_thread_idle;
 			else
 				io_sq_thread_drop_mm_files(ctx);
 			continue;
@@ -6857,7 +6880,7 @@ static int io_sq_thread_percpu(void *data)
 			io_ring_clear_wakeup_flag(ctx);
 
 		finish_wait(&t->sqo_wait, &wait);
-		timeout = jiffies + t->sq_thread_idle;
+		timeout = io_current_time(t->idle_mode_us) + t->sq_thread_idle;
 	}
 
 	if (current->task_works)
@@ -7752,6 +7775,7 @@ static void destroy_sq_thread_percpu(struct io_ring_ctx *ctx, int cpu)
 	}
 }
 
+#define DEFAULT_SQ_IDLE_US 10
 
 static int io_sq_offload_start(struct io_ring_ctx *ctx,
 			       struct io_uring_params *p)
@@ -7766,9 +7790,22 @@ static int io_sq_offload_start(struct io_ring_ctx *ctx,
 		if (!capable(CAP_SYS_ADMIN))
 			goto err;
 
-		ctx->sq_thread_idle = msecs_to_jiffies(p->sq_thread_idle);
-		if (!ctx->sq_thread_idle)
-			ctx->sq_thread_idle = HZ;
+		if ((ctx->flags & IORING_SETUP_IDLE_US) &&
+		   !(ctx->flags & IORING_SETUP_SQPOLL_PERCPU)) {
+			ret = -EINVAL;
+			goto err;
+		}
+
+		/*
+		 * for ms mode: ctx->sq_thread_idle is jiffies
+		 * for us mode: ctx->sq_thread_idle is time in terms of microsecond
+		 */
+		if (ctx->flags & IORING_SETUP_IDLE_US)
+			ctx->sq_thread_idle = p->sq_thread_idle ?
+				p->sq_thread_idle : DEFAULT_SQ_IDLE_US;
+		else
+			ctx->sq_thread_idle = p->sq_thread_idle ?
+				msecs_to_jiffies(p->sq_thread_idle) : HZ;
 
 		if (p->flags & IORING_SETUP_SQ_AFF) {
 			int cpu = p->sq_thread_cpu;
@@ -7794,8 +7831,9 @@ static int io_sq_offload_start(struct io_ring_ctx *ctx,
 			goto err;
 		}
 		wake_up_process(ctx->sqo_thread);
-	} else if (p->flags & IORING_SETUP_SQ_AFF) {
-		/* Can't have SQ_AFF without SQPOLL */
+	} else if (p->flags & (IORING_SETUP_SQ_AFF | IORING_SETUP_IDLE_US |
+			       IORING_SETUP_SQPOLL_PERCPU)) {
+		/* Can't have SQ_AFF or IDLE_US or SQPOLL_PERCPU without SQPOLL */
 		ret = -EINVAL;
 		goto err;
 	}
@@ -8943,7 +8981,7 @@ static long io_uring_setup(u32 entries, struct io_uring_params __user *params)
 	if (p.flags & ~(IORING_SETUP_IOPOLL | IORING_SETUP_SQPOLL |
 			IORING_SETUP_SQ_AFF | IORING_SETUP_CQSIZE |
 			IORING_SETUP_CLAMP | IORING_SETUP_ATTACH_WQ |
-			IORING_SETUP_SQPOLL_PERCPU))
+			IORING_SETUP_SQPOLL_PERCPU | IORING_SETUP_IDLE_US))
 		return -EINVAL;
 
 	return  io_uring_create(entries, &p, params);
