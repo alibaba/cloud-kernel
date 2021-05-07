@@ -2329,10 +2329,11 @@ static void io_iopoll_req_issued(struct io_kiocb *req, bool in_async)
 
 	/*
 	 * If IORING_SETUP_SQPOLL is enabled, sqes are either handled in sq thread
-	 * task context or in io worker task context. If current task context is
-	 * sq thread, we don't need to check whether should wake up sq thread.
+	 * task context or in io worker task context or in original context. If
+	 * current task context is sq thread, we don't need to check whether should
+	 * wake up sq thread.
 	 */
-	if (in_async && (ctx->flags & IORING_SETUP_SQPOLL) &&
+	if ((ctx->flags & IORING_SETUP_SQPOLL) && (current != ctx->sqo_thread) &&
 	    wq_has_sleeper(ctx->sqo_wait))
 		wake_up(ctx->sqo_wait);
 }
@@ -4580,6 +4581,7 @@ static int io_req_task_work_add(struct io_kiocb *req, struct callback_head *cb,
 	struct io_ring_ctx *ctx = req->ctx;
 	enum task_work_notify_mode notify;
 	int ret;
+	bool sqpoll_mode, submit_on_idle;
 
 	/*
 	 * SQPOLL kernel thread doesn't need notification, just a wakeup. For
@@ -4588,7 +4590,9 @@ static int io_req_task_work_add(struct io_kiocb *req, struct callback_head *cb,
 	 * will do the job.
 	 */
 	notify = TWA_NONE;
-	if (!(ctx->flags & IORING_SETUP_SQPOLL) && twa_signal_ok)
+	sqpoll_mode = ctx->flags & IORING_SETUP_SQPOLL;
+	submit_on_idle = ctx->sqo_thread && (ctx->sqo_thread != req->task);
+	if ((!sqpoll_mode || submit_on_idle) && twa_signal_ok)
 		notify = TWA_SIGNAL;
 
 	ret = task_work_add(tsk, cb, notify);
@@ -8565,7 +8569,8 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	if (current->task_works)
 		task_work_run();
 
-	if (flags & ~(IORING_ENTER_GETEVENTS | IORING_ENTER_SQ_WAKEUP | IORING_ENTER_EXT_ARG))
+	if (flags & ~(IORING_ENTER_GETEVENTS | IORING_ENTER_SQ_WAKEUP |
+		      IORING_ENTER_EXT_ARG | IORING_ENTER_SQ_SUBMIT_ON_IDLE))
 		return -EINVAL;
 
 	f = fdget(fd);
@@ -8590,8 +8595,19 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	if (ctx->flags & IORING_SETUP_SQPOLL) {
 		if (!list_empty_careful(&ctx->cq_overflow_list))
 			io_cqring_overflow_flush(ctx, false);
-		if (flags & IORING_ENTER_SQ_WAKEUP)
+		if (flags & IORING_ENTER_SQ_WAKEUP) {
 			wake_up(ctx->sqo_wait);
+			if ((flags & IORING_ENTER_SQ_SUBMIT_ON_IDLE) &&
+			    same_thread_group(ctx->sqo_thread, current)) {
+				bool has_lock;
+
+				has_lock = mutex_trylock(&ctx->uring_lock);
+				if (has_lock) {
+					io_submit_sqes(ctx, min(to_submit, 8U), f.file, fd);
+					mutex_unlock(&ctx->uring_lock);
+				}
+			}
+		}
 		submitted = to_submit;
 	} else if (to_submit) {
 		mutex_lock(&ctx->uring_lock);
