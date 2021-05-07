@@ -6840,6 +6840,9 @@ static int io_sq_thread_percpu(void *data)
 
 		needs_sched = true;
 		prepare_to_wait(&t->sqo_wait, &wait, TASK_INTERRUPTIBLE);
+		list_for_each_entry(ctx, &t->ctx_list, sqd_list)
+			io_ring_set_wakeup_flag(ctx);
+
 		list_for_each_entry(ctx, &t->ctx_list, sqd_list) {
 			if ((ctx->flags & IORING_SETUP_IOPOLL) &&
 			    !list_empty_careful(&ctx->poll_list)) {
@@ -6851,13 +6854,11 @@ static int io_sq_thread_percpu(void *data)
 				break;
 			}
 		}
-		if (needs_sched) {
-			list_for_each_entry(ctx, &t->ctx_list, sqd_list)
-				io_ring_set_wakeup_flag(ctx);
+		if (needs_sched)
 			schedule();
-			list_for_each_entry(ctx, &t->ctx_list, sqd_list)
-				io_ring_clear_wakeup_flag(ctx);
-		}
+		list_for_each_entry(ctx, &t->ctx_list, sqd_list)
+			io_ring_clear_wakeup_flag(ctx);
+
 		finish_wait(&t->sqo_wait, &wait);
 		timeout = jiffies + t->sq_thread_idle;
 	}
