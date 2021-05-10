@@ -4370,6 +4370,8 @@ static long calc_group_runnable(struct cfs_rq *cfs_rq, long shares)
 }
 #endif /* CONFIG_SMP */
 
+static inline int throttled_hierarchy(struct cfs_rq *cfs_rq);
+
 /*
  * Recomputes the group entity based on the current state of its group
  * runqueue.
