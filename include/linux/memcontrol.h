@@ -976,7 +976,8 @@ static inline bool del_hugepage_from_queue(struct page *page)
 	unsigned long flags;
 	bool ret = false;
 
-	if (!memcg || !(PageTransHuge(head) && !PageHuge(head)))
+	if (!memcg || !(PageTransHuge(head) && !PageHuge(head)) ||
+	    PageKmemcg(page) || PageSlab(page))
 		return ret;
 
 	hr_queue = &memcg->nodeinfo[nid]->hugepage_reclaim_queue;
