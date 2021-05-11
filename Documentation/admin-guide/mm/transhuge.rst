@@ -467,11 +467,24 @@ disable
 
 If the mode is reclaim or swap, the new huge page will be add to a reclaim
 queue in mem_cgroup, and the queue would be scanned when memory reclaiming.
-The huge page which contains at least 1/32 zero pages would be split(estimate
-it by checking some discrete unsigned long values).
-
 The queue stat can be checked like this::
 
         cat /sys/fs/cgroup/memory/{memcg}/memory.thp_reclaim_stat
 
 Now, it only contains the queue length of each node.
+
+We also add a controller interface to set configs for thp reclaim::
+
+        /sys/fs/cgroup/memory/{memcg}/memory.thp_reclaim_ctrl
+
+threshold
+        means the huge page which contains at least threshold zero pages would
+        be split (estimate it by checking some discrete unsigned long values).
+        The default value of threshold is 16, and will inherit from it's parent.
+        The range of this value is (0, HPAGE_PMD_NR], which means the value must
+        be less than or equal to HPAGE_PMD_NR (512 in x86), and be greater than 0.
+        We can set reclaim threshold to be 8 by this::
+
+        echo "threshold 8" > memory.thp_reclaim_ctrl
+
+Only one of the configs mentioned above can be set at a time.

@@ -72,6 +72,7 @@
 #include <net/ip.h>
 #include "slab.h"
 #include <linux/proc_fs.h>
+#include <linux/parser.h>
 
 #include <linux/uaccess.h>
 
@@ -5835,6 +5836,57 @@ static int memcg_thp_reclaim_stat_show(struct seq_file *m, void *v)
 
 	return 0;
 }
+
+static inline char *strsep_s(char **s, const char *ct)
+{
+	char *p;
+
+	while ((p = strsep(s, ct))) {
+		if (*p)
+			return p;
+	}
+	return NULL;
+}
+
+static int memcg_thp_reclaim_ctrl_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	int thp_reclaim_threshold = READ_ONCE(memcg->thp_reclaim_threshold);
+
+	seq_printf(m, "threshold\t%d\n", thp_reclaim_threshold);
+
+	return 0;
+}
+
+static ssize_t memcg_thp_reclaim_ctrl_write(struct kernfs_open_file *of,
+					char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	int ret, threshold;
+	char *key, *value;
+
+	key = strsep_s(&buf, " \t\n");
+	if (!key)
+		return -EINVAL;
+
+	if (!strcmp(key, "threshold")) {
+		value = strsep_s(&buf, " \t\n");
+		if (!value)
+			return -EINVAL;
+
+		ret = kstrtouint(value, 0, &threshold);
+		if (ret)
+			return ret;
+
+		if (threshold > HPAGE_PMD_NR || threshold < 1)
+			return -EINVAL;
+
+		xchg(&memcg->thp_reclaim_threshold, threshold);
+	} else
+		return -EINVAL;
+
+	return nbytes;
+}
 #endif
 
 static struct cftype mem_cgroup_legacy_files[] = {
@@ -6113,6 +6165,11 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.name = "thp_reclaim_stat",
 		.seq_show = memcg_thp_reclaim_stat_show,
 	},
+	{
+		.name = "thp_reclaim_ctrl",
+		.seq_show = memcg_thp_reclaim_ctrl_show,
+		.write = memcg_thp_reclaim_ctrl_write,
+	},
 #endif
 	{ },	/* terminate */
 };
@@ -6302,6 +6359,7 @@ static bool __mem_cgroup_init(struct mem_cgroup *memcg)
 #endif
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	memcg->thp_reclaim = THP_RECLAIM_DISABLE;
+	memcg->thp_reclaim_threshold = THP_RECLAIM_THRESHOLD_DEFAULT;
 #endif
 	kidled_memcg_init(memcg);
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
@@ -6469,6 +6527,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 					    : 50;
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 		memcg->thp_reclaim = parent->thp_reclaim;
+		memcg->thp_reclaim_threshold = parent->thp_reclaim_threshold;
 #endif
 		kidled_memcg_inherit_parent_buckets(parent, memcg);
 	}

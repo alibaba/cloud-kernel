@@ -242,6 +242,8 @@ struct memcg_padding {
 #define THP_RECLAIM_ZSR		2
 
 #define THP_RECLAIM_MEMCG	3 /* For global configure*/
+
+#define THP_RECLAIM_THRESHOLD_DEFAULT	16
 #endif
 
 /*
@@ -402,6 +404,7 @@ struct mem_cgroup {
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	int thp_reclaim;
+	int thp_reclaim_threshold;
 #endif
 
 	ALI_HOTFIX_RESERVE(1)

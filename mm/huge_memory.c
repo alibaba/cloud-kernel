@@ -3211,7 +3211,7 @@ static inline bool is_zero_page(struct page *page)
  * We'll split the huge page iff it contains at least 1/32 zeros,
  * estimate it by checking some discrete unsigned long values.
  */
-static bool hugepage_estimate_zero(struct page *page)
+static bool hugepage_estimate_zero(struct page *page, int threshold)
 {
 	unsigned int i, maybe_zero_pages = 0, offset = 0;
 	void *addr;
@@ -3220,12 +3220,16 @@ static bool hugepage_estimate_zero(struct page *page)
 		addr = kmap(page);
 		if (unlikely((offset + 1) * BYTES_PER_LONG > PAGE_SIZE))
 			offset = 0;
-		if (*(const unsigned long *)(addr + offset) == 0UL)
-			maybe_zero_pages++;
+		if (*(const unsigned long *)(addr + offset) == 0UL) {
+			if (++maybe_zero_pages == threshold) {
+				kunmap(page);
+				return true;
+			}
+		}
 		kunmap(page);
 	}
 
-	return (maybe_zero_pages << 5) >= HPAGE_PMD_NR;
+	return false;
 }
 
 static bool replace_zero_pte(struct page *page, struct vm_area_struct *vma,
@@ -3429,7 +3433,7 @@ static unsigned long hugepage_reclaim_count(struct shrinker *shrink,
  * from lru list and locked.
  */
 static struct page *get_reclaim_hugepage(struct hugepage_reclaim *hr_queue,
-					 bool *empty, bool disable)
+				int threshold, bool *empty, bool disable)
 {
 	struct page *page = NULL, *reclaim_page = NULL;
 	unsigned long flags;
@@ -3450,7 +3454,7 @@ static struct page *get_reclaim_hugepage(struct hugepage_reclaim *hr_queue,
 				spin_unlock_irqrestore(&hr_queue->reclaim_queue_lock,
 						       flags);
 				if (hugepage_can_reclaim(page) &&
-				    hugepage_estimate_zero(page) &&
+				    hugepage_estimate_zero(page, threshold) &&
 				    !isolate_lru_page(page)) {
 					__mod_node_page_state(page_pgdat(page),
 							NR_ISOLATED_ANON,
@@ -3487,7 +3491,7 @@ static unsigned long hugepage_reclaim_scan(struct shrinker *shrink,
 	struct lruvec *lruvec = mem_cgroup_lruvec(sc->memcg, pgdat);
 	struct hugepage_reclaim *hr_queue = NULL;
 	struct page *page;
-	int thp_reclaim;
+	int thp_reclaim, threshold;
 	unsigned long nr_to_scan, nr_scanned;
 	unsigned long flags;
 	bool empty;
@@ -3507,6 +3511,7 @@ static unsigned long hugepage_reclaim_scan(struct shrinker *shrink,
 	if (!hr_queue)
 		return SHRINK_STOP;
 
+	threshold = READ_ONCE(sc->memcg->thp_reclaim_threshold);
 	thp_reclaim = READ_ONCE(global_thp_reclaim);
 	thp_reclaim = (thp_reclaim != THP_RECLAIM_MEMCG) ? thp_reclaim :
 			READ_ONCE(sc->memcg->thp_reclaim);
@@ -3518,8 +3523,8 @@ static unsigned long hugepage_reclaim_scan(struct shrinker *shrink,
 		LIST_HEAD(keep_list);
 
 		cond_resched();
-		page = get_reclaim_hugepage(hr_queue, &empty,
-				thp_reclaim == THP_RECLAIM_DISABLE);
+		page = get_reclaim_hugepage(hr_queue, threshold, &empty,
+					    thp_reclaim == THP_RECLAIM_DISABLE);
 		if (empty)
 			break;
 
