@@ -1096,10 +1096,24 @@ config ARCH_CPUIDLE_HALTPOLL
 config KVM_GUEST
 	bool "KVM Guest support"
 
+config PARAVIRT_SPINLOCKS
+	bool "Paravirtualization layer for spinlocks"
+	depends on PARAVIRT && SMP
+	help
+	  Paravirtualized spinlocks allow a pvops backend to replace the
+	  spinlock implementation with something virtualization-friendly
+	  (for example, block the virtual CPU rather than spinning).
+
+	  It has a minimal impact on native kernels and gives a nice performance
+	  benefit on paravirtualized KVM kernels.
+
+	  If you are unsure how to answer this question, answer Y.
+
 config PARAVIRT
 	bool "Enable paravirtualization code"
 	select ARCH_CPUIDLE_HALTPOLL
 	select KVM_GUEST
+	select PARAVIRT_SPINLOCKS
 	help
 	  This changes the kernel so it can modify itself when it is run
 	  under a hypervisor, potentially improving performance significantly
