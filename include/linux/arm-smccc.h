@@ -136,6 +136,18 @@
 			   ARM_SMCCC_OWNER_VENDOR_HYP,		\
 			   0xb1)
 
+#define ARM_SMCCC_HV_PV_QSPINLOCK_FEATURES			\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,			\
+			   ARM_SMCCC_SMC_64,			\
+			   ARM_SMCCC_OWNER_VENDOR_HYP,		\
+			   0xb2)
+
+#define ARM_SMCCC_HV_PV_QSPINLOCK_KICK_CPU			\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,			\
+			   ARM_SMCCC_SMC_64,			\
+			   ARM_SMCCC_OWNER_VENDOR_HYP,		\
+			   0xb3)
+
 /*
  * Return codes defined in ARM DEN 0070A
  * ARM DEN 0070A is now merged/consolidated into ARM DEN 0028 C
