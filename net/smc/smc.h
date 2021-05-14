@@ -292,4 +292,9 @@ static inline bool using_ipsec(struct smc_sock *smc)
 struct sock *smc_accept_dequeue(struct sock *parent, struct socket *new_sock);
 void smc_close_non_accepted(struct sock *sk);
 
+#ifdef CONFIG_SYSCTL
+int smc_sysctl_init(void);
+void smc_sysctl_exit(void);
+#endif
+
 #endif	/* __SMC_H */
