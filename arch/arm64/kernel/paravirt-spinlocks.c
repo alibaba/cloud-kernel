@@ -11,3 +11,8 @@ __visible bool __native_vcpu_is_preempted(int cpu)
 {
 	return false;
 }
+
+bool pv_is_native_spin_unlock(void)
+{
+	return false;
+}

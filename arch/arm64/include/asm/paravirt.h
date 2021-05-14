@@ -49,6 +49,8 @@ static inline bool pv_vcpu_is_preempted(int cpu)
 	return pv_ops.lock.vcpu_is_preempted(cpu);
 }
 
+bool pv_is_native_spin_unlock(void);
+void __init pv_qspinlock_init(void);
 static inline void pv_wait(u8 *ptr, u8 val)
 {
 	return pv_ops.qspinlock.wait(ptr, val);

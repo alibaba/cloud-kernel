@@ -24,6 +24,7 @@
 #include <asm/pvlock-abi.h>
 #include <asm/smp_plat.h>
 #include <asm/pvpoll-abi.h>
+#include <asm/qspinlock_paravirt.h>
 
 static bool has_pv_poll_control;
 static DEFINE_PER_CPU(struct pv_vcpu_poll_ctl, pv_poll_ctl);
@@ -31,6 +32,10 @@ struct static_key paravirt_steal_enabled;
 struct static_key paravirt_steal_rq_enabled;
 
 struct paravirt_patch_template pv_ops = {
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+	.qspinlock.queued_spin_lock_slowpath	= native_queued_spin_lock_slowpath,
+	.qspinlock.queued_spin_unlock		= native_queued_spin_unlock,
+#endif
 	.lock.vcpu_is_preempted		= __native_vcpu_is_preempted,
 };
 EXPORT_SYMBOL_GPL(pv_ops);
@@ -385,3 +390,80 @@ int __init pv_lock_init(void)
 
 	return 0;
 }
+
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+static bool has_kvm_qspinlock(void)
+{
+	struct arm_smccc_res res;
+
+	/* To detect the presence of PV lock support we require SMCCC 1.1+ */
+	if (arm_smccc_1_1_get_conduit() == SMCCC_CONDUIT_NONE)
+		return false;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
+			ARM_SMCCC_HV_PV_QSPINLOCK_FEATURES, &res);
+	if (res.a0 != SMCCC_RET_SUCCESS)
+		return false;
+
+	return true;
+}
+
+/* Kick a cpu by its cpuid. Used to wake up a halted vcpu */
+static void kvm_kick_cpu(int cpu)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_QSPINLOCK_KICK_CPU, cpu, &res);
+}
+
+static void kvm_wait(u8 *ptr, u8 val)
+{
+	unsigned long flags;
+
+	if (in_nmi())
+		return;
+
+	local_irq_save(flags);
+
+	if (READ_ONCE(*ptr) != val)
+		goto out;
+
+	dsb(sy);
+	wfi();
+
+out:
+	local_irq_restore(flags);
+}
+
+static bool pvqspinlock;
+
+static __init int parse_pvqspinlock(char *arg)
+{
+	pvqspinlock = true;
+	return 0;
+}
+early_param("pvqspinlock", parse_pvqspinlock);
+
+void __init pv_qspinlock_init(void)
+{
+	/* Don't use the PV qspinlock code if there is only 1 vCPU. */
+	if (num_possible_cpus() == 1)
+		return;
+
+	if (!pvqspinlock) {
+		pr_info("PV qspinlocks disabled\n");
+		return;
+	}
+
+	if (!has_kvm_qspinlock())
+		return;
+
+	pr_info("PV qspinlocks enabled\n");
+
+	__pv_init_lock_hash();
+	pv_ops.qspinlock.queued_spin_lock_slowpath = __pv_queued_spin_lock_slowpath;
+	pv_ops.qspinlock.queued_spin_unlock = __pv_queued_spin_unlock;
+	pv_ops.qspinlock.wait = kvm_wait;
+	pv_ops.qspinlock.kick = kvm_kick_cpu;
+}
+#endif

@@ -358,6 +358,9 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	smp_build_mpidr_hash();
 
 	pv_lock_init();
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+	pv_qspinlock_init();
+#endif
 
 	/* Init percpu seeds for random tags after cpus are set up. */
 	kasan_init_tags();
