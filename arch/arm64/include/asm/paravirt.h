@@ -18,6 +18,8 @@ struct pv_lock_ops {
 struct pv_qspinlock_ops {
 	void (*wait)(u8 *ptr, u8 val);
 	void (*kick)(int cpu);
+	void (*queued_spin_lock_slowpath)(struct qspinlock *lock, u32 val);
+	void (*queued_spin_unlock)(struct qspinlock *lock);
 };
 
 struct paravirt_patch_template {
@@ -55,6 +57,16 @@ static inline void pv_wait(u8 *ptr, u8 val)
 static inline void pv_kick(int cpu)
 {
 	return pv_ops.qspinlock.kick(cpu);
+}
+
+static inline void pv_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
+{
+	return pv_ops.qspinlock.queued_spin_lock_slowpath(lock, val);
+}
+
+static inline void pv_queued_spin_unlock(struct qspinlock *lock)
+{
+	return pv_ops.qspinlock.queued_spin_unlock(lock);
 }
 
 #else
