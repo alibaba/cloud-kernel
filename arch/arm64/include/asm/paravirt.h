@@ -15,9 +15,15 @@ struct pv_lock_ops {
 	bool (*vcpu_is_preempted)(int cpu);
 };
 
+struct pv_qspinlock_ops {
+	void (*wait)(u8 *ptr, u8 val);
+	void (*kick)(int cpu);
+};
+
 struct paravirt_patch_template {
 	struct pv_time_ops time;
 	struct pv_lock_ops lock;
+	struct pv_qspinlock_ops qspinlock;
 };
 
 extern struct paravirt_patch_template pv_ops;
@@ -39,6 +45,16 @@ __visible bool __native_vcpu_is_preempted(int cpu);
 static inline bool pv_vcpu_is_preempted(int cpu)
 {
 	return pv_ops.lock.vcpu_is_preempted(cpu);
+}
+
+static inline void pv_wait(u8 *ptr, u8 val)
+{
+	return pv_ops.qspinlock.wait(ptr, val);
+}
+
+static inline void pv_kick(int cpu)
+{
+	return pv_ops.qspinlock.kick(cpu);
 }
 
 #else
