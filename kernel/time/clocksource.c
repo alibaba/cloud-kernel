@@ -940,6 +940,9 @@ int __clocksource_register_scale(struct clocksource *cs, u32 scale, u32 freq)
 	/* Initialize mult/shift and max_idle_ns */
 	__clocksource_update_freq_scale(cs, scale, freq);
 
+	if (WARN_ON_ONCE((unsigned int)cs->id >= CSID_MAX))
+		cs->id = CSID_GENERIC;
+
 	/* Add clocksource to the clocksource list */
 	mutex_lock(&clocksource_mutex);
 
