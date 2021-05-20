@@ -867,7 +867,8 @@ static noinline int
 id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 {
 	/* Do not migrate the last highclass, try someone else */
-	if (is_highclass_task(p) && src_rq->nr_high_running < 2)
+	if (sched_feat(ID_LAST_HIGHCLASS_STAY) && is_highclass_task(p)
+	    && src_rq->nr_high_running < 2)
 		goto bad_dst;
 
 	if (!is_expellee_task(p))
