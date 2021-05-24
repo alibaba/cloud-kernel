@@ -330,8 +330,11 @@ void __migration_entry_wait(struct mm_struct *mm, pte_t *ptep,
 	 * So, we use get_page_unless_zero(), here. Even failed, page fault
 	 * will occur again.
 	 */
-	if (!get_page_unless_zero(page))
-		goto out;
+	if (!get_page_unless_zero(page)) {
+		pte_unmap_unlock(ptep, ptl);
+		cond_resched();
+		return;
+	}
 	pte_unmap_unlock(ptep, ptl);
 	wait_on_page_locked(page);
 	put_page(page);
