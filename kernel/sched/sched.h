@@ -873,6 +873,7 @@ struct rq {
 	u64			avg_id_idle;
 #ifdef CONFIG_SCHED_SMT
 	unsigned long		next_expel_ib;
+	unsigned long           expel_next_update;
 #endif
 #endif
 
