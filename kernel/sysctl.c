@@ -1970,6 +1970,13 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+	{
+		.procname	= "sched_expel_update_interval",
+		.data		= &sysctl_sched_expel_update_interval,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 #endif
 #endif
 #ifdef CONFIG_PROVE_LOCKING

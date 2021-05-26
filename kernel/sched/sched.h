@@ -1016,6 +1016,7 @@ struct rq {
 	u64			avg_id_idle;
 #ifdef CONFIG_SCHED_SMT
 	unsigned long		next_expel_ib;
+	unsigned long		next_expel_update;
 #endif
 #endif
 
