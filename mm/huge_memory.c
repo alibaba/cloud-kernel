@@ -3483,17 +3483,108 @@ unlock:
 
 }
 
+static void reclaim_huge_page(struct lruvec *lruvec, struct page *page, int mode)
+{
+	struct pglist_data *pgdat = page_pgdat(page);
+	unsigned long flags;
+	LIST_HEAD(split_list);
+	LIST_HEAD(keep_list);
+
+	switch (mode) {
+	case THP_RECLAIM_SWAP:
+		/*
+		 * Putback the page to inactive lru list.
+		 * Since there is no interface function to put the
+		 * page to the tail of inactive lru list, we put it
+		 * to the head of the list in order to less invasion.
+		 */
+		__ClearPageActive(page);
+		ClearPageReferenced(page);
+		unlock_page(page);
+		putback_lru_page(page);
+		mod_node_page_state(pgdat, NR_ISOLATED_ANON,
+				    -HPAGE_PMD_NR);
+		break;
+	case THP_RECLAIM_ZSR:
+		/*
+		 * Split the huge page and reclaim the zero subpages.
+		 * And putback the non-zero subpages to the lru list.
+		 */
+		if (split_huge_page_to_list(page, &split_list)) {
+			unlock_page(page);
+			putback_lru_page(page);
+			mod_node_page_state(pgdat, NR_ISOLATED_ANON,
+					    -HPAGE_PMD_NR);
+			break;
+		}
+
+		unlock_page(page);
+		list_add_tail(&page->lru, &split_list);
+		reclaim_zero_subpages(&split_list, &keep_list);
+
+		spin_lock_irqsave(&pgdat->lru_lock, flags);
+		putback_inactive_pages(lruvec, &keep_list);
+		spin_unlock_irqrestore(&pgdat->lru_lock, flags);
+		mod_node_page_state(pgdat, NR_ISOLATED_ANON,
+				    -HPAGE_PMD_NR);
+
+		mem_cgroup_uncharge_list(&keep_list);
+		free_unref_page_list(&keep_list);
+		break;
+	default:
+		WARN_ONCE(1, "To reclaim a huge page when thp reclaim is disable");
+		break;
+	}
+}
+
+static inline int get_reclaim_mode(struct mem_cgroup *memcg)
+{
+	int reclaim = READ_ONCE(global_thp_reclaim);
+
+	return (reclaim != THP_RECLAIM_MEMCG) ? reclaim :
+					READ_ONCE(memcg->thp_reclaim);
+}
+
+void reclaim_memcg_huge_pages(struct mem_cgroup *memcg)
+{
+	struct lruvec *lruvec;
+	struct hugepage_reclaim *hr_queue;
+	struct page *page;
+	int thp_reclaim, threshold, nid;
+	bool empty;
+
+	threshold = READ_ONCE(memcg->thp_reclaim_threshold);
+	thp_reclaim = get_reclaim_mode(memcg);
+
+	for_each_online_node(nid) {
+		lruvec = mem_cgroup_lruvec(memcg, NODE_DATA(nid));
+		hr_queue = &memcg->nodeinfo[nid]->hugepage_reclaim_queue;
+		while (1) {
+			cond_resched();
+			page = get_reclaim_hugepage(hr_queue, threshold,
+				&empty, thp_reclaim == THP_RECLAIM_DISABLE);
+
+			if (empty)
+				break;
+
+			if (!page)
+				continue;
+
+			reclaim_huge_page(lruvec, page, thp_reclaim);
+		}
+
+	}
+}
+
 static unsigned long hugepage_reclaim_scan(struct shrinker *shrink,
 		struct shrink_control *sc)
 {
 	int nid = sc->nid;
-	struct pglist_data *pgdat = NODE_DATA(nid);
-	struct lruvec *lruvec = mem_cgroup_lruvec(sc->memcg, pgdat);
+	struct lruvec *lruvec = mem_cgroup_lruvec(sc->memcg, NODE_DATA(nid));
 	struct hugepage_reclaim *hr_queue = NULL;
 	struct page *page;
 	int thp_reclaim, threshold;
 	unsigned long nr_to_scan, nr_scanned;
-	unsigned long flags;
 	bool empty;
 #define MAX_SCAN_HUGEPAGES 32UL
 
@@ -3512,16 +3603,11 @@ static unsigned long hugepage_reclaim_scan(struct shrinker *shrink,
 		return SHRINK_STOP;
 
 	threshold = READ_ONCE(sc->memcg->thp_reclaim_threshold);
-	thp_reclaim = READ_ONCE(global_thp_reclaim);
-	thp_reclaim = (thp_reclaim != THP_RECLAIM_MEMCG) ? thp_reclaim :
-			READ_ONCE(sc->memcg->thp_reclaim);
+	thp_reclaim = get_reclaim_mode(sc->memcg);
 	nr_to_scan = min(sc->nr_to_scan, MAX_SCAN_HUGEPAGES);
 	nr_scanned = 0;
 
 	while (nr_to_scan) {
-		LIST_HEAD(split_list);
-		LIST_HEAD(keep_list);
-
 		cond_resched();
 		page = get_reclaim_hugepage(hr_queue, threshold, &empty,
 					    thp_reclaim == THP_RECLAIM_DISABLE);
@@ -3534,51 +3620,7 @@ static unsigned long hugepage_reclaim_scan(struct shrinker *shrink,
 		if (!page)
 			continue;
 
-		switch (thp_reclaim) {
-		case THP_RECLAIM_SWAP:
-			/*
-			 * Putback the page to inactive lru list.
-			 * Since there is no interface function to put the
-			 * page to the tail of inactive lru list, we put it
-			 * to the head of the list in order to less invasion.
-			 */
-			__ClearPageActive(page);
-			ClearPageReferenced(page);
-			unlock_page(page);
-			putback_lru_page(page);
-			mod_node_page_state(pgdat, NR_ISOLATED_ANON,
-					    -HPAGE_PMD_NR);
-
-			continue;
-
-		case THP_RECLAIM_ZSR:
-			/*
-			 * Split the huge page and reclaim the zero subpages.
-			 * And putback the non-zero subpages to the lru list.
-			 */
-			if (split_huge_page_to_list(page, &split_list)) {
-				unlock_page(page);
-				putback_lru_page(page);
-				mod_node_page_state(pgdat, NR_ISOLATED_ANON,
-						    -HPAGE_PMD_NR);
-				continue;
-			}
-
-			unlock_page(page);
-			list_add_tail(&page->lru, &split_list);
-			reclaim_zero_subpages(&split_list, &keep_list);
-
-			spin_lock_irqsave(&pgdat->lru_lock, flags);
-			putback_inactive_pages(lruvec, &keep_list);
-			spin_unlock_irqrestore(&pgdat->lru_lock, flags);
-			mod_node_page_state(pgdat, NR_ISOLATED_ANON,
-					    -HPAGE_PMD_NR);
-
-			mem_cgroup_uncharge_list(&keep_list);
-			free_unref_page_list(&keep_list);
-
-			break;
-		}
+		reclaim_huge_page(lruvec, page, thp_reclaim);
 	}
 
 	sc->nr_scanned = nr_scanned;

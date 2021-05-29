@@ -487,4 +487,15 @@ threshold
 
         echo "threshold 8" > memory.thp_reclaim_ctrl
 
+reclaim
+        triggers action immediately for the huge pages in the reclaim queue.
+        The action deponds on the thp reclaim config (reclaim, swap or disable,
+        disable means just remove the huge page from the queue).
+        This contronller has two value, 1 and 2. 1 means just reclaim the current
+        memcg, and 2 means reclaim the current memcg and all the children memcgs.
+        Like this::
+
+        echo "reclaim 1" > memory.thp_reclaim_ctrl
+        echo "reclaim 2" > memory.thp_reclaim_ctrl
+
 Only one of the configs mentioned above can be set at a time.

@@ -925,6 +925,7 @@ void memcg_check_wmark_min_adj(struct task_struct *curr,
 extern int global_thp_reclaim;
 extern void set_hugepage_reclaim_shrinker_bit(struct mem_cgroup *memcg,
 					      int nid);
+extern void reclaim_memcg_huge_pages(struct mem_cgroup *memcg);
 
 static inline struct list_head *hugepage_reclaim_list(struct page *page)
 {

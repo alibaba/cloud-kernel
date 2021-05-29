@@ -5858,11 +5858,13 @@ static int memcg_thp_reclaim_ctrl_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+#define CTRL_RECLAIM_MEMCG 1 /* only relciam current memcg*/
+#define CTRL_RECLAIM_ALL   2 /* reclaim current memcg and all the child memcg */
 static ssize_t memcg_thp_reclaim_ctrl_write(struct kernfs_open_file *of,
 					char *buf, size_t nbytes, loff_t off)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
-	int ret, threshold;
+	int ret, threshold, mode;
 	char *key, *value;
 
 	key = strsep_s(&buf, " \t\n");
@@ -5882,6 +5884,30 @@ static ssize_t memcg_thp_reclaim_ctrl_write(struct kernfs_open_file *of,
 			return -EINVAL;
 
 		xchg(&memcg->thp_reclaim_threshold, threshold);
+	} else if (!strcmp(key, "reclaim")) {
+		struct mem_cgroup *iter;
+
+		value = strsep_s(&buf, " \t\n");
+		if (!value)
+			return -EINVAL;
+
+		ret = kstrtouint(value, 0, &mode);
+		if (ret)
+			return ret;
+
+		switch (mode) {
+		case CTRL_RECLAIM_MEMCG:
+			reclaim_memcg_huge_pages(memcg);
+			break;
+		case CTRL_RECLAIM_ALL:
+			iter = mem_cgroup_iter(memcg, NULL, NULL);
+			do {
+				reclaim_memcg_huge_pages(iter);
+			} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
+			break;
+		default:
+			return -EINVAL;
+		}
 	} else
 		return -EINVAL;
 
