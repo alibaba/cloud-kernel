@@ -7723,12 +7723,14 @@ static inline void io_sq_thread_park(struct sq_thread_percpu *t)
 static void create_sq_thread_percpu(struct io_ring_ctx *ctx, int cpu)
 {
 	struct sq_thread_percpu *t;
+	char buf[TASK_COMM_LEN];
 
 	t = per_cpu_ptr(percpu_threads, cpu);
 	mutex_lock(&t->lock);
 	if (!t->sqo_thread) {
+		snprintf(buf, sizeof(buf), "iou-sqp-%d", current->pid);
 		t->sqo_thread = kthread_create_on_cpu(io_sq_thread_percpu, t,
-					cpu, "io_uring-sq-percpu");
+					cpu, buf);
 		if (IS_ERR(t->sqo_thread)) {
 			ctx->sqo_thread = t->sqo_thread;
 			t->sqo_thread = NULL;
