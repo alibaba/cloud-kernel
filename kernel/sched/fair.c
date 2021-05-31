@@ -141,16 +141,6 @@ unsigned int sysctl_sched_idle_saver_wmark;
  * Default: -1, units: ms
  */
 int sysctl_sched_expel_idle_balance_delay = -1;
-/*
- *  In order to prevent scheduling errors in the case of ipi failure,
- *  update_rq_on_expel() is called in function pick_next_task_fair(),
- *  but this will cause performence regression. In order to prevent
- *  errors while ensuring performence, we introduce an interval to call
- *  update_rq_on_expel().
- *
- *  Default: 10, units: ms
- */
-const_debug unsigned long sysctl_sched_expel_update_interval = 10;
 #endif
 #endif
 
@@ -681,14 +671,6 @@ static inline void update_rq_on_expel(struct rq *rq)
 		rq->on_expel = ret;
 }
 
-static inline void loose_update_rq_on_expel(struct rq *rq)
-{
-	if (time_after(jiffies, rq->expel_next_update) && rq->nr_under_running) {
-		update_rq_on_expel(rq);
-		rq->expel_next_update = jiffies + sysctl_sched_expel_update_interval;
-	}
-}
-
 static inline bool rq_on_expel(struct rq *rq)
 {
 	return rq->on_expel;
@@ -765,10 +747,6 @@ static inline bool need_expel(int this_cpu)
 }
 
 static inline void update_rq_on_expel(struct rq *rq)
-{
-}
-
-static inline void loose_update_rq_on_expel(struct rq *rq)
 {
 }
 
@@ -7970,11 +7948,7 @@ again:
 	if (!cfs_rq->nr_running)
 		goto idle;
 
-	if (sched_feat(ID_LOOSE_EXPEL))
-		loose_update_rq_on_expel(rq);
-	else
-		update_rq_on_expel(rq);
-
+	update_rq_on_expel(rq);
 	if (expellee_only(rq)) {
 		/*
 		 * In order to mark CPU as IDLE, we need to call
