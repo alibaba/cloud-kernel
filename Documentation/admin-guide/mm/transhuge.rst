@@ -471,7 +471,14 @@ The queue stat can be checked like this::
 
         cat /sys/fs/cgroup/memory/{memcg}/memory.thp_reclaim_stat
 
-Now, it only contains the queue length of each node.
+queue_length
+        means the queue length of each node.
+
+split_hugepage
+        means the huge pages split by thp reclaim of each node.
+
+reclaim_subpage
+        means the zero subpages reclaimed by thp reclaim of each node.
 
 We also add a controller interface to set configs for thp reclaim::
 

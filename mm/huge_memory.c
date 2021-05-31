@@ -3483,9 +3483,12 @@ unlock:
 
 }
 
-static void reclaim_huge_page(struct lruvec *lruvec, struct page *page, int mode)
+static void reclaim_huge_page(struct hugepage_reclaim *hr_queue,
+			      struct lruvec *lruvec, struct page *page,
+			      int mode)
 {
 	struct pglist_data *pgdat = page_pgdat(page);
+	unsigned long reclaimed;
 	unsigned long flags;
 	LIST_HEAD(split_list);
 	LIST_HEAD(keep_list);
@@ -3520,7 +3523,7 @@ static void reclaim_huge_page(struct lruvec *lruvec, struct page *page, int mode
 
 		unlock_page(page);
 		list_add_tail(&page->lru, &split_list);
-		reclaim_zero_subpages(&split_list, &keep_list);
+		reclaimed = reclaim_zero_subpages(&split_list, &keep_list);
 
 		spin_lock_irqsave(&pgdat->lru_lock, flags);
 		putback_inactive_pages(lruvec, &keep_list);
@@ -3530,6 +3533,9 @@ static void reclaim_huge_page(struct lruvec *lruvec, struct page *page, int mode
 
 		mem_cgroup_uncharge_list(&keep_list);
 		free_unref_page_list(&keep_list);
+
+		atomic_long_inc(&hr_queue->split_hugepage);
+		atomic_long_add(reclaimed, &hr_queue->reclaim_subpage);
 		break;
 	default:
 		WARN_ONCE(1, "To reclaim a huge page when thp reclaim is disable");
@@ -3570,7 +3576,7 @@ void reclaim_memcg_huge_pages(struct mem_cgroup *memcg)
 			if (!page)
 				continue;
 
-			reclaim_huge_page(lruvec, page, thp_reclaim);
+			reclaim_huge_page(hr_queue, lruvec, page, thp_reclaim);
 		}
 
 	}
@@ -3620,7 +3626,7 @@ static unsigned long hugepage_reclaim_scan(struct shrinker *shrink,
 		if (!page)
 			continue;
 
-		reclaim_huge_page(lruvec, page, thp_reclaim);
+		reclaim_huge_page(hr_queue, lruvec, page, thp_reclaim);
 	}
 
 	sc->nr_scanned = nr_scanned;

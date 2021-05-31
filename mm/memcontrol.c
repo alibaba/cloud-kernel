@@ -5826,11 +5826,27 @@ static int memcg_thp_reclaim_stat_show(struct seq_file *m, void *v)
 	int node;
 	unsigned long len;
 
-	seq_puts(m, "queue_length");
+	seq_puts(m, "queue_length\t");
 	for_each_node(node) {
 		mz = mem_cgroup_nodeinfo(memcg, node);
 		len = READ_ONCE(mz->hugepage_reclaim_queue.reclaim_queue_len);
-		seq_printf(m, " %8lu", len);
+		seq_printf(m, "%-24lu", len);
+	}
+
+	seq_puts(m, "\n");
+	seq_puts(m, "split_hugepage\t");
+	for_each_node(node) {
+		mz = mem_cgroup_nodeinfo(memcg, node);
+		len = atomic_long_read(&mz->hugepage_reclaim_queue.split_hugepage);
+		seq_printf(m, "%-24lu", len);
+	}
+
+	seq_puts(m, "\n");
+	seq_puts(m, "reclaim_subpage\t");
+	for_each_node(node) {
+		mz = mem_cgroup_nodeinfo(memcg, node);
+		len = atomic_long_read(&mz->hugepage_reclaim_queue.reclaim_subpage);
+		seq_printf(m, "%-24lu", len);
 	}
 	seq_puts(m, "\n");
 

@@ -653,6 +653,8 @@ struct hugepage_reclaim {
 	spinlock_t reclaim_queue_lock;
 	struct list_head reclaim_queue;
 	unsigned long reclaim_queue_len;
+	atomic_long_t split_hugepage;
+	atomic_long_t reclaim_subpage;
 };
 #endif
 
