@@ -1232,6 +1232,7 @@ static int __init mce_amd_init(void)
 
 	case 0x17:
 	case 0x18:
+	case 0x19:
 		pr_warn_once("Decoding supported only on Scalable MCA processors.\n");
 		return -EINVAL;
 
