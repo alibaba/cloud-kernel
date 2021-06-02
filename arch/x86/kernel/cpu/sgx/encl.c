@@ -407,7 +407,8 @@ void sgx_encl_release(struct kref *ref)
 			encl->secs_child_cnt--;
 			entry->epc_page = NULL;
 		}
-
+		radix_tree_delete(&entry->encl->page_tree,
+				  PFN_DOWN(entry->desc));
 		kfree(entry);
 	}
 
