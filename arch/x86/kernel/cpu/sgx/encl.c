@@ -444,6 +444,9 @@ static void sgx_encl_mm_release_deferred(struct rcu_head *rcu)
 	struct sgx_encl_mm *encl_mm =
 		container_of(rcu, struct sgx_encl_mm, rcu);
 
+	/* 'encl_mm' is going away, put encl_mm->encl reference: */
+	kref_put(&encl_mm->encl->refcount, sgx_encl_release);
+
 	kfree(encl_mm);
 }
 
