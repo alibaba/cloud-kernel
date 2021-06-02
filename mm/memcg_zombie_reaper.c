@@ -34,6 +34,8 @@
 	     iter = mem_cgroup_iter(root, iter, NULL))
 
 /* Reap by kthread at background, off by default */
+#define REAP_BACKGROUND_GLOBAL	(1 << 0)
+#define REAP_BACKGROUND_MEMCG	(1 << 1)
 static unsigned int reaper_kthread_on;
 static unsigned int reaper_verbose;
 static unsigned int reaper_scan_interval = 5; /* in seconds */
@@ -41,6 +43,17 @@ static unsigned int reaper_scan_interval = 5; /* in seconds */
 static unsigned int reaper_pages_scan = 1310720;
 
 static DECLARE_WAIT_QUEUE_HEAD(reaper_waitq);
+
+void memcg_reap_background_set(void)
+{
+	reaper_kthread_on |= REAP_BACKGROUND_MEMCG;
+	wake_up_interruptible(&reaper_waitq);
+}
+
+void memcg_reap_background_clear(void)
+{
+	reaper_kthread_on &= ~REAP_BACKGROUND_MEMCG;
+}
 
 #ifdef CONFIG_SYSFS
 static void reap_zombie_memcgs(bool background);
@@ -135,9 +148,12 @@ static ssize_t reap_background_store(struct kobject *kobj,
 	if (err || (enable != 0 && enable != 1))
 		return -EINVAL;
 
-	reaper_kthread_on = enable;
-	if (reaper_kthread_on)
+	reaper_kthread_on &= ~REAP_BACKGROUND_GLOBAL;
+
+	if (enable) {
+		reaper_kthread_on |= REAP_BACKGROUND_GLOBAL;
 		wake_up_interruptible(&reaper_waitq);
+	}
 
 	return count;
 }
@@ -243,6 +259,9 @@ static void reap_zombie_memcgs(bool background)
 			break;
 		}
 		if (mem_cgroup_online(iter))
+			continue;
+		if (!(reaper_kthread_on & REAP_BACKGROUND_GLOBAL) &&
+		    !iter->reap_background)
 			continue;
 		reclaimed += do_reap_zombie_memcg(iter, background);
 		cond_resched();

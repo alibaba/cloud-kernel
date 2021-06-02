@@ -400,6 +400,7 @@ struct mem_cgroup {
 #endif
 
 	unsigned long offline_jiffies;
+	unsigned long reap_background;
 
 	CK_HOTFIX_RESERVE(1)
 	CK_HOTFIX_RESERVE(2)

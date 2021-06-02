@@ -5960,6 +5960,34 @@ out_kfree:
 	return ret;
 }
 
+static u64 memcg_reap_background_read(struct cgroup_subsys_state *css,
+				       struct cftype *cft)
+{
+	return mem_cgroup_from_css(css)->reap_background;
+}
+
+extern void memcg_reap_background_set(void);
+extern void memcg_reap_background_clear(void);
+static int memcg_reap_background_write(struct cgroup_subsys_state *css,
+					struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *iter, *memcg = mem_cgroup_from_css(css);
+
+	/* Only 0 and 1 are allowed */
+	if (val > 1)
+		return -EINVAL;
+
+	for_each_mem_cgroup_tree(iter, memcg)
+		iter->reap_background = val;
+
+	if (val)
+		memcg_reap_background_set();
+	else if (mem_cgroup_is_root(memcg))
+		memcg_reap_background_clear();
+
+	return 0;
+}
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -6180,6 +6208,11 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.file_offset = offsetof(struct mem_cgroup, swap_events_file),
 		.seq_show = swap_events_show,
+	},
+	{
+		.name = "reap_background",
+		.read_u64 = memcg_reap_background_read,
+		.write_u64 = memcg_reap_background_write,
 	},
 	{ },	/* terminate */
 };
@@ -6444,6 +6477,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		memcg->wmark_scale_factor = parent->wmark_scale_factor ?
 					    : 50;
 		kidled_memcg_inherit_parent_buckets(parent, memcg);
+		memcg->reap_background = parent->reap_background;
 	}
 	if (!parent) {
 		page_counter_init(&memcg->memory, NULL);
@@ -7718,6 +7752,11 @@ static struct cftype memory_files[] = {
 		.write = mem_cgroup_idle_page_stats_write,
 	},
 #endif
+	{
+		.name = "reap_background",
+		.read_u64 = memcg_reap_background_read,
+		.write_u64 = memcg_reap_background_write,
+	},
 	{ }	/* terminate */
 };
 
