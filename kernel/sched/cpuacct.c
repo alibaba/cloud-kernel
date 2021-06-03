@@ -361,7 +361,8 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 		res->steal = se->statistics.wait_sum;
 	else
 		res->steal = 0;
-	res->guest = res->guest_nice = 0; /* currently always 0 */
+	res->guest = kcpustat->cpustat[CPUTIME_GUEST];
+	res->guest_nice = kcpustat->cpustat[CPUTIME_GUEST_NICE];
 }
 
 static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
@@ -393,6 +394,7 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 			softirq += res.softirq;
 			steal += res.steal;
 			guest += res.guest;
+			guest += res.guest_nice;
 			iowait += res.iowait;
 			idle += res.idle;
 		}
@@ -407,6 +409,7 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 			irq += kcpustat->cpustat[CPUTIME_IRQ];
 			softirq += kcpustat->cpustat[CPUTIME_SOFTIRQ];
 			guest += kcpustat->cpustat[CPUTIME_GUEST];
+			guest += kcpustat->cpustat[CPUTIME_GUEST_NICE];
 			idle += get_idle_time(kcpustat, cpu);
 			iowait += get_iowait_time(kcpustat, cpu);
 			steal += kcpustat_cpu(cpu).cpustat[CPUTIME_STEAL];
