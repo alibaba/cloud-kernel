@@ -2128,6 +2128,11 @@ static inline void rseq_syscall(struct pt_regs *regs)
 
 #endif
 
+struct cpuacct_usage_result {
+	u64 user, nice, system, irq, softirq;
+	u64 steal, iowait, idle, guest, guest_nice;
+};
+
 const struct sched_avg *sched_trace_cfs_rq_avg(struct cfs_rq *cfs_rq);
 char *sched_trace_cfs_rq_path(struct cfs_rq *cfs_rq, char *str, int len);
 int sched_trace_cfs_rq_cpu(struct cfs_rq *cfs_rq);

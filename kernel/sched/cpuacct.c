@@ -23,7 +23,9 @@ static const char * const cpuacct_stat_desc[] = {
 
 struct cpuacct_usage {
 	u64	usages[CPUACCT_STAT_NSTATS];
-};
+	struct prev_cputime prev_cputime1; /* utime and stime */
+	struct prev_cputime prev_cputime2; /* user and nice */
+} ____cacheline_aligned;
 
 /* track CPU usage of a group of tasks and its child groups */
 struct cpuacct {
@@ -65,6 +67,7 @@ static struct cgroup_subsys_state *
 cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
 {
 	struct cpuacct *ca;
+	int i;
 
 	if (!parent_css)
 		return &root_cpuacct.css;
@@ -80,6 +83,11 @@ cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
 	ca->cpustat = alloc_percpu(struct kernel_cpustat);
 	if (!ca->cpustat)
 		goto out_free_cpuusage;
+
+	for_each_possible_cpu(i) {
+		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime1);
+		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime2);
+	}
 
 	return &ca->css;
 
@@ -299,6 +307,123 @@ static int cpuacct_stats_show(struct seq_file *sf, void *v)
 	return 0;
 }
 
+#ifdef CONFIG_SCHED_SLI
+#ifndef arch_idle_time
+#define arch_idle_time(cpu) 0
+#endif
+
+static inline struct task_group *cgroup_tg(struct cgroup *cgrp)
+{
+	return container_of(global_cgroup_css(cgrp, cpu_cgrp_id),
+				struct task_group, css);
+}
+
+static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
+		struct task_group *tg, struct cpuacct_usage_result *res)
+{
+	struct kernel_cpustat *kcpustat;
+	struct cpuacct_usage *cpuusage;
+	struct task_cputime cputime;
+	u64 tick_user, tick_nice, tick_sys, left, right;
+	struct sched_entity *se;
+
+	kcpustat = per_cpu_ptr(ca->cpustat, cpu);
+	if (unlikely(!tg)) {
+		memset(res, 0, sizeof(*res));
+		return;
+	}
+
+	se = tg->se[cpu];
+	cpuusage = per_cpu_ptr(ca->cpuusage, cpu);
+	tick_user = kcpustat->cpustat[CPUTIME_USER];
+	tick_nice = kcpustat->cpustat[CPUTIME_NICE];
+	tick_sys = kcpustat->cpustat[CPUTIME_SYSTEM];
+
+	/* Calculate system run time */
+	cputime.sum_exec_runtime = cpuusage->usages[CPUACCT_STAT_USER] +
+			cpuusage->usages[CPUACCT_STAT_SYSTEM];
+	cputime.utime = tick_user + tick_nice;
+	cputime.stime = tick_sys;
+	cputime_adjust(&cputime, &cpuusage->prev_cputime1, &left, &right);
+	res->system = right;
+
+	/* Calculate user and nice run time */
+	cputime.sum_exec_runtime = left; /* user + nice */
+	cputime.utime = tick_user;
+	cputime.stime = tick_nice;
+	cputime_adjust(&cputime, &cpuusage->prev_cputime2, &left, &right);
+	res->user = left;
+	res->nice = right;
+
+	res->irq = kcpustat->cpustat[CPUTIME_IRQ];
+	res->softirq = kcpustat->cpustat[CPUTIME_SOFTIRQ];
+	if (se)
+		res->steal = se->statistics.wait_sum;
+	else
+		res->steal = 0;
+	res->guest = res->guest_nice = 0; /* currently always 0 */
+}
+
+static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
+{
+	struct cpuacct *ca = css_ca(seq_css(sf));
+	struct cgroup *cgrp = seq_css(sf)->cgroup;
+	u64 user, nice, system, idle, iowait, irq, softirq, steal, guest;
+	int cpu;
+
+	user = nice = system = idle = iowait =
+		irq = softirq = steal = guest = 0;
+
+	if (ca != &root_cpuacct) {
+		struct cpuacct_usage_result res;
+
+		for_each_possible_cpu(cpu) {
+			rcu_read_lock();
+			__cpuacct_get_usage_result(ca, cpu,
+					cgroup_tg(cgrp), &res);
+			rcu_read_unlock();
+
+			user += res.user;
+			nice += res.nice;
+			system += res.system;
+			irq += res.irq;
+			softirq += res.softirq;
+			steal += res.steal;
+			guest += res.guest;
+			iowait += res.iowait;
+			idle += res.idle;
+		}
+	} else {
+		struct kernel_cpustat *kcpustat;
+
+		for_each_possible_cpu(cpu) {
+			kcpustat = per_cpu_ptr(ca->cpustat, cpu);
+			user += kcpustat->cpustat[CPUTIME_USER];
+			nice += kcpustat->cpustat[CPUTIME_NICE];
+			system += kcpustat->cpustat[CPUTIME_SYSTEM];
+			irq += kcpustat->cpustat[CPUTIME_IRQ];
+			softirq += kcpustat->cpustat[CPUTIME_SOFTIRQ];
+			guest += kcpustat->cpustat[CPUTIME_GUEST];
+			idle += get_idle_time(kcpustat, cpu);
+			iowait += get_iowait_time(kcpustat, cpu);
+			steal += kcpustat_cpu(cpu).cpustat[CPUTIME_STEAL];
+		}
+	}
+
+	seq_printf(sf, "user %lld\n", nsec_to_clock_t(user));
+	seq_printf(sf, "nice %lld\n", nsec_to_clock_t(nice));
+	seq_printf(sf, "system %lld\n", nsec_to_clock_t(system));
+	seq_printf(sf, "idle %lld\n", nsec_to_clock_t(idle));
+	seq_printf(sf, "iowait %lld\n", nsec_to_clock_t(iowait));
+	seq_printf(sf, "irq %lld\n", nsec_to_clock_t(irq));
+	seq_printf(sf, "softirq %lld\n", nsec_to_clock_t(softirq));
+	seq_printf(sf, "steal %lld\n", nsec_to_clock_t(steal));
+	seq_printf(sf, "guest %lld\n", nsec_to_clock_t(guest));
+
+	return 0;
+}
+#endif
+
 static struct cftype files[] = {
 	{
 		.name = "usage",
@@ -333,6 +458,12 @@ static struct cftype files[] = {
 		.name = "stat",
 		.seq_show = cpuacct_stats_show,
 	},
+#ifdef CONFIG_SCHED_SLI
+	{
+		.name = "proc_stat",
+		.seq_show = cpuacct_proc_stats_show,
+	},
+#endif
 	{ }	/* terminate */
 };
 

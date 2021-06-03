@@ -61,7 +61,7 @@ u64 get_idle_time(struct kernel_cpustat *kcs, int cpu)
 	return idle;
 }
 
-static u64 get_iowait_time(struct kernel_cpustat *kcs, int cpu)
+u64 get_iowait_time(struct kernel_cpustat *kcs, int cpu)
 {
 	u64 iowait, iowait_usecs = -1ULL;
 
