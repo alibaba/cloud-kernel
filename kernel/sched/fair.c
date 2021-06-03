@@ -11249,6 +11249,16 @@ static unsigned int get_rr_interval_fair(struct rq *rq, struct task_struct *task
 	return rr_interval;
 }
 
+#ifdef CONFIG_SCHED_SLI
+static void update_nr_uninterruptible_fair(struct task_struct *p, long inc)
+{
+	struct sched_entity *se = &p->se;
+
+	for_each_sched_entity(se)
+		cfs_rq_of(se)->nr_uninterruptible += inc;
+}
+#endif
+
 /*
  * All the scheduling class methods:
  */
@@ -11290,6 +11300,10 @@ const struct sched_class fair_sched_class
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	.task_change_group	= task_change_group_fair,
+#endif
+
+#ifdef CONFIG_SCHED_SLI
+	.update_nr_uninterruptible = update_nr_uninterruptible_fair,
 #endif
 
 #ifdef CONFIG_UCLAMP_TASK
