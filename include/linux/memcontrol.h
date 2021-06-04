@@ -1063,6 +1063,9 @@ static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
 	return page_counter_read(&memcg->memory) < memcg->memory.wmark_low;
 }
 
+void memcg_meminfo(struct mem_cgroup *memcg,
+		struct sysinfo *info, struct sysinfo_ext *ext);
+
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0
@@ -1428,6 +1431,12 @@ static inline void count_memcg_page_event(struct page *page,
 
 static inline
 void count_memcg_event_mm(struct mm_struct *mm, enum vm_event_item idx)
+{
+}
+
+static inline void
+memcg_meminfo(struct mem_cgroup *memcg,
+		struct sysinfo *info, struct sysinfo_ext *ext)
 {
 }
 

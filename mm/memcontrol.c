@@ -8813,4 +8813,78 @@ static int __init mem_cgroup_swap_init(void)
 }
 core_initcall(mem_cgroup_swap_init);
 
+void memcg_meminfo(struct mem_cgroup *memcg,
+		struct sysinfo *info, struct sysinfo_ext *ext)
+{
+	struct mem_cgroup *iter;
+	unsigned long limit, memsw_limit, usage, totalram_pages_tmp;
+	unsigned long pagecache, memcg_wmark, swap_size;
+	int i;
+
+	ext->cached = memcg_page_state(memcg, NR_FILE_PAGES);
+	ext->file_dirty = memcg_page_state(memcg, NR_FILE_DIRTY);
+	ext->writeback = memcg_page_state(memcg, NR_WRITEBACK);
+	ext->anon_mapped = memcg_page_state(memcg, NR_ANON_MAPPED);
+	ext->file_mapped = memcg_page_state(memcg, NR_FILE_MAPPED);
+	ext->slab_reclaimable = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B);
+	ext->slab_unreclaimable =
+		memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE_B);
+	ext->kernel_stack_kb = memcg_page_state(memcg, NR_KERNEL_STACK_KB);
+	ext->writeback_temp = 0;
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	ext->anon_thps = memcg_page_state(memcg, NR_ANON_THPS);
+#endif
+	ext->shmem_thps = 0;
+	ext->shmem_pmd_mapped = 0;
+
+	swap_size = memcg_page_state(memcg, MEMCG_SWAP);
+	limit = memsw_limit = PAGE_COUNTER_MAX;
+	for (iter = memcg; iter; iter = parent_mem_cgroup(iter)) {
+		limit = min(limit, iter->memory.max);
+		memsw_limit = min(memsw_limit, iter->memsw.max);
+	}
+	usage = mem_cgroup_usage(memcg, false);
+	totalram_pages_tmp = totalram_pages();
+	info->totalram = limit > totalram_pages_tmp ? totalram_pages_tmp : limit;
+	info->sharedram = memcg_page_state(memcg, NR_SHMEM);
+	info->freeram = info->totalram - usage;
+	/* these are not accounted by memcg yet */
+	/* if give bufferram the global value, free may show a quite
+	 * large number in the ±buffers/caches row, the reason is
+	 * it's equal to group_used - global_buffer - group_cached,
+	 * if global_buffer > group_used, we get a rewind large value.
+	 */
+	info->bufferram = 0;
+	info->totalhigh = totalhigh_pages();
+	info->freehigh = nr_free_highpages();
+	info->mem_unit = PAGE_SIZE;
+
+	/* fill in swinfo */
+	if (!cgroup_memory_noswap) {
+		si_swapinfo(info);
+		if (memsw_limit < info->totalswap)
+			info->totalswap = memsw_limit;
+		info->freeswap = info->totalswap - swap_size;
+	} else {
+		info->totalswap = 0;
+		info->freeswap = 0;
+	}
+
+	for (i = 0; i < NR_LRU_LISTS; i++)
+		ext->lrupages[i] = memcg_page_state(memcg, NR_LRU_BASE + i);
+
+	/* Like what si_mem_available() does */
+	memcg_wmark = memcg->memory.wmark_high;
+	if (memcg->wmark_ratio && info->totalram > memcg_wmark)
+		memcg_wmark = info->totalram - memcg_wmark;
+	else
+		memcg_wmark = 0;
+	pagecache = ext->lrupages[LRU_ACTIVE_FILE] +
+		ext->lrupages[LRU_INACTIVE_FILE];
+	pagecache -= min(pagecache / 2, memcg_wmark);
+	ext->available = info->freeram + pagecache;
+	ext->available += ext->slab_reclaimable -
+		min(ext->slab_reclaimable / 2, memcg_wmark);
+}
+
 #endif /* CONFIG_MEMCG_SWAP */
