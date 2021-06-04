@@ -828,6 +828,15 @@ static void update_tg_load_avg(struct cfs_rq *cfs_rq)
 }
 #endif /* CONFIG_SMP */
 
+static inline void
+update_exec_raw(struct cfs_rq *cfs_rq, struct sched_entity *curr)
+{
+	u64 now = rq_clock(rq_of(cfs_rq));
+
+	curr->sum_exec_raw += now - curr->exec_start_raw;
+	curr->exec_start_raw = now;
+}
+
 /*
  * Update the current task's runtime statistics.
  */
@@ -864,6 +873,7 @@ static void update_curr(struct cfs_rq *cfs_rq)
 	}
 
 	account_cfs_rq_runtime(cfs_rq, delta_exec);
+	update_exec_raw(cfs_rq, curr);
 }
 
 static void update_curr_fair(struct rq *rq)
@@ -1045,6 +1055,7 @@ update_stats_curr_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	 * We are starting a new run period:
 	 */
 	se->exec_start = rq_clock_task(rq_of(cfs_rq));
+	se->exec_start_raw = rq_clock(rq_of(cfs_rq));
 }
 
 /**************************************************
@@ -11201,7 +11212,7 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 	update_load_set(&se->load, NICE_0_LOAD);
 	se->parent = parent;
 	seqlock_init(&se->idle_seqlock);
-	se->cg_idle_start = cpu_clock(cpu);
+	se->cg_idle_start = se->cg_init_time = cpu_clock(cpu);
 }
 
 static DEFINE_MUTEX(shares_mutex);

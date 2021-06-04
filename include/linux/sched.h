@@ -477,8 +477,14 @@ struct sched_entity {
 	u64				vruntime;
 	u64				prev_sum_exec_runtime;
 
+	/* irq time is included */
+	u64				exec_start_raw;
+	u64				sum_exec_raw;
 	u64				cg_idle_start;
 	u64				cg_idle_sum;
+	u64				cg_init_time;
+	u64				cg_ineffective_sum;
+	u64				cg_ineffective_start;
 	seqlock_t			idle_seqlock;
 
 	u64				nr_migrations;
