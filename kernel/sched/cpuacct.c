@@ -407,6 +407,84 @@ out_rcu_unlock:
 	return nr;
 }
 
+void cgroup_idle_start(struct sched_entity *se)
+{
+	unsigned long flags;
+	u64 clock;
+
+	if (!schedstat_enabled())
+		return;
+
+	clock = __rq_clock_broken(se->cfs_rq->rq);
+
+	local_irq_save(flags);
+
+	write_seqlock(&se->idle_seqlock);
+	__schedstat_set(se->cg_idle_start, clock);
+	write_sequnlock(&se->idle_seqlock);
+
+	local_irq_restore(flags);
+}
+
+void cgroup_idle_end(struct sched_entity *se)
+{
+	unsigned long flags;
+	u64 clock;
+	u64 idle_start;
+
+	if (!schedstat_enabled())
+		return;
+
+	clock = __rq_clock_broken(se->cfs_rq->rq);
+
+	local_irq_save(flags);
+
+	write_seqlock(&se->idle_seqlock);
+	idle_start = schedstat_val(se->cg_idle_start);
+	__schedstat_add(se->cg_idle_sum, clock - idle_start);
+	__schedstat_set(se->cg_idle_start, 0);
+	write_sequnlock(&se->idle_seqlock);
+
+	local_irq_restore(flags);
+}
+
+void cpuacct_cpuset_changed(struct cgroup *cgrp, struct cpumask *deleted,
+		struct cpumask *added)
+{
+	struct task_group *tg;
+	struct sched_entity *se;
+	int cpu;
+
+	if (!schedstat_enabled())
+		return;
+
+	rcu_read_lock();
+	tg = cgroup_tg(cgrp);
+
+	if (!tg) {
+		rcu_read_unlock();
+		return;
+	}
+
+	if (added) {
+		/* Mark newly added cpus as newly-idle */
+		for_each_cpu(cpu, added) {
+			se = tg->se[cpu];
+			cgroup_idle_start(se);
+		}
+	}
+
+	if (deleted) {
+		/* Mark ineffective_cpus as idle-invalid */
+		for_each_cpu(cpu, deleted) {
+			se = tg->se[cpu];
+			cgroup_idle_end(se);
+		}
+	}
+
+	rcu_read_unlock();
+}
+
 static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 		struct task_group *tg, struct cpuacct_usage_result *res)
 {
@@ -446,10 +524,25 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 
 	res->irq = kcpustat->cpustat[CPUTIME_IRQ];
 	res->softirq = kcpustat->cpustat[CPUTIME_SOFTIRQ];
-	if (se)
-		res->steal = se->statistics.wait_sum;
-	else
+	if (se && schedstat_enabled()) {
+		unsigned int seq;
+		u64 idle_start;
+		u64 clock = cpu_clock(cpu);
+
+		do {
+			seq = read_seqbegin(&se->idle_seqlock);
+			res->idle = schedstat_val(se->cg_idle_sum);
+			idle_start = schedstat_val(se->cg_idle_start);
+			clock = cpu_clock(cpu);
+			if (idle_start && clock > idle_start)
+				res->idle += clock - idle_start;
+		} while (read_seqretry(&se->idle_seqlock, seq));
+
 		res->steal = 0;
+	} else {
+		res->idle = res->iowait = res->steal = 0;
+	}
+
 	res->guest = kcpustat->cpustat[CPUTIME_GUEST];
 	res->guest_nice = kcpustat->cpustat[CPUTIME_GUEST_NICE];
 }

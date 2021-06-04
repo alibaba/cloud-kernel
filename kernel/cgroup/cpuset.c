@@ -1324,6 +1324,7 @@ static int update_parent_subparts_cpumask(struct cpuset *cpuset, int cmd,
 static void update_cpumasks_hier(struct cpuset *cs, struct tmpmasks *tmp)
 {
 	struct cpuset *cp;
+	struct cpumask added, deleted, old_cpus;
 	struct cgroup_subsys_state *pos_css;
 	bool need_rebuild_sched_domains = false;
 	int new_prs;
@@ -1349,6 +1350,11 @@ static void update_cpumasks_hier(struct cpuset *cs, struct tmpmasks *tmp)
 			WARN_ON_ONCE(!parent->child_ecpus_count);
 			parent->child_ecpus_count--;
 		}
+
+		if (cpumask_empty(cp->effective_cpus))
+			cpumask_copy(&old_cpus, parent->effective_cpus);
+		else
+			cpumask_copy(&old_cpus, cp->effective_cpus);
 
 		/*
 		 * Skip the whole subtree if the cpumask remains the same
@@ -1446,7 +1452,15 @@ static void update_cpumasks_hier(struct cpuset *cs, struct tmpmasks *tmp)
 		WARN_ON(!is_in_v2_mode() &&
 			!cpumask_equal(cp->cpus_allowed, cp->effective_cpus));
 
+		/* add = new - old = new & (~old) */
+		cpumask_andnot(&added, tmp->new_cpus, &old_cpus);
+		cpuacct_cpuset_changed(cs->css.cgroup, NULL, &added);
+
 		update_tasks_cpumask(cp);
+
+		/* deleted = old - new = old & (~new) */
+		cpumask_andnot(&deleted, &old_cpus, tmp->new_cpus);
+		cpuacct_cpuset_changed(cs->css.cgroup, &deleted, NULL);
 
 		/*
 		 * On legacy hierarchy, if the effective cpumask of any non-
@@ -2812,6 +2826,7 @@ static int cpuset_css_online(struct cgroup_subsys_state *css)
 	cs->effective_mems = parent->mems_allowed;
 	cpumask_copy(cs->cpus_allowed, parent->cpus_allowed);
 	cpumask_copy(cs->effective_cpus, parent->cpus_allowed);
+	cpuacct_cpuset_changed(cs->css.cgroup, NULL, cs->effective_cpus);
 	spin_unlock_irq(&callback_lock);
 out_unlock:
 	percpu_up_write(&cpuset_rwsem);

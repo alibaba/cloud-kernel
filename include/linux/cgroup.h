@@ -961,4 +961,16 @@ static inline void cgroup_bpf_put(struct cgroup *cgrp) {}
 
 #endif /* CONFIG_CGROUP_BPF */
 
+#ifdef CONFIG_SCHED_SLI
+void cpuacct_cpuset_changed(struct cgroup *cgrp,
+		struct cpumask *effective, struct cpumask *new_added);
+void cgroup_idle_end(struct sched_entity *se);
+void cgroup_idle_start(struct sched_entity *se);
+#else
+static inline void cpuacct_cpuset_changed(struct cgroup *cgrp,
+		struct cpumask *effective, struct cpumask *new_added) { }
+static inline void cgroup_idle_end(struct sched_entity *se) { }
+static inline void cgroup_idle_start(struct sched_entity *se) { }
+#endif
+
 #endif /* _LINUX_CGROUP_H */
