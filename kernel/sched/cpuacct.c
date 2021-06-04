@@ -423,6 +423,11 @@ void cgroup_idle_start(struct sched_entity *se)
 	__schedstat_set(se->cg_idle_start, clock);
 	write_sequnlock(&se->idle_seqlock);
 
+	spin_lock(&se->iowait_lock);
+	if (schedstat_val(se->cg_nr_iowait))
+		__schedstat_set(se->cg_iowait_start, clock);
+	spin_unlock(&se->iowait_lock);
+
 	local_irq_restore(flags);
 }
 
@@ -430,7 +435,7 @@ void cgroup_idle_end(struct sched_entity *se)
 {
 	unsigned long flags;
 	u64 clock;
-	u64 idle_start;
+	u64 idle_start, iowait_start;
 
 	if (!schedstat_enabled())
 		return;
@@ -444,6 +449,14 @@ void cgroup_idle_end(struct sched_entity *se)
 	__schedstat_add(se->cg_idle_sum, clock - idle_start);
 	__schedstat_set(se->cg_idle_start, 0);
 	write_sequnlock(&se->idle_seqlock);
+
+	spin_lock(&se->iowait_lock);
+	if (schedstat_val(se->cg_nr_iowait)) {
+		iowait_start = schedstat_val(se->cg_iowait_start);
+		__schedstat_add(se->cg_iowait_sum, clock - iowait_start);
+		__schedstat_set(se->cg_iowait_start, 0);
+	}
+	spin_unlock(&se->iowait_lock);
 
 	local_irq_restore(flags);
 }
@@ -533,8 +546,9 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 	res->softirq = kcpustat->cpustat[CPUTIME_SOFTIRQ];
 	if (se && schedstat_enabled()) {
 		unsigned int seq;
+		unsigned long flags;
 		u64 idle_start, ineff, ineff_start, elapse, complement;
-		u64 clock;
+		u64 clock, iowait_start;
 
 		do {
 			seq = read_seqbegin(&se->idle_seqlock);
@@ -550,6 +564,13 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 		if (ineff_start)
 			__schedstat_add(ineff, clock - ineff_start);
 
+		spin_lock_irqsave(&se->iowait_lock, flags);
+		res->iowait = schedstat_val(se->cg_iowait_sum);
+		iowait_start = schedstat_val(se->cg_iowait_start);
+		if (iowait_start)
+			__schedstat_add(res->iowait, clock - iowait_start);
+		spin_unlock_irqrestore(&se->iowait_lock, flags);
+
 		res->steal = 0;
 
 		elapse = clock - schedstat_val(se->cg_init_time);
@@ -557,6 +578,7 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 		if (elapse > complement)
 			res->steal = elapse - complement;
 
+		res->idle -= res->iowait;
 	} else {
 		res->idle = res->iowait = res->steal = 0;
 	}
