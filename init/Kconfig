@@ -1090,6 +1090,20 @@ config SCHED_SLI
 	  Note CPU usage requires cpuacct and cpu cgroup subsys to be mounted
 	  together to take effect.
 
+config RICH_CONTAINER
+	bool "Alibaba rich container"
+	depends on CGROUP_CPUACCT
+	depends on CFS_BANDWIDTH
+	depends on CPUSETS
+	default n
+	help
+	  Make containers feel like VMs. Change the following interface
+	  to reflect the information from containers, like:
+	  "/proc/cpuinfo", "/proc/meminfo", "/sys/devices/system/cpu/online".
+	  Then tools(i.e. top, free) can work in containers as in VMs.
+	  Note that it requires "cpu,cpuacct,cpuset" shared v1 hierarchy to
+	  work properly.
+
 config CGROUP_CPUACCT
 	bool "Simple CPU accounting controller"
 	help
