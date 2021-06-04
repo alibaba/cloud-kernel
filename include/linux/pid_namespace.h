@@ -88,4 +88,16 @@ extern struct pid_namespace *task_active_pid_ns(struct task_struct *tsk);
 void pidhash_init(void);
 void pid_idr_init(void);
 
+#ifdef CONFIG_RICH_CONTAINER
+static inline bool in_rich_container(struct task_struct *tsk)
+{
+	return (task_active_pid_ns(tsk) != &init_pid_ns) && child_cpuacct(tsk);
+}
+#else
+static inline bool in_rich_container(struct task_struct *tsk)
+{
+	return false;
+}
+#endif
+
 #endif /* _LINUX_PID_NS_H */

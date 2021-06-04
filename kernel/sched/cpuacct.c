@@ -773,3 +773,53 @@ static int __init cgroup_v1_psi_init(void)
 
 late_initcall_sync(cgroup_v1_psi_init);
 #endif
+
+#ifdef CONFIG_RICH_CONTAINER
+bool child_cpuacct(struct task_struct *tsk)
+{
+	struct cpuacct *ca = task_ca(tsk);
+
+	if (ca && ca != &root_cpuacct)
+		return true;
+
+	return false;
+}
+
+bool check_rich_container(unsigned int cpu, unsigned int *index,
+		bool *rich_container, unsigned int *total)
+{
+	struct cpumask cpuset_allowed;
+	struct task_struct *init_tsk;
+	bool in_rich;
+	int i, id = 0;
+
+	rcu_read_lock();
+	in_rich = in_rich_container(current);
+	rcu_read_unlock();
+	if (!in_rich)
+		return false;
+
+	*rich_container = true;
+
+	read_lock(&tasklist_lock);
+	init_tsk = task_active_pid_ns(current)->child_reaper;
+	get_task_struct(init_tsk);
+	read_unlock(&tasklist_lock);
+	cpuset_cpus_allowed(init_tsk, &cpuset_allowed);
+	put_task_struct(init_tsk);
+
+	*total = cpumask_weight(&cpuset_allowed);
+	if (cpumask_test_cpu(cpu, &cpuset_allowed)) {
+		for_each_cpu(i, &cpuset_allowed) {
+			if (i == cpu)
+				break;
+			id++;
+		}
+		*index = id;
+		return false;
+	}
+
+	/* Hide this cpu in the container */
+	return true;
+}
+#endif
