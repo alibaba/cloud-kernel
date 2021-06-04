@@ -1309,6 +1309,8 @@ static int update_parent_subparts_cpumask(struct cpuset *cpuset, int cmd,
 	return cmd == partcmd_update;
 }
 
+static struct cpumask added, deleted, old_cpus;
+
 /*
  * update_cpumasks_hier - Update effective cpumasks and tasks in the subtree
  * @cs:  the cpuset to consider
@@ -1324,7 +1326,6 @@ static int update_parent_subparts_cpumask(struct cpuset *cpuset, int cmd,
 static void update_cpumasks_hier(struct cpuset *cs, struct tmpmasks *tmp)
 {
 	struct cpuset *cp;
-	struct cpumask added, deleted, old_cpus;
 	struct cgroup_subsys_state *pos_css;
 	bool need_rebuild_sched_domains = false;
 	int new_prs;
