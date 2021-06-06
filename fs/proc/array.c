@@ -449,6 +449,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	u64 cgtime, gtime;
 	unsigned long rsslim = 0;
 	unsigned long flags;
+	struct task_struct *init_tsk;
 
 	state = *get_task_state(task);
 	vsize = eip = esp = 0;
@@ -537,6 +538,18 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 
 	/* convert nsec -> ticks */
 	start_time = nsec_to_clock_t(task->start_boottime);
+
+	/*
+	 * While uptime in container is fixed to container start time,
+	 * task start time need to be fixed too, otherwise wrong start
+	 * time will show in "ps".
+	 */
+	rcu_read_lock();
+	if (in_rich_container(current)) {
+		init_tsk = task_active_pid_ns(current)->child_reaper;
+		start_time -= nsec_to_clock_t(init_tsk->start_boottime);
+	}
+	rcu_read_unlock();
 
 	seq_put_decimal_ull(m, "", pid_nr_ns(pid, ns));
 	seq_puts(m, " (");
