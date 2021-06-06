@@ -372,6 +372,8 @@ void calc_global_load(void)
 
 	WRITE_ONCE(calc_load_update, sample_window + LOAD_FREQ);
 
+	calc_cgroup_load();
+
 	/*
 	 * In case we went to NO_HZ for multiple LOAD_FREQ intervals
 	 * catch up in bulk.
