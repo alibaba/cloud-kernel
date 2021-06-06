@@ -35,6 +35,7 @@ struct cpuacct {
 #ifdef CONFIG_SCHED_SLI
 	struct list_head sli_list;
 	bool sli_enabled;
+	u64 next_load_update;
 #endif
 	struct kernel_cpustat __percpu	*cpustat;
 
@@ -918,6 +919,159 @@ struct cgroup_subsys cpuacct_cgrp_subsys = {
 	.legacy_cftypes	= files,
 	.early_init	= true,
 };
+
+#ifdef CONFIG_SCHED_SLI
+static DEFINE_STATIC_KEY_FALSE(async_load_calc);
+
+bool async_load_calc_enabled(void)
+{
+	return static_branch_likely(&async_load_calc);
+}
+
+static int async_load_calc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", async_load_calc_enabled());
+	return 0;
+}
+
+static int async_load_calc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, async_load_calc_show, NULL);
+}
+
+static void async_calc_cgroup_load(void)
+{
+	int cnt;
+	struct cpuacct *ca;
+
+again:
+	cnt = 1;
+	rcu_read_lock();
+	list_for_each_entry_rcu(ca, &sli_ca_list, sli_list) {
+		unsigned long next_update = ca->next_load_update;
+
+		/*
+		 * Need per ca check since after break the list
+		 * could have been changed, otherwise the loop
+		 * will be endless.
+		 */
+		if (time_before(jiffies, next_update + 10))
+			continue;
+
+		cpuacct_calc_load(ca);
+		ca->next_load_update = jiffies + LOAD_FREQ;
+
+		/* Take a break for every 100 ca */
+		if (cnt++ >= 100) {
+			rcu_read_unlock();
+			cond_resched();
+			goto again;
+		}
+	}
+	rcu_read_unlock();
+}
+
+int load_calc_func(void *unsed)
+{
+	unsigned long next_update = jiffies + LOAD_FREQ;
+
+	while (!kthread_should_stop()) {
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		schedule_timeout(HZ/5);
+		set_current_state(TASK_RUNNING);
+
+		if (time_before(jiffies, next_update + 10))
+			continue;
+
+		async_calc_cgroup_load();
+		next_update += LOAD_FREQ;
+	}
+
+	return 0;
+}
+
+static struct task_struct *load_calc_p;
+
+static int mod_async_load_calc(bool enable)
+{
+	if (enable == async_load_calc_enabled())
+		return 0;
+
+	if (enable) {
+		load_calc_p = kthread_create(load_calc_func, NULL, "load_calc");
+		if (!load_calc_p)
+			return -ENOMEM;
+
+		wake_up_process(load_calc_p);
+		static_branch_enable(&async_load_calc);
+	} else {
+		kthread_stop(load_calc_p);
+		load_calc_p = NULL;
+
+		static_branch_disable(&async_load_calc);
+	}
+
+	return 0;
+}
+
+static DEFINE_MUTEX(load_calc_mutex);
+
+static ssize_t async_load_calc_write(struct file *file,
+		const char __user *ubuf,
+		size_t count, loff_t *ppos)
+{
+	char val = -1;
+	int ret = 0;
+
+	if (count < 1 || *ppos) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (copy_from_user(&val, ubuf, 1)) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	mutex_lock(&load_calc_mutex);
+
+	switch (val) {
+	case '0':
+		ret = mod_async_load_calc(false);
+		break;
+	case '1':
+		ret = mod_async_load_calc(true);
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	mutex_unlock(&load_calc_mutex);
+out:
+	return ret ? ret : count;
+}
+
+static const struct proc_ops async_load_calc_opt = {
+	.proc_open	= async_load_calc_open,
+	.proc_read	= seq_read,
+	.proc_write	= async_load_calc_write,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= single_release,
+};
+
+static void async_load_calc_init(void)
+{
+	if (!proc_create("async_load_calc", 0600, NULL,
+				&async_load_calc_opt)) {
+		pr_err("Failed to register async_load_calc interface\n");
+		return;
+	}
+
+	if (mod_async_load_calc(true))
+		pr_err("Failed to enable async_load_calc\n");
+}
+late_initcall_sync(async_load_calc_init);
+#endif
 
 #ifdef CONFIG_PSI
 
