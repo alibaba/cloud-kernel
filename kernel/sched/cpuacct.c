@@ -312,6 +312,13 @@ static int cpuacct_stats_show(struct seq_file *sf, void *v)
 #define arch_idle_time(cpu) 0
 #endif
 
+static unsigned long ca_running(struct cpuacct *ca, int cpu);
+
+unsigned long task_ca_running(struct task_struct *tsk, int cpu)
+{
+	return ca_running(task_ca(tsk), cpu);
+}
+
 static inline struct task_group *cgroup_tg(struct cgroup *cgrp)
 {
 	return container_of(global_cgroup_css(cgrp, cpu_cgrp_id),
@@ -585,6 +592,16 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 
 	res->guest = kcpustat->cpustat[CPUTIME_GUEST];
 	res->guest_nice = kcpustat->cpustat[CPUTIME_GUEST_NICE];
+}
+
+void cpuacct_get_usage_result(struct task_struct *tsk, int cpu,
+		struct cpuacct_usage_result *res)
+{
+	struct cpuacct *ca = task_ca(tsk);
+	struct cgroup *cgrp = ca->css.cgroup;
+	struct task_group *tg = cgroup_tg(cgrp);
+
+	__cpuacct_get_usage_result(ca, cpu, tg, res);
 }
 
 static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)

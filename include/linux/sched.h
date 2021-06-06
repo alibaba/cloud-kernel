@@ -2149,10 +2149,21 @@ struct cpuacct_usage_result {
 
 #ifdef CONFIG_RICH_CONTAINER
 bool child_cpuacct(struct task_struct *tsk);
+void cpuacct_get_usage_result(struct task_struct *tsk, int cpu,
+		struct cpuacct_usage_result *res);
+unsigned long task_ca_running(struct task_struct *tsk, int cpu);
 bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total);
 
 #else
+static inline void cpuacct_get_usage_result(struct task_struct *tsk,
+		int cpu, struct cpuacct_usage_result *res) { }
+
+static inline unsigned long task_ca_running(struct task_struct *tsk, int cpu)
+{
+	return 0;
+}
+
 static inline bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total)
 {
