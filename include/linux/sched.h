@@ -2176,6 +2176,12 @@ static inline bool check_rich_container(unsigned int cpu, unsigned int *index,
 }
 #endif
 
+#ifdef CONFIG_SCHED_SLI
+void create_rich_container_reaper(struct task_struct *tsk);
+#else
+static inline void create_rich_container_reaper(struct task_struct *tsk) { }
+#endif
+
 const struct sched_avg *sched_trace_cfs_rq_avg(struct cfs_rq *cfs_rq);
 char *sched_trace_cfs_rq_path(struct cfs_rq *cfs_rq, char *str, int len);
 int sched_trace_cfs_rq_cpu(struct cfs_rq *cfs_rq);

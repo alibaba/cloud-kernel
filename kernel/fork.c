@@ -2318,6 +2318,8 @@ retry:
 	proc_fork_connector(p);
 	sched_post_fork(p, args);
 	cgroup_post_fork(p, args);
+	if (likely(p->pid) && is_child_reaper(pid))
+		create_rich_container_reaper(p);
 	perf_event_fork(p);
 
 	trace_task_newtask(p, clone_flags);

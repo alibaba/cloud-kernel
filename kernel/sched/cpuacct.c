@@ -32,6 +32,10 @@ struct cpuacct {
 	struct cgroup_subsys_state	css;
 	/* cpuusage holds pointer to a u64-type object on every CPU */
 	struct cpuacct_usage __percpu	*cpuusage;
+#ifdef CONFIG_SCHED_SLI
+	struct list_head sli_list;
+	bool sli_enabled;
+#endif
 	struct kernel_cpustat __percpu	*cpustat;
 
 	unsigned long avenrun[3];
@@ -64,6 +68,57 @@ static struct cpuacct root_cpuacct = {
 	.cpuusage	= &root_cpuacct_cpuusage,
 };
 
+#ifdef CONFIG_SCHED_SLI
+static DEFINE_SPINLOCK(sli_ca_lock);
+LIST_HEAD(sli_ca_list);
+
+static void ca_enable_sli(struct cpuacct *ca, bool val)
+{
+	spin_lock(&sli_ca_lock);
+	if (val && !READ_ONCE(ca->sli_enabled))
+		list_add_tail_rcu(&ca->sli_list, &sli_ca_list);
+	else if (!val && READ_ONCE(ca->sli_enabled))
+		list_del_rcu(&ca->sli_list);
+	WRITE_ONCE(ca->sli_enabled, val);
+	spin_unlock(&sli_ca_lock);
+}
+
+void create_rich_container_reaper(struct task_struct *tsk)
+{
+	struct cpuacct *ca;
+	struct cpuacct *parent_ca;
+	struct cgroup_subsys_state *css;
+
+	if (thread_group_leader(tsk)) {
+		rcu_read_lock();
+		css = task_css(tsk, cpuacct_cgrp_id);
+		ca = css_ca(css);
+		if (!ca || !in_rich_container(tsk)) {
+			rcu_read_unlock();
+			return;
+		}
+
+		ca_enable_sli(ca, true);
+		parent_ca = css_ca(css->parent);
+		if (parent_ca && parent_ca != &root_cpuacct)
+			ca_enable_sli(parent_ca, true);
+		rcu_read_unlock();
+	}
+}
+
+static int enable_sli_write(struct cgroup_subsys_state *css,
+		struct cftype *cft, u64 val)
+{
+	ca_enable_sli(css_ca(css), !!val);
+	return 0;
+}
+
+static u64 enable_sli_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return READ_ONCE(css_ca(css)->sli_enabled);
+}
+#endif
+
 /* Create a new CPU accounting group */
 static struct cgroup_subsys_state *
 cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
@@ -86,6 +141,10 @@ cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
 	if (!ca->cpustat)
 		goto out_free_cpuusage;
 
+#ifdef CONFIG_SCHED_SLI
+	INIT_LIST_HEAD(&ca->sli_list);
+#endif
+
 	for_each_possible_cpu(i) {
 		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime1);
 		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime2);
@@ -100,6 +159,13 @@ out_free_ca:
 out:
 	return ERR_PTR(-ENOMEM);
 }
+
+#ifdef CONFIG_SCHED_SLI
+static void cpuacct_css_offline(struct cgroup_subsys_state *css)
+{
+	ca_enable_sli(css_ca(css), false);
+}
+#endif
 
 /* Destroy an existing CPU accounting group */
 static void cpuacct_css_free(struct cgroup_subsys_state *css)
@@ -553,32 +619,16 @@ static void cpuacct_calc_load(struct cpuacct *acct)
 }
 
 /*
- * Currently we walk the whole cpuacct tree to perform per-cgroup
- * load calculation, but it can cause overhead if there're too many
- * cgroups.
- *
- * TODO: A better way to avoid the possible overhead.
- *	Consider NO_HZ.
+ * We walk cpuacct whose SLI is enabled to perform per-cgroup load calculation
+ * the overhead is acceptable if SLI is not enabled for most of the cgroups.
  */
 void calc_cgroup_load(void)
 {
-	struct cgroup_subsys_state *css;
-	struct cpuacct *acct;
+	struct cpuacct *ca;
 
 	rcu_read_lock();
-	css_for_each_descendant_pre(css, &root_cpuacct.css) {
-		acct = NULL;
-		if (css && css_tryget(css))
-			acct = container_of(css, struct cpuacct, css);
-		rcu_read_unlock();
-		if (acct) {
-			cpuacct_calc_load(acct);
-			css_put(&acct->css);
-		}
-		rcu_read_lock();
-		if (!css)
-			break;
-	}
+	list_for_each_entry_rcu(ca, &sli_ca_list, sli_list)
+		cpuacct_calc_load(ca);
 	rcu_read_unlock();
 }
 
@@ -802,6 +852,11 @@ static struct cftype files[] = {
 		.name = "proc_stat",
 		.seq_show = cpuacct_proc_stats_show,
 	},
+	{
+		.name = "enable_sli",
+		.read_u64 = enable_sli_read,
+		.write_u64 = enable_sli_write
+	},
 #endif
 	{ }	/* terminate */
 };
@@ -843,9 +898,23 @@ void cpuacct_account_field(struct task_struct *tsk, int index, u64 val)
 	rcu_read_unlock();
 }
 
+static void cpuacct_cgroup_attach(struct cgroup_taskset *tset)
+{
+	struct task_struct *task;
+	struct cgroup_subsys_state *css;
+
+	cgroup_taskset_for_each(task, css, tset)
+		if (task->pid && is_child_reaper(task_pid(task)))
+			create_rich_container_reaper(task);
+}
+
 struct cgroup_subsys cpuacct_cgrp_subsys = {
 	.css_alloc	= cpuacct_css_alloc,
 	.css_free	= cpuacct_css_free,
+#ifdef CONFIG_SCHED_SLI
+	.css_offline	= cpuacct_css_offline,
+#endif
+	.attach		= cpuacct_cgroup_attach,
 	.legacy_cftypes	= files,
 	.early_init	= true,
 };
