@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Shared Memory Communications over RDMA (SMC-R) and RoCE
+ * Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
  *
  * Work Requests exploiting Infiniband API
  *
@@ -142,9 +142,9 @@ again:
 	polled++;
 	do {
 		memset(&wc, 0, sizeof(wc));
-		rc = ib_poll_cq(dev->roce_cq_send, SMC_WR_MAX_POLL_CQE, wc);
+		rc = ib_poll_cq(dev->ib_cq_send, SMC_WR_MAX_POLL_CQE, wc);
 		if (polled == 1) {
-			ib_req_notify_cq(dev->roce_cq_send,
+			ib_req_notify_cq(dev->ib_cq_send,
 					 IB_CQ_NEXT_COMP |
 					 IB_CQ_REPORT_MISSED_EVENTS);
 		}
@@ -269,10 +269,10 @@ int smc_wr_tx_send(struct smc_link *link, struct smc_wr_tx_pend_priv *priv)
 	struct smc_wr_tx_pend *pend;
 	int rc;
 
-	ib_req_notify_cq(link->smcibdev->roce_cq_send,
+	ib_req_notify_cq(link->smcibdev->ib_cq_send,
 			 IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
 	pend = container_of(priv, struct smc_wr_tx_pend, priv);
-	rc = ib_post_send(link->roce_qp, &link->wr_tx_ibs[pend->idx], NULL);
+	rc = ib_post_send(link->ib_qp, &link->wr_tx_ibs[pend->idx], NULL);
 	if (rc) {
 		smc_wr_tx_put_slot(link, priv);
 		smcr_link_down_cond_sched(link);
@@ -312,13 +312,13 @@ int smc_wr_reg_send(struct smc_link *link, struct ib_mr *mr)
 {
 	int rc;
 
-	ib_req_notify_cq(link->smcibdev->roce_cq_send,
+	ib_req_notify_cq(link->smcibdev->ib_cq_send,
 			 IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
 	link->wr_reg_state = POSTED;
 	link->wr_reg.wr.wr_id = (u64)(uintptr_t)mr;
 	link->wr_reg.mr = mr;
 	link->wr_reg.key = mr->rkey;
-	rc = ib_post_send(link->roce_qp, &link->wr_reg.wr, NULL);
+	rc = ib_post_send(link->ib_qp, &link->wr_reg.wr, NULL);
 	if (rc)
 		return rc;
 
@@ -449,9 +449,9 @@ again:
 	polled++;
 	do {
 		memset(&wc, 0, sizeof(wc));
-		rc = ib_poll_cq(dev->roce_cq_recv, SMC_WR_MAX_POLL_CQE, wc);
+		rc = ib_poll_cq(dev->ib_cq_recv, SMC_WR_MAX_POLL_CQE, wc);
 		if (polled == 1) {
-			ib_req_notify_cq(dev->roce_cq_recv,
+			ib_req_notify_cq(dev->ib_cq_recv,
 					 IB_CQ_SOLICITED_MASK
 					 | IB_CQ_REPORT_MISSED_EVENTS);
 		}
@@ -489,7 +489,7 @@ void smc_wr_remember_qp_attr(struct smc_link *lnk)
 
 	memset(attr, 0, sizeof(*attr));
 	memset(&init_attr, 0, sizeof(init_attr));
-	ib_query_qp(lnk->roce_qp, attr,
+	ib_query_qp(lnk->ib_qp, attr,
 		    IB_QP_STATE |
 		    IB_QP_CUR_STATE |
 		    IB_QP_PKEY_INDEX |
@@ -523,15 +523,15 @@ static void smc_wr_init_sge(struct smc_link *lnk)
 		lnk->wr_tx_sges[i].addr =
 			lnk->wr_tx_dma_addr + i * SMC_WR_BUF_SIZE;
 		lnk->wr_tx_sges[i].length = SMC_WR_TX_SIZE;
-		lnk->wr_tx_sges[i].lkey = lnk->roce_pd->local_dma_lkey;
+		lnk->wr_tx_sges[i].lkey = lnk->ib_pd->local_dma_lkey;
 		lnk->wr_tx_rdma_sges[i].tx_rdma_sge[0].wr_tx_rdma_sge[0].lkey =
-			lnk->roce_pd->local_dma_lkey;
+			lnk->ib_pd->local_dma_lkey;
 		lnk->wr_tx_rdma_sges[i].tx_rdma_sge[0].wr_tx_rdma_sge[1].lkey =
-			lnk->roce_pd->local_dma_lkey;
+			lnk->ib_pd->local_dma_lkey;
 		lnk->wr_tx_rdma_sges[i].tx_rdma_sge[1].wr_tx_rdma_sge[0].lkey =
-			lnk->roce_pd->local_dma_lkey;
+			lnk->ib_pd->local_dma_lkey;
 		lnk->wr_tx_rdma_sges[i].tx_rdma_sge[1].wr_tx_rdma_sge[1].lkey =
-			lnk->roce_pd->local_dma_lkey;
+			lnk->ib_pd->local_dma_lkey;
 		lnk->wr_tx_ibs[i].next = NULL;
 		lnk->wr_tx_ibs[i].sg_list = &lnk->wr_tx_sges[i];
 		lnk->wr_tx_ibs[i].num_sge = 1;
@@ -549,7 +549,7 @@ static void smc_wr_init_sge(struct smc_link *lnk)
 		lnk->wr_rx_sges[i].addr =
 			lnk->wr_rx_dma_addr + i * SMC_WR_BUF_SIZE;
 		lnk->wr_rx_sges[i].length = SMC_WR_BUF_SIZE;
-		lnk->wr_rx_sges[i].lkey = lnk->roce_pd->local_dma_lkey;
+		lnk->wr_rx_sges[i].lkey = lnk->ib_pd->local_dma_lkey;
 		lnk->wr_rx_ibs[i].next = NULL;
 		lnk->wr_rx_ibs[i].sg_list = &lnk->wr_rx_sges[i];
 		lnk->wr_rx_ibs[i].num_sge = 1;

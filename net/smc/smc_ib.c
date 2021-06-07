@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- *  Shared Memory Communications over RDMA (SMC-R) and RoCE
+ *  Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
  *
  *  IB infrastructure:
  *  Establish SMC-R as an Infiniband Client to be notified about added and
@@ -51,7 +51,7 @@ static int smc_ib_modify_qp_init(struct smc_link *lnk)
 	qp_attr.port_num = lnk->ibport;
 	qp_attr.qp_access_flags = IB_ACCESS_LOCAL_WRITE
 				| IB_ACCESS_REMOTE_WRITE;
-	return ib_modify_qp(lnk->roce_qp, &qp_attr,
+	return ib_modify_qp(lnk->ib_qp, &qp_attr,
 			    IB_QP_STATE | IB_QP_PKEY_INDEX |
 			    IB_QP_ACCESS_FLAGS | IB_QP_PORT);
 }
@@ -79,7 +79,7 @@ static int smc_ib_modify_qp_rtr(struct smc_link *lnk)
 					 */
 	qp_attr.min_rnr_timer = SMC_QP_MIN_RNR_TIMER;
 
-	return ib_modify_qp(lnk->roce_qp, &qp_attr, qp_attr_mask);
+	return ib_modify_qp(lnk->ib_qp, &qp_attr, qp_attr_mask);
 }
 
 int smc_ib_modify_qp_rts(struct smc_link *lnk)
@@ -95,7 +95,7 @@ int smc_ib_modify_qp_rts(struct smc_link *lnk)
 	qp_attr.max_rd_atomic = 1;	/* # of outstanding RDMA reads and
 					 * atomic ops allowed
 					 */
-	return ib_modify_qp(lnk->roce_qp, &qp_attr,
+	return ib_modify_qp(lnk->ib_qp, &qp_attr,
 			    IB_QP_STATE | IB_QP_TIMEOUT | IB_QP_RETRY_CNT |
 			    IB_QP_SQ_PSN | IB_QP_RNR_RETRY |
 			    IB_QP_MAX_QP_RD_ATOMIC);
@@ -107,7 +107,7 @@ int smc_ib_modify_qp_reset(struct smc_link *lnk)
 
 	memset(&qp_attr, 0, sizeof(qp_attr));
 	qp_attr.qp_state = IB_QPS_RESET;
-	return ib_modify_qp(lnk->roce_qp, &qp_attr, IB_QP_STATE);
+	return ib_modify_qp(lnk->ib_qp, &qp_attr, IB_QP_STATE);
 }
 
 int smc_ib_ready_link(struct smc_link *lnk)
@@ -123,7 +123,7 @@ int smc_ib_ready_link(struct smc_link *lnk)
 	if (rc)
 		goto out;
 	smc_wr_remember_qp_attr(lnk);
-	rc = ib_req_notify_cq(lnk->smcibdev->roce_cq_recv,
+	rc = ib_req_notify_cq(lnk->smcibdev->ib_cq_recv,
 			      IB_CQ_SOLICITED_MASK);
 	if (rc)
 		goto out;
@@ -227,7 +227,7 @@ static int smc_ib_remember_port_attr(struct smc_ib_device *smcibdev, u8 ibport)
 			   &smcibdev->pattr[ibport - 1]);
 	if (rc)
 		goto out;
-	/* the SMC protocol requires specification of the RoCE MAC address */
+	/* the SMC protocol requires specification of the RoCE or iWARP MAC address */
 	rc = smc_ib_fill_mac(smcibdev, ibport);
 	if (rc)
 		goto out;
@@ -311,19 +311,19 @@ static void smc_ib_global_event_handler(struct ib_event_handler *handler,
 
 void smc_ib_dealloc_protection_domain(struct smc_link *lnk)
 {
-	if (lnk->roce_pd)
-		ib_dealloc_pd(lnk->roce_pd);
-	lnk->roce_pd = NULL;
+	if (lnk->ib_pd)
+		ib_dealloc_pd(lnk->ib_pd);
+	lnk->ib_pd = NULL;
 }
 
 int smc_ib_create_protection_domain(struct smc_link *lnk)
 {
 	int rc;
 
-	lnk->roce_pd = ib_alloc_pd(lnk->smcibdev->ibdev, 0);
-	rc = PTR_ERR_OR_ZERO(lnk->roce_pd);
-	if (IS_ERR(lnk->roce_pd))
-		lnk->roce_pd = NULL;
+	lnk->ib_pd = ib_alloc_pd(lnk->smcibdev->ibdev, 0);
+	rc = PTR_ERR_OR_ZERO(lnk->ib_pd);
+	if (IS_ERR(lnk->ib_pd))
+		lnk->ib_pd = NULL;
 	return rc;
 }
 
@@ -515,9 +515,9 @@ static void smc_ib_qp_event_handler(struct ib_event *ibevent, void *priv)
 
 void smc_ib_destroy_queue_pair(struct smc_link *lnk)
 {
-	if (lnk->roce_qp)
-		ib_destroy_qp(lnk->roce_qp);
-	lnk->roce_qp = NULL;
+	if (lnk->ib_qp)
+		ib_destroy_qp(lnk->ib_qp);
+	lnk->ib_qp = NULL;
 }
 
 /* create a queue pair within the protection domain for a link */
@@ -526,8 +526,8 @@ int smc_ib_create_queue_pair(struct smc_link *lnk)
 	struct ib_qp_init_attr qp_attr = {
 		.event_handler = smc_ib_qp_event_handler,
 		.qp_context = lnk,
-		.send_cq = lnk->smcibdev->roce_cq_send,
-		.recv_cq = lnk->smcibdev->roce_cq_recv,
+		.send_cq = lnk->smcibdev->ib_cq_send,
+		.recv_cq = lnk->smcibdev->ib_cq_recv,
 		.srq = NULL,
 		.cap = {
 				/* include unsolicited rdma_writes as well,
@@ -543,10 +543,10 @@ int smc_ib_create_queue_pair(struct smc_link *lnk)
 	};
 	int rc;
 
-	lnk->roce_qp = ib_create_qp(lnk->roce_pd, &qp_attr);
-	rc = PTR_ERR_OR_ZERO(lnk->roce_qp);
-	if (IS_ERR(lnk->roce_qp))
-		lnk->roce_qp = NULL;
+	lnk->ib_qp = ib_create_qp(lnk->ib_pd, &qp_attr);
+	rc = PTR_ERR_OR_ZERO(lnk->ib_qp);
+	if (IS_ERR(lnk->ib_qp))
+		lnk->ib_qp = NULL;
 	else
 		smc_wr_remember_qp_attr(lnk);
 	return rc;
@@ -681,20 +681,20 @@ long smc_ib_setup_per_ibdev(struct smc_ib_device *smcibdev)
 	smc_order = MAX_ORDER - cqe_size_order - 1;
 	if (SMC_MAX_CQE + 2 > (0x00000001 << smc_order) * PAGE_SIZE)
 		cqattr.cqe = (0x00000001 << smc_order) * PAGE_SIZE - 2;
-	smcibdev->roce_cq_send = ib_create_cq(smcibdev->ibdev,
-					      smc_wr_tx_cq_handler, NULL,
-					      smcibdev, &cqattr);
-	rc = PTR_ERR_OR_ZERO(smcibdev->roce_cq_send);
-	if (IS_ERR(smcibdev->roce_cq_send)) {
-		smcibdev->roce_cq_send = NULL;
+	smcibdev->ib_cq_send = ib_create_cq(smcibdev->ibdev,
+					    smc_wr_tx_cq_handler, NULL,
+					    smcibdev, &cqattr);
+	rc = PTR_ERR_OR_ZERO(smcibdev->ib_cq_send);
+	if (IS_ERR(smcibdev->ib_cq_send)) {
+		smcibdev->ib_cq_send = NULL;
 		goto out;
 	}
-	smcibdev->roce_cq_recv = ib_create_cq(smcibdev->ibdev,
-					      smc_wr_rx_cq_handler, NULL,
-					      smcibdev, &cqattr);
-	rc = PTR_ERR_OR_ZERO(smcibdev->roce_cq_recv);
-	if (IS_ERR(smcibdev->roce_cq_recv)) {
-		smcibdev->roce_cq_recv = NULL;
+	smcibdev->ib_cq_recv = ib_create_cq(smcibdev->ibdev,
+					    smc_wr_rx_cq_handler, NULL,
+					    smcibdev, &cqattr);
+	rc = PTR_ERR_OR_ZERO(smcibdev->ib_cq_recv);
+	if (IS_ERR(smcibdev->ib_cq_recv)) {
+		smcibdev->ib_cq_recv = NULL;
 		goto err;
 	}
 	smc_wr_add_dev(smcibdev);
@@ -702,7 +702,7 @@ long smc_ib_setup_per_ibdev(struct smc_ib_device *smcibdev)
 	goto out;
 
 err:
-	ib_destroy_cq(smcibdev->roce_cq_send);
+	ib_destroy_cq(smcibdev->ib_cq_send);
 out:
 	mutex_unlock(&smcibdev->mutex);
 	return rc;
@@ -714,8 +714,8 @@ static void smc_ib_cleanup_per_ibdev(struct smc_ib_device *smcibdev)
 	if (!smcibdev->initialized)
 		goto out;
 	smcibdev->initialized = 0;
-	ib_destroy_cq(smcibdev->roce_cq_recv);
-	ib_destroy_cq(smcibdev->roce_cq_send);
+	ib_destroy_cq(smcibdev->ib_cq_recv);
+	ib_destroy_cq(smcibdev->ib_cq_send);
 	smc_wr_remove_dev(smcibdev);
 out:
 	mutex_unlock(&smcibdev->mutex);

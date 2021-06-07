@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Shared Memory Communications over RDMA (SMC-R) and RoCE
+ * Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
  *
  *  Definitions for SMC Connections, Link Groups and Links
  *
@@ -79,10 +79,10 @@ struct smc_link {
 	struct iw_ext_conn_param	iw_conn_param;
 	struct smc_ib_device	*smcibdev;	/* ib-device */
 	u8			ibport;		/* port - values 1 | 2 */
-	struct ib_pd		*roce_pd;	/* IB protection domain,
-						 * unique for every RoCE QP
+	struct ib_pd		*ib_pd;		/* IB protection domain,
+						 * unique for every IB QP
 						 */
-	struct ib_qp		*roce_qp;	/* IB queue pair */
+	struct ib_qp		*ib_qp;		/* IB queue pair */
 	struct ib_qp_attr	qp_attr;	/* IB queue pair attributes */
 
 	struct smc_wr_buf	*wr_tx_bufs;	/* WR send payload buffers */

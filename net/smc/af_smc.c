@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- *  Shared Memory Communications over RDMA (SMC-R) and RoCE
+ *  Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
  *
  *  AF_SMC protocol family socket handler keeping the AF_INET sock address type
  *  applies to SOCK_STREAM sockets only
  *  offers an alternative communication option for TCP-protocol sockets
- *  applicable with RoCE-cards only
+ *  applicable with RoCE-cards or iWARP-cards
  *
  *  Initial restrictions:
  *    - support for alternate links postponed
@@ -393,7 +393,7 @@ static int smcr_clnt_conf_first_link(struct smc_sock *smc)
 	struct smc_llc_qentry *qentry;
 	int rc;
 
-	/* receive CONFIRM LINK request from server over RoCE fabric */
+	/* receive CONFIRM LINK request from server over IB fabric */
 	qentry = smc_llc_wait(link->lgr, NULL, SMC_LLC_WAIT_TIME,
 			      SMC_LLC_CONFIRM_LINK);
 	if (!qentry) {
@@ -421,7 +421,7 @@ static int smcr_clnt_conf_first_link(struct smc_sock *smc)
 	/* confirm_rkey is implicit on 1st contact */
 	smc->conn.rmb_desc->is_conf_rkey = true;
 
-	/* send CONFIRM LINK response over RoCE fabric */
+	/* send CONFIRM LINK response over IB fabric */
 	rc = smc_llc_send_confirm_link(link, SMC_LLC_RESP);
 	if (rc < 0)
 		return SMC_CLC_DECL_TIMEOUT_CL;
@@ -628,7 +628,7 @@ static int smc_find_rdma_device(struct smc_sock *smc, struct smc_init_info *ini)
 	 * within same PNETID that also contains the ethernet device
 	 * used for the internal TCP socket
 	 */
-	smc_pnet_find_roce_resource(smc->clcsock->sk, ini);
+	smc_pnet_find_ib_resource(smc->clcsock->sk, ini);
 	if (!ini->ib_dev)
 		return SMC_CLC_DECL_NOSMCRDEV;
 	return 0;
@@ -857,7 +857,7 @@ static int smc_connect_rdma(struct smc_sock *smc,
 	smc_tx_init(smc);
 
 	if (ini->first_contact_local) {
-		/* QP confirmation over RoCE fabric */
+		/* QP confirmation over IB fabric */
 		smc_llc_flow_initiate(link->lgr, SMC_LLC_FLOW_ADD_LINK);
 		reason_code = smcr_clnt_conf_first_link(smc);
 		smc_llc_flow_stop(link->lgr, &link->lgr->llc_flow_lcl);
@@ -1300,12 +1300,12 @@ static int smcr_serv_conf_first_link(struct smc_sock *smc)
 	if (smcr_link_reg_rmb(link, smc->conn.rmb_desc))
 		return SMC_CLC_DECL_ERR_REGRMB;
 
-	/* send CONFIRM LINK request to client over the RoCE fabric */
+	/* send CONFIRM LINK request to client over the IB fabric */
 	rc = smc_llc_send_confirm_link(link, SMC_LLC_REQ);
 	if (rc < 0)
 		return SMC_CLC_DECL_TIMEOUT_CL;
 
-	/* receive CONFIRM LINK response from client over the RoCE fabric */
+	/* receive CONFIRM LINK response from client over the IB fabric */
 	qentry = smc_llc_wait(link->lgr, link, SMC_LLC_WAIT_TIME,
 			      SMC_LLC_CONFIRM_LINK);
 	if (!qentry) {
@@ -1708,7 +1708,7 @@ static int smc_listen_rdma_finish(struct smc_sock *new_smc,
 	if (local_first) {
 		if (smc_ib_ready_link(link))
 			return SMC_CLC_DECL_ERR_RDYLNK;
-		/* QP confirmation over RoCE fabric */
+		/* QP confirmation over IB fabric */
 		smc_llc_flow_initiate(link->lgr, SMC_LLC_FLOW_ADD_LINK);
 		reason_code = smcr_serv_conf_first_link(new_smc);
 		smc_llc_flow_stop(link->lgr, &link->lgr->llc_flow_lcl);
@@ -1781,7 +1781,7 @@ static void smc_listen_work(struct work_struct *work)
 	smc_rx_init(new_smc);
 	smc_tx_init(new_smc);
 
-	/* determine ISM or RoCE device used for connection */
+	/* determine ISM or IB device used for connection */
 	rc = smc_listen_find_device(new_smc, pclc, ini);
 	if (rc)
 		goto out_unlock;

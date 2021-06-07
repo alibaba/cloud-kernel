@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- *  Shared Memory Communications over RDMA (SMC-R) and RoCE
+ *  Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
  *
  *  Basic Transport Functions exploiting Infiniband API
  *
@@ -1856,7 +1856,7 @@ static int smcr_buf_map_link(struct smc_buf_desc *buf_desc, bool is_rmb,
 
 	/* create a new memory region for the RMB */
 	if (is_rmb) {
-		rc = smc_ib_get_memory_region(lnk->roce_pd,
+		rc = smc_ib_get_memory_region(lnk->ib_pd,
 					      IB_ACCESS_REMOTE_WRITE |
 					      IB_ACCESS_LOCAL_WRITE,
 					      buf_desc, lnk->link_idx);

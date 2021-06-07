@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Shared Memory Communications over RDMA (SMC-R) and RoCE
+ * Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
  *
  * SMC statistics netlink routines
  *
