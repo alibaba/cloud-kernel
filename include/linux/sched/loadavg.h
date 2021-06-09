@@ -13,7 +13,17 @@
  *    11 bit fractions.
  */
 extern unsigned long avenrun[];		/* Load averages */
+extern unsigned long avenrun_r[];	/* R load averages */
+
 extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
+
+#ifdef CONFIG_SCHED_SLI
+extern void get_avenrun_r(unsigned long *loads, unsigned long offset,
+	int shift);
+#else
+static inline void get_avenrun_r(unsigned long *loads, unsigned long offset,
+	int shift) { }
+#endif
 
 #define FSHIFT		11		/* nr of bits of precision */
 #define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */

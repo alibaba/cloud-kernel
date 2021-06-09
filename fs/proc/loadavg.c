@@ -13,7 +13,7 @@
 
 static int loadavg_proc_show(struct seq_file *m, void *v)
 {
-	unsigned long avnrun[3], nr_R = 0;
+	unsigned long avnrun[3], nr_r = 0;
 	struct cpumask cpuset_allowed;
 	int i;
 
@@ -25,15 +25,15 @@ static int loadavg_proc_show(struct seq_file *m, void *v)
 		init_tsk = task_active_pid_ns(current)->child_reaper;
 		get_task_struct(init_tsk);
 		read_unlock(&tasklist_lock);
+		get_cgroup_avenrun(init_tsk, avnrun, FIXED_1/200, 0, false);
 
-		get_cgroup_avenrun(init_tsk, avnrun, FIXED_1/200, 0);
 		cpuset_cpus_allowed(init_tsk, &cpuset_allowed);
 		for_each_cpu(i, &cpuset_allowed)
-			nr_R += task_ca_running(init_tsk, i);
+			nr_r += task_ca_running(init_tsk, i);
 		put_task_struct(init_tsk);
 	} else {
 		get_avenrun(avnrun, FIXED_1/200, 0);
-		nr_R = nr_running();
+		nr_r = nr_running();
 	}
 	rcu_read_unlock();
 
@@ -41,7 +41,7 @@ static int loadavg_proc_show(struct seq_file *m, void *v)
 		LOAD_INT(avnrun[0]), LOAD_FRAC(avnrun[0]),
 		LOAD_INT(avnrun[1]), LOAD_FRAC(avnrun[1]),
 		LOAD_INT(avnrun[2]), LOAD_FRAC(avnrun[2]),
-		nr_R, nr_threads,
+		nr_r, nr_threads,
 		idr_get_cursor(&task_active_pid_ns(current)->idr) - 1);
 	return 0;
 }

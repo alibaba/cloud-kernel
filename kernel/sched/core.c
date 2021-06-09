@@ -6719,6 +6719,11 @@ static void calc_load_migrate(struct rq *rq)
 	long delta = calc_load_fold_active(rq, 1);
 	if (delta)
 		atomic_long_add(delta, &calc_load_tasks);
+#ifdef CONFIG_SCHED_SLI
+	delta = calc_load_fold_active_r(rq, 1);
+	if (delta)
+		atomic_long_add(delta, &calc_load_tasks_r);
+#endif
 }
 
 static struct task_struct *__pick_migrate_task(struct rq *rq)
@@ -7151,6 +7156,9 @@ void __init sched_init(void)
 		raw_spin_lock_init(&rq->lock);
 		rq->nr_running = 0;
 		rq->calc_load_active = 0;
+#ifdef CONFIG_SCHED_SLI
+		rq->calc_load_active_r = 0;
+#endif
 		rq->calc_load_update = jiffies + LOAD_FREQ;
 		init_cfs_rq(&rq->cfs);
 		init_rt_rq(&rq->rt);

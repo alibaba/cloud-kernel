@@ -113,6 +113,9 @@ struct cpuacct {
 	struct kernel_cpustat __percpu	*cpustat;
 
 	unsigned long avenrun[3];
+#ifdef CONFIG_SCHED_SLI
+	unsigned long avenrun_r[3];
+#endif
 
 	CK_HOTFIX_RESERVE(1)
 	CK_HOTFIX_RESERVE(2)
@@ -392,6 +395,10 @@ cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
 		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime2);
 	}
 
+	ca->avenrun[0] = ca->avenrun[1] = ca->avenrun[2] = 0;
+#ifdef CONFIG_SCHED_SLI
+	ca->avenrun_r[0] = ca->avenrun_r[1] = ca->avenrun_r[2] = 0;
+#endif
 	return &ca->css;
 
 #ifdef CONFIG_SCHED_SLI
@@ -635,20 +642,24 @@ static int cpuacct_stats_show(struct seq_file *sf, void *v)
 static unsigned long ca_running(struct cpuacct *ca, int cpu);
 
 static void __get_cgroup_avenrun(struct cpuacct *ca, unsigned long *loads,
-		unsigned long offset, int shift)
+		unsigned long offset, int shift, bool running)
 {
 	unsigned long *avenrun;
 
-	avenrun = ca->avenrun;
+	if (running)
+		avenrun = ca->avenrun_r;
+	else
+		avenrun = ca->avenrun;
+
 	loads[0] = (avenrun[0] + offset) << shift;
 	loads[1] = (avenrun[1] + offset) << shift;
 	loads[2] = (avenrun[2] + offset) << shift;
 }
 
 void get_cgroup_avenrun(struct task_struct *tsk, unsigned long *loads,
-			unsigned long offset, int shift)
+			unsigned long offset, int shift, bool running)
 {
-	__get_cgroup_avenrun(task_ca(tsk), loads, offset, shift);
+	__get_cgroup_avenrun(task_ca(tsk), loads, offset, shift, running);
 }
 
 unsigned long task_ca_running(struct task_struct *tsk, int cpu)
@@ -851,22 +862,36 @@ void cpuacct_cpuset_changed(struct cgroup *cgrp, struct cpumask *deleted,
 
 static void cpuacct_calc_load(struct cpuacct *acct)
 {
-	if (acct != &root_cpuacct) {
-		long active = 0;
-		int cpu;
+	long active = 0, active_r = 0, nr_r;
+	int cpu;
 
+	if (acct != &root_cpuacct) {
 		for_each_possible_cpu(cpu) {
-			active += ca_running(acct, cpu);
+			nr_r = ca_running(acct, cpu);
+			active   += nr_r;
+			active_r += nr_r;
 			active += ca_uninterruptible(acct, cpu);
 		}
 		active = active > 0 ? active * FIXED_1 : 0;
 		acct->avenrun[0] = calc_load(acct->avenrun[0], EXP_1, active);
 		acct->avenrun[1] = calc_load(acct->avenrun[1], EXP_5, active);
 		acct->avenrun[2] = calc_load(acct->avenrun[2], EXP_15, active);
+
+		active_r = active_r > 0 ? active_r * FIXED_1 : 0;
+		acct->avenrun_r[0] = calc_load(acct->avenrun_r[0],
+				EXP_1, active_r);
+		acct->avenrun_r[1] = calc_load(acct->avenrun_r[1],
+				EXP_5, active_r);
+		acct->avenrun_r[2] = calc_load(acct->avenrun_r[2],
+				EXP_15, active_r);
 	} else {
 		acct->avenrun[0] = avenrun[0];
 		acct->avenrun[1] = avenrun[1];
 		acct->avenrun[2] = avenrun[2];
+
+		acct->avenrun_r[0] = avenrun_r[0];
+		acct->avenrun_r[1] = avenrun_r[1];
+		acct->avenrun_r[2] = avenrun_r[2];
 	}
 }
 
@@ -983,7 +1008,7 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 	u64 user, nice, system, idle, iowait, irq, softirq, steal, guest;
 	u64 nr_migrations = 0;
 	struct cpuacct_alistats *alistats;
-	unsigned long load, avnrun[3];
+	unsigned long load, avnrun[3], avnrun_r[3];
 	unsigned long nr_run = 0, nr_uninter = 0;
 	int cpu;
 
@@ -1019,7 +1044,8 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 			nr_uninter += ca_uninterruptible(ca, cpu);
 		}
 
-		__get_cgroup_avenrun(ca, avnrun, FIXED_1/200, 0);
+		__get_cgroup_avenrun(ca, avnrun, FIXED_1/200, 0, false);
+		__get_cgroup_avenrun(ca, avnrun_r, FIXED_1/200, 0, true);
 	} else {
 		struct kernel_cpustat *kcpustat;
 
@@ -1043,6 +1069,7 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 		nr_uninter = nr_uninterruptible();
 
 		get_avenrun(avnrun, FIXED_1/200, 0);
+		get_avenrun_r(avnrun_r, FIXED_1/200, 0);
 	}
 
 	seq_printf(sf, "user %lld\n", nsec_to_clock_t(user));
@@ -1067,6 +1094,13 @@ static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
 		nr_uninter = 0;
 	seq_printf(sf, "nr_uninterruptible %lld\n", (u64)nr_uninter);
 	seq_printf(sf, "nr_migrations %lld\n", (u64)nr_migrations);
+
+	load = LOAD_INT(avnrun_r[0]) * 100 + LOAD_FRAC(avnrun_r[0]);
+	seq_printf(sf, "running load average(1min) %lld\n", (u64)load);
+	load = LOAD_INT(avnrun_r[1]) * 100 + LOAD_FRAC(avnrun_r[1]);
+	seq_printf(sf, "running load average(5min) %lld\n", (u64)load);
+	load = LOAD_INT(avnrun_r[2]) * 100 + LOAD_FRAC(avnrun_r[2]);
+	seq_printf(sf, "running load average(15min) %lld\n", (u64)load);
 
 	return 0;
 }
