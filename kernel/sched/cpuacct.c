@@ -38,6 +38,7 @@ enum sched_lat_stat_item {
 	SCHED_LAT_WAIT,
 	SCHED_LAT_BLOCK,
 	SCHED_LAT_IOBLOCK,
+	SCHED_LAT_CGROUP_WAIT,
 	SCHED_LAT_NR_STAT
 };
 
@@ -123,6 +124,12 @@ struct cpuacct {
 	CK_HOTFIX_RESERVE(3)
 	CK_HOTFIX_RESERVE(4)
 };
+
+static inline struct cpuacct *cgroup_ca(struct cgroup *cgrp)
+{
+	return container_of(global_cgroup_css(cgrp, cpuacct_cgrp_id),
+				struct cpuacct, css);
+}
 
 static inline struct cpuacct *css_ca(struct cgroup_subsys_state *css)
 {
@@ -267,26 +274,33 @@ void task_ca_update_block(struct task_struct *tsk, u64 runtime)
 	rcu_read_unlock();
 }
 
-void cpuacct_update_latency(struct task_struct *tsk, u64 delta)
+void cpuacct_update_latency(struct sched_entity *se, u64 delta)
 {
-	enum sched_lat_count_t idx;
+	int idx;
+	enum sched_lat_stat_item s;
 	struct cpuacct *ca;
 	unsigned int msecs;
+	struct task_group *tg;
 
 	if (static_branch_likely(&cpuacct_no_sched_lat))
 		return;
 
 	rcu_read_lock();
-	ca = task_ca(tsk);
+	tg = se->cfs_rq->tg;
+	ca = cgroup_ca(tg->css.cgroup);
 	if (!ca) {
 		rcu_read_unlock();
 		return;
 	}
+	if (entity_is_task(se))
+		s = SCHED_LAT_WAIT;
+	else
+		s = SCHED_LAT_CGROUP_WAIT;
+
 	msecs = delta >> 20; /* Proximately to speed up */
 	idx = get_sched_lat_count_idx(msecs);
-	this_cpu_inc(ca->lat_stat_cpu->item[SCHED_LAT_WAIT][idx]);
-	this_cpu_add(ca->lat_stat_cpu->item[SCHED_LAT_WAIT][SCHED_LAT_TOTAL],
-			delta);
+	this_cpu_inc(ca->lat_stat_cpu->item[s][idx]);
+	this_cpu_add(ca->lat_stat_cpu->item[s][SCHED_LAT_TOTAL], delta);
 	rcu_read_unlock();
 }
 #endif
@@ -1111,11 +1125,13 @@ static void smp_write_##name(void *info)				\
 }									\
 
 SCHED_LAT_STAT_SMP_WRITE(sched_wait_latency, SCHED_LAT_WAIT);
+SCHED_LAT_STAT_SMP_WRITE(sched_wait_cgroup_latency, SCHED_LAT_CGROUP_WAIT);
 SCHED_LAT_STAT_SMP_WRITE(sched_block_latency, SCHED_LAT_BLOCK);
 SCHED_LAT_STAT_SMP_WRITE(sched_ioblock_latency, SCHED_LAT_IOBLOCK);
 
 smp_call_func_t smp_sched_lat_write_funcs[] = {
 	smp_write_sched_wait_latency,
+	smp_write_sched_wait_cgroup_latency,
 	smp_write_sched_block_latency,
 	smp_write_sched_ioblock_latency
 };
@@ -1233,6 +1249,12 @@ static struct cftype files[] = {
 	{
 		.name = "wait_latency",
 		.private = SCHED_LAT_WAIT,
+		.write_u64 = sched_lat_stat_write,
+		.seq_show = sched_lat_stat_show
+	},
+	{
+		.name = "cgroup_wait_latency",
+		.private = SCHED_LAT_CGROUP_WAIT,
 		.write_u64 = sched_lat_stat_write,
 		.seq_show = sched_lat_stat_show
 	},

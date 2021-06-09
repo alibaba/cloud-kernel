@@ -936,8 +936,8 @@ update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			return;
 		}
 		trace_sched_stat_wait(p, delta);
-		cpuacct_update_latency(p, delta);
 	}
+	cpuacct_update_latency(se, delta);
 
 	__schedstat_set(se->statistics.wait_max,
 		      max(schedstat_val(se->statistics.wait_max), delta));
