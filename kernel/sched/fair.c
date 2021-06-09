@@ -1004,6 +1004,7 @@ update_stats_enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		__schedstat_add(se->statistics.sum_sleep_runtime, delta);
 
 		if (tsk) {
+			task_ca_update_block(tsk, delta);
 			if (tsk->in_iowait) {
 				__schedstat_add(se->statistics.iowait_sum, delta);
 				__schedstat_inc(se->statistics.iowait_count);
