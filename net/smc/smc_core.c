@@ -687,6 +687,23 @@ static void smcr_copy_dev_info_to_link(struct smc_link *link)
 	link->ndev_ifidx = smcibdev->ndev_ifidx[link->ibport - 1];
 }
 
+static void smcr_link_iw_extension(struct iw_ext_conn_param *iw_param, struct sock *clcsk)
+{
+	iw_param->sk_addr.family = clcsk->sk_family;
+	if (iw_param->sk_addr.family == PF_INET) {
+		iw_param->sk_addr.saddr_v4 = clcsk->sk_rcv_saddr;
+		iw_param->sk_addr.daddr_v4 = clcsk->sk_daddr;
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+		iw_param->sk_addr.saddr_v6 = clcsk->sk_v6_rcv_saddr;
+		iw_param->sk_addr.daddr_v6 = clcsk->sk_v6_daddr;
+#endif
+	}
+
+	iw_param->sk_addr.sport = clcsk->sk_num;
+	iw_param->sk_addr.dport = clcsk->sk_dport;
+}
+
 int smcr_link_init(struct smc_link_group *lgr, struct smc_link *lnk,
 		   u8 link_idx, struct smc_init_info *ini)
 {
@@ -823,6 +840,8 @@ static int smc_lgr_create(struct smc_sock *smc, struct smc_init_info *ini)
 
 		link_idx = SMC_SINGLE_LINK;
 		lnk = &lgr->lnk[link_idx];
+		smcr_link_iw_extension(&lnk->iw_conn_param, smc->clcsock->sk);
+
 		rc = smcr_link_init(lgr, lnk, link_idx, ini);
 		if (rc)
 			goto free_wq;

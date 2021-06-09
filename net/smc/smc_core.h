@@ -76,6 +76,7 @@ struct smc_rdma_wr {				/* work requests per message
 #define SMC_LGR_ID_SIZE		4
 
 struct smc_link {
+	struct iw_ext_conn_param	iw_conn_param;
 	struct smc_ib_device	*smcibdev;	/* ib-device */
 	u8			ibport;		/* port - values 1 | 2 */
 	struct ib_pd		*roce_pd;	/* IB protection domain,

@@ -2246,6 +2246,25 @@ struct ib_counters_read_attr {
 struct uverbs_attr_bundle;
 struct iw_cm_id;
 struct iw_cm_conn_param;
+struct iw_ext_conn_param {
+	struct {
+		union {
+			__be32 daddr_v4;
+#if IS_ENABLED(CONFIG_IPV6)
+			struct in6_addr daddr_v6;
+#endif
+		};
+		union {
+			__be32 saddr_v4;
+#if IS_ENABLED(CONFIG_IPV6)
+			struct in6_addr saddr_v6;
+#endif
+		};
+		__be16 dport;
+		__u16 sport;
+		unsigned short family;
+	} sk_addr;
+};
 
 #define INIT_RDMA_OBJ_SIZE(ib_struct, drv_struct, member)                      \
 	.size_##ib_struct =                                                    \
