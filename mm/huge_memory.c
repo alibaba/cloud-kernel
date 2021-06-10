@@ -3293,10 +3293,8 @@ static bool replace_zero_page(struct page *page)
 	anon_vma_lock_write(anon_vma);
 	unmap_success = try_to_unmap(page, ttu_flags);
 
-	if (!unmap_success)
-		ret = false;
-	else if (!is_zero_page(page)) {
-		/* remap the non-zero page */
+	if (!unmap_success || !is_zero_page(page)) {
+		/* remap the page */
 		remove_migration_ptes(page, page, true);
 		ret = false;
 	} else
