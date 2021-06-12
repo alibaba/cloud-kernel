@@ -1028,6 +1028,7 @@ static bool iocg_activate(struct ioc_gq *iocg, struct ioc_now *now)
 	u64 last_period, cur_period, max_period_delta;
 	u64 vtime, vmargin, vmin;
 	int i;
+	unsigned long flags;
 
 	/*
 	 * If seem to be already active, just update the stamp to tell the
@@ -1045,7 +1046,7 @@ static bool iocg_activate(struct ioc_gq *iocg, struct ioc_now *now)
 	if (iocg->child_active_sum)
 		return false;
 
-	spin_lock_irq(&ioc->lock);
+	spin_lock_irqsave(&ioc->lock, flags);
 
 	ioc_now(ioc, now);
 
@@ -1103,11 +1104,11 @@ static bool iocg_activate(struct ioc_gq *iocg, struct ioc_now *now)
 	}
 
 succeed_unlock:
-	spin_unlock_irq(&ioc->lock);
+	spin_unlock_irqrestore(&ioc->lock, flags);
 	return true;
 
 fail_unlock:
-	spin_unlock_irq(&ioc->lock);
+	spin_unlock_irqrestore(&ioc->lock, flags);
 	return false;
 }
 
@@ -1732,6 +1733,7 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 	struct iocg_wait wait;
 	u32 hw_active, hw_inuse;
 	u64 abs_cost, cost, vtime;
+	unsigned long flags;
 
 	/* bypass IOs if disabled */
 	if (!ioc->enabled)
@@ -1781,9 +1783,9 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 	    time_after_eq64(vtime + ioc->inuse_margin_vtime, now.vnow)) {
 		TRACE_IOCG_PATH(inuse_reset, iocg, &now,
 				iocg->inuse, iocg->weight, hw_inuse, hw_active);
-		spin_lock_irq(&ioc->lock);
+		spin_lock_irqsave(&ioc->lock, flags);
 		propagate_active_weight(iocg, iocg->weight, iocg->weight);
-		spin_unlock_irq(&ioc->lock);
+		spin_unlock_irqrestore(&ioc->lock, flags);
 		current_hweight(iocg, &hw_active, &hw_inuse);
 	}
 
@@ -1806,10 +1808,10 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 	 * as we're waiting or has debt, so we're good if we're activated
 	 * here. In the unlikely case that we aren't, just issue the IO.
 	 */
-	spin_lock_irq(&iocg->waitq.lock);
+	spin_lock_irqsave(&iocg->waitq.lock, flags);
 
 	if (unlikely(list_empty(&iocg->active_list))) {
-		spin_unlock_irq(&iocg->waitq.lock);
+		spin_unlock_irqrestore(&iocg->waitq.lock, flags);
 		iocg_commit_bio(iocg, bio, cost);
 		return;
 	}
@@ -1836,7 +1838,7 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 		if (iocg_kick_delay(iocg, &now))
 			blkcg_schedule_throttle(rqos->q,
 					(bio->bi_opf & REQ_SWAP) == REQ_SWAP);
-		spin_unlock_irq(&iocg->waitq.lock);
+		spin_unlock_irqrestore(&iocg->waitq.lock, flags);
 		return;
 	}
 
@@ -1862,7 +1864,7 @@ static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio, spinlock_t *
 	__add_wait_queue_entry_tail(&iocg->waitq, &wait.wait);
 	iocg_kick_waitq(iocg, &now);
 
-	spin_unlock_irq(&iocg->waitq.lock);
+	spin_unlock_irqrestore(&iocg->waitq.lock, flags);
 
 	while (true) {
 		set_current_state(TASK_UNINTERRUPTIBLE);
