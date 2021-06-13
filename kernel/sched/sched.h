@@ -1726,7 +1726,11 @@ static const_debug __maybe_unused unsigned int sysctl_sched_features =
 #endif /* SCHED_DEBUG */
 
 extern struct static_key_false sched_numa_balancing;
+#ifdef CONFIG_SCHEDSTATS_HOST
+extern struct static_key_true sched_schedstats;
+#else
 extern struct static_key_false sched_schedstats;
+#endif
 
 static inline u64 global_rt_period(void)
 {

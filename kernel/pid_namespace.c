@@ -24,7 +24,9 @@
 #include <linux/sched/signal.h>
 #include <linux/idr.h>
 
-#ifdef CONFIG_RICH_CONTAINER
+#if defined(CONFIG_RICH_CONTAINER_CG_SWITCH)
+int sysctl_rich_container_enable = 1;
+#elif defined(CONFIG_RICH_CONTAINER)
 int sysctl_rich_container_enable;
 #endif
 
