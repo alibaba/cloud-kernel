@@ -1122,6 +1122,15 @@ config SCHEDSTATS
 	  application, you can say N to avoid the very slight overhead
 	  this adds.
 
+config SCHEDSTATS_HOST
+	bool "Select scheduler statistics in host or guest"
+	depends on SCHEDSTATS
+	default n
+	help
+	  The defalut value of /proc/sys/kernel/sched_schedstats depends on
+	  this config. If Y here, the default value of it is 1, and if N,
+	  the value is 0.
+
 endmenu
 
 config DEBUG_TIMEKEEPING

@@ -1104,6 +1104,15 @@ config RICH_CONTAINER
 	  Note that it requires "cpu,cpuacct,cpuset" shared v1 hierarchy to
 	  work properly.
 
+config RICH_CONTAINER_CG_SWITCH
+	bool "Control Alibaba rich container by per cgroup switches"
+	depends on RICH_CONTAINER
+	default n
+	help
+	  Allow disabling/enabling per cgroup interface for some features
+	  in rich container. If Y, some new interface will be created in per
+	  cgroup directory, and if N, nothing will be created.
+
 config CGROUP_CPUACCT
 	bool "Simple CPU accounting controller"
 	help
