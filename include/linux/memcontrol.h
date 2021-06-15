@@ -1053,6 +1053,15 @@ mem_cgroup_idle_page_stats_switch(struct mem_cgroup *memcg)
 }
 #endif /* CONFIG_KIDLED */
 
+#ifdef CONFIG_RICH_CONTAINER
+struct mem_cgroup *rich_container_get_memcg(void);
+#else
+static inline struct mem_cgroup *rich_container_get_memcg(void)
+{
+	return NULL;
+}
+#endif
+
 void drain_all_stock(struct mem_cgroup *root_memcg);
 
 static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)

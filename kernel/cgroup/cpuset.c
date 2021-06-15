@@ -42,6 +42,7 @@
 #include <linux/fs_context.h>
 #include <linux/namei.h>
 #include <linux/pagemap.h>
+#include <linux/pid_namespace.h>
 #include <linux/proc_fs.h>
 #include <linux/rcupdate.h>
 #include <linux/sched.h>
@@ -3340,6 +3341,43 @@ void cpuset_cpus_allowed(struct task_struct *tsk, struct cpumask *pmask)
 	rcu_read_unlock();
 	spin_unlock_irqrestore(&callback_lock, flags);
 }
+
+#ifdef CONFIG_RICH_CONTAINER
+void rich_container_get_cpuset_cpus(struct cpumask *pmask)
+{
+	unsigned long flags;
+	struct cgroup_subsys_state *css;
+	struct cpuset *cs_src;
+
+	rcu_read_lock();
+#ifdef CONFIG_RICH_CONTAINER_CG_SWITCH
+	css = task_css(current, cpuset_cgrp_id);
+	while (css) {
+		if (test_bit(CGRP_RICH_CONTAINER_SOURCE, &css->cgroup->flags))
+			break;
+		css = css->parent;
+	}
+#else
+	if (sysctl_rich_container_source == 1)
+		css = NULL;
+	else
+		css = task_css(current, cpuset_cgrp_id);
+#endif
+
+	if (css) {
+		cs_src = css_cs(css);
+	} else {
+		read_lock(&tasklist_lock);
+		cs_src = task_cs(task_active_pid_ns(current)->child_reaper);
+		read_unlock(&tasklist_lock);
+	}
+
+	spin_lock_irqsave(&callback_lock, flags);
+	guarantee_online_cpus(cs_src, pmask);
+	spin_unlock_irqrestore(&callback_lock, flags);
+	rcu_read_unlock();
+}
+#endif
 
 /**
  * cpuset_cpus_allowed_fallback - final fallback before complete catastrophe.

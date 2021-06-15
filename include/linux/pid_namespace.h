@@ -90,6 +90,9 @@ void pid_idr_init(void);
 
 #ifdef CONFIG_RICH_CONTAINER
 extern int sysctl_rich_container_enable;
+#ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
+extern int sysctl_rich_container_source;
+#endif
 static inline bool in_rich_container(struct task_struct *tsk)
 {
 	if (sysctl_rich_container_enable == 0)
@@ -97,10 +100,16 @@ static inline bool in_rich_container(struct task_struct *tsk)
 
 	return (task_active_pid_ns(tsk) != &init_pid_ns) && child_cpuacct(tsk);
 }
+
+void rich_container_get_cpuset_cpus(struct cpumask *pmask);
 #else
 static inline bool in_rich_container(struct task_struct *tsk)
 {
 	return false;
+}
+
+static inline void rich_container_get_cpuset_cpus(struct cpumask *pmask)
+{
 }
 #endif
 

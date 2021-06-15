@@ -605,6 +605,24 @@ static int cgroup_clone_children_write(struct cgroup_subsys_state *css,
 	return 0;
 }
 
+#ifdef CONFIG_RICH_CONTAINER_CG_SWITCH
+static u64 cgroup_rich_container_source_read(struct cgroup_subsys_state *css,
+				      struct cftype *cft)
+{
+	return test_bit(CGRP_RICH_CONTAINER_SOURCE, &css->cgroup->flags);
+}
+
+static int cgroup_rich_container_source_write(struct cgroup_subsys_state *css,
+				       struct cftype *cft, u64 val)
+{
+	if (val)
+		set_bit(CGRP_RICH_CONTAINER_SOURCE, &css->cgroup->flags);
+	else
+		clear_bit(CGRP_RICH_CONTAINER_SOURCE, &css->cgroup->flags);
+	return 0;
+}
+#endif
+
 /* cgroup core interface files for the legacy hierarchies */
 struct cftype cgroup1_base_files[] = {
 	{
@@ -647,6 +665,14 @@ struct cftype cgroup1_base_files[] = {
 		.write = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX - 1,
 	},
+#ifdef CONFIG_RICH_CONTAINER_CG_SWITCH
+	{
+		.name = "cgroup.rich_container_source",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = cgroup_rich_container_source_read,
+		.write_u64 = cgroup_rich_container_source_write,
+	},
+#endif
 	{ }	/* terminate */
 };
 

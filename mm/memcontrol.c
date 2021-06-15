@@ -8813,6 +8813,48 @@ static int __init mem_cgroup_swap_init(void)
 }
 core_initcall(mem_cgroup_swap_init);
 
+#endif /* CONFIG_MEMCG_SWAP */
+
+#ifdef CONFIG_RICH_CONTAINER
+static inline struct mem_cgroup *css_memcg(struct cgroup_subsys_state *css)
+{
+	return css ? container_of(css, struct mem_cgroup, css) : NULL;
+}
+
+/* with rcu lock held */
+struct mem_cgroup *rich_container_get_memcg(void)
+{
+	struct cgroup_subsys_state *css;
+	struct mem_cgroup *memcg_src;
+
+#ifdef CONFIG_RICH_CONTAINER_CG_SWITCH
+	css = task_css(current, memory_cgrp_id);
+	while (css) {
+		if (test_bit(CGRP_RICH_CONTAINER_SOURCE, &css->cgroup->flags))
+			break;
+		css = css->parent;
+	}
+#else
+	if (sysctl_rich_container_source == 1)
+		css = NULL;
+	else
+		css = task_css(current, memory_cgrp_id);
+#endif
+
+	if (css) {
+		memcg_src = css_memcg(css);
+	} else {
+		read_lock(&tasklist_lock);
+		memcg_src = mem_cgroup_from_task(task_active_pid_ns(current)->child_reaper);
+		read_unlock(&tasklist_lock);
+	}
+
+	if (css_tryget(&memcg_src->css))
+		return memcg_src;
+	else
+		return NULL;
+}
+
 void memcg_meminfo(struct mem_cgroup *memcg,
 		struct sysinfo *info, struct sysinfo_ext *ext)
 {
@@ -8886,5 +8928,4 @@ void memcg_meminfo(struct mem_cgroup *memcg,
 	ext->available += ext->slab_reclaimable -
 		min(ext->slab_reclaimable / 2, memcg_wmark);
 }
-
-#endif /* CONFIG_MEMCG_SWAP */
+#endif

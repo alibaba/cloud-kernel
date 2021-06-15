@@ -43,24 +43,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 #ifdef CONFIG_MEMCG
 	rcu_read_lock();
 	if (in_rich_container(current)) {
-		struct task_struct *init_tsk;
-
-		/*
-		 * current may be in a subcgroup, use reaper instead.
-		 * We assume the reaper always be in the container's
-		 * top group.
-		 */
-		read_lock(&tasklist_lock);
-		init_tsk = task_active_pid_ns(current)->child_reaper;
-		get_task_struct(init_tsk);
-		read_unlock(&tasklist_lock);
-
-		memcg = mem_cgroup_from_task(init_tsk);
-		if (mem_cgroup_is_root(memcg))
-			memcg = NULL;
-		else
-			css_get(&memcg->css);
-		put_task_struct(init_tsk);
+		memcg = rich_container_get_memcg();
 	}
 	rcu_read_unlock();
 #endif

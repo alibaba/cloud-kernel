@@ -2149,28 +2149,51 @@ struct cpuacct_usage_result {
 	u64 steal, iowait, idle, guest, guest_nice;
 };
 
+enum rich_container_source {
+	RICH_CONTAINER_CSS,
+	RICH_CONTAINER_REAPER,
+	RICH_CONTAINER_CURRENT,
+};
+
 #ifdef CONFIG_RICH_CONTAINER
+void rich_container_source(enum rich_container_source *from);
 bool child_cpuacct(struct task_struct *tsk);
-void cpuacct_get_usage_result(struct task_struct *tsk, int cpu,
+void rich_container_get_usage(enum rich_container_source from,
+		struct task_struct *reaper, int cpu,
 		struct cpuacct_usage_result *res);
-unsigned long task_ca_running(struct task_struct *tsk, int cpu);
-void get_cgroup_avenrun(struct task_struct *tsk, unsigned long *loads,
+unsigned long rich_container_get_running(enum rich_container_source from,
+		struct task_struct *reaper, int cpu);
+void rich_container_get_avenrun(enum rich_container_source from,
+		struct task_struct *reaper, unsigned long *loads,
 		unsigned long offset, int shift, bool running);
 bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total);
 
 #else
-static inline void cpuacct_get_usage_result(struct task_struct *tsk,
-		int cpu, struct cpuacct_usage_result *res) { }
+static inline void
+rich_container_source(enum rich_container_source *from)
+{
+}
 
-static inline unsigned long task_ca_running(struct task_struct *tsk, int cpu)
+static inline void
+rich_container_get_usage(enum rich_container_source from,
+		struct task_struct *reaper, int cpu,
+		struct cpuacct_usage_result *res)
+{
+}
+
+static inline unsigned long
+rich_container_get_running(enum rich_container_source from,
+		struct task_struct *reaper, int cpu)
 {
 	return 0;
 }
 
-static inline void get_cgroup_avenrun(struct task_struct *tsk,
-		unsigned long *loads, unsigned long offset,
-		int shift, bool running) { }
+static inline void rich_container_get_avenrun(enum rich_container_source from,
+		struct task_struct *reaper, unsigned long *loads,
+		unsigned long offset, int shift, bool running)
+{
+}
 
 static inline bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total)

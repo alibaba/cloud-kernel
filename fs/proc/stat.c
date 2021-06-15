@@ -119,6 +119,7 @@ static int show_stat(struct seq_file *p, void *v)
 	unsigned long nr_runnable = 0;
 	struct task_struct *init_tsk = NULL;
 	struct cpuacct_usage_result res;
+	enum rich_container_source from;
 	bool rich_container;
 
 	user = nice = system = idle = iowait =
@@ -136,9 +137,10 @@ static int show_stat(struct seq_file *p, void *v)
 		read_unlock(&tasklist_lock);
 		boottime.tv_sec += init_tsk->start_time / NSEC_PER_SEC;
 
-		cpuset_cpus_allowed(init_tsk, &cpuset_allowed);
+		rich_container_get_cpuset_cpus(&cpuset_allowed);
+		rich_container_source(&from);
 		for_each_cpu(i, &cpuset_allowed) {
-			cpuacct_get_usage_result(init_tsk, i, &res);
+			rich_container_get_usage(from, init_tsk, i, &res);
 			user += res.user;
 			nice += res.nice;
 			system += res.system;
@@ -199,7 +201,7 @@ static int show_stat(struct seq_file *p, void *v)
 	rcu_read_lock();
 	if (rich_container) {
 		for_each_cpu(i, &cpuset_allowed) {
-			cpuacct_get_usage_result(init_tsk, i, &res);
+			rich_container_get_usage(from, init_tsk, i, &res);
 
 			seq_printf(p, "cpu%d", seq++);
 			seq_put_decimal_ull(p, " ",
@@ -267,7 +269,7 @@ static int show_stat(struct seq_file *p, void *v)
 	rcu_read_lock();
 	if (rich_container) {
 		for_each_cpu(i, &cpuset_allowed)
-			nr_runnable += task_ca_running(init_tsk, i);
+			nr_runnable += rich_container_get_running(from, init_tsk, i);
 	} else
 		nr_runnable = nr_running();
 	rcu_read_unlock();
