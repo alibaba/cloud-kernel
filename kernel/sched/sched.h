@@ -2727,5 +2727,10 @@ static inline bool async_load_calc_enabled(void)
 extern struct cftype cgroup_v1_psi_files[];
 #endif
 
+#ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
+long tg_get_cfs_quota(struct task_group *tg);
+long tg_get_cfs_period(struct task_group *tg);
+#endif
+
 void swake_up_all_locked(struct swait_queue_head *q);
 void __prepare_to_swait(struct swait_queue_head *q, struct swait_queue *wait);

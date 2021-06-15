@@ -92,6 +92,16 @@ void pid_idr_init(void);
 extern int sysctl_rich_container_enable;
 #ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
 extern int sysctl_rich_container_source;
+extern int sysctl_rich_container_cpuinfo_source;
+extern unsigned int sysctl_rich_container_cpuinfo_sharesbase;
+
+static inline struct task_struct *rich_container_get_scenario(void)
+{
+	if (sysctl_rich_container_source == 1)
+		return task_active_pid_ns(current)->child_reaper;
+
+	return current;
+}
 #endif
 static inline bool in_rich_container(struct task_struct *tsk)
 {
@@ -110,6 +120,11 @@ static inline bool in_rich_container(struct task_struct *tsk)
 
 static inline void rich_container_get_cpuset_cpus(struct cpumask *pmask)
 {
+}
+
+static inline struct task_struct *rich_container_get_scenario(void)
+{
+	return NULL;
 }
 #endif
 

@@ -2788,6 +2788,23 @@ static struct ctl_table kern_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
+	{
+		.procname       = "rich_container_cpuinfo_source",
+		.data           = &sysctl_rich_container_cpuinfo_source,
+		.maxlen         = sizeof(int),
+		.mode           = 0600,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = &two,
+	},
+	{
+		.procname       = "rich_container_cpuinfo_sharesbase",
+		.data           = &sysctl_rich_container_cpuinfo_sharesbase,
+		.maxlen         = sizeof(int),
+		.mode           = 0600,
+		.proc_handler   = proc_douintvec_minmax,
+		.extra1         = &two,
+	},
 #endif
 #endif
 	{ }

@@ -2169,7 +2169,11 @@ void rich_container_get_avenrun(enum rich_container_source from,
 bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total);
 
-#else
+#ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
+void rich_container_get_cpus(struct task_struct *tsk, struct cpumask *pmask);
+#endif
+
+#else /* CONFIG_RICH_CONTAINER */
 static inline void
 rich_container_source(enum rich_container_source *from)
 {
@@ -2199,6 +2203,11 @@ static inline bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total)
 {
 	return false;
+}
+
+static inline
+void rich_container_get_cpus(struct task_struct *tsk, struct cpumask *pmask)
+{
 }
 #endif
 
