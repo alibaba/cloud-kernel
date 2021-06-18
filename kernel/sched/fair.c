@@ -960,28 +960,27 @@ id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 }
 
 static noinline void
-id_make_up_nr_running(struct task_group *tg, struct rq *rq, long delta)
+id_update_make_up(struct task_group *tg, struct rq *rq, long delta)
 {
 	struct sched_entity *se = tg->se[cpu_of(rq)];
 
-	/*
-	 * The only case we should skip make up is
-	 * when enqueue_entity() triggered throttle.
-	 *
-	 * At that point the new arrived task has
-	 * not yet been accounted into rq, and will
-	 * not until unthrottled, so just skip the
-	 * make up and let unthrottle process do the
-	 * job.
-	 */
-	if (rq->skip_make_up || !delta)
-		return;
-
 	if (is_highclass(se))
-		rq->nr_high_running += delta;
+		rq->nr_high_make_up += delta;
 
 	if (is_underclass(se))
-		rq->nr_under_running += delta;
+		rq->nr_under_make_up += delta;
+}
+
+static noinline void
+id_commit_make_up(struct rq *rq, bool commit)
+{
+	if (commit) {
+		rq->nr_high_running += rq->nr_high_make_up;
+		rq->nr_under_running += rq->nr_under_make_up;
+	}
+
+	rq->nr_high_make_up = 0;
+	rq->nr_under_make_up = 0;
 }
 
 static __always_inline void
@@ -1764,7 +1763,12 @@ id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
 }
 
 static inline void
-id_make_up_nr_running(struct task_group *tg, struct rq *rq, long delta)
+id_update_make_up(struct task_group *tg, struct rq *rq, long delta)
+{
+}
+
+static noinline void
+id_commit_make_up(struct rq *rq, bool commit)
 {
 }
 
@@ -5857,9 +5861,7 @@ static int tg_unthrottle_up(struct task_group *tg, void *data)
 		/* Add cfs_rq with already running entity in the list */
 		if (cfs_rq->nr_running >= 1)
 			list_add_leaf_cfs_rq(cfs_rq);
-#ifdef CONFIG_GROUP_IDENTITY
-		id_make_up_nr_running(tg, rq, cfs_rq->nr_tasks);
-#endif
+		id_update_make_up(tg, rq, cfs_rq->nr_tasks);
 	}
 
 	return 0;
@@ -5874,9 +5876,7 @@ static int tg_throttle_down(struct task_group *tg, void *data)
 	if (!cfs_rq->throttle_count) {
 		cfs_rq->throttled_clock_task = rq_clock_task(rq);
 		list_del_leaf_cfs_rq(cfs_rq);
-#ifdef CONFIG_GROUP_IDENTITY
-		id_make_up_nr_running(tg, rq, -(cfs_rq->nr_tasks));
-#endif
+		id_update_make_up(tg, rq, -(cfs_rq->nr_tasks));
 	}
 	cfs_rq->throttle_count++;
 
@@ -5920,6 +5920,8 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	if (!se)
 		sub_nr_running(rq, task_delta);
+
+	id_commit_make_up(rq, !se);
 
 	cfs_rq->throttled = 1;
 	cfs_rq->throttled_clock = rq_clock(rq);
@@ -5997,6 +5999,8 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	if (!se)
 		add_nr_running(rq, task_delta);
+
+	id_commit_make_up(rq, !se);
 
 	/* Determine whether we need to wake up potentially idle CPU: */
 	if (rq->curr == rq->idle && rq->cfs.nr_running)
@@ -6250,15 +6254,8 @@ static void check_enqueue_throttle(struct cfs_rq *cfs_rq)
 
 	/* update runtime allocation */
 	account_cfs_rq_runtime(cfs_rq, 0);
-	if (cfs_rq->runtime_remaining <= 0) {
-#ifdef CONFIG_GROUP_IDENTITY
-		rq_of(cfs_rq)->skip_make_up = true;
-#endif
+	if (cfs_rq->runtime_remaining <= 0)
 		throttle_cfs_rq(cfs_rq);
-#ifdef CONFIG_GROUP_IDENTITY
-		rq_of(cfs_rq)->skip_make_up = false;
-#endif
-	}
 }
 
 static void sync_throttle(struct task_group *tg, int cpu)
