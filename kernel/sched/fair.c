@@ -960,15 +960,16 @@ id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 }
 
 static noinline void
-id_update_make_up(struct task_group *tg, struct rq *rq, long delta)
+id_update_make_up(struct task_group *tg, struct rq *rq, struct cfs_rq *cfs_rq,
+		  int coefficient)
 {
 	struct sched_entity *se = tg->se[cpu_of(rq)];
 
 	if (is_highclass(se))
-		rq->nr_high_make_up += delta;
+		rq->nr_high_make_up += coefficient * cfs_rq->nr_tasks;
 
 	if (is_underclass(se))
-		rq->nr_under_make_up += delta;
+		rq->nr_under_make_up += coefficient * cfs_rq->nr_tasks;
 }
 
 static noinline void
@@ -1763,7 +1764,8 @@ id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
 }
 
 static inline void
-id_update_make_up(struct task_group *tg, struct rq *rq, long delta)
+id_update_make_up(struct task_group *tg, struct rq *rq, struct cfs_rq *cfs_rq,
+		  int coefficient)
 {
 }
 
@@ -5861,7 +5863,7 @@ static int tg_unthrottle_up(struct task_group *tg, void *data)
 		/* Add cfs_rq with already running entity in the list */
 		if (cfs_rq->nr_running >= 1)
 			list_add_leaf_cfs_rq(cfs_rq);
-		id_update_make_up(tg, rq, cfs_rq->nr_tasks);
+		id_update_make_up(tg, rq, cfs_rq, 1);
 	}
 
 	return 0;
@@ -5876,7 +5878,7 @@ static int tg_throttle_down(struct task_group *tg, void *data)
 	if (!cfs_rq->throttle_count) {
 		cfs_rq->throttled_clock_task = rq_clock_task(rq);
 		list_del_leaf_cfs_rq(cfs_rq);
-		id_update_make_up(tg, rq, -(cfs_rq->nr_tasks));
+		id_update_make_up(tg, rq, cfs_rq, -1);
 	}
 	cfs_rq->throttle_count++;
 
