@@ -15,6 +15,11 @@
 #include <net/netlink.h>
 #include <net/genetlink.h>
 
+enum {
+	SMC_CMD_ATTR_TCP2SMC = 1,
+	SMC_CMD_MAX_ATTR,
+};
+
 extern struct genl_family smc_gen_nl_family;
 
 struct smc_nl_dmp_ctx {
