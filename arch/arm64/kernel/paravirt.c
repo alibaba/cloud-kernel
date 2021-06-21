@@ -198,7 +198,7 @@ static void kvm_enable_host_haltpoll(void *i)
 void arch_haltpoll_enable(unsigned int cpu)
 {
 	if (!has_pv_poll_control) {
-		pr_warn("Do not support PV poll control\n");
+		pr_debug("Do not support PV poll control\n");
 		return;
 	}
 
@@ -210,7 +210,7 @@ EXPORT_SYMBOL_GPL(arch_haltpoll_enable);
 void arch_haltpoll_disable(unsigned int cpu)
 {
 	if (!has_pv_poll_control) {
-		pr_warn("Do not support PV poll control\n");
+		pr_debug("Do not support PV poll control\n");
 		return;
 	}
 
