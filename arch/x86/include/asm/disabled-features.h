@@ -64,10 +64,10 @@
 /* Force disable because it's broken beyond repair */
 #define DISABLE_ENQCMD		(1 << (X86_FEATURE_ENQCMD & 31))
 
-#ifdef CONFIG_INTEL_SGX
-# define DISABLE_SGX   0
+#ifdef CONFIG_X86_SGX
+# define DISABLE_SGX	0
 #else
-# define DISABLE_SGX   (1 << (X86_FEATURE_SGX & 31))
+# define DISABLE_SGX	(1 << (X86_FEATURE_SGX & 31))
 #endif
 
 /*
