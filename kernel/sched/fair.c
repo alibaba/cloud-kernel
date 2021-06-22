@@ -908,6 +908,10 @@ id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 	    && src_rq->nr_high_running < 2)
 		goto bad_dst;
 
+	if (!sched_feat(ID_EXPELLER_SHARE_CORE) &&
+	    task_is_expeller(p) && rq_on_expel(dst_rq))
+		goto bad_dst;
+
 	if (!is_expellee_task(p))
 		return -1;
 
@@ -963,6 +967,29 @@ id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 
 	if (idle)
 		*idle = is_idle;
+
+	/*
+	 * Move Task to an on expel CPU could lead into
+	 * all the SMT of a core are running expeller.
+	 *
+	 * In the case of expeller is highclass, this
+	 * will lead into more conflict on hardware unit
+	 * between highcalss, damage the performance when
+	 * they are rarely sleep.
+	 *
+	 * However, when highclass sleep a lot and races
+	 * less on hardware, run on SMT bring benefit for
+	 * hot cache, so it's hard to decide when should
+	 * allow and when should disallow such behavior.
+	 *
+	 * Thus we provide method for user to prevent
+	 * such conflict between highclass when their
+	 * highclass workload are heavy, for others they
+	 * don't really need to worry about this.
+	 */
+	if (!sched_feat(ID_EXPELLER_SHARE_CORE) &&
+	    task_is_expeller(p) && rq_on_expel(rq))
+		return false;
 
 	if (need_expel)
 		return false;
