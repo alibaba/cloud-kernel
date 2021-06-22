@@ -519,11 +519,11 @@ static int __init hugepage_init(void)
 
 	return 0;
 err_khugepaged:
-	unregister_shrinker(&deferred_split_shrinker);
 #ifdef CONFIG_MEMCG
-err_hugepage_reclaim:
 	unregister_shrinker(&hugepage_reclaim_shrinker);
+err_hugepage_reclaim:
 #endif
+	unregister_shrinker(&deferred_split_shrinker);
 err_split_shrinker:
 	unregister_shrinker(&huge_zero_page_shrinker);
 err_hzp_shrinker:
@@ -3389,7 +3389,7 @@ static unsigned long hugepage_reclaim_count(struct shrinker *shrink,
 #define ZSR_IF_HAVE_PG_HWPOISON(flag)	0
 #endif
 
-/* Fiter unsupported page flags. */
+/* Filter unsupported page flags. */
 #define PAGE_FLAG_CHECK_AT_ZERO_SUBPAGE_RECLAIM	\
 	((1UL << PG_error) |			\
 	 (1UL << PG_owner_priv_1) |		\
