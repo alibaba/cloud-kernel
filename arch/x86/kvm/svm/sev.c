@@ -15,6 +15,8 @@
 #include <linux/pagemap.h>
 #include <linux/swap.h>
 
+#include <asm/pkru.h>
+
 #include "x86.h"
 #include "svm.h"
 
