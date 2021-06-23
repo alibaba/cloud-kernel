@@ -11671,7 +11671,7 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 	/* guarantee group entities always have weight */
 	update_load_set(&se->load, NICE_0_LOAD);
 	se->parent = parent;
-	seqcount_init(&se->idle_seqcount);
+	seqlock_init(&se->idle_seqlock);
 	spin_lock_init(&se->iowait_lock);
 	se->cg_idle_start = se->cg_init_time = cpu_clock(cpu);
 }

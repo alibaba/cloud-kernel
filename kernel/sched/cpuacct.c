@@ -637,9 +637,9 @@ void cgroup_idle_start(struct sched_entity *se)
 
 	local_irq_save(flags);
 
-	write_seqcount_begin(&se->idle_seqcount);
+	write_seqlock(&se->idle_seqlock);
 	__schedstat_set(se->cg_idle_start, clock);
-	write_seqcount_end(&se->idle_seqcount);
+	write_sequnlock(&se->idle_seqlock);
 
 	spin_lock(&se->iowait_lock);
 	if (schedstat_val(se->cg_nr_iowait))
@@ -662,11 +662,11 @@ void cgroup_idle_end(struct sched_entity *se)
 
 	local_irq_save(flags);
 
-	write_seqcount_begin(&se->idle_seqcount);
+	write_seqlock(&se->idle_seqlock);
 	idle_start = schedstat_val(se->cg_idle_start);
 	__schedstat_add(se->cg_idle_sum, clock - idle_start);
 	__schedstat_set(se->cg_idle_start, 0);
-	write_seqcount_end(&se->idle_seqcount);
+	write_sequnlock(&se->idle_seqlock);
 
 	spin_lock(&se->iowait_lock);
 	if (schedstat_val(se->cg_nr_iowait)) {
@@ -858,13 +858,13 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 		u64 clock, iowait_start;
 
 		do {
-			seq = read_seqcount_begin(&se->idle_seqcount);
+			seq = read_seqbegin(&se->idle_seqlock);
 			res->idle = schedstat_val(se->cg_idle_sum);
 			idle_start = schedstat_val(se->cg_idle_start);
 			clock = cpu_clock(cpu);
 			if (idle_start && clock > idle_start)
 				res->idle += clock - idle_start;
-		} while (read_seqcount_retry(&se->idle_seqcount, seq));
+		} while (read_seqretry(&se->idle_seqlock, seq));
 
 		ineff = schedstat_val(se->cg_ineffective_sum);
 		ineff_start = schedstat_val(se->cg_ineffective_start);
