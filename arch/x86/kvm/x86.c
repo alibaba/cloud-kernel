@@ -9356,7 +9356,7 @@ static void kvm_load_guest_fpu(struct kvm_vcpu *vcpu)
 	kvm_save_current_fpu(vcpu->arch.user_fpu);
 
 	/* PKRU is separately restored in kvm_x86_ops.run.  */
-	__copy_kernel_to_fpregs(&vcpu->arch.guest_fpu->state,
+	__restore_fpregs_from_fpstate(&vcpu->arch.guest_fpu->state,
 				~XFEATURE_MASK_PKRU);
 
 	fpregs_mark_activate();
@@ -9372,7 +9372,7 @@ static void kvm_put_guest_fpu(struct kvm_vcpu *vcpu)
 
 	kvm_save_current_fpu(vcpu->arch.guest_fpu);
 
-	copy_kernel_to_fpregs(&vcpu->arch.user_fpu->state);
+	restore_fpregs_from_fpstate(&vcpu->arch.user_fpu->state);
 
 	fpregs_mark_activate();
 	fpregs_unlock();
