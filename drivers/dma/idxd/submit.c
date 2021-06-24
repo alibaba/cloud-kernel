@@ -22,21 +22,13 @@ static struct idxd_desc *__get_desc(struct idxd_wq *wq, int idx, int cpu)
 		desc->hw->pasid = idxd->pasid;
 
 	/*
-	 * Descriptor completion vectors are 1...N for MSIX. We will round
-	 * robin through the N vectors.
+	 * On host, MSIX vecotr 0 is used for misc interrupt. Therefore when we match
+	 * vector 1:1 to the WQ id, we need to add 1
 	 */
-	wq->vec_ptr = desc->vector = (wq->vec_ptr % idxd->num_wq_irqs) + 1;
-	if (!idxd->int_handles) {
-		desc->hw->int_handle = wq->vec_ptr;
-	} else {
-		/*
-		 * int_handles are only for descriptor completion. However for device
-		 * MSIX enumeration, vec 0 is used for misc interrupts. Therefore even
-		 * though we are rotating through 1...N for descriptor interrupts, we
-		 * need to acqurie the int_handles from 0..N-1.
-		 */
-		desc->hw->int_handle = idxd->int_handles[desc->vector - 1];
-	}
+	if (!idxd->int_handles)
+		desc->hw->int_handle = wq->id + 1;
+	else
+		desc->hw->int_handle = idxd->int_handles[wq->id];
 
 	return desc;
 }
@@ -130,7 +122,7 @@ int idxd_submit_desc(struct idxd_wq *wq, struct idxd_desc *desc)
 	 * that we designated the descriptor to.
 	 */
 	if (desc->hw->flags & IDXD_OP_FLAG_RCI)
-		llist_add(&desc->llnode, &idxd->irq_entries[desc->vector].pending_llist);
+		llist_add(&desc->llnode, &idxd->irq_entries[wq->id + 1].pending_llist);
 
 	return 0;
 }
