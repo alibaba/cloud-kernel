@@ -99,7 +99,7 @@ static ssize_t scan_interval_store(struct kobject *kobj,
 	unsigned long interval;
 
 	err = kstrtoul(buf, 10, &interval);
-	if (err || interval > UINT_MAX)
+	if (err || interval > UINT_MAX || interval == 0)
 		return -EINVAL;
 
 	reaper_scan_interval = interval;
