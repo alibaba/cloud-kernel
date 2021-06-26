@@ -12,10 +12,13 @@
 #define _SMC_H
 
 #define SMC_MAX_PNETID_LEN	16	/* Max. length of PNET id */
+#define SMC_HTABLE_SHIFT	9
+#define SMC_HTABLE_SIZE	(1 << SMC_HTABLE_SHIFT) /* Size of SMC hashtable buckets */
 
 struct smc_hashinfo {
+	unsigned int bkt_idx;
 	rwlock_t lock;
-	struct hlist_head ht;
+	struct hlist_head ht[SMC_HTABLE_SIZE];
 };
 
 int smc_hash_sk(struct sock *sk);
