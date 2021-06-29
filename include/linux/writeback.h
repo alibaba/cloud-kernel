@@ -195,6 +195,7 @@ void wbc_detach_inode(struct writeback_control *wbc);
 void wbc_account_io(struct writeback_control *wbc, struct page *page,
 		    size_t bytes);
 void cgroup_writeback_umount(void);
+bool cleanup_offline_cgwb(struct bdi_writeback *wb);
 
 /**
  * inode_attach_wb - associate an inode with its wb
