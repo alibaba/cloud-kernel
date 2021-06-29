@@ -470,7 +470,7 @@ static bool blk_zone_valid(struct gendisk *disk, struct blk_zone *zone,
 	/* Check for holes in the zone report */
 	if (zone->start != *sector) {
 		pr_warn("%s: Zone gap at sectors %llu..%llu\n",
-			disk->disk_name, *sector, zone->start);
+			disk->disk_name, (unsigned long long)*sector, zone->start);
 		return false;
 	}
 
