@@ -7870,7 +7870,8 @@ static void destroy_sq_thread_percpu(struct io_ring_ctx *ctx, int cpu)
 	 * where the kthread is created without being waked up, thus wake it
 	 * up now to make sure the wait will complete.
 	 */
-	wake_up_process(t->sqo_thread);
+	io_sq_thread_park(t);
+	io_sq_thread_unpark(t);
 	wait_for_completion(&ctx->sq_thread_comp);
 
 	io_sq_thread_park(t);
