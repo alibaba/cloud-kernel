@@ -36,8 +36,8 @@ struct reclaim_stat {
 
 struct sysinfo_ext {
 	unsigned long lrupages[NR_LRU_LISTS];
-	unsigned long cached;
-	unsigned long available;
+	long cached;
+	long available;
 	unsigned long file_dirty;
 	unsigned long writeback;
 	unsigned long anon_mapped;
