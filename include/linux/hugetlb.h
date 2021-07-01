@@ -379,6 +379,7 @@ enum hugetlb_page_flags {
 	HPG_migratable,
 	HPG_temporary,
 	HPG_freed,
+	HPG_vmemmap_optimized,
 	__NR_HPAGEFLAGS,
 };
 
@@ -424,6 +425,10 @@ HPAGEFLAG(RestoreReserve, restore_reserve)
 HPAGEFLAG(Migratable, migratable)
 HPAGEFLAG(Temporary, temporary)
 HPAGEFLAG(Freed, freed)
+/*
+ * Create functions associated with hugetlb page flags
+ */
+HPAGEFLAG(VmemmapOptimized, vmemmap_optimized)
 
 #ifdef CONFIG_HUGETLB_PAGE
 
