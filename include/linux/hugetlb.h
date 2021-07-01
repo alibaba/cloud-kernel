@@ -715,6 +715,11 @@ static inline pgoff_t basepage_index(struct page *page)
 	return page->index;
 }
 
+static inline struct hugepage_subpool *hugetlb_page_subpool(struct page *hpage)
+{
+	return NULL;
+}
+
 static inline int dissolve_free_huge_page(struct page *page)
 {
 	return 0;
