@@ -17,14 +17,16 @@
 
 #include <linux/mmdebug.h>
 
+#ifdef CONFIG_CGROUP_HUGETLB
 struct hugetlb_cgroup;
 /*
  * Minimum page order trackable by hugetlb cgroup.
  * At least 3 pages are necessary for all the tracking information.
+ * The second tail page (hpage[SUBPAGE_INDEX_CGROUP]) is the fault
+ * usage cgroup. The third tail page (hpage[SUBPAGE_INDEX_CGROUP_RSVD])
+ * is the reservation usage cgroup.
  */
-#define HUGETLB_CGROUP_MIN_ORDER	2
-
-#ifdef CONFIG_CGROUP_HUGETLB
+#define HUGETLB_CGROUP_MIN_ORDER order_base_2(__MAX_CGROUP_SUBPAGE_INDEX + 1)
 
 static inline struct hugetlb_cgroup *hugetlb_cgroup_from_page(struct page *page)
 {
@@ -32,7 +34,7 @@ static inline struct hugetlb_cgroup *hugetlb_cgroup_from_page(struct page *page)
 
 	if (compound_order(page) < HUGETLB_CGROUP_MIN_ORDER)
 		return NULL;
-	return (struct hugetlb_cgroup *)page[2].private;
+	return (void *)page_private(page + SUBPAGE_INDEX_CGROUP);
 }
 
 static inline
@@ -42,7 +44,10 @@ int set_hugetlb_cgroup(struct page *page, struct hugetlb_cgroup *h_cg)
 
 	if (compound_order(page) < HUGETLB_CGROUP_MIN_ORDER)
 		return -1;
-	page[2].private	= (unsigned long)h_cg;
+
+	set_page_private(page + SUBPAGE_INDEX_CGROUP,
+			 (unsigned long)h_cg);
+
 	return 0;
 }
 
