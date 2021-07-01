@@ -2811,6 +2811,8 @@ extern int randomize_va_space;
 
 const char * arch_vma_name(struct vm_area_struct *vma);
 void print_vma_addr(char *prefix, unsigned long rip);
+void vmemmap_remap_free(unsigned long start, unsigned long end,
+			unsigned long reuse);
 
 void *sparse_buffer_alloc(unsigned long size);
 struct page *sparse_mem_map_populate(unsigned long pnum, int nid,
