@@ -1100,13 +1100,14 @@ static void __update_identity(struct task_group *tg, int flags)
 		struct cfs_rq *cfs_rq;
 		struct sched_entity *se;
 		struct rq *rq = cpu_rq(cpu);
-		bool throttled = throttled_hierarchy(cfs_rq);
+		bool throttled;
 
 		rq_lock_irq(rq, &rf);
 		update_rq_clock(rq);
 
 		se = tg->se[cpu];
 		cfs_rq = cfs_rq_of(se);
+		throttled = throttled_hierarchy(cfs_rq);
 		delta = se->my_q->nr_tasks;
 		ei_delta = get_h_nr_expel_immune(se);
 		on_rq = se->on_rq;
