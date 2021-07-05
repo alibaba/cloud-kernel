@@ -5501,7 +5501,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		vruntime -= thresh;
 	}
 
-#ifdef CONFIG_GROUP_ENTITY
+#ifdef CONFIG_GROUP_IDENTITY
 	/*
 	 * The runtime penalty for underclass wakee to make sure
 	 * they won't interrupt other's execution too much.
