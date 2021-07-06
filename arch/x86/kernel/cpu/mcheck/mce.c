@@ -152,8 +152,6 @@ void mce_inject_log(struct mce *m)
 }
 EXPORT_SYMBOL_GPL(mce_inject_log);
 
-static struct notifier_block mce_srao_nb;
-
 void mce_register_decode_chain(struct notifier_block *nb)
 {
 	if (WARN_ON(nb->priority > MCE_PRIO_MCELOG && nb->priority < MCE_PRIO_EDAC))
@@ -578,28 +576,30 @@ static struct notifier_block early_nb = {
 	.priority	= MCE_PRIO_EARLY,
 };
 
-static int srao_decode_notifier(struct notifier_block *nb, unsigned long val,
+static int uc_decode_notifier(struct notifier_block *nb, unsigned long val,
 				void *data)
 {
 	struct mce *mce = (struct mce *)data;
 	unsigned long pfn;
 
-	if (!mce)
+	if (!mce || !mce_usable_address(mce))
 		return NOTIFY_DONE;
 
-	if (mce_usable_address(mce) && (mce->severity == MCE_AO_SEVERITY)) {
-		pfn = mce->addr >> PAGE_SHIFT;
-		if (!memory_failure(pfn, 0)) {
-			set_mce_nospec(pfn, whole_page(mce));
-			mce->kflags |= MCE_HANDLED_UC;
-		}
+	if (mce->severity != MCE_AO_SEVERITY &&
+	    mce->severity != MCE_DEFERRED_SEVERITY)
+		return NOTIFY_DONE;
+
+	pfn = mce->addr >> PAGE_SHIFT;
+	if (!memory_failure(pfn, 0)) {
+		set_mce_nospec(pfn, whole_page(mce));
+		mce->kflags |= MCE_HANDLED_UC;
 	}
 
 	return NOTIFY_OK;
 }
-static struct notifier_block mce_srao_nb = {
-	.notifier_call	= srao_decode_notifier,
-	.priority	= MCE_PRIO_SRAO,
+static struct notifier_block mce_uc_nb = {
+	.notifier_call	= uc_decode_notifier,
+	.priority	= MCE_PRIO_UC,
 };
 
 static int mce_default_notifier(struct notifier_block *nb, unsigned long val,
@@ -2005,7 +2005,7 @@ int __init mcheck_init(void)
 {
 	mcheck_intel_therm_init();
 	mce_register_decode_chain(&early_nb);
-	mce_register_decode_chain(&mce_srao_nb);
+	mce_register_decode_chain(&mce_uc_nb);
 	mce_register_decode_chain(&mce_default_nb);
 	mcheck_vendor_init_severity();
 
