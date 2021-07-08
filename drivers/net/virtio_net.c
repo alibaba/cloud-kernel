@@ -30,10 +30,12 @@ static int napi_weight = NAPI_POLL_WEIGHT;
 module_param(napi_weight, int, 0444);
 
 static bool csum = true, gso = true, napi_tx, force_xdp;
+static bool lro;
 module_param(csum, bool, 0444);
 module_param(gso, bool, 0444);
 module_param(napi_tx, bool, 0644);
 module_param(force_xdp, bool, 0644);
+module_param(lro, bool, 0644);
 
 /* FIXME: MTU in config. */
 #define GOOD_PACKET_LEN (ETH_HLEN + VLAN_HLEN + ETH_DATA_LEN)
@@ -3424,6 +3426,39 @@ static struct virtio_driver virtio_net_driver = {
 #endif
 };
 
+static void virtio_net_off_lro(unsigned int *features, int size)
+{
+	unsigned long long mask;
+	unsigned int df = 0;
+	int i;
+
+	for (i = 0; i < size; ++i) {
+		mask = 1ULL << features[i];
+
+		if (mask & GUEST_OFFLOAD_GRO_HW_MASK)
+			continue;
+
+		df = features[i];
+		break;
+	}
+
+	for (i = 0; i < size; ++i) {
+		mask = 1ULL << features[i];
+
+		if (mask & GUEST_OFFLOAD_GRO_HW_MASK)
+			features[i] = df;
+	}
+}
+
+static void virtio_net_check_lro(void)
+{
+	if (lro)
+		return;
+
+	virtio_net_off_lro(features, ARRAY_SIZE(features));
+	virtio_net_off_lro(features_legacy, ARRAY_SIZE(features_legacy));
+}
+
 static __init int virtio_net_driver_init(void)
 {
 	int ret;
@@ -3447,6 +3482,8 @@ static __init int virtio_net_driver_init(void)
 		virtio_net_driver.feature_table_legacy = features_force_xdp;
 		virtio_net_driver.feature_table_size_legacy =
 			ARRAY_SIZE(features_force_xdp);
+	} else {
+		virtio_net_check_lro();
 	}
 
         ret = register_virtio_driver(&virtio_net_driver);
