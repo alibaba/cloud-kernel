@@ -12,6 +12,7 @@
 #include <linux/kexec.h>
 #include <linux/nmi.h>
 #include <linux/page-flags.h>
+#include <linux/set_memory.h>
 #include <linux/smp.h>
 
 #include <asm/cacheflush.h>

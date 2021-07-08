@@ -10,7 +10,7 @@
 
 #include <linux/kfence.h>
 
-#include <asm/cacheflush.h>
+#include <asm/set_memory.h>
 
 static inline bool arch_kfence_init_pool(struct kfence_pool_area *kpa) { return true; }
 
