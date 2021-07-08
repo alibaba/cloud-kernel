@@ -30,6 +30,7 @@ TEST_GEN_FILES += hugepage-shm
 TEST_GEN_FILES += map_hugetlb
 TEST_GEN_FILES += map_fixed_noreplace
 TEST_GEN_FILES += map_populate
+TEST_GEN_FILES += memfd_secret
 TEST_GEN_FILES += mlock-random-test
 TEST_GEN_FILES += mlock2-tests
 TEST_GEN_FILES += mremap_dontunmap
@@ -133,4 +134,4 @@ endif
 
 $(OUTPUT)/userfaultfd: LDLIBS += -lpthread
 
-$(OUTPUT)/mlock-random-test: LDLIBS += -lcap
+$(OUTPUT)/mlock-random-test $(OUTPUT)/memfd_secret: LDLIBS += -lcap
