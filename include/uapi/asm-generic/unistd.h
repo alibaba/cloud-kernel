@@ -859,9 +859,25 @@ __SYSCALL(__NR_pidfd_getfd, sys_pidfd_getfd)
 __SYSCALL(__NR_faccessat2, sys_faccessat2)
 #define __NR_process_madvise 440
 __SYSCALL(__NR_process_madvise, sys_process_madvise)
+#define __NR_epoll_pwait2 441
+__SYSCALL(__NR_epoll_pwait2, sys_ni_syscall)
+#define __NR_mount_setattr 442
+__SYSCALL(__NR_mount_setattr,  sys_ni_syscall)
+#define __NR_quotactl_fd 443
+__SYSCALL(__NR_quotactl_fd, sys_ni_syscall)
+#define __NR_landlock_create_ruleset 444
+__SYSCALL(__NR_landlock_create_ruleset, sys_ni_syscall)
+#define __NR_landlock_add_rule 445
+__SYSCALL(__NR_landlock_add_rule, sys_ni_syscall)
+#define __NR_landlock_restrict_self 446
+__SYSCALL(__NR_landlock_restrict_self, sys_ni_syscall)
+#ifdef __ARCH_WANT_MEMFD_SECRET
+#define __NR_memfd_secret 447
+__SYSCALL(__NR_memfd_secret, sys_memfd_secret)
+#endif
 
 #undef __NR_syscalls
-#define __NR_syscalls 441
+#define __NR_syscalls 448
 
 /*
  * 32 bit systems traditionally used different
