@@ -1555,12 +1555,7 @@ static struct iommu_group *arm_smmu_device_group(struct device *dev)
 				return ERR_PTR(-EINVAL);
 			}
 
-			if (ft2000_iommu_hwfix) {
-				if (smmu->s2crs[idx].group)
-					group = smmu->s2crs[idx].group;
-			} else {
-				group = smmu->s2crs[idx].group;
-			}
+			group = smmu->s2crs[idx].group;
 		}
 	}
 
