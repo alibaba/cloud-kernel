@@ -2345,10 +2345,12 @@ unsigned long scale_irq_capacity(unsigned long util, unsigned long irq, unsigned
 #ifdef CONFIG_SCHED_SLI
 extern u64 get_idle_time(int cpu);
 extern u64 get_iowait_time(int cpu);
+void calc_cgroup_load(void);
 extern void task_ca_increase_nr_migrations(struct task_struct *tsk);
 void cpuacct_update_latency(struct sched_entity *se, u64 delta);
 void task_ca_update_block(struct task_struct *tsk, u64 runtime);
 #else
+static inline void calc_cgroup_load(void) { }
 static inline void task_ca_increase_nr_migrations(struct task_struct *tsk) { }
 static inline void cpuacct_update_latency(struct sched_entity *se,
 		u64 delta) { }
