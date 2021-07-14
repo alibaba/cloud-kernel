@@ -881,6 +881,9 @@ static void update_tasks_cpumask(struct cpuset *cs)
 	css_task_iter_end(&it);
 }
 
+/* Don't care about the concurrency of these vars protected by cpuset_mutex. */
+struct cpumask added, deleted, old_cpus;
+
 /*
  * update_cpumasks_hier - Update effective cpumasks and tasks in the subtree
  * @cs: the cpuset to consider
@@ -896,7 +899,6 @@ static void update_tasks_cpumask(struct cpuset *cs)
 static void update_cpumasks_hier(struct cpuset *cs, struct cpumask *new_cpus)
 {
 	struct cpuset *cp;
-	struct cpumask added, deleted, old_cpus;
 	struct cgroup_subsys_state *pos_css;
 	bool need_rebuild_sched_domains = false;
 
