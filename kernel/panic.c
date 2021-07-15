@@ -749,6 +749,13 @@ void __warn(const char *file, int line, void *caller, unsigned taint,
 {
 	disable_trace_on_warning();
 
+	if (file && strstr(file, "list_debug.c"))
+		report_fault_event(smp_processor_id(), current,
+			FATAL_FAULT, FE_LIST_CORRUPT, NULL);
+	else
+		report_fault_event(smp_processor_id(), current,
+			SLIGHT_FAULT, FE_WARN, "kernel warning");
+
 	if (file)
 		pr_warn("WARNING: CPU: %d PID: %d at %s:%d %pS\n",
 			raw_smp_processor_id(), current->pid, file, line,
