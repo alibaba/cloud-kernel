@@ -218,6 +218,8 @@ void panic(const char *fmt, ...)
 
 	console_verbose();
 	bust_spinlocks(1);
+	report_fault_event(smp_processor_id(), current, FATAL_FAULT,
+		FE_PANIC, NULL);
 	va_start(args, fmt);
 	len = vscnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
