@@ -463,6 +463,9 @@ enum {
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
 	OPT_DAX,
+	OPT_DAX_ALWAYS,
+	OPT_DAX_NEVER,
+	OPT_DAX_INODE,
 	OPT_ERR
 };
 
@@ -477,6 +480,9 @@ static const match_table_t tokens = {
 	{OPT_MAX_READ,			"max_read=%u"},
 	{OPT_BLKSIZE,			"blksize=%u"},
 	{OPT_DAX,			"dax"},
+	{OPT_DAX_ALWAYS,		"dax=always"},
+	{OPT_DAX_NEVER,			"dax=never"},
+	{OPT_DAX_INODE,			"dax=inode"},
 	{OPT_ERR,			NULL}
 };
 
@@ -575,7 +581,16 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 			break;
 
 		case OPT_DAX:
-			d->dax = 1;
+		case OPT_DAX_ALWAYS:
+			d->dax_mode = FUSE_DAX_ALWAYS;
+			break;
+
+		case OPT_DAX_NEVER:
+			d->dax_mode = FUSE_DAX_NEVER;
+			break;
+
+		case OPT_DAX_INODE:
+			d->dax_mode = FUSE_DAX_INODE;
 			break;
 
 		default:
@@ -611,8 +626,12 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
 		seq_printf(m, ",blksize=%lu", sb->s_blocksize);
 #ifdef CONFIG_FUSE_DAX
-	if (fc->dax)
-		seq_puts(m, ",dax");
+	if (fc->dax_mode == FUSE_DAX_ALWAYS)
+		seq_puts(m, ",dax=always");
+	else if (fc->dax_mode == FUSE_DAX_NEVER)
+		seq_puts(m, ",dax=never");
+	else if (fc->dax_mode == FUSE_DAX_INODE)
+		seq_puts(m, ",dax=inode");
 #endif
 
 	return 0;
@@ -1193,7 +1212,8 @@ int fuse_fill_super_common(struct super_block *sb,
 	fc->release = fuse_free_conn;
 
 	if (IS_ENABLED(CONFIG_FUSE_DAX)) {
-		err = fuse_dax_conn_alloc(fc, mount_data->dax_dev);
+		err = fuse_dax_conn_alloc(fc, mount_data->dax_mode,
+					  mount_data->dax_dev);
 		if (err)
 			goto err_put_conn;
 	}
