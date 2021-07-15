@@ -92,6 +92,16 @@ extern __read_mostly int scheduler_running;
 
 extern unsigned long calc_load_update;
 extern atomic_long_t calc_load_tasks;
+extern atomic_long_t calc_load_tasks_r;
+
+#ifdef CONFIG_SCHED_SLI
+extern long calc_load_fold_active_r(struct rq *this_rq, long adjust);
+#else
+static inline long calc_load_fold_active_r(struct rq *this_rq, long adjust)
+{
+	return 0;
+}
+#endif
 
 extern void calc_global_load_tick(struct rq *this_rq);
 extern long calc_load_fold_active(struct rq *this_rq, long adjust);
@@ -952,6 +962,9 @@ struct rq {
 	/* calc_load related fields */
 	unsigned long		calc_load_update;
 	long			calc_load_active;
+#ifdef CONFIG_SCHED_SLI
+	long			calc_load_active_r;
+#endif
 
 	atomic64_t		cpu_stress;
 

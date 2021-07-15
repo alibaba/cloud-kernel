@@ -57,8 +57,10 @@
 
 /* Variables and functions for calc_load */
 atomic_long_t calc_load_tasks;
-unsigned long calc_load_update;
+atomic_long_t calc_load_tasks_r;
 unsigned long avenrun[3];
+unsigned long avenrun_r[3];
+unsigned long calc_load_update;
 EXPORT_SYMBOL(avenrun); /* should be removed */
 
 /**
@@ -92,6 +94,30 @@ long calc_load_fold_active(struct rq *this_rq, long adjust)
 
 	return delta;
 }
+
+#ifdef CONFIG_SCHED_SLI
+void get_avenrun_r(unsigned long *loads, unsigned long offset, int shift)
+{
+	loads[0] = (avenrun_r[0] + offset) << shift;
+	loads[1] = (avenrun_r[1] + offset) << shift;
+	loads[2] = (avenrun_r[2] + offset) << shift;
+}
+
+long calc_load_fold_active_r(struct rq *this_rq, long adjust)
+{
+	long nr_active, delta = 0;
+
+	nr_active = this_rq->nr_running - adjust;
+	nr_active -= id_nr_invalid(this_rq);
+
+	if (nr_active != this_rq->calc_load_active_r) {
+		delta = nr_active - this_rq->calc_load_active_r;
+		this_rq->calc_load_active_r = nr_active;
+	}
+
+	return delta;
+}
+#endif
 
 /**
  * fixed_power_int - compute: x^n, in O(log n) time
@@ -206,6 +232,9 @@ calc_load_n(unsigned long load, unsigned long exp,
  * When making the ILB scale, we should try to pull this in as well.
  */
 static atomic_long_t calc_load_nohz[2];
+#ifdef CONFIG_SCHED_SLI
+static atomic_long_t calc_load_nohz_r[2];
+#endif
 static int calc_load_idx;
 
 static inline int calc_load_write_idx(void)
@@ -237,17 +266,21 @@ void calc_load_nohz_start(void)
 {
 	struct rq *this_rq = this_rq();
 	long delta;
+	int idx = calc_load_write_idx();
 
 	/*
 	 * We're going into NO_HZ mode, if there's any pending delta, fold it
 	 * into the pending NO_HZ delta.
 	 */
 	delta = calc_load_fold_active(this_rq, 0);
-	if (delta) {
-		int idx = calc_load_write_idx();
-
+	if (delta)
 		atomic_long_add(delta, &calc_load_nohz[idx]);
-	}
+
+#ifdef CONFIG_SCHED_SLI
+	delta = calc_load_fold_active_r(this_rq, 0);
+	if (delta)
+		atomic_long_add(delta, &calc_load_nohz_r[idx]);
+#endif
 }
 
 void calc_load_nohz_stop(void)
@@ -281,6 +314,19 @@ static long calc_load_nohz_fold(void)
 	return delta;
 }
 
+#ifdef CONFIG_SCHED_SLI
+static long calc_load_nohz_r_fold(void)
+{
+	int idx = calc_load_read_idx();
+	long delta = 0;
+
+	if (atomic_long_read(&calc_load_nohz_r[idx]))
+		delta = atomic_long_xchg(&calc_load_nohz_r[idx], 0);
+
+	return delta;
+}
+#endif
+
 /*
  * NO_HZ can leave us missing all per-CPU ticks calling
  * calc_load_fold_active(), but since a NO_HZ CPU folds its delta into
@@ -310,6 +356,16 @@ static void calc_global_nohz(void)
 		avenrun[1] = calc_load_n(avenrun[1], EXP_5, active, n);
 		avenrun[2] = calc_load_n(avenrun[2], EXP_15, active, n);
 
+#ifdef CONFIG_RICH_CONTAINER
+		/* Calc avenrun_r */
+		active = atomic_long_read(&calc_load_tasks_r);
+		active = active > 0 ? active * FIXED_1 : 0;
+
+		avenrun_r[0] = calc_load_n(avenrun_r[0], EXP_1, active, n);
+		avenrun_r[1] = calc_load_n(avenrun_r[1], EXP_5, active, n);
+		avenrun_r[2] = calc_load_n(avenrun_r[2], EXP_15, active, n);
+#endif
+
 		WRITE_ONCE(calc_load_update, sample_window + n * LOAD_FREQ);
 	}
 
@@ -326,6 +382,7 @@ static void calc_global_nohz(void)
 #else /* !CONFIG_NO_HZ_COMMON */
 
 static inline long calc_load_nohz_fold(void) { return 0; }
+static inline long calc_load_nohz_r_fold(void) { return 0; }
 static inline void calc_global_nohz(void) { }
 
 #endif /* CONFIG_NO_HZ_COMMON */
@@ -359,6 +416,23 @@ void calc_global_load(unsigned long ticks)
 	avenrun[1] = calc_load(avenrun[1], EXP_5, active);
 	avenrun[2] = calc_load(avenrun[2], EXP_15, active);
 
+#ifdef CONFIG_SCHED_SLI
+	/*
+	 * Calculate load 1/5/15 for running tasks only. We do not
+	 * invent common functions to keep the same layout as upstream.
+	 */
+	delta = calc_load_nohz_r_fold();
+	if (delta)
+		atomic_long_add(delta, &calc_load_tasks_r);
+
+	active = atomic_long_read(&calc_load_tasks_r);
+	active = active > 0 ? active * FIXED_1 : 0;
+
+	avenrun_r[0] = calc_load(avenrun_r[0], EXP_1, active);
+	avenrun_r[1] = calc_load(avenrun_r[1], EXP_5, active);
+	avenrun_r[2] = calc_load(avenrun_r[2], EXP_15, active);
+#endif
+
 	WRITE_ONCE(calc_load_update, sample_window + LOAD_FREQ);
 
 	if (!async_load_calc_enabled())
@@ -385,6 +459,12 @@ void calc_global_load_tick(struct rq *this_rq)
 	delta  = calc_load_fold_active(this_rq, 0);
 	if (delta)
 		atomic_long_add(delta, &calc_load_tasks);
+
+#ifdef CONFIG_SCHED_SLI
+	delta = calc_load_fold_active_r(this_rq, 0);
+	if (delta)
+		atomic_long_add(delta, &calc_load_tasks_r);
+#endif
 
 	this_rq->calc_load_update += LOAD_FREQ;
 }
