@@ -694,6 +694,13 @@ S:	Maintained
 F:	Documentation/i2c/busses/i2c-ali1563.rst
 F:	drivers/i2c/busses/i2c-ali1563.c
 
+ALIBABA ELASTIC RDMA ADAPTER DRIVER
+M:	Cheng You <chengyou@linux.alibaba.com>
+M:	Kai Shen <KaiShen@linux.alibaba.com>
+S:	Maintained
+F:	drivers/infiniband/hw/erdma/
+F:	include/uapi/rdma/erdma-abi.h
+
 ALL SENSORS DLH SERIES PRESSURE SENSORS DRIVER
 M:	Tomislav Denis <tomislav.denis@avl.com>
 L:	linux-iio@vger.kernel.org
