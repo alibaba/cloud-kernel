@@ -2479,6 +2479,30 @@ static struct ctl_table kern_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif /* CONFIG_SMP */
+	{
+		.procname	= "unrecovered_softlockup_thresh_cpus",
+		.data		= &sysctl_unrecovered_softlockup_thresh_cpus,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+	},
+	{
+		.procname	= "unrecovered_softlockup_sample_seconds",
+		.data		= &sysctl_unrecovered_softlockup_sample_interval,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+	},
+	{
+		.procname	= "unrecovered_softlockup_thresh_times",
+		.data		= &sysctl_unrecovered_softlockup_thresh_times,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+	},
 #endif
 #ifdef CONFIG_HARDLOCKUP_DETECTOR
 	{
