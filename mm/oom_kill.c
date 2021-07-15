@@ -918,6 +918,8 @@ static void __oom_kill_process(struct task_struct *victim, const char *message,
 	 */
 	do_send_sig_info(SIGKILL, SEND_SIG_PRIV, victim, PIDTYPE_TGID);
 	mark_oom_victim(victim);
+	report_fault_event(smp_processor_id(), victim,
+		NORMAL_FAULT, FE_SIGNAL, "sigkill by oom");
 	if (!suppress_print)
 		pr_err("%s: Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB, UID:%u pgtables:%lukB oom_score_adj:%hd\n",
 			message, task_pid_nr(victim), victim->comm, K(mm->total_vm),
@@ -958,6 +960,8 @@ static void __oom_kill_process(struct task_struct *victim, const char *message,
 		if (unlikely(p->flags & PF_KTHREAD))
 			continue;
 		do_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_TGID);
+		report_fault_event(smp_processor_id(), p, NORMAL_FAULT,
+			FE_SIGNAL, "sigkill by oom");
 	}
 	rcu_read_unlock();
 
