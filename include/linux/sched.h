@@ -2051,4 +2051,10 @@ void rich_container_get_cpus(struct task_struct *tsk, struct cpumask *pmask)
 }
 #endif
 
+#ifdef CONFIG_SCHED_SLI
+void create_rich_container_reaper(struct task_struct *tsk);
+#else
+static inline void create_rich_container_reaper(struct task_struct *tsk) { }
+#endif
+
 #endif

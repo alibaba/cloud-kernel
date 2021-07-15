@@ -2073,6 +2073,8 @@ static __latent_entropy struct task_struct *copy_process(
 	proc_fork_connector(p);
 	cgroup_post_fork(p);
 	cgroup_threadgroup_change_end(current);
+	if (likely(p->pid) && is_child_reaper(pid))
+		create_rich_container_reaper(p);
 	perf_event_fork(p);
 
 	trace_task_newtask(p, clone_flags);
