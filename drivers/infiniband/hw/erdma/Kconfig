@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0 OR BSD-2-Clause
+config INFINIBAND_ERDMA
+	tristate "Elastic ERDMA support"
+	depends on PCI_MSI && 64BIT && !CPU_BIG_ENDIAN && X86_64
+	depends on INFINIBAND_USER_ACCESS
+	help
+	  This driver supports Alibaba Elastic RDMA Adapter (ERDMA).
+
+	  To compile this driver as a module, choose M here.
+	  The module will be called erdma.
