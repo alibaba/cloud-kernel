@@ -42,6 +42,7 @@
 #include <linux/psi.h>
 #include <linux/sched/sysctl.h>
 #include <linux/blk-crypto.h>
+#include <linux/fault_event.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/block.h>
@@ -225,6 +226,8 @@ static void print_req_error(struct request *req, blk_status_t status,
 	if (WARN_ON_ONCE(idx >= ARRAY_SIZE(blk_errors)))
 		return;
 
+	report_fault_event(smp_processor_id(), current,
+		FATAL_FAULT, FE_IO_ERR, NULL);
 	printk_ratelimited(KERN_ERR
 		"%s: %s error, dev %s, sector %llu op 0x%x:(%s) flags 0x%x "
 		"phys_seg %u prio class %u\n",
