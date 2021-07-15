@@ -31,6 +31,9 @@
 #include <linux/bug.h>
 #include <linux/ratelimit.h>
 #include <linux/debugfs.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#include <linux/fault_event.h>
 #include <asm/sections.h>
 
 #define PANIC_TIMER_STEP 100
@@ -567,6 +570,172 @@ void oops_exit(void)
 	print_oops_end_marker();
 	kmsg_dump(KMSG_DUMP_OOPS);
 }
+
+unsigned int sysctl_fault_event_enable = 1;
+unsigned int sysctl_fault_event_print;
+unsigned int sysctl_panic_on_fatal_event;
+static atomic_t tot_fault_cnt;
+static atomic_t class_fault_cnt[FAULT_CLASSS_MAX];
+
+static char *fault_class_name[FAULT_CLASSS_MAX] = {
+	"Slight",
+	"Normal",
+	"Fatal"
+};
+
+static struct fault_event fevents[FE_MAX] = {
+	{FE_SOFTLOCKUP, "soft lockup", "general", {0} },
+	{FE_RCUSTALL, "rcu stall", "general", {0} },
+	{FE_HUNGTASK, "hung task", "general", {0} },
+	{FE_OOM_GLOBAL, "global oom", "mem", {0} },
+	{FE_OOM_CGROUP, "cgroup oom", "mem", {0} },
+	{FE_ALLOCFAIL, "alloc failed", "mem", {0} },
+	{FE_LIST_CORRUPT, "list corruption", "general", {0} },
+	{FE_MM_STATE, "bad mm_struct", "mem", {0} },
+	{FE_IO_ERR, "io error", "io", {0} },
+	{FE_EXT4_ERR, "ext4 fs error", "fs", {0} },
+	{FE_MCE, "mce", "hardware", {0} },
+	{FE_SIGNAL, "fatal signal", "general", {0} },
+	{FE_WARN, "warning", "general", {0} },
+	{FE_PANIC, "panic", "general", {0} },
+};
+
+bool fault_monitor_enable(void)
+{
+	return sysctl_fault_event_enable;
+}
+
+static const char *get_task_cmdline(struct task_struct *tsk, char *buff,
+		int size)
+{
+	struct mm_struct *mm;
+	char *p = buff, c;
+	int i, len, count = 0;
+
+	if (!tsk)
+		return "nil";
+
+	if (tsk->tgid != current->tgid || !tsk->mm
+	    || (tsk->flags & PF_KTHREAD))
+		goto use_comm;
+
+	mm = tsk->mm;
+	len = mm->arg_end - mm->arg_start;
+	len = min(len, size);
+	if (len <= 0)
+		goto use_comm;
+
+	if (__copy_from_user_inatomic(p, (void *)mm->arg_start, len))
+		goto use_comm;
+
+	if (__copy_from_user_inatomic(&c, (void *)(mm->arg_end - 1), 1))
+		goto use_comm;
+
+	count += len;
+	if (c == '\0' || len == size)
+		goto out;
+
+	p = buff + len;
+	len = mm->env_end - mm->env_start;
+	len = min(len, size - count);
+	if (len <= 0)
+		goto out;
+
+	if (!__copy_from_user_inatomic(p, (void *)mm->env_start, len))
+		count += len;
+
+out:
+	for (i = 0; i < count-1; i++) {
+		if (buff[i] == '\0')
+			buff[i] = ' ';
+	}
+	buff[count - 1] = '\0';
+
+	return buff;
+
+use_comm:
+	return tsk->comm;
+}
+
+void report_fault_event(int cpu, struct task_struct *tsk,
+		enum FAULT_CLASS class, enum FAULT_EVENT event,
+		const char *msg)
+{
+	unsigned int evt_cnt;
+	char tsk_cmdline[256];
+
+	if (!sysctl_fault_event_enable)
+		return;
+
+	if (class >= FAULT_CLASSS_MAX || event >= FE_MAX)
+		return;
+
+	evt_cnt = atomic_inc_return(&fevents[event].count);
+	atomic_inc(&class_fault_cnt[class]);
+	atomic_inc(&tot_fault_cnt);
+
+	if (!sysctl_fault_event_print)
+		goto may_panic;
+
+	printk_ratelimited(KERN_EMERG "%s fault event[%s:%s]: %s. "
+		"At cpu %d task %d(%s). Total: %d\n",
+		fault_class_name[class], fevents[event].module,
+		fevents[event].name, msg ? msg : "", cpu,
+		tsk ? tsk->pid : -1,
+		get_task_cmdline(tsk, tsk_cmdline, 256), evt_cnt);
+
+may_panic:
+	if (sysctl_panic_on_fatal_event && class == FATAL_FAULT &&
+	    event != FE_PANIC) {
+		sysctl_fault_event_enable = false;
+		panic("kernel fault event");
+	}
+}
+EXPORT_SYMBOL(report_fault_event);
+
+static int fault_events_show(struct seq_file *m, void *v)
+{
+	unsigned int evt_cnt, class_cnt, total;
+	int i;
+
+	total = atomic_read(&tot_fault_cnt);
+	seq_printf(m, "\nTotal fault events: %d\n\n", total);
+
+	for (i = 0; i < FAULT_CLASSS_MAX; i++) {
+		class_cnt = atomic_read(&class_fault_cnt[i]);
+		seq_printf(m, "%s: %d\n", fault_class_name[i],
+		class_cnt);
+	}
+
+	seq_puts(m, "\n");
+	for (i = 0; i < FE_MAX; i++) {
+		evt_cnt = atomic_read(&fevents[i].count);
+		seq_printf(m, "%s: %d\n", fevents[i].name,
+			evt_cnt);
+	}
+
+	return 0;
+}
+
+static int fault_events_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, fault_events_show, NULL);
+}
+
+const struct proc_ops fault_events_fops = {
+	.proc_open = fault_events_open,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = single_release,
+};
+
+static int fault_events_init(void)
+{
+	proc_create("fault_events", 0644, NULL, &fault_events_fops);
+
+	return 0;
+}
+module_init(fault_events_init);
 
 struct warn_args {
 	const char *fmt;
