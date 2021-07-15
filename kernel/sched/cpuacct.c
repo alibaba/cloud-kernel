@@ -1214,6 +1214,46 @@ static int sched_lat_stat_show(struct seq_file *sf, void *v)
 
 	return 0;
 }
+
+static int cpuacct_sched_cfs_show(struct seq_file *sf, void *v)
+{
+	struct cgroup *cgrp = seq_css(sf)->cgroup;
+	struct task_group *tg = cgroup_tg(cgrp);
+	struct sched_entity *se;
+	int cpu;
+	u64 wait_max = 0, wait_sum = 0, wait_sum_other = 0, exec_sum = 0;
+
+	if (!schedstat_enabled())
+		goto out_show;
+
+	rcu_read_lock();
+	tg = cgroup_tg(cgrp);
+	if (unlikely(!tg)) {
+		WARN_ONCE(1, "cgroup \"cpu,cpuacct\" are not bound together");
+		goto rcu_unlock_show;
+	}
+
+	for_each_online_cpu(cpu) {
+		se = tg->se[cpu];
+		if (!se)
+			continue;
+		exec_sum += schedstat_val(se->sum_exec_runtime);
+		wait_sum_other +=
+			schedstat_val(se->statistics.parent_wait_contrib);
+		wait_sum += schedstat_val(se->statistics.wait_sum);
+		wait_max =
+			max(wait_max, schedstat_val(se->statistics.wait_max));
+	}
+rcu_unlock_show:
+	rcu_read_unlock();
+out_show:
+	/* [Serve time] [On CPU time] [Queue other time] [Queue sibling time] [Queue max time] */
+	seq_printf(sf, "%lld %lld %lld %lld %lld\n",
+			exec_sum + wait_sum, exec_sum, wait_sum_other,
+			wait_sum - wait_sum_other, wait_max);
+
+	return 0;
+}
 #endif
 
 static struct cftype files[] = {
@@ -1283,6 +1323,10 @@ static struct cftype files[] = {
 		.private = SCHED_LAT_IOBLOCK,
 		.write_u64 = sched_lat_stat_write,
 		.seq_show = sched_lat_stat_show
+	},
+	{
+		.name = "sched_cfs_statistics",
+		.seq_show = cpuacct_sched_cfs_show,
 	},
 #endif
 	{ }	/* terminate */
