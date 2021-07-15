@@ -21,6 +21,7 @@
 #include <linux/sched/signal.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/sysctl.h>
+#include <linux/fault_event.h>
 
 #include <trace/events/sched.h>
 
@@ -118,6 +119,8 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 		hung_task_show_lock = true;
 		hung_task_call_panic = true;
 	}
+
+	report_fault_event(-1, t, NORMAL_FAULT, FE_HUNGTASK, NULL);
 
 	/*
 	 * Ok, the task did not get scheduled for more than 2 minutes,
