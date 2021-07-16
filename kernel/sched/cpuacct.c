@@ -1593,6 +1593,7 @@ bool check_rich_container(unsigned int cpu, unsigned int *index,
 		bool *rich_container, unsigned int *total)
 {
 	struct cpumask cpuset_allowed;
+	struct task_struct __maybe_unused *scenario;
 	bool in_rich;
 	int i, id = 0;
 
@@ -1604,7 +1605,16 @@ bool check_rich_container(unsigned int cpu, unsigned int *index,
 
 	*rich_container = true;
 
+#ifdef CONFIG_RICH_CONTAINER_CG_SWITCH
 	rich_container_get_cpuset_cpus(&cpuset_allowed);
+#else
+	read_lock(&tasklist_lock);
+	scenario = rich_container_get_scenario();
+	get_task_struct(scenario);
+	read_unlock(&tasklist_lock);
+	rich_container_get_cpus(scenario, &cpuset_allowed);
+	put_task_struct(scenario);
+#endif
 
 	*total = cpumask_weight(&cpuset_allowed);
 	if (cpumask_test_cpu(cpu, &cpuset_allowed)) {
@@ -1756,6 +1766,7 @@ ok:
 	rcu_read_unlock();
 }
 
+#ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
 /* 0 - cpu quota; 1 - cpuset.cpus; 2 - cpu.shares */
 int sysctl_rich_container_cpuinfo_source;
 /* when cpu.shares */
@@ -1825,4 +1836,5 @@ cpuset_source:
 	/* cpuset.cpus source */
 	cpuset_cpus_allowed(tsk, pmask);
 }
+#endif /*CONFIG_RICH_CONTAINER_CG_SWITCH */
 #endif

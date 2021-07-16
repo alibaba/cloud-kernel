@@ -2380,7 +2380,7 @@ static inline void task_ca_update_block(struct task_struct *tsk,
 extern struct cftype cgroup_v1_psi_files[];
 #endif
 
-#ifdef CONFIG_RICH_CONTAINER
+#ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
 long tg_get_cfs_quota(struct task_group *tg);
 long tg_get_cfs_period(struct task_group *tg);
 #endif

@@ -1347,7 +1347,6 @@ static struct ctl_table kern_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
-#endif /* CONFIG_RICH_CONTAINER_CG_SWITCH */
 	{
 		.procname	= "rich_container_cpuinfo_source",
 		.data		= &sysctl_rich_container_cpuinfo_source,
@@ -1365,6 +1364,7 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_douintvec_minmax,
 		.extra1		= &two,
 	},
+#endif /* CONFIG_RICH_CONTAINER_CG_SWITCH */
 #endif
 #ifdef CONFIG_CGROUP_CACHE
 	{
