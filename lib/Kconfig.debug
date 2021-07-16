@@ -1007,6 +1007,16 @@ config SCHEDSTATS
 	  application, you can say N to avoid the very slight overhead
 	  this adds.
 
+config SCHEDSTATS_DEFAULT
+	int "The default value of kernel.sched_schedstats"
+	range 0 1
+	default "0"
+	depends on SCHEDSTATS
+	help
+	  The defalut value of /proc/sys/kernel/sched_schedstats depends on
+	  this config. if 0, the kernel.sched_schedstats is closed default,
+	  else is opened default.
+
 config SCHED_STACK_END_CHECK
 	bool "Detect stack corruption on calls to schedule()"
 	depends on DEBUG_KERNEL
