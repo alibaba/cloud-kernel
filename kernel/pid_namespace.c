@@ -23,12 +23,10 @@
 #include <linux/sched/signal.h>
 #include <linux/idr.h>
 
-#ifdef CONFIG_RICH_CONTAINER
-#ifdef CONFIG_RICH_CONTAINER_CG_SWITCH
+#if defined(CONFIG_RICH_CONTAINER_CG_SWITCH)
 int sysctl_rich_container_enable = 1;
-#else
+#elif defined(CONFIG_RICH_CONTAINER)
 int sysctl_rich_container_enable;
-#endif
 int sysctl_rich_container_source; /* 0 - current; 1 - child_reaper */
 #endif
 

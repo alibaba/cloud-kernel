@@ -102,7 +102,9 @@ void pid_idr_init(void);
 
 #ifdef CONFIG_RICH_CONTAINER
 extern int sysctl_rich_container_enable;
+#ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
 extern int sysctl_rich_container_source;
+#endif
 extern int sysctl_rich_container_cpuinfo_source;
 extern unsigned int sysctl_rich_container_cpuinfo_sharesbase;
 
@@ -114,22 +116,15 @@ static inline bool in_rich_container(struct task_struct *tsk)
 	return (task_active_pid_ns(tsk) != &init_pid_ns) && child_cpuacct(tsk);
 }
 
-static inline struct task_struct *rich_container_get_scenario(void)
-{
-	if (sysctl_rich_container_source == 1)
-		return task_active_pid_ns(current)->child_reaper;
-
-	return current;
-}
+void rich_container_get_cpuset_cpus(struct cpumask *pmask);
 #else
 static inline bool in_rich_container(struct task_struct *tsk)
 {
 	return false;
 }
 
-static inline struct task_struct *rich_container_get_scenario(void)
+static inline void rich_container_get_cpuset_cpus(struct cpumask *pmask)
 {
-	return NULL;
 }
 #endif
 

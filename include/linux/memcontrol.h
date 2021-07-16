@@ -909,6 +909,15 @@ void drain_all_stock(struct mem_cgroup *root_memcg);
 void memcg_meminfo(struct mem_cgroup *memcg,
 		struct sysinfo *info, struct sysinfo_ext *ext);
 
+#ifdef CONFIG_RICH_CONTAINER
+struct mem_cgroup *rich_container_get_memcg(void);
+#else
+static inline struct mem_cgroup *rich_container_get_memcg(void)
+{
+	return NULL;
+}
+#endif
+
 static inline bool is_wmark_ok(struct mem_cgroup *memcg, bool high)
 {
 	if (high)

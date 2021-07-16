@@ -68,6 +68,7 @@
 #include <linux/mount.h>
 #include <linux/pipe_fs_i.h>
 #include <linux/cgroup.h>
+#include <linux/pid_namespace.h>
 
 #include "../lib/kstrtox.h"
 
@@ -1336,6 +1337,7 @@ static struct ctl_table kern_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+#ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
 	{
 		.procname	= "rich_container_source",
 		.data		= &sysctl_rich_container_source,
@@ -1345,6 +1347,7 @@ static struct ctl_table kern_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+#endif /* CONFIG_RICH_CONTAINER_CG_SWITCH */
 	{
 		.procname	= "rich_container_cpuinfo_source",
 		.data		= &sysctl_rich_container_cpuinfo_source,

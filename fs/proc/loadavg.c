@@ -20,16 +20,18 @@ static int loadavg_proc_show(struct seq_file *m, void *v)
 	rcu_read_lock();
 	if (in_rich_container(current)) {
 		struct task_struct *init_tsk;
+		enum rich_container_source from;
 
 		read_lock(&tasklist_lock);
 		init_tsk = task_active_pid_ns(current)->child_reaper;
 		get_task_struct(init_tsk);
 		read_unlock(&tasklist_lock);
-		get_cgroup_avenrun(init_tsk, avnrun, FIXED_1/200, 0, false);
 
-		cpuset_cpus_allowed(init_tsk, &cpuset_allowed);
+		rich_container_source(&from);
+		rich_container_get_avenrun(from, init_tsk, avnrun, FIXED_1/200, 0, false);
+		rich_container_get_cpuset_cpus(&cpuset_allowed);
 		for_each_cpu(i, &cpuset_allowed)
-			nr_r += task_ca_running(init_tsk, i);
+			nr_r += rich_container_get_running(from, init_tsk, i);
 		put_task_struct(init_tsk);
 	} else {
 		get_avenrun(avnrun, FIXED_1/200, 0);

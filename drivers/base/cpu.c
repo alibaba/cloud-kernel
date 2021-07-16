@@ -213,28 +213,16 @@ static ssize_t show_cpus_attr(struct device *dev,
 {
 	struct cpu_attr *ca = container_of(attr, struct cpu_attr, attr);
 	struct cpumask cpuset_allowed;
-	struct task_struct *scenario;
 	bool rich_container;
 
 	rcu_read_lock();
 	rich_container = in_rich_container(current);
-	if (rich_container) {
-		read_lock(&tasklist_lock);
-		scenario = rich_container_get_scenario();
-		get_task_struct(scenario);
-		read_unlock(&tasklist_lock);
-	} else {
-		scenario = NULL;
-	}
 	rcu_read_unlock();
 
 	if (rich_container && !strcmp(attr->attr.name, "online"))
-		rich_container_get_cpus(scenario, &cpuset_allowed);
+		rich_container_get_cpuset_cpus(&cpuset_allowed);
 	else
 		cpumask_copy(&cpuset_allowed, ca->map);
-
-	if (scenario)
-		put_task_struct(scenario);
 
 	return cpumap_print_to_pagebuf(true, buf, &cpuset_allowed);
 }

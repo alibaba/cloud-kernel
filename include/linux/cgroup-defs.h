@@ -65,6 +65,10 @@ enum {
 	 * specified at mount time and thus is implemented here.
 	 */
 	CGRP_CPUSET_CLONE_CHILDREN,
+
+#ifdef CONFIG_RICH_CONTAINER
+	CGRP_RICH_CONTAINER_SOURCE,
+#endif
 };
 
 /* cgroup_root->flags */

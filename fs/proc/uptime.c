@@ -22,6 +22,7 @@ static int uptime_proc_show(struct seq_file *m, void *v)
 	nsec = 0;
 	rcu_read_lock();
 	if (in_rich_container(current)) {
+		enum rich_container_source from;
 		struct task_struct *init_tsk;
 		struct cpuacct_usage_result res;
 
@@ -30,8 +31,9 @@ static int uptime_proc_show(struct seq_file *m, void *v)
 		get_task_struct(init_tsk);
 		read_unlock(&tasklist_lock);
 
+		rich_container_source(&from);
 		for_each_possible_cpu(i) {
-			cpuacct_get_usage_result(init_tsk, i, &res);
+			rich_container_get_usage(from, init_tsk, i, &res);
 			nsec += res.idle;
 		}
 		uptime = timespec64_sub(uptime,
