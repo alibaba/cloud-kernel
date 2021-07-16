@@ -1145,8 +1145,7 @@ static int its_cpumask_select(struct its_device *its_dev,
 	}
 
 	cpu = cpumask_any_and(mask_val, cpu_mask);
-	if ((cpu > cpus) && (cpu < (cpus + skt_cpu_cnt[skt_id])))
-		cpus = cpu;
+	cpus = cpus + cpu % skt_cpu_cnt[skt_id];
 
 	if (is_kdump_kernel()) {
 		skt = (cpu_logical_map(cpu) >> 16) & 0xff;
