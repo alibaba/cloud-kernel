@@ -143,12 +143,12 @@ unsigned int sysctl_sched_idle_saver_wmark;
 int sysctl_sched_expel_idle_balance_delay = -1;
 /*
  *  In order to prevent scheduling errors in the case of ipi failure,
- *  update_rq_on_expel() is called in function pick_next_task_fair(),
+ *  __update_rq_on_expel() is called in function pick_next_task_fair(),
  *  but this will cause performence regression. In order to prevent
  *  errors while ensuring performence, we introduce an interval to call
- *  update_rq_on_expel().
+ *  __update_rq_on_expel().
  *
- *  Default: 10, units: jiffy
+ *  Default: 10, units: ms
  */
 const_debug unsigned long sysctl_sched_expel_update_interval = 10;
 #endif
@@ -669,7 +669,7 @@ static inline bool need_expel(int this_cpu)
 	return false;
 }
 
-static inline void update_rq_on_expel(struct rq *rq)
+static inline void __update_rq_on_expel(struct rq *rq)
 {
 	bool ret = need_expel(rq->cpu);
 
@@ -685,18 +685,23 @@ static inline void update_rq_on_expel(struct rq *rq)
  * This funciton is called in pick_next_task_fair() if ID_LOOSE_EXPEL is
  * on to improve the performence. But there is a risk to do so.
  * Consider a scenario that if this cpu is executing pick_next_task_fair()
- * and skip update_rq_on_expel(), a reschedule IPI is arriving but local
+ * and skip __update_rq_on_expel(), a reschedule IPI is arriving but local
  * irq is disabled, so an underclass task is picked to run on this cpu until
  * reschedule, which will degrade the performence of highclass task.
  */
-static inline void loose_update_rq_on_expel(struct rq *rq)
+static inline void update_rq_on_expel(struct rq *rq)
 {
-	if (rq->nr_under_running &&
-	    time_after(jiffies, rq->next_expel_update)) {
-		update_rq_on_expel(rq);
-		rq->next_expel_update = jiffies +
-			msecs_to_jiffies(sysctl_sched_expel_update_interval);
-	}
+	if (!sched_feat(ID_LOOSE_EXPEL))
+		goto update;
+
+	if (!rq->nr_under_running
+	    || !time_after(jiffies, rq->next_expel_update))
+		return;
+	rq->next_expel_update = jiffies +
+		msecs_to_jiffies(sysctl_sched_expel_update_interval);
+
+update:
+	__update_rq_on_expel(rq);
 }
 
 static inline bool rq_on_expel(struct rq *rq)
@@ -774,11 +779,11 @@ static inline bool need_expel(int this_cpu)
 	return false;
 }
 
-static inline void update_rq_on_expel(struct rq *rq)
+static inline void __update_rq_on_expel(struct rq *rq)
 {
 }
 
-static inline void loose_update_rq_on_expel(struct rq *rq)
+static inline void update_rq_on_expel(struct rq *rq)
 {
 }
 
@@ -1619,7 +1624,7 @@ void handle_smt_expeller(void)
 {
 	struct rq *rq = this_rq();
 
-	update_rq_on_expel(rq);
+	__update_rq_on_expel(rq);
 
 	/* Safe since 'current' can't be changed during IPI */
 	if (expel_resched(rq) && !test_tsk_need_resched(rq->curr)) {
@@ -1690,6 +1695,10 @@ static inline bool should_expel_se(struct rq *rq, struct sched_entity *se)
 static inline bool expellee_only(struct rq *rq)
 {
 	return false;
+}
+
+static inline void __update_rq_on_expel(struct rq *rq)
+{
 }
 
 static inline void update_rq_on_expel(struct rq *rq)
@@ -8041,10 +8050,7 @@ again:
 	if (!cfs_rq->nr_running)
 		goto idle;
 
-	if (sched_feat(ID_LOOSE_EXPEL))
-		loose_update_rq_on_expel(rq);
-	else
-		update_rq_on_expel(rq);
+	update_rq_on_expel(rq);
 
 	if (expellee_only(rq)) {
 		/*
