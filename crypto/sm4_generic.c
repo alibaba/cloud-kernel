@@ -169,7 +169,7 @@ int crypto_sm4_set_key(struct crypto_tfm *tfm, const u8 *in_key,
 }
 EXPORT_SYMBOL_GPL(crypto_sm4_set_key);
 
-static void sm4_do_crypt(const u32 *rk, u32 *out, const u32 *in)
+void sm4_do_crypt(const u32 *rk, u32 *out, const u32 *in)
 {
 	u32 x[4], i, t;
 
@@ -187,6 +187,7 @@ static void sm4_do_crypt(const u32 *rk, u32 *out, const u32 *in)
 	for (i = 0; i < 4; ++i)
 		put_unaligned_be32(x[3 - i], &out[i]);
 }
+EXPORT_SYMBOL_GPL(sm4_do_crypt);
 
 /* encrypt a block of text */
 

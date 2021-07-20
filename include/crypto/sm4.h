@@ -22,6 +22,7 @@ struct crypto_sm4_ctx {
 
 int crypto_sm4_set_key(struct crypto_tfm *tfm, const u8 *in_key,
 		       unsigned int key_len);
+void sm4_do_crypt(const u32 *rk, u32 *out, const u32 *in);
 int crypto_sm4_expand_key(struct crypto_sm4_ctx *ctx, const u8 *in_key,
 			  unsigned int key_len);
 
