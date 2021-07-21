@@ -36,6 +36,7 @@
 #include <linux/debugfs.h>
 #include <linux/bpf.h>
 #include <linux/psi.h>
+#include <linux/fault_event.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/block.h>
@@ -297,6 +298,8 @@ static void print_req_error(struct request *req, blk_status_t status)
 	if (WARN_ON_ONCE(idx >= ARRAY_SIZE(blk_errors)))
 		return;
 
+	report_fault_event(smp_processor_id(), current,
+		FATAL_FAULT, FE_IO_ERR, NULL);
 	printk_ratelimited(KERN_ERR "%s: %s error, dev %s, sector %llu\n",
 			   __func__, blk_errors[idx].name, req->rq_disk ?
 			   req->rq_disk->disk_name : "?",
