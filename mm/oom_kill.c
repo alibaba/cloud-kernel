@@ -41,6 +41,7 @@
 #include <linux/kthread.h>
 #include <linux/init.h>
 #include <linux/mmu_notifier.h>
+#include <linux/fault_event.h>
 
 #include <asm/tlb.h>
 #include "internal.h"
@@ -1150,6 +1151,9 @@ bool out_of_memory(struct oom_control *oc)
 	constraint = constrained_alloc(oc);
 	if (constraint != CONSTRAINT_MEMORY_POLICY)
 		oc->nodemask = NULL;
+
+	report_fault_event(smp_processor_id(), current, NORMAL_FAULT,
+		is_memcg_oom(oc) ? FE_OOM_CGROUP : FE_OOM_GLOBAL, NULL);
 	check_panic_on_oom(oc, constraint);
 
 	if (!is_memcg_oom(oc) && sysctl_oom_kill_allocating_task &&
