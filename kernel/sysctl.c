@@ -69,6 +69,7 @@
 #include <linux/pipe_fs_i.h>
 #include <linux/cgroup.h>
 #include <linux/pid_namespace.h>
+#include <linux/fault_event.h>
 
 #include "../lib/kstrtox.h"
 
@@ -1366,6 +1367,35 @@ static struct ctl_table kern_table[] = {
 	},
 #endif /* CONFIG_RICH_CONTAINER_CG_SWITCH */
 #endif
+	{
+		.procname       = "fault_event_enable",
+		.data           = &sysctl_fault_event_enable,
+		.maxlen         = sizeof(unsigned int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &zero,
+		.extra2         = &one,
+	},
+#if defined CONFIG_PRINTK
+	{
+		.procname       = "fault_event_print",
+		.data           = &sysctl_fault_event_print,
+		.maxlen         = sizeof(unsigned int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &zero,
+		.extra2         = &one,
+	},
+#endif
+	{
+		.procname       = "panic_on_fatal_event",
+		.data           = &sysctl_panic_on_fatal_event,
+		.maxlen         = sizeof(unsigned int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &zero,
+		.extra2         = &one,
+	},
 #ifdef CONFIG_CGROUP_CACHE
 	{
 		.procname	= "cgroup_limit",
