@@ -830,16 +830,24 @@ erdma_ib_alloc_mr(struct ib_pd *ibpd, enum ib_mr_type mr_type, u32 max_num_sg)
 	pd = to_epd(ibpd);
 	edev = pd->hdr.edev;
 
+	if (atomic_inc_return(&edev->num_mem) > edev->attrs.max_mr) {
+		dev_err(&edev->pdev->dev, "ERROR: Out of MRs: %d, max %d\n",
+			atomic_read(&edev->num_mem), edev->attrs.max_mr);
+		ret = -ENOMEM;
+		goto out;
+	}
+
 	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
-	if (!mr)
-		return ERR_PTR(-ENOMEM);
+	if (!mr) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
 	mr->mem.stag_state = STAG_INVALID;
 	ret = erdma_mem_add(edev, &mr->mem);
 	if (ret < 0) {
 		dprint(DBG_ON, ": erdma_mem_add\n");
-		kfree(mr);
-		return ERR_PTR(ret);
+		goto out_free;
 	}
 	dprint(DBG_OBJ|DBG_MM, "(MPT%d): New Object", mr->mem.hdr.id);
 
@@ -848,11 +856,16 @@ erdma_ib_alloc_mr(struct ib_pd *ibpd, enum ib_mr_type mr_type, u32 max_num_sg)
 	ret = prealloc_mtt(edev, mr, max_num_sg);
 	if (ret) {
 		dprint(DBG_ON, ":prealloc mtt\n");
-		kfree(mr);
-		return ERR_PTR(ret);
+		goto out_free;
 	}
 
 	return &mr->ibmr;
+
+out_free:
+	kfree(mr);
+out:
+	atomic_dec(&edev->num_mem);
+	return ERR_PTR(ret);
 }
 
 static int
