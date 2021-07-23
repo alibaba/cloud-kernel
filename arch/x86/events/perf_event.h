@@ -1164,7 +1164,7 @@ static inline int is_ht_workaround_enabled(void)
 }
 #endif /* CONFIG_CPU_SUP_INTEL */
 
-#if ((defined CONFIG_CPU_SUP_CENTAUR) || (defined CONFIG_CPU_ZHAOXIN))
+#if ((defined CONFIG_CPU_SUP_CENTAUR) || (defined CONFIG_CPU_SUP_ZHAOXIN))
 int zhaoxin_pmu_init(void);
 #else
 static inline int zhaoxin_pmu_init(void)
