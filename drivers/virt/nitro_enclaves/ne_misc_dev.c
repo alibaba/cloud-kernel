@@ -784,12 +784,6 @@ static int ne_sanity_check_user_mem_region(struct ne_enclave *ne_enclave,
 	return 0;
 }
 
-/* Returns the number of bytes in this potentially compound page. */
-static inline unsigned long page_size(struct page *page)
-{
-	return PAGE_SIZE << compound_order(page);
-}
-
 /**
  * ne_sanity_check_user_mem_region_page() - Sanity check a page from the user space
  *					    memory region received during the set
