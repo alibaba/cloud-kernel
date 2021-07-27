@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0 OR BSD-2-Clause
+// SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB
 /*
  * ElasticRDMA driver for Linux
  * Authors: Cheng You <chengyou@linux.alibaba.com>
@@ -65,7 +65,7 @@
 
 MODULE_AUTHOR("Alibaba");
 MODULE_DESCRIPTION(DESC);
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION("1.0");
 
 #define DRV_VER_MAJOR 0
