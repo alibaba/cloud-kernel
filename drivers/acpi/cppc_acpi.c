@@ -552,7 +552,11 @@ static int register_pcc_channel(int pcc_ss_idx)
 		pcc_data[pcc_ss_idx]->pcc_nominal = cppc_ss->latency;
 
 		pcc_data[pcc_ss_idx]->pcc_comm_addr =
+#ifdef CONFIG_ARCH_HISI
+			acpi_os_ioremap_pcc(cppc_ss->base_address, cppc_ss->length);
+#else
 			acpi_os_ioremap(cppc_ss->base_address, cppc_ss->length);
+#endif
 		if (!pcc_data[pcc_ss_idx]->pcc_comm_addr) {
 			pr_err("Failed to ioremap PCC comm region mem for %d\n",
 			       pcc_ss_idx);
