@@ -183,8 +183,6 @@ int erdma_modify_qp_internal_raw(struct erdma_qp *qp, struct erdma_qp_attrs *att
 	struct erdma_modify_qp_params params = {};
 	int ret;
 
-	pr_info("modify qp raw");
-
 	if (!mask)
 		return 0;
 
