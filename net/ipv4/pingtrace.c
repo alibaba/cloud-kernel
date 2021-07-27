@@ -12,10 +12,10 @@
 #include <net/pingtrace.h>
 #include <net/net_namespace.h>
 
-static unsigned int sysctl_pingtrace;
+static unsigned int sysctl_pingtrace = 1;
 static u32 sysctl_icmp_pingtrace_user_id;
 
-DEFINE_STATIC_KEY_FALSE(pingtrace_control);
+DEFINE_STATIC_KEY_TRUE(pingtrace_control);
 
 #define PINGTRACE_TRANSPORT_PACKET_MIN_LEN \
 	(sizeof(struct icmphdr) + sizeof(struct pingtrace_hdr))

@@ -21,7 +21,7 @@ struct sk_buff;
 #define PINGTRACE_F_BOTH                3
 #define PINGTRACE_F_CALCULATE_CHECKSUM  4
 
-DECLARE_STATIC_KEY_FALSE(pingtrace_control);
+DECLARE_STATIC_KEY_TRUE(pingtrace_control);
 
 bool skb_pingtrace_check(struct sk_buff *skb, u64 flags);
 int skb_pingtrace_add_ts(struct sk_buff *skb, struct net *net, u32 function_id,
