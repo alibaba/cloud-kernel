@@ -283,6 +283,8 @@ struct erdma_dev {
 
 	__u32 is_registered;
 	struct dentry *debugfs;
+
+	int numa_node;
 };
 
 __u32 erdma_reg_read32(struct erdma_dev *dev, __u32 reg);

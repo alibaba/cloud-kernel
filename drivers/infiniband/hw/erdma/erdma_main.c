@@ -329,7 +329,8 @@ static int erdma_set_mgmt_irq(struct erdma_dev *dev)
 	irq->data = dev;
 	irq->vector = pci_irq_vector(dev->pdev, ERDMA_MSIX_VECTOR_CMDQ);
 
-	cpu = cpumask_first(cpu_online_mask);
+	cpu = cpumask_first(cpumask_of_node(dev->numa_node));
+
 	irq->cpu = cpu;
 	cpumask_set_cpu(cpu, &dev->cmd_irq.affinity_hint_mask);
 	dev_info(&dev->pdev->dev, "setup irq:%p vector:%d name:%s\n",
@@ -405,7 +406,7 @@ static int erdma_set_ceq_irq(struct erdma_dev *dev, __u16 eqn)
 	tasklet_init(&dev->ceqs[eqn - 1].tasklet, erdma_intr_ceq_task,
 			(unsigned long)&dev->ceqs[eqn - 1]);
 
-	cpu = cpumask_first(cpu_online_mask);
+	cpu = cpumask_local_spread(eqn, dev->numa_node);
 	irq->cpu = cpu;
 	cpumask_set_cpu(cpu, &irq->affinity_hint_mask);
 	dev_info(&dev->pdev->dev, "setup irq:%p vector:%d name:%s\n",
@@ -567,6 +568,7 @@ static int erdma_probe_dev(struct pci_dev *pdev)
 
 	pci_set_drvdata(pdev, edev);
 	edev->pdev = pdev;
+	edev->numa_node = pdev->dev.numa_node;
 
 	bars = pci_select_bars(pdev, IORESOURCE_MEM);
 	err = pci_request_selected_regions(pdev, bars, DRV_MODULE_NAME);
