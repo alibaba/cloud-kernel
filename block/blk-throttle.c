@@ -2356,7 +2356,8 @@ void blk_throtl_charge_bio_split(struct bio *bio)
 	} while (parent);
 }
 
-bool blk_throtl_bio(struct bio *bio, wait_queue_head_t **wait)
+bool blk_throtl_bio(struct bio *bio, wait_queue_head_t **waitq,
+		    struct wait_queue_entry *wait)
 {
 	struct request_queue *q = bio->bi_disk->queue;
 	struct blkcg_gq *blkg = bio->bi_blkg;
@@ -2458,8 +2459,10 @@ again:
 
 		if (bps_limit != U64_MAX &&
 		    (wq_has_sleeper(&sq->wait[rw]) ||
-		     sq->nr_queued_bytes[rw] > div_u64(bps_limit, 2)))
-			*wait = &sq->wait[rw];
+		     sq->nr_queued_bytes[rw] > div_u64(bps_limit, 2))) {
+			*waitq = &sq->wait[rw];
+			prepare_to_wait_exclusive(*waitq, wait, TASK_UNINTERRUPTIBLE);
+		}
 	}
 
 	throtl_add_bio_tg(bio, qn, tg);
