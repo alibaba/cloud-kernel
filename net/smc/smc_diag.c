@@ -136,6 +136,12 @@ static int __smc_diag_dump(struct sock *sk, struct sk_buff *skb,
 			.tx_sent.count = conn->tx_curs_sent.count,
 			.tx_fin.wrap = conn->tx_curs_fin.wrap,
 			.tx_fin.count = conn->tx_curs_fin.count,
+			.rx_cnt	= conn->rx_cnt,
+			.tx_cnt = conn->tx_cnt,
+			.tx_corked_cnt = conn->tx_corked_cnt,
+			.rx_bytes = conn->rx_bytes,
+			.tx_bytes = conn->tx_bytes,
+			.tx_corked_bytes = conn->tx_corked_bytes,
 		};
 
 		if (nla_put(skb, SMC_DIAG_CONNINFO, sizeof(cinfo), &cinfo) < 0)
