@@ -25,6 +25,8 @@ struct cpuacct_usage {
 	u64	usages[CPUACCT_STAT_NSTATS];
 	struct prev_cputime prev_cputime1; /* utime and stime */
 	struct prev_cputime prev_cputime2; /* user and nice */
+	struct prev_cputime prev_cputime3; /* sys and irq + softirq */
+	struct prev_cputime prev_cputime4; /* irq and softirq */
 } ____cacheline_aligned;
 
 #ifdef CONFIG_SCHED_SLI
@@ -393,6 +395,8 @@ cpuacct_css_alloc(struct cgroup_subsys_state *parent_css)
 	for_each_possible_cpu(i) {
 		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime1);
 		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime2);
+		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime3);
+		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime4);
 	}
 
 	ca->avenrun[0] = ca->avenrun[1] = ca->avenrun[2] = 0;
@@ -904,7 +908,8 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 	struct kernel_cpustat *kcpustat;
 	struct cpuacct_usage *cpuusage;
 	struct task_cputime cputime;
-	u64 tick_user, tick_nice, tick_sys, left, right;
+	u64 tick_user, tick_nice, tick_sys, tick_irq, tick_softirq;
+	u64 left, right, left2, right2;
 	struct sched_entity *se;
 
 	kcpustat = per_cpu_ptr(ca->cpustat, cpu);
@@ -918,25 +923,39 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 	tick_user = kcpustat->cpustat[CPUTIME_USER];
 	tick_nice = kcpustat->cpustat[CPUTIME_NICE];
 	tick_sys = kcpustat->cpustat[CPUTIME_SYSTEM];
+	tick_irq = kcpustat->cpustat[CPUTIME_IRQ];
+	tick_softirq = kcpustat->cpustat[CPUTIME_SOFTIRQ];
 
 	/* Calculate system run time */
 	cputime.sum_exec_runtime = cpuusage->usages[CPUACCT_STAT_USER] +
 			cpuusage->usages[CPUACCT_STAT_SYSTEM];
 	cputime.utime = tick_user + tick_nice;
-	cputime.stime = tick_sys;
+	cputime.stime = tick_sys + tick_irq + tick_softirq;
 	cputime_adjust(&cputime, &cpuusage->prev_cputime1, &left, &right);
-	res->system = right;
 
 	/* Calculate user and nice run time */
 	cputime.sum_exec_runtime = left; /* user + nice */
 	cputime.utime = tick_user;
 	cputime.stime = tick_nice;
-	cputime_adjust(&cputime, &cpuusage->prev_cputime2, &left, &right);
-	res->user = left;
-	res->nice = right;
+	cputime_adjust(&cputime, &cpuusage->prev_cputime2, &left2, &right2);
+	res->user = left2;
+	res->nice = right2;
 
-	res->irq = kcpustat->cpustat[CPUTIME_IRQ];
-	res->softirq = kcpustat->cpustat[CPUTIME_SOFTIRQ];
+	/* Calculate sys and irq + softirq run time */
+	cputime.sum_exec_runtime = right; /* sys + irq + softirq */
+	cputime.utime = tick_sys;
+	cputime.stime = tick_irq + tick_softirq;
+	cputime_adjust(&cputime, &cpuusage->prev_cputime3, &left2, &right2);
+	res->system = left2;
+
+	/* Calculate irq and softirq run time */
+	cputime.sum_exec_runtime = right2; /* irq + softirq */
+	cputime.utime = tick_irq;
+	cputime.stime = tick_softirq;
+	cputime_adjust(&cputime, &cpuusage->prev_cputime4, &left, &right);
+	res->irq = left;
+	res->softirq = right;
+
 	if (se && schedstat_enabled()) {
 		unsigned int seq;
 		unsigned long flags;
