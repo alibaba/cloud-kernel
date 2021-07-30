@@ -2456,7 +2456,7 @@ static int cgroup_migrate_execute(struct cgroup_mgctx *mgctx)
 	if (tset->nr_tasks) {
 		ret = allocate_memcg_blkcg_links(tset->dst_count*2, &tmp_links);
 		if (ret)
-			goto out_free_list;
+			goto out_release_tset;
 
 		do_each_subsys_mask(ss, ssid, mgctx->ss_mask) {
 			if (ss->can_attach) {
@@ -2540,7 +2540,6 @@ out_release_tset:
 	}
 	spin_unlock_irq(&css_set_lock);
 
-out_free_list:
 	free_memcg_blkcg_links(&tmp_links);
 
 	/*
