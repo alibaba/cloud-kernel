@@ -2203,7 +2203,7 @@ int sysctl_numa_balancing(struct ctl_table *table, int write,
 #ifdef CONFIG_SCHEDSTATS
 
 DEFINE_STATIC_KEY_FALSE(sched_schedstats);
-static bool __sched_schedstats __initdata = CONFIG_SCHEDSTATS_DEFAULT;
+bool __sched_schedstats __initdata = CONFIG_SCHEDSTATS_DEFAULT;
 
 static void set_schedstats(bool enabled)
 {
