@@ -38,6 +38,11 @@ struct virtio_fs_vq {
 	char name[24];
 } ____cacheline_aligned_in_smp;
 
+struct virtio_fs_mount_info {
+	void *data;
+	const char *dev_name;
+};
+
 /* A virtio-fs device instance */
 struct virtio_fs {
 	struct kref refcount;
@@ -1032,10 +1037,12 @@ static int virtio_fs_fill_super(struct super_block *sb, void *data,
 	unsigned int i;
 	int err;
 	struct fuse_req *init_req;
+	struct virtio_fs_mount_info *info = (struct virtio_fs_mount_info *)data;
+	const char *tag = NULL;
 
 	mutex_lock(&virtio_fs_mutex);
 	err = -EINVAL;
-	if (!parse_fuse_opt(data, &d, is_bdev, sb->s_user_ns, true))
+	if (!parse_fuse_opt(info->data, &d, is_bdev, sb->s_user_ns, true))
 		goto err;
 
 	if (d.fd_present) {
@@ -1043,11 +1050,16 @@ static int virtio_fs_fill_super(struct super_block *sb, void *data,
 		goto err;
 	}
 	if (!d.tag_present) {
+		tag = info->dev_name;
+	} else {
+		tag = d.tag;
+	}
+	if (!tag) {
 		pr_err("virtio-fs: missing tag option\n");
 		goto err;
 	}
 
-	fs = virtio_fs_find_instance(d.tag);
+	fs = virtio_fs_find_instance(tag);
 	if (!fs) {
 		pr_err("virtio-fs: tag not found\n");
 		err = -ENOENT;
@@ -1146,7 +1158,11 @@ static struct dentry *virtio_fs_mount(struct file_system_type *fs_type,
 				      int flags, const char *dev_name,
 				      void *raw_data)
 {
-	return mount_nodev(fs_type, flags, raw_data, virtio_fs_fill_super);
+	struct virtio_fs_mount_info info = {
+		.data = raw_data,
+		.dev_name = dev_name,
+	};
+	return mount_nodev(fs_type, flags, &info, virtio_fs_fill_super);
 }
 
 static struct file_system_type virtio_fs_type = {
