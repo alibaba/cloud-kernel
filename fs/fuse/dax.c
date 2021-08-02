@@ -1336,9 +1336,10 @@ static const struct address_space_operations fuse_dax_file_aops  = {
 	.invalidatepage	= noop_invalidatepage,
 };
 
-static bool fuse_should_enable_dax(struct inode *inode)
+static bool fuse_should_enable_dax(struct inode *inode, unsigned int flags)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	unsigned int dax_mode = fc->dax_mode;
 
 	/*
 	 * fc->dax will be NULL when 'dax=never';
@@ -1348,12 +1349,16 @@ static bool fuse_should_enable_dax(struct inode *inode)
 	if (!fc->dax)
 		return false;
 
-	return true;
+	if (dax_mode == FUSE_DAX_ALWAYS)
+		return true;
+
+	WARN_ON_ONCE(dax_mode != FUSE_DAX_INODE);
+	return fc->perfile_dax && (flags & FUSE_ATTR_DAX);
 }
 
-void fuse_dax_inode_init(struct inode *inode)
+void fuse_dax_inode_init(struct inode *inode, unsigned int flags)
 {
-	if (!fuse_should_enable_dax(inode))
+	if (!fuse_should_enable_dax(inode, flags))
 		return;
 
 	inode->i_flags |= S_DAX;
