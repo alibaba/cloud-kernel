@@ -1001,10 +1001,13 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 				fc->cache_symlinks = 1;
 			if (arg->flags & FUSE_ABORT_ERROR)
 				fc->abort_err = 1;
-			if (IS_ENABLED(CONFIG_FUSE_DAX) &&
-			    arg->flags & FUSE_MAP_ALIGNMENT &&
-			    !fuse_dax_check_alignment(fc, arg->map_alignment)) {
-				ok = false;
+			if (IS_ENABLED(CONFIG_FUSE_DAX)) {
+				if (arg->flags & FUSE_MAP_ALIGNMENT &&
+				    !fuse_dax_check_alignment(fc, arg->map_alignment))
+					ok = false;
+				if (arg->flags & FUSE_PERFILE_DAX)
+					fc->perfile_dax = 1;
+
 			}
 		} else {
 			ra_pages = fc->max_read / PAGE_SIZE;
@@ -1047,6 +1050,8 @@ void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 #ifdef CONFIG_FUSE_DAX
 	if (fc->dax)
 		arg->flags |= FUSE_MAP_ALIGNMENT;
+	if (fc->dax_mode == FUSE_DAX_INODE)
+		arg->flags |= FUSE_PERFILE_DAX;
 #endif
 	req->in.h.opcode = FUSE_INIT;
 	req->in.numargs = 1;
