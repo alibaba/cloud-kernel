@@ -182,7 +182,7 @@ struct fuse_attr {
 	uint32_t	gid;
 	uint32_t	rdev;
 	uint32_t	blksize;
-	uint32_t	padding;
+	uint32_t	flags;
 };
 
 struct fuse_kstatfs {
@@ -264,6 +264,7 @@ struct fuse_file_lock {
  * FUSE_MAP_ALIGNMENT: init_out.map_alignment contains log2(byte alignment) for
  *		       foffset and moffset fields in struct
  *		       fuse_setupmapping_out and fuse_removemapping_one.
+ * FUSE_PERFILE_DAX:	kernel supports per-file DAX
  */
 #define FUSE_ASYNC_READ		(1 << 0)
 #define FUSE_POSIX_LOCKS	(1 << 1)
@@ -289,6 +290,7 @@ struct fuse_file_lock {
 #define FUSE_ABORT_ERROR	(1 << 21)
 #define FUSE_CACHE_SYMLINKS	(1 << 23)
 #define FUSE_MAP_ALIGNMENT	(1 << 26)
+#define FUSE_PERFILE_DAX	(1 << 30)
 
 /**
  * CUSE INIT request/reply flags
@@ -354,6 +356,13 @@ struct fuse_file_lock {
  * FUSE_POLL_SCHEDULE_NOTIFY: request poll notify
  */
 #define FUSE_POLL_SCHEDULE_NOTIFY (1 << 0)
+
+/**
+ * fuse_attr flags
+ *
+ * FUSE_ATTR_DAX: Enable DAX for this file in per-file DAX mode
+ */
+#define FUSE_ATTR_DAX  (1 << 1)
 
 enum fuse_opcode {
 	FUSE_LOOKUP	   = 1,
