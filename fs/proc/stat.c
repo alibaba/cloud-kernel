@@ -142,6 +142,7 @@ static int show_stat(struct seq_file *p, void *v)
 				kcpustat_cpu(i).cpustat[CPUTIME_GUEST_NICE];
 		}
 	}
+	rcu_read_unlock();
 
 	for_each_possible_cpu(i) {
 		sum += kstat_cpu_irqs_sum(i);
