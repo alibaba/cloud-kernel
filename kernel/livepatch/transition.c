@@ -31,7 +31,7 @@
 
 struct klp_patch *klp_transition_patch;
 
-static int klp_target_state = KLP_UNDEFINED;
+int klp_target_state = KLP_UNDEFINED;
 
 /*
  * This work can be performed periodically to finish patching or unpatching any
