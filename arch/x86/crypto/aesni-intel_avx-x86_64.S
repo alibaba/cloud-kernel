@@ -454,7 +454,8 @@ _get_AAD_rest0\@:
 	vpshufb and an array of shuffle masks */
 	movq    %r12, %r11
 	salq    $4, %r11
-	movdqu  aad_shift_arr(%r11), \T1
+	leaq	aad_shift_arr(%rip), %rax
+	movdqu	(%rax,%r11,), \T1
 	vpshufb \T1, reg_i, reg_i
 _get_AAD_rest_final\@:
 	vpshufb SHUF_MASK(%rip), reg_i, reg_i
@@ -1761,7 +1762,8 @@ _get_AAD_rest0\@:
 	vpshufb and an array of shuffle masks */
 	movq    %r12, %r11
 	salq    $4, %r11
-	movdqu  aad_shift_arr(%r11), \T1
+	leaq	aad_shift_arr(%rip), %rax
+	movdqu	(%rax,%r11,), \T1
 	vpshufb \T1, reg_i, reg_i
 _get_AAD_rest_final\@:
 	vpshufb SHUF_MASK(%rip), reg_i, reg_i

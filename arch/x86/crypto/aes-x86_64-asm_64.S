@@ -48,8 +48,12 @@
 #define R10	%r10
 #define R11	%r11
 
+/* Hold global for PIE support */
+#define RBASE	%r12
+
 #define prologue(FUNC,KEY,B128,B192,r1,r2,r5,r6,r7,r8,r9,r10,r11) \
 	ENTRY(FUNC);			\
+	pushq	RBASE;			\
 	movq	r1,r2;			\
 	leaq	KEY+48(r8),r9;		\
 	movq	r10,r11;		\
@@ -74,54 +78,63 @@
 	movl	r6 ## E,4(r9);		\
 	movl	r7 ## E,8(r9);		\
 	movl	r8 ## E,12(r9);		\
+	popq	RBASE;			\
 	ret;				\
 	ENDPROC(FUNC);
+
+#define round_mov(tab_off, reg_i, reg_o) \
+	leaq	tab_off(%rip), RBASE; \
+	movl	(RBASE,reg_i,4), reg_o;
+
+#define round_xor(tab_off, reg_i, reg_o) \
+	leaq	tab_off(%rip), RBASE; \
+	xorl	(RBASE,reg_i,4), reg_o;
 
 #define round(TAB,OFFSET,r1,r2,r3,r4,r5,r6,r7,r8,ra,rb,rc,rd) \
 	movzbl	r2 ## H,r5 ## E;	\
 	movzbl	r2 ## L,r6 ## E;	\
-	movl	TAB+1024(,r5,4),r5 ## E;\
+	round_mov(TAB+1024, r5, r5 ## E)\
 	movw	r4 ## X,r2 ## X;	\
-	movl	TAB(,r6,4),r6 ## E;	\
+	round_mov(TAB, r6, r6 ## E)	\
 	roll	$16,r2 ## E;		\
 	shrl	$16,r4 ## E;		\
 	movzbl	r4 ## L,r7 ## E;	\
 	movzbl	r4 ## H,r4 ## E;	\
 	xorl	OFFSET(r8),ra ## E;	\
 	xorl	OFFSET+4(r8),rb ## E;	\
-	xorl	TAB+3072(,r4,4),r5 ## E;\
-	xorl	TAB+2048(,r7,4),r6 ## E;\
+	round_xor(TAB+3072, r4, r5 ## E)\
+	round_xor(TAB+2048, r7, r6 ## E)\
 	movzbl	r1 ## L,r7 ## E;	\
 	movzbl	r1 ## H,r4 ## E;	\
-	movl	TAB+1024(,r4,4),r4 ## E;\
+	round_mov(TAB+1024, r4, r4 ## E)\
 	movw	r3 ## X,r1 ## X;	\
 	roll	$16,r1 ## E;		\
 	shrl	$16,r3 ## E;		\
-	xorl	TAB(,r7,4),r5 ## E;	\
+	round_xor(TAB, r7, r5 ## E)	\
 	movzbl	r3 ## L,r7 ## E;	\
 	movzbl	r3 ## H,r3 ## E;	\
-	xorl	TAB+3072(,r3,4),r4 ## E;\
-	xorl	TAB+2048(,r7,4),r5 ## E;\
+	round_xor(TAB+3072, r3, r4 ## E)\
+	round_xor(TAB+2048, r7, r5 ## E)\
 	movzbl	r1 ## L,r7 ## E;	\
 	movzbl	r1 ## H,r3 ## E;	\
 	shrl	$16,r1 ## E;		\
-	xorl	TAB+3072(,r3,4),r6 ## E;\
-	movl	TAB+2048(,r7,4),r3 ## E;\
+	round_xor(TAB+3072, r3, r6 ## E)\
+	round_mov(TAB+2048, r7, r3 ## E)\
 	movzbl	r1 ## L,r7 ## E;	\
 	movzbl	r1 ## H,r1 ## E;	\
-	xorl	TAB+1024(,r1,4),r6 ## E;\
-	xorl	TAB(,r7,4),r3 ## E;	\
+	round_xor(TAB+1024, r1, r6 ## E)\
+	round_xor(TAB, r7, r3 ## E)	\
 	movzbl	r2 ## H,r1 ## E;	\
 	movzbl	r2 ## L,r7 ## E;	\
 	shrl	$16,r2 ## E;		\
-	xorl	TAB+3072(,r1,4),r3 ## E;\
-	xorl	TAB+2048(,r7,4),r4 ## E;\
+	round_xor(TAB+3072, r1, r3 ## E)\
+	round_xor(TAB+2048, r7, r4 ## E)\
 	movzbl	r2 ## H,r1 ## E;	\
 	movzbl	r2 ## L,r2 ## E;	\
 	xorl	OFFSET+8(r8),rc ## E;	\
 	xorl	OFFSET+12(r8),rd ## E;	\
-	xorl	TAB+1024(,r1,4),r3 ## E;\
-	xorl	TAB(,r2,4),r4 ## E;
+	round_xor(TAB+1024, r1, r3 ## E)\
+	round_xor(TAB, r2, r4 ## E)
 
 #define move_regs(r1,r2,r3,r4) \
 	movl	r3 ## E,r1 ## E;	\
