@@ -1160,9 +1160,9 @@ SCHED_LAT_STAT_SMP_WRITE(sched_ioblock_latency, SCHED_LAT_IOBLOCK);
 
 smp_call_func_t smp_sched_lat_write_funcs[] = {
 	smp_write_sched_wait_latency,
-	smp_write_sched_wait_cgroup_latency,
 	smp_write_sched_block_latency,
-	smp_write_sched_ioblock_latency
+	smp_write_sched_ioblock_latency,
+	smp_write_sched_wait_cgroup_latency
 };
 
 static int sched_lat_stat_write(struct cgroup_subsys_state *css,
