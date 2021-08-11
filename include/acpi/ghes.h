@@ -145,4 +145,63 @@ int ghes_notify_sea(void);
 static inline int ghes_notify_sea(void) { return -ENOENT; }
 #endif
 
+#pragma pack(1)
+struct raw_data_header {
+	uint32_t signature; /* 'r' 'a' 'w' 'd' */
+	uint8_t type;
+	uint8_t ras_count;
+	/* one record may have multiple sub-record (up to 6) */
+	uint8_t sub_type[6];
+};
+
+struct ras_reg_common {
+	uint64_t fr;
+	uint64_t ctrl;
+	uint64_t status;
+	uint64_t addr;
+	uint64_t misc0;
+	uint64_t misc1;
+	uint64_t misc2;
+	uint64_t misc3;
+};
+
+enum ras_type {
+	ERR_TYPE_GENERIC = 0x40,
+	ERR_TYPE_CORE = 0x41,
+	ERR_TYPE_GIC = 0x42,
+	ERR_TYPE_CMN = 0x43,
+	ERR_TYPE_SMMU = 0x44,
+	ERR_TYPE_DDR = 0x50,
+	ERR_TYPE_PCI = 0x60
+};
+enum cmn_node_type {
+	NODE_TYPE_DVM = 0x1,
+	NODE_TYPE_CFG = 0x2,
+	NODE_TYPE_DTC = 0x3,
+	NODE_TYPE_HN_I = 0x4,
+	NODE_TYPE_HN_F = 0x5,
+	NODE_TYPE_XP = 0x6,
+	NODE_TYPE_SBSX = 0x7,
+	NODE_TYPE_MPAM_S = 0x8,
+	NODE_TYPE_MPAM_NS = 0x9,
+	NODE_TYPE_RN_I = 0xA,
+	NODE_TYPE_RN_D = 0xD,
+	NODE_TYPE_RN_SAM = 0xF,
+	NODE_TYPE_HN_P = 0x11,
+	/* Coherent Multichip Link (CML) node types */
+	NODE_TYPE_CML_BASE = 0x100,
+	NODE_TYPE_CXRA = 0x100,
+	NODE_TYPE_CXHA = 0x101,
+	NODE_TYPE_CXLA = 0x102,
+	NODE_TYPE_CCRA = 0x103,
+	NODE_TYPE_CCHA = 0x104,
+	NODE_TYPE_CCLA = 0x105,
+};
+#pragma pack()
+
+#define apei_estatus_for_each_raw_reg_common(r_data_header, reg_common) \
+	for (reg_common = (struct ras_reg_common *)(r_data_header + 1); \
+	     (void *)(reg_common) - (void *)(r_data_header + 1) < r_data_header->ras_count; \
+	     reg_common = (((void *)(reg_common)) + 1))
+
 #endif /* GHES_H */
