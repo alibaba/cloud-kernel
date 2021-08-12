@@ -14,4 +14,8 @@ extern char __end_rodata_hpage_align[];
 extern char __entry_trampoline_start[], __entry_trampoline_end[];
 #endif
 
+#if defined(CONFIG_X86_PIE)
+extern char __start_got[], __end_got[];
+#endif
+
 #endif	/* _ASM_X86_SECTIONS_H */
