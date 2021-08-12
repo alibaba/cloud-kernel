@@ -109,7 +109,7 @@ static const unsigned char *ftrace_nop_replace(void)
 
 static int
 ftrace_modify_code_direct(unsigned long ip, unsigned const char *old_code,
-		   unsigned const char *new_code)
+			  unsigned const char *new_code)
 {
 	unsigned char replaced[MCOUNT_INSN_SIZE];
 
@@ -142,6 +142,53 @@ ftrace_modify_code_direct(unsigned long ip, unsigned const char *old_code,
 	return 0;
 }
 
+/* Bytes before call GOT offset */
+static const unsigned char got_call_preinsn[] = { 0xff, 0x15 };
+
+static int
+ftrace_modify_initial_code(unsigned long ip, unsigned const char *old_code,
+			   unsigned const char *new_code)
+{
+	unsigned char replaced[MCOUNT_INSN_SIZE + 1];
+
+	/*
+	 * If PIE is not enabled default to the original approach to code
+	 * modification.
+	 */
+	if (!IS_ENABLED(CONFIG_X86_PIE))
+		return ftrace_modify_code_direct(ip, old_code, new_code);
+
+	ftrace_expected = old_code;
+
+	/* Ensure the instructions point to a call to the GOT */
+	if (probe_kernel_read(replaced, (void *)ip, sizeof(replaced))) {
+		WARN_ONCE(1, "invalid function");
+		return -EFAULT;
+	}
+
+	if (memcmp(replaced, got_call_preinsn, sizeof(got_call_preinsn))) {
+		WARN_ONCE(1, "invalid function call");
+		return -EINVAL;
+	}
+
+	/*
+	 * Build a nop slide with a 5-byte nop and 1-byte nop to keep the ftrace
+	 * hooking algorithm working with the expected 5 bytes instruction.
+	 */
+	memset(replaced, ideal_nops[1][0], sizeof(replaced));
+	memcpy(replaced, new_code, MCOUNT_INSN_SIZE);
+
+	ip = text_ip_addr(ip);
+
+	if (probe_kernel_write((void *)ip, replaced, sizeof(replaced)))
+		return -EPERM;
+
+	sync_core();
+
+	return 0;
+
+}
+
 int ftrace_make_nop(struct module *mod,
 		    struct dyn_ftrace *rec, unsigned long addr)
 {
@@ -160,7 +207,7 @@ int ftrace_make_nop(struct module *mod,
 	 * just modify the code directly.
 	 */
 	if (addr == MCOUNT_ADDR)
-		return ftrace_modify_code_direct(rec->ip, old, new);
+		return ftrace_modify_initial_code(rec->ip, old, new);
 
 	ftrace_expected = NULL;
 

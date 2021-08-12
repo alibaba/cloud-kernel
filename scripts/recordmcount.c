@@ -171,33 +171,9 @@ umalloc(size_t size)
 	return addr;
 }
 
-static unsigned char ideal_nop5_x86_64[5] = { 0x0f, 0x1f, 0x44, 0x00, 0x00 };
-static unsigned char ideal_nop5_x86_32[5] = { 0x3e, 0x8d, 0x74, 0x26, 0x00 };
-static unsigned char *ideal_nop;
-
 static char rel_type_nop;
-
 static int (*make_nop)(void *map, size_t const offset);
-
-static int make_nop_x86(void *map, size_t const offset)
-{
-	uint32_t *ptr;
-	unsigned char *op;
-
-	/* Confirm we have 0xe8 0x0 0x0 0x0 0x0 */
-	ptr = map + offset;
-	if (*ptr != 0)
-		return -1;
-
-	op = map + offset - 1;
-	if (*op != 0xe8)
-		return -1;
-
-	/* convert to nop */
-	ulseek(fd_map, offset - 1, SEEK_SET);
-	uwrite(fd_map, ideal_nop, 5);
-	return 0;
-}
+static unsigned char *ideal_nop;
 
 static unsigned char ideal_nop4_arm_le[4] = { 0x00, 0x00, 0xa0, 0xe1 }; /* mov r0, r0 */
 static unsigned char ideal_nop4_arm_be[4] = { 0xe1, 0xa0, 0x00, 0x00 }; /* mov r0, r0 */
@@ -447,6 +423,49 @@ static void MIPS64_r_info(Elf64_Rel *const rp, unsigned sym, unsigned type)
 	}).r_info;
 }
 
+static unsigned char ideal_nop5_x86_64[5] = { 0x0f, 0x1f, 0x44, 0x00, 0x00 };
+static unsigned char ideal_nop6_x86_64[6] = { 0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00 };
+static unsigned char ideal_nop5_x86_32[5] = { 0x3e, 0x8d, 0x74, 0x26, 0x00 };
+static size_t ideal_nop_x86_size;
+
+static unsigned char stub_default_x86[2] = { 0xe8, 0x00 };   /* call relative */
+static unsigned char stub_got_x86[3] = { 0xff, 0x15, 0x00 }; /* call .got */
+static unsigned char *stub_x86;
+static size_t stub_x86_size;
+
+static int make_nop_x86(void *map, size_t const offset)
+{
+	uint32_t *ptr;
+	size_t stub_offset = offset - stub_x86_size;
+
+	/* confirm we have the expected stub */
+	ptr = map + stub_offset;
+	if (memcmp(ptr, stub_x86, stub_x86_size))
+		return -1;
+
+	/* convert to nop */
+	ulseek(fd_map, stub_offset, SEEK_SET);
+	uwrite(fd_map, ideal_nop, ideal_nop_x86_size);
+	return 0;
+}
+
+/* Swap the stub and nop for a got call if the binary is built with PIE */
+static int is_fake_mcount_x86_x64(Elf64_Rel const *rp)
+{
+	if (ELF64_R_TYPE(rp->r_info) == R_X86_64_GOTPCREL) {
+		ideal_nop = ideal_nop6_x86_64;
+		ideal_nop_x86_size = sizeof(ideal_nop6_x86_64);
+		stub_x86 = stub_got_x86;
+		stub_x86_size = sizeof(stub_got_x86);
+		mcount_adjust_64 = 1 - stub_x86_size;
+	}
+
+	/* Once the relocation was checked, rollback to default */
+	is_fake_mcount64 = fn_is_fake_mcount64;
+	return is_fake_mcount64(rp);
+}
+
+
 static void
 do_file(char const *const fname)
 {
@@ -509,6 +528,9 @@ do_file(char const *const fname)
 		rel_type_nop = R_386_NONE;
 		make_nop = make_nop_x86;
 		ideal_nop = ideal_nop5_x86_32;
+		ideal_nop_x86_size = sizeof(ideal_nop5_x86_32);
+		stub_x86 = stub_default_x86;
+		stub_x86_size = sizeof(stub_default_x86);
 		mcount_adjust_32 = -1;
 		break;
 	case EM_ARM:	 reltype = R_ARM_ABS32;
@@ -533,9 +555,13 @@ do_file(char const *const fname)
 	case EM_X86_64:
 		make_nop = make_nop_x86;
 		ideal_nop = ideal_nop5_x86_64;
+		ideal_nop_x86_size = sizeof(ideal_nop5_x86_64);
+		stub_x86 = stub_default_x86;
+		stub_x86_size = sizeof(stub_default_x86);
 		reltype = R_X86_64_64;
 		rel_type_nop = R_X86_64_NONE;
-		mcount_adjust_64 = -1;
+		is_fake_mcount64 = is_fake_mcount_x86_x64;
+		mcount_adjust_64 = 1 - stub_x86_size;
 		break;
 	}  /* end switch */
 
