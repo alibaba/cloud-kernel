@@ -424,7 +424,8 @@ extern asmlinkage void ignore_sysret(void);
 /* Save actual FS/GS selectors and bases to current->thread */
 void current_save_fsgs(void);
 #else	/* X86_64 */
-#ifdef CONFIG_STACKPROTECTOR
+#if defined(CONFIG_STACKPROTECTOR) && \
+	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
 /*
  * Make sure stack canary segment base is cached-aligned:
  *   "For Intel Atom processors, avoid non zero segment base address

@@ -67,7 +67,8 @@ int main(void)
 	OFFSET(TSS_ist, tss_struct, x86_tss.ist);
 	BLANK();
 
-#ifdef CONFIG_STACKPROTECTOR
+#if defined(CONFIG_STACKPROTECTOR) && \
+	!defined(CONFIG_X86_GLOBAL_STACKPROTECTOR)
 	DEFINE(stack_canary_offset, offsetof(union irq_stack_union, stack_canary));
 	BLANK();
 #endif
