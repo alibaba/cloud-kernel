@@ -1461,7 +1461,7 @@ asmlinkage void __noreturn kvm_spurious_fault(void);
 	".pushsection .fixup, \"ax\" \n\t"				\
 	"700: \n\t"							\
 	cleanup_insn "\n\t"						\
-	"cmpb	$0, kvm_rebooting\n\t"					\
+	"cmpb $0, kvm_rebooting" __ASM_SEL(, (%%rip)) "\n\t" \
 	"je	667b \n\t"						\
 	"jmp	668b \n\t"						\
 	".popsection \n\t"						\
