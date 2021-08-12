@@ -1116,11 +1116,14 @@ uapi-asm-generic:
 PHONY += prepare-objtool
 prepare-objtool: $(objtool_target)
 ifeq ($(SKIP_STACK_VALIDATION),1)
+# CONFIG_STACK_VALIDATION is not yet support by CONFIG_X86_PIE and warning is displayed before.
+ifndef CONFIG_X86_PIE
 ifdef CONFIG_UNWINDER_ORC
 	@echo "error: Cannot generate ORC metadata for CONFIG_UNWINDER_ORC=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
 	@false
 else
 	@echo "warning: Cannot use CONFIG_STACK_VALIDATION=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
+endif
 endif
 endif
 
