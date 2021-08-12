@@ -51,7 +51,7 @@ static inline void *current_text_addr(void)
 {
 	void *pc;
 
-	asm volatile("mov $1f, %0; 1:":"=r" (pc));
+	asm volatile(_ASM_MOVABS " $1f, %0; 1:":"=r" (pc));
 
 	return pc;
 }
