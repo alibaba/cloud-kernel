@@ -32,6 +32,7 @@ struct section {
 	Elf_Sym        *symtab;
 	Elf_Rel        *reltab;
 	char           *strtab;
+	Elf_Addr       *got;
 };
 static struct section *secs;
 
@@ -294,6 +295,36 @@ static Elf_Sym *sym_lookup(const char *symname)
 	return 0;
 }
 
+static Elf_Sym *sym_lookup_addr(Elf_Addr addr, const char **name)
+{
+	int i;
+
+	for (i = 0; i < ehdr.e_shnum; i++) {
+		struct section *sec = &secs[i];
+		long nsyms;
+		Elf_Sym *symtab;
+		Elf_Sym *sym;
+
+		if (sec->shdr.sh_type != SHT_SYMTAB)
+			continue;
+
+		nsyms = sec->shdr.sh_size/sizeof(Elf_Sym);
+		symtab = sec->symtab;
+
+		for (sym = symtab; --nsyms >= 0; sym++) {
+			if (sym->st_value == addr) {
+				if (name) {
+					*name = sym_name(sec->link->strtab,
+							 sym);
+				}
+				return sym;
+			}
+		}
+	}
+	return 0;
+}
+
+
 #if BYTE_ORDER == LITTLE_ENDIAN
 #define le16_to_cpu(val) (val)
 #define le32_to_cpu(val) (val)
@@ -514,6 +545,35 @@ static void read_relocs(FILE *fp)
 	}
 }
 
+static void read_got(FILE *fp)
+{
+	int i;
+
+	for (i = 0; i < ehdr.e_shnum; i++) {
+		struct section *sec = &secs[i];
+
+		sec->got = NULL;
+		if (sec->shdr.sh_type != SHT_PROGBITS ||
+		    strcmp(sec_name(i), ".got")) {
+			continue;
+		}
+		sec->got = malloc(sec->shdr.sh_size);
+		if (!sec->got) {
+			die("malloc of %d bytes for got failed\n",
+				sec->shdr.sh_size);
+		}
+		if (fseek(fp, sec->shdr.sh_offset, SEEK_SET) < 0) {
+			die("Seek to %d failed: %s\n",
+				sec->shdr.sh_offset, strerror(errno));
+		}
+		if (fread(sec->got, 1, sec->shdr.sh_size, fp)
+		    != sec->shdr.sh_size) {
+			die("Cannot read got: %s\n",
+				strerror(errno));
+		}
+	}
+}
+
 
 static void print_absolute_symbols(void)
 {
@@ -644,6 +704,32 @@ static void add_reloc(struct relocs *r, uint32_t offset)
 	r->offset[r->count++] = offset;
 }
 
+/*
+ * The linker does not generate relocations for the GOT for the kernel.
+ * If a GOT is found, simulate the relocations that should have been included.
+ */
+static void walk_got_table(int (*process)(struct section *sec, Elf_Rel *rel,
+					  Elf_Sym *sym, const char *symname),
+			   struct section *sec)
+{
+	int i;
+	Elf_Addr entry;
+	Elf_Sym *sym;
+	const char *symname;
+	Elf_Rel rel;
+
+	for (i = 0; i < sec->shdr.sh_size/sizeof(Elf_Addr); i++) {
+		entry = sec->got[i];
+		sym = sym_lookup_addr(entry, &symname);
+		if (!sym)
+			die("Could not found got symbol for entry %d\n", i);
+		rel.r_offset = sec->shdr.sh_addr + i * sizeof(Elf_Addr);
+		rel.r_info = ELF_BITS == 64 ? R_X86_64_GLOB_DAT
+			     : R_386_GLOB_DAT;
+		process(sec, &rel, sym, symname);
+	}
+}
+
 static void walk_relocs(int (*process)(struct section *sec, Elf_Rel *rel,
 			Elf_Sym *sym, const char *symname))
 {
@@ -657,6 +743,8 @@ static void walk_relocs(int (*process)(struct section *sec, Elf_Rel *rel,
 		struct section *sec = &secs[i];
 
 		if (sec->shdr.sh_type != SHT_REL_TYPE) {
+			if (sec->got)
+				walk_got_table(process, sec);
 			continue;
 		}
 		sec_symtab  = sec->link;
@@ -766,6 +854,7 @@ static int do_reloc64(struct section *sec, Elf_Rel *rel, ElfW(Sym) *sym,
 		offset += per_cpu_load_addr;
 
 	switch (r_type) {
+	case R_X86_64_GOTPCREL:
 	case R_X86_64_NONE:
 		/* NONE can be ignored. */
 		break;
@@ -810,13 +899,17 @@ static int do_reloc64(struct section *sec, Elf_Rel *rel, ElfW(Sym) *sym,
 		 * the relocations are processed.
 		 * Make sure that the offset will fit.
 		 */
-		if ((int32_t)offset != (int64_t)offset)
+		if (r_type != R_X86_64_64 && (int32_t)offset != (int64_t)offset)
 			die("Relocation offset doesn't fit in 32 bits\n");
 
 		if (r_type == R_X86_64_64)
 			add_reloc(&relocs64, offset);
 		else
 			add_reloc(&relocs32, offset);
+		break;
+
+	case R_X86_64_GLOB_DAT:
+		add_reloc(&relocs64, offset);
 		break;
 
 	default:
@@ -1088,6 +1181,7 @@ void process(FILE *fp, int use_real_mode, int as_text,
 	read_strtabs(fp);
 	read_symtabs(fp);
 	read_relocs(fp);
+	read_got(fp);
 	if (ELF_BITS == 64)
 		percpu_init();
 	if (show_absolute_syms) {
