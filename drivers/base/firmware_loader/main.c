@@ -94,8 +94,8 @@ static struct firmware_cache fw_cache;
 
 #ifdef CONFIG_FW_LOADER
 
-extern struct builtin_fw __start_builtin_fw[];
-extern struct builtin_fw __end_builtin_fw[];
+extern struct builtin_fw __start_builtin_fw[] __default_visibility;
+extern struct builtin_fw __end_builtin_fw[] __default_visibility;
 
 static void fw_copy_to_prealloc_buf(struct firmware *fw,
 				    void *buf, size_t size)
