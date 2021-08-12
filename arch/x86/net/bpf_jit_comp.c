@@ -829,12 +829,24 @@ xadd:			if (is_imm8(insn->off))
 
 			/* call */
 		case BPF_JMP | BPF_CALL:
-			func = (u8 *) __bpf_call_base + imm32;
-			jmp_offset = func - (image + addrs[i]);
-			if (!imm32 || !is_simm32(jmp_offset)) {
-				pr_err("unsupported BPF func %d addr %p image %p\n",
-				       imm32, func, image);
-				return -EINVAL;
+			/* The length of x86 0xe8 JMP is a fixed thing. So we
+			 * don't need to hurry to calculate the target addr
+			 * repeatly.
+			 */
+			if (image) {
+				func = (u8 *) __bpf_call_base + imm32;
+				jmp_offset = func - (image + addrs[i]);
+				if (!is_simm32(jmp_offset)) {
+					pr_err("unsupported BPF func %d addr %p image %p jmp_offset %llx\n",
+					       imm32, func, image, jmp_offset);
+					return -EINVAL;
+				}
+			} else {
+				if (!imm32) {
+					pr_err("BPF_CALL's offset couldn't be zero.\n");
+					return -EINVAL;
+				}
+				jmp_offset = imm32;
 			}
 			EMIT1_off32(0xE8, jmp_offset);
 			break;
