@@ -21,7 +21,7 @@
 
 struct klp_patch *klp_transition_patch;
 
-static int klp_target_state = KLP_UNDEFINED;
+int klp_target_state = KLP_UNDEFINED;
 
 static unsigned int klp_signals_cnt;
 

@@ -1059,6 +1059,7 @@ static int klp_try_disable_patch(void *data)
 
 	return ret;
 }
+extern int klp_target_state;
 static int __klp_disable_patch(struct klp_patch *patch)
 {
 	int ret;
@@ -1073,6 +1074,7 @@ static int __klp_disable_patch(struct klp_patch *patch)
 
 	pr_notice("disabling patch '%s'\n", patch->mod->name);
 	klp_transition_patch = patch;
+	klp_target_state = KLP_UNPATCHED;
 
 	/*
 	 * Enforce the order of the func->transition writes in
@@ -1086,6 +1088,7 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	ret = stop_machine(klp_try_disable_patch, patch, NULL);
 	if (ret) {
 		pr_warn("failed to disable patch '%s'\n", patch->mod->name);
+		goto out;
 	} else {
 		klp_for_each_object(patch, obj) {
 			if (!klp_is_object_loaded(obj))
@@ -1114,7 +1117,9 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	else if (patch->replace)
 		klp_free_replaced_patches_async(patch);
 
+out:
 	klp_transition_patch = NULL;
+	klp_target_state = KLP_UNDEFINED;
 
 	return ret;
 }
