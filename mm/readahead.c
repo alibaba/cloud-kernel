@@ -28,6 +28,7 @@
 
 /* enable context readahead default */
 int sysctl_enable_context_readahead = 1;
+int sysctl_enable_multithread_ra_boost;
 
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
@@ -200,6 +201,7 @@ void page_cache_ra_unbounded(struct readahead_control *ractl,
 	 */
 	for (i = 0; i < nr_to_read; i++) {
 		struct page *page = xa_load(&mapping->i_pages, index + i);
+		int error;
 
 		BUG_ON(index + i != ractl->_index + ractl->_nr_pages);
 
@@ -222,11 +224,15 @@ void page_cache_ra_unbounded(struct readahead_control *ractl,
 		if (mapping->a_ops->readpages) {
 			page->index = index + i;
 			list_add(&page->lru, &page_pool);
-		} else if (add_to_page_cache_lru(page, mapping, index + i,
-					gfp_mask) < 0) {
-			put_page(page);
-			read_pages(ractl, &page_pool, true);
-			continue;
+		} else {
+			error = add_to_page_cache_lru(page, mapping, index + i, gfp_mask);
+			if (error < 0) {
+				put_page(page);
+				read_pages(ractl, &page_pool, true);
+				if (error == -EEXIST && sysctl_enable_multithread_ra_boost)
+					break;
+				continue;
+			}
 		}
 		if (i == nr_to_read - lookahead_size)
 			SetPageReadahead(page);

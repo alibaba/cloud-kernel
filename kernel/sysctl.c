@@ -3381,6 +3381,15 @@ static struct ctl_table vm_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
+	{
+		.procname       = "enable_multithread_ra_boost",
+		.data           = &sysctl_enable_multithread_ra_boost,
+		.maxlen         = sizeof(sysctl_enable_multithread_ra_boost),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
 	{ }
 };
 

@@ -76,6 +76,7 @@ Currently, these files are in /proc/sys/vm:
 - watermark_scale_factor
 - zone_reclaim_mode
 - enable_context_readahead
+- enable_multithread_ra_boost
 
 
 admin_reserve_kbytes
@@ -1013,3 +1014,20 @@ To disable context readahead:
 To enable context readahead again:
        echo 1 > /proc/sys/vm/enable_context_readahead
 
+
+enable_multithread_ra_boost
+===========================
+
+Specific workloads using multiple threads to do sequential reading on the same
+file may introduce race on spinlock during page cache readahead. Readahead
+process will end earlier when detecting readahead page conflict. This is
+effective for sequential reading the same file with multiple threads and large
+readahead size(e.g., reading with rayon of rust, which is used in lotus).
+
+Default it is disabled.
+
+To disable context readahead:
+       echo 0 > /proc/sys/vm/enable_multithread_ra_boost
+
+To enable context readahead:
+       echo 1 > /proc/sys/vm/enable_multithread_ra_boost
