@@ -220,6 +220,9 @@ int main(int argc, char **argv)
 	unsigned int use_signed_attrs;
 	const EVP_MD *digest_algo;
 	EVP_PKEY *private_key;
+#if defined(EVP_PKEY_SM2) && OPENSSL_VERSION_NUMBER < 0x30000000
+	EVP_PKEY *pkey;
+#endif
 #ifndef USE_PKCS7
 	CMS_ContentInfo *cms = NULL;
 	unsigned int use_keyid = 0;
@@ -302,6 +305,27 @@ int main(int argc, char **argv)
 		display_openssl_errors(__LINE__);
 		digest_algo = EVP_get_digestbyname(hash_algo);
 		ERR(!digest_algo, "EVP_get_digestbyname");
+
+#if defined(EVP_PKEY_SM2) && OPENSSL_VERSION_NUMBER < 0x30000000
+		/* If EC key are used, check whether it is SM2 key */
+		if (EVP_PKEY_id(private_key) == EVP_PKEY_EC) {
+			EC_KEY *ec = EVP_PKEY_get0_EC_KEY(private_key);
+			int curve = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec));
+
+			if (curve == NID_sm2)
+				EVP_PKEY_set_alias_type(private_key, EVP_PKEY_SM2);
+		}
+
+		pkey = X509_get0_pubkey(x509);
+		/* If EC key are used, check whether it is SM2 key */
+		if (EVP_PKEY_id(pkey) == EVP_PKEY_EC) {
+			EC_KEY *ec = EVP_PKEY_get0_EC_KEY(pkey);
+			int curve = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec));
+
+			if (curve == NID_sm2)
+				EVP_PKEY_set_alias_type(pkey, EVP_PKEY_SM2);
+		}
+#endif
 
 #ifndef USE_PKCS7
 		/* Load the signature message from the digest buffer. */
