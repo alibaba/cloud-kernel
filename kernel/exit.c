@@ -647,17 +647,10 @@ static void forget_original_parent(struct task_struct *father,
 static void exit_notify(struct task_struct *tsk, int group_dead)
 {
 	bool autoreap;
-	unsigned long flags;
 	struct task_struct *p, *n;
 	LIST_HEAD(dead);
 
-retry:
-	if (!write_trylock_irqsave(&tasklist_lock, flags)) {
-		if (!in_atomic() && !irqs_disabled())
-			cond_resched();
-		goto retry;
-	}
-
+	write_lock_irq(&tasklist_lock);
 	forget_original_parent(tsk, &dead);
 
 	if (group_dead)
