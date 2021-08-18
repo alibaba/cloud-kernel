@@ -225,7 +225,7 @@ static bool blk_mq_check_rq_hang(struct blk_mq_hw_ctx *hctx,
 	if (duration >= rq->q->rq_hang_threshold)
 		blk_mq_debugfs_rq_hang_show(m, rq);
 
-	if (is_flush_rq(rq, hctx))
+	if (is_flush_rq(rq))
 		rq->end_io(rq, 0);
 	else if (refcount_dec_and_test(&rq->ref))
 		__blk_mq_free_request(rq);
