@@ -229,6 +229,22 @@ int pciehp_check_link_active(struct controller *ctrl)
 	return ret;
 }
 
+int pciehp_check_present_change_enable(struct controller *ctrl)
+{
+	struct pci_dev *pdev = ctrl_dev(ctrl);
+	u16 slot_ctrl;
+	int ret;
+
+	ret = pcie_capability_read_word(pdev, PCI_EXP_SLTCTL, &slot_ctrl);
+	if (ret == PCIBIOS_DEVICE_NOT_FOUND || slot_ctrl == (u16)~0)
+		return -ENODEV;
+
+	ret = !!(slot_ctrl & PCI_EXP_SLTCTL_PDCE);
+	ctrl_dbg(ctrl, "%s: slot_ctrl = %x\n", __func__, slot_ctrl);
+
+	return ret;
+}
+
 static bool pci_bus_check_dev(struct pci_bus *bus, int devfn)
 {
 	u32 l;
