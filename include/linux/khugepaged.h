@@ -26,10 +26,18 @@ static inline void collapse_pte_mapped_thp(struct mm_struct *mm,
 }
 #endif
 
+#ifdef CONFIG_HUGETEXT
+#define khugepaged_enabled()					\
+	(transparent_hugepage_flags &				\
+	 ((1<<TRANSPARENT_HUGEPAGE_FLAG) |			\
+	  (1<<TRANSPARENT_HUGEPAGE_REQ_MADV_FLAG) |		\
+	  (1<<TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG)))
+#else
 #define khugepaged_enabled()					       \
 	(transparent_hugepage_flags &				       \
 	 ((1<<TRANSPARENT_HUGEPAGE_FLAG) |		       \
 	  (1<<TRANSPARENT_HUGEPAGE_REQ_MADV_FLAG)))
+#endif
 #define khugepaged_always()				\
 	(transparent_hugepage_flags &			\
 	 (1<<TRANSPARENT_HUGEPAGE_FLAG))
@@ -59,6 +67,7 @@ static inline int khugepaged_enter(struct vm_area_struct *vma,
 	if (!test_bit(MMF_VM_HUGEPAGE, &vma->vm_mm->flags))
 		if ((khugepaged_always() ||
 		     (shmem_file(vma->vm_file) && shmem_huge_enabled(vma)) ||
+		     (hugetext_enabled() && vma_is_hugetext(vma, vm_flags)) ||
 		     (khugepaged_req_madv() && (vm_flags & VM_HUGEPAGE))) &&
 		    !(vm_flags & VM_NOHUGEPAGE) &&
 		    !test_bit(MMF_DISABLE_THP, &vma->vm_mm->flags))

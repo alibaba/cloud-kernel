@@ -315,6 +315,35 @@ static ssize_t hpage_pmd_size_show(struct kobject *kobj,
 static struct kobj_attribute hpage_pmd_size_attr =
 	__ATTR_RO(hpage_pmd_size);
 
+#ifdef CONFIG_HUGETEXT
+static ssize_t hugetext_enabled_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	return single_hugepage_flag_show(kobj, attr, buf,
+			TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG);
+}
+
+static ssize_t hugetext_enabled_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	ssize_t ret = count;
+
+	ret = single_hugepage_flag_store(kobj, attr, buf, count,
+			TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG);
+
+	if (ret > 0) {
+		int err = start_stop_khugepaged();
+
+		if (err)
+			ret = err;
+	}
+
+	return ret;
+}
+struct kobj_attribute hugetext_enabled_attr =
+	__ATTR(hugetext_enabled, 0644, hugetext_enabled_show, hugetext_enabled_store);
+#endif /* CONFIG_HUGETEXT */
+
 static struct attribute *hugepage_attr[] = {
 	&enabled_attr.attr,
 	&defrag_attr.attr,
@@ -322,6 +351,9 @@ static struct attribute *hugepage_attr[] = {
 	&hpage_pmd_size_attr.attr,
 #ifdef CONFIG_SHMEM
 	&shmem_enabled_attr.attr,
+#endif
+#ifdef CONFIG_HUGETEXT
+	&hugetext_enabled_attr.attr,
 #endif
 	NULL,
 };
@@ -475,6 +507,31 @@ out:
 	return ret;
 }
 __setup("transparent_hugepage=", setup_transparent_hugepage);
+
+#ifdef CONFIG_HUGETEXT
+static int __init setup_hugetext(char *str)
+{
+	int ret = 0;
+
+	if (!str)
+		goto out;
+	if (!strcmp(str, "1")) {
+		set_bit(TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG,
+			  &transparent_hugepage_flags);
+		ret = 1;
+	} else if (!strcmp(str, "0")) {
+		clear_bit(TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG,
+			&transparent_hugepage_flags);
+		ret = 1;
+	}
+
+out:
+	if (!ret)
+		pr_warn("hugetext= cannot parse, ignored\n");
+	return ret;
+}
+__setup("hugetext=", setup_hugetext);
+#endif
 
 pmd_t maybe_pmd_mkwrite(pmd_t pmd, struct vm_area_struct *vma)
 {

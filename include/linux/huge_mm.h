@@ -90,6 +90,9 @@ enum transparent_hugepage_flag {
 #ifdef CONFIG_DEBUG_VM
 	TRANSPARENT_HUGEPAGE_DEBUG_COW_FLAG,
 #endif
+#ifdef CONFIG_HUGETEXT
+	TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG,
+#endif
 };
 
 struct kobject;
@@ -141,6 +144,27 @@ static inline bool transhuge_vma_enabled(struct vm_area_struct *vma,
 	    test_bit(MMF_DISABLE_THP, &vma->vm_mm->flags))
 		return false;
 	return true;
+}
+
+#ifdef CONFIG_HUGETEXT
+#define hugetext_enabled()			\
+	(transparent_hugepage_flags &		\
+	 (1<<TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG))
+#else
+#define hugetext_enabled()	false
+#endif /* CONFIG_HUGETEXT */
+
+static inline bool vma_is_hugetext(struct vm_area_struct *vma,
+				   unsigned long vm_flags)
+{
+	if (!(vm_flags & VM_EXEC))
+		return false;
+
+	if (vma->vm_file && !inode_is_open_for_write(vma->vm_file->f_inode))
+		return IS_ALIGNED((vma->vm_start >> PAGE_SHIFT) - vma->vm_pgoff,
+				HPAGE_PMD_NR);
+
+	return false;
 }
 
 /*

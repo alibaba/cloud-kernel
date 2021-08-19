@@ -451,6 +451,10 @@ static bool hugepage_vma_check(struct vm_area_struct *vma,
 	if (shmem_file(vma->vm_file))
 		return shmem_huge_enabled(vma);
 
+	/* Enable hugetext does not require THP settings */
+	if (hugetext_enabled() && vma_is_hugetext(vma, vm_flags))
+		return true;
+
 	/* THP settings require madvise. */
 	if (!(vm_flags & VM_HUGEPAGE) && !khugepaged_always())
 		return false;

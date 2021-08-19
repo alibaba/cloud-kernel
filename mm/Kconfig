@@ -843,6 +843,17 @@ config READ_ONLY_THP_FOR_FS
 	  support of file THPs will be developed in the next few release
 	  cycles.
 
+config HUGETEXT
+	bool "THP for text segments"
+	depends on READ_ONLY_THP_FOR_FS
+
+	help
+	  Allow khugepaged to put read-only file-backed pages, including
+	  shared libraries, as well as the anonymous and executable pages
+	  in THP.
+
+	  This feature builds on and extends READ_ONLY_THP_FOR_FS.
+
 config ARCH_HAS_PTE_SPECIAL
 	bool
 
