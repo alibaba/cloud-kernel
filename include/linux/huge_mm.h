@@ -176,6 +176,9 @@ static inline bool vma_is_hugetext(struct vm_area_struct *vma,
 		return IS_ALIGNED((vma->vm_start >> PAGE_SHIFT) - vma->vm_pgoff,
 				HPAGE_PMD_NR);
 
+	if (vma_is_anonymous(vma))
+		return true;
+
 	return false;
 }
 
@@ -202,6 +205,10 @@ static inline bool __transparent_hugepage_enabled(struct vm_area_struct *vma)
 		return true;
 
 	if (vma_is_dax(vma))
+		return true;
+
+	if (hugetext_enabled() && vma_is_anonymous(vma)
+			&& (vma->vm_flags & VM_EXEC))
 		return true;
 
 	if (transparent_hugepage_flags &
