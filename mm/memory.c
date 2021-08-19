@@ -69,6 +69,7 @@
 #include <linux/userfaultfd_k.h>
 #include <linux/dax.h>
 #include <linux/oom.h>
+#include <linux/khugepaged.h>
 
 #include <asm/io.h>
 #include <asm/mmu_context.h>
@@ -3664,6 +3665,17 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	vm_fault_t ret = 0;
+
+#ifdef CONFIG_HUGETEXT
+	/* Add the candidate hugetext vma into khugepaged scan list */
+	if (pmd_none(*vmf->pmd) && hugetext_enabled()
+			&& vma_is_hugetext(vma, vma->vm_flags)) {
+		unsigned long haddr = vmf->address & HPAGE_PMD_MASK;
+
+		if (transhuge_vma_suitable(vma, haddr))
+			khugepaged_enter(vma, vma->vm_flags);
+	}
+#endif
 
 	/*
 	 * Let's call ->map_pages() first and use ->fault() as fallback
