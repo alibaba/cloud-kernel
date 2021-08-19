@@ -1133,6 +1133,11 @@ out_free_interp:
 				retval = -EINVAL;
 				goto out_free_dentry;
 			}
+#ifdef CONFIG_HUGETEXT
+			if (hugetext_enabled() && interpreter &&
+					total_size >= HPAGE_PMD_SIZE)
+				load_bias &= HPAGE_PMD_MASK;
+#endif
 		}
 
 		error = elf_map(bprm->file, load_bias + vaddr, elf_ppnt,
