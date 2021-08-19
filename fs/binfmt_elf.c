@@ -1006,6 +1006,11 @@ static int load_elf_binary(struct linux_binprm *bprm)
 				retval = -EINVAL;
 				goto out_free_dentry;
 			}
+#ifdef CONFIG_HUGETEXT
+			if (hugetext_enabled() && elf_interpreter &&
+					total_size >= HPAGE_PMD_SIZE)
+				load_bias &= HPAGE_PMD_MASK;
+#endif
 		}
 
 		error = elf_map(bprm->file, load_bias + vaddr, elf_ppnt,
