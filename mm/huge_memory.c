@@ -635,6 +635,21 @@ out:
 }
 EXPORT_SYMBOL_GPL(thp_get_unmapped_area);
 
+#ifdef CONFIG_HUGETEXT
+unsigned long hugetext_get_unmapped_area(struct file *filp, unsigned long addr,
+		unsigned long len, unsigned long pgoff, unsigned long flags)
+{
+	unsigned long ret;
+	loff_t off = (loff_t)pgoff << PAGE_SHIFT;
+
+	ret = __thp_get_unmapped_area(filp, addr, len, off, flags, PMD_SIZE);
+	if (ret)
+		return ret;
+
+	return current->mm->get_unmapped_area(filp, addr, len, pgoff, flags);
+}
+#endif /* CONFIG_HUGETEXT */
+
 static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 			struct page *page, gfp_t gfp)
 {

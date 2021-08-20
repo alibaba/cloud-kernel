@@ -2269,8 +2269,26 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 
 	get_area = current->mm->get_unmapped_area;
 	if (file) {
+#ifdef CONFIG_HUGETEXT
+		/*
+		 * Prior to the file->f_op->get_unmapped_area.
+		 *
+		 * If hugetext is enabled, except for MAP_FIXED, it always
+		 * make the mapping address of files that have executable
+		 * attribute be mapped in 2MB alignment.
+		 */
+		struct inode *inode = file_inode(file);
+
+		if (hugetext_enabled() && (inode->i_mode & 0111) &&
+				(!file->f_op->get_unmapped_area ||
+				 file->f_op->get_unmapped_area == thp_get_unmapped_area))
+			get_area = hugetext_get_unmapped_area;
+		else if (file->f_op->get_unmapped_area)
+			get_area = file->f_op->get_unmapped_area;
+#else
 		if (file->f_op->get_unmapped_area)
 			get_area = file->f_op->get_unmapped_area;
+#endif
 	} else if (flags & MAP_SHARED) {
 		/*
 		 * mmap_region() will call shmem_zero_setup() to create a file,

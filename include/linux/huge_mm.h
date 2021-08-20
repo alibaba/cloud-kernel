@@ -150,8 +150,20 @@ static inline bool transhuge_vma_enabled(struct vm_area_struct *vma,
 #define hugetext_enabled()			\
 	(transparent_hugepage_flags &		\
 	 (1<<TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG))
+
+extern unsigned long hugetext_get_unmapped_area(struct file *filp,
+		unsigned long addr, unsigned long len, unsigned long pgoff,
+		unsigned long flags);
 #else
 #define hugetext_enabled()	false
+
+static inline unsigned long hugetext_get_unmapped_area(struct file *filp,
+		unsigned long addr, unsigned long len, unsigned long pgoff,
+		unsigned long flags)
+{
+	BUILD_BUG();
+	return 0;
+}
 #endif /* CONFIG_HUGETEXT */
 
 static inline bool vma_is_hugetext(struct vm_area_struct *vma,
