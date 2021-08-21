@@ -3056,6 +3056,12 @@ static int io_iter_do_read(struct io_kiocb *req, struct iov_iter *iter)
 		return -EINVAL;
 }
 
+static bool need_read_all(struct io_kiocb *req)
+{
+	return req->flags & REQ_F_ISREG ||
+		S_ISBLK(file_inode(req->file)->i_mode);
+}
+
 static int io_read(struct io_kiocb *req, bool force_nonblock)
 {
 	struct iovec inline_vecs[UIO_FASTIOV], *iovec = inline_vecs;
@@ -3109,7 +3115,7 @@ static int io_read(struct io_kiocb *req, bool force_nonblock)
 
 	/* read it all, or we did blocking attempt. no retry. */
 	if (!iov_iter_count(iter) || !force_nonblock ||
-	    (req->file->f_flags & O_NONBLOCK) || !(req->flags & REQ_F_ISREG))
+	    (req->file->f_flags & O_NONBLOCK) || !need_read_all(req))
 		goto done;
 
 	io_size -= ret;
