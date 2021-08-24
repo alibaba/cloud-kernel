@@ -117,6 +117,9 @@ void __noreturn handle_stack_overflow(const char *message,
 				      unsigned long fault_address);
 #endif
 
+void _enter_from_user_mode(void);
+void _prepare_exit_to_usermode(struct pt_regs *regs);
+
 /* Interrupts/Exceptions */
 enum {
 	X86_TRAP_DE = 0,	/*  0, Divide-by-zero */

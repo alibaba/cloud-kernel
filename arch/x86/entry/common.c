@@ -47,6 +47,11 @@ __visible inline void enter_from_user_mode(void)
 static inline void enter_from_user_mode(void) {}
 #endif
 
+noinstr void _enter_from_user_mode(void)
+{
+	enter_from_user_mode();
+}
+
 static void do_audit_syscall_entry(struct pt_regs *regs, u32 arch)
 {
 #ifdef CONFIG_X86_64
@@ -215,6 +220,11 @@ __visible inline void prepare_exit_to_usermode(struct pt_regs *regs)
 	user_enter_irqoff();
 
 	mds_user_clear_cpu_buffers();
+}
+
+noinstr void _prepare_exit_to_usermode(struct pt_regs *regs)
+{
+	prepare_exit_to_usermode(regs);
 }
 
 #define SYSCALL_EXIT_WORK_FLAGS				\

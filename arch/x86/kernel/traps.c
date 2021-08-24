@@ -522,7 +522,11 @@ dotraplinkage void notrace do_int3(struct pt_regs *regs, long error_code)
 	if (poke_int3_handler(regs))
 		return;
 
-	nmi_enter();
+	if (user_mode(regs))
+		_enter_from_user_mode();
+	else
+		nmi_enter();
+
 #ifdef CONFIG_KGDB_LOW_LEVEL_TRAP
 	if (kgdb_ll_trap(DIE_INT3, "int3", regs, error_code, X86_TRAP_BP,
 				SIGTRAP) == NOTIFY_STOP)
@@ -543,7 +547,11 @@ dotraplinkage void notrace do_int3(struct pt_regs *regs, long error_code)
 	cond_local_irq_disable(regs);
 
 exit:
-	nmi_exit();
+	if (user_mode(regs)) {
+		lockdep_assert_irqs_disabled();
+		_prepare_exit_to_usermode(regs);
+	} else
+		nmi_exit();
 }
 NOKPROBE_SYMBOL(do_int3);
 
