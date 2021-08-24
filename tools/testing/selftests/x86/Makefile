@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 all:
 
+top_srcdir = ../../../..
+
 include ../lib.mk
 
 .PHONY: all all_32 all_64 warn_32bit_failure clean
@@ -33,7 +35,8 @@ BINARIES_64 := $(TARGETS_C_64BIT_ALL:%=%_64)
 BINARIES_32 := $(patsubst %,$(OUTPUT)/%,$(BINARIES_32))
 BINARIES_64 := $(patsubst %,$(OUTPUT)/%,$(BINARIES_64))
 
-CFLAGS := -O2 -g -std=gnu99 -pthread -Wall
+INCLUDES := -I$(top_srcdir)/tools/include
+CFLAGS := -O2 -g -std=gnu99 -pthread -Wall $(INCLUDES)
 
 # call32_from_64 in thunks.S uses absolute addresses.
 ifeq ($(CAN_BUILD_WITH_NOPIE),1)

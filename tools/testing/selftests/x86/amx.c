@@ -18,6 +18,7 @@
 #include <ucontext.h>
 
 #include <linux/futex.h>
+#include <linux/compiler.h>
 
 #include <sys/ipc.h>
 #include <sys/mman.h>
@@ -50,7 +51,7 @@ typedef uint64_t u64;
 
 struct xsave_data {
 	u8 area[XSAVE_SIZE];
-} __attribute__(aligned(64));
+} __aligned(64);
 
 /* Tile configuration associated: */
 #define MAX_TILES			16
