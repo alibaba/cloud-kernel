@@ -67,9 +67,9 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		ext.anon_mapped = global_node_page_state(NR_ANON_MAPPED);
 		ext.file_mapped = global_node_page_state(NR_FILE_MAPPED);
 		ext.slab_reclaimable =
-			global_node_page_state(NR_SLAB_RECLAIMABLE_B);
+			global_node_page_state_pages(NR_SLAB_RECLAIMABLE_B);
 		ext.slab_unreclaimable =
-			global_node_page_state(NR_SLAB_UNRECLAIMABLE_B);
+			global_node_page_state_pages(NR_SLAB_UNRECLAIMABLE_B);
 		ext.kernel_stack_kb =
 			global_node_page_state(NR_KERNEL_STACK_KB);
 		ext.writeback_temp = global_node_page_state(NR_WRITEBACK_TEMP);
