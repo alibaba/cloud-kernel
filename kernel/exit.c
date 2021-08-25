@@ -710,22 +710,16 @@ static void forget_original_parent(struct task_struct *father,
 static void exit_notify(struct task_struct *tsk, int group_dead)
 {
 	bool autoreap;
+	unsigned long flags;
 	struct task_struct *p, *n;
 	LIST_HEAD(dead);
 
-#ifdef CONFIG_X86_64
-	unsigned long flags;
-
-	/* Reduce jitters due to lock contention for co-location */
 retry:
 	if (!write_trylock_irqsave(&tasklist_lock, flags)) {
 		if (!in_atomic() && !irqs_disabled())
 			cond_resched();
 		goto retry;
 	}
-#else
-	write_lock_irq(&tasklist_lock);
-#endif
 
 	forget_original_parent(tsk, &dead);
 
