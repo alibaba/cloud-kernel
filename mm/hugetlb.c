@@ -1593,6 +1593,7 @@ int dissolve_free_huge_page(struct page *page)
 		h->free_huge_pages--;
 		h->free_huge_pages_node[nid]--;
 		h->max_huge_pages--;
+		spin_unlock(&hugetlb_lock);
 
 		/*
 		 * Normally update_and_free_page will allocate required vmemmmap
