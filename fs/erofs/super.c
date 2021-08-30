@@ -210,6 +210,7 @@ err_out:
 
 static int erofs_read_superblock(struct super_block *sb)
 {
+	struct address_space *mapping;
 	struct erofs_sb_info *sbi;
 	struct page *page;
 	struct erofs_super_block *dsb;
@@ -217,13 +218,18 @@ static int erofs_read_superblock(struct super_block *sb)
 	void *data;
 	int ret;
 
-	page = read_mapping_page(sb->s_bdev->bd_inode->i_mapping, 0, NULL);
+	sbi = EROFS_SB(sb);
+
+	if (sbi->bootstrap)
+		mapping = sbi->bootstrap->f_inode->i_mapping;
+	else
+		mapping = sb->s_bdev->bd_inode->i_mapping;
+
+	page = read_mapping_page(mapping, 0, NULL);
 	if (IS_ERR(page)) {
 		erofs_err(sb, "cannot read erofs superblock");
 		return PTR_ERR(page);
 	}
-
-	sbi = EROFS_SB(sb);
 
 	data = kmap(page);
 	dsb = (struct erofs_super_block *)(data + EROFS_SUPER_OFFSET);
@@ -340,6 +346,7 @@ enum {
 	Opt_noacl,
 	Opt_cache_strategy,
 	Opt_device,
+	Opt_bootstrap_path,
 	Opt_err
 };
 
@@ -350,6 +357,7 @@ static match_table_t erofs_tokens = {
 	{Opt_noacl, "noacl"},
 	{Opt_cache_strategy, "cache_strategy=%s"},
 	{Opt_device, "device=%s"},
+	{Opt_bootstrap_path, "bootstrap_path=%s"},
 	{Opt_err, NULL}
 };
 
@@ -428,6 +436,14 @@ static int erofs_parse_options(struct super_block *sb, char *options)
 			}
 			++sbi->devs->extra_devices;
 			break;
+		case Opt_bootstrap_path:
+			kfree(sbi->bootstrap_path);
+			sbi->bootstrap_path = match_strdup(&args[0]);
+			if (!sbi->bootstrap_path)
+				return -ENOMEM;
+			erofs_info(sb, "RAFS bootstrap_path %s",
+				   sbi->bootstrap_path);
+			break;
 		default:
 			erofs_err(sb, "Unrecognized mount option \"%s\" or missing value", p);
 			return -EINVAL;
@@ -495,6 +511,22 @@ static int erofs_init_managed_cache(struct super_block *sb)
 static int erofs_init_managed_cache(struct super_block *sb) { return 0; }
 #endif
 
+static int rafs_v6_fill_super(struct super_block *sb, void *data)
+{
+	struct erofs_sb_info *sbi = EROFS_SB(sb);
+
+	if (sbi->bootstrap_path) {
+		struct file *f;
+
+		f = filp_open(sbi->bootstrap_path, O_RDONLY, 0644);
+		if (IS_ERR(f))
+			return PTR_ERR(f);
+		sbi->bootstrap = f;
+	}
+	/* TODO: open each blobfiles */
+	return 0;
+}
+
 static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct inode *inode;
@@ -503,11 +535,13 @@ static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_magic = EROFS_SUPER_MAGIC;
 
-	if (!sb_set_blocksize(sb, EROFS_BLKSIZ)) {
+	if (sb->s_bdev && !sb_set_blocksize(sb, EROFS_BLKSIZ)) {
 		erofs_err(sb, "failed to set erofs blksize");
 		return -EINVAL;
+	} else {
+		sb->s_blocksize = EROFS_BLKSIZ;
+		sb->s_blocksize_bits = LOG_BLOCK_SIZE;
 	}
-
 	sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
 	if (!sbi)
 		return -ENOMEM;
@@ -531,6 +565,10 @@ static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 	erofs_default_options(sbi);
 
 	err = erofs_parse_options(sb, data);
+	if (err)
+		return err;
+
+	err = rafs_v6_fill_super(sb, data);
 	if (err)
 		return err;
 
@@ -595,9 +633,44 @@ static void erofs_free_dev_context(struct erofs_dev_context *devs)
 	idr_destroy(&devs->tree);
 }
 
+static bool erofs_mount_is_rafs_v6(char *options)
+{
+	substring_t args[MAX_OPT_ARGS];
+	char *tmpstr, *p;
+
+	if (!options)
+		return false;
+
+	tmpstr = kstrdup(options, GFP_KERNEL);
+	if (!tmpstr)
+		return false;
+	options = tmpstr;
+	while ((p = strsep(&options, ","))) {
+		int token;
+
+		if (!*p)
+			continue;
+
+		args[0].to = args[0].from = NULL;
+		token = match_token(p, erofs_tokens, args);
+
+		switch (token) {
+		case Opt_bootstrap_path:
+			kfree(tmpstr);
+			return true;
+		default:
+			break;
+		}
+	}
+	kfree(tmpstr);
+	return false;
+}
+
 static struct dentry *erofs_mount(struct file_system_type *fs_type, int flags,
 				  const char *dev_name, void *data)
 {
+	if (erofs_mount_is_rafs_v6(data))
+		return mount_nodev(fs_type, flags, data, erofs_fill_super);
 	return mount_bdev(fs_type, flags, dev_name, data, erofs_fill_super);
 }
 
@@ -611,7 +684,10 @@ static void erofs_kill_sb(struct super_block *sb)
 
 	WARN_ON(sb->s_magic != EROFS_SUPER_MAGIC);
 
-	kill_block_super(sb);
+	if (sb->s_bdev)
+		kill_block_super(sb);
+	else
+		generic_shutdown_super(sb);
 
 	sbi = EROFS_SB(sb);
 	if (!sbi)
@@ -628,6 +704,9 @@ static void erofs_put_super(struct super_block *sb)
 
 	DBG_BUGON(!sbi);
 
+	if (sbi->bootstrap)
+		filp_close(sbi->bootstrap, NULL);
+	kfree(sbi->bootstrap_path);
 	erofs_shrinker_unregister(sb);
 #ifdef CONFIG_EROFS_FS_ZIP
 	iput(sbi->managed_cache);
@@ -699,7 +778,12 @@ static int erofs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct super_block *sb = dentry->d_sb;
 	struct erofs_sb_info *sbi = EROFS_SB(sb);
-	u64 id = huge_encode_dev(sb->s_bdev->bd_dev);
+	u64 id;
+
+	if (sb->s_bdev)
+		id = huge_encode_dev(sb->s_bdev->bd_dev);
+	else
+		id = 0;
 
 	buf->f_type = sb->s_magic;
 	buf->f_bsize = EROFS_BLKSIZ;

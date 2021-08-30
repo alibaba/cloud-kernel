@@ -34,9 +34,13 @@ static void erofs_readendio(struct bio *bio)
 
 struct page *erofs_get_meta_page(struct super_block *sb, erofs_blk_t blkaddr)
 {
-	struct address_space *const mapping = sb->s_bdev->bd_inode->i_mapping;
+	struct address_space *mapping;
 	struct page *page;
 
+	if (EROFS_SB(sb)->bootstrap)
+		mapping = EROFS_SB(sb)->bootstrap->f_inode->i_mapping;
+	else
+		mapping = sb->s_bdev->bd_inode->i_mapping;
 	page = read_cache_page_gfp(mapping, blkaddr,
 				   mapping_gfp_constraint(mapping, ~__GFP_FS));
 	/* should already be PageUptodate */
@@ -100,8 +104,8 @@ err_out:
 	return err;
 }
 
-static int erofs_map_blocks(struct inode *inode,
-			    struct erofs_map_blocks *map, int flags)
+int erofs_map_blocks(struct inode *inode,
+		     struct erofs_map_blocks *map, int flags)
 {
 	struct super_block *sb = inode->i_sb;
 	struct erofs_inode *vi = EROFS_I(inode);

@@ -83,6 +83,8 @@ struct erofs_sb_info {
 	/* pseudo inode to manage cached pages */
 	struct inode *managed_cache;
 #endif	/* CONFIG_EROFS_FS_ZIP */
+	struct file *bootstrap;
+	char *bootstrap_path;
 	struct erofs_dev_context *devs;
 	u64 total_blocks;
 	u32 primarydevice_blocks;
@@ -262,6 +264,7 @@ struct erofs_inode {
 
 	unsigned int xattr_shared_count;
 	unsigned int *xattr_shared_xattrs;
+	const struct vm_operations_struct *lower_vm_ops;
 
 	union {
 		erofs_blk_t raw_blkaddr;
@@ -359,6 +362,7 @@ struct erofs_map_blocks {
 	erofs_off_t m_pa, m_la;
 	u64 m_plen, m_llen;
 
+	unsigned int m_deviceid;
 	unsigned int m_flags;
 
 	struct page *mpage;
@@ -366,6 +370,9 @@ struct erofs_map_blocks {
 
 /* Flags used by erofs_map_blocks_flatmode() */
 #define EROFS_GET_BLOCKS_RAW    0x0001
+
+int erofs_map_blocks(struct inode *inode,
+		     struct erofs_map_blocks *map, int flags);
 
 /* zmap.c */
 #ifdef CONFIG_EROFS_FS_ZIP
