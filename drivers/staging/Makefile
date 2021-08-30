@@ -52,5 +52,4 @@ obj-$(CONFIG_SOC_MT7621)	+= mt7621-eth/
 obj-$(CONFIG_SOC_MT7621)	+= mt7621-dts/
 obj-$(CONFIG_STAGING_GASKET_FRAMEWORK)	+= gasket/
 obj-$(CONFIG_XIL_AXIS_FIFO)	+= axis-fifo/
-obj-$(CONFIG_EROFS_FS)		+= erofs/
 obj-$(CONFIG_ARM_GIC_PHYTIUM_2500)	+= gic_phytium_2500/

@@ -124,8 +124,6 @@ source "drivers/staging/gasket/Kconfig"
 
 source "drivers/staging/axis-fifo/Kconfig"
 
-source "drivers/staging/erofs/Kconfig"
-
 source "drivers/staging/gic_phytium_2500/Kconfig"
 
 endif # STAGING

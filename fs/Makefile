@@ -131,3 +131,4 @@ obj-$(CONFIG_CEPH_FS)		+= ceph/
 obj-$(CONFIG_PSTORE)		+= pstore/
 obj-$(CONFIG_EFIVAR_FS)		+= efivarfs/
 obj-$(CONFIG_RESCTRL_AARCH64)		+= resctrlfs.o
+obj-$(CONFIG_EROFS_FS)		+= erofs/
