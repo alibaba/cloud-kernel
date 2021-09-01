@@ -679,9 +679,7 @@ static int kill_accessing_process(struct task_struct *p, unsigned long pfn,
 	hwp_walk_ops.private = (void *)&priv;
 	hwp_walk_ops.mm = p->mm;
 
-	ret = down_read_killable(&(p->mm->mmap_sem));
-	if (ret)
-		return -EFAULT;
+	down_read(&(p->mm->mmap_sem));
 	ret = walk_page_range(0, TASK_SIZE, &hwp_walk_ops);
 	if (ret == 1 && priv.tk.addr)
 		kill_proc(&priv.tk, pfn, flags);
@@ -1484,7 +1482,7 @@ int memory_failure(unsigned long pfn, int flags)
 	if (!(flags & MF_COUNT_INCREASED) && !get_hwpoison_page(p)) {
 		if (is_free_buddy_page(p)) {
 			action_result(pfn, MF_MSG_BUDDY, MF_DELAYED);
-			res = res == MF_RECOVERED ? 0 : -EBUSY;
+			res = 0;
 		} else {
 			action_result(pfn, MF_MSG_KERNEL_HIGH_ORDER, MF_IGNORED);
 			res = -EBUSY;
