@@ -25,8 +25,8 @@
 	pci_read_config_dword((d)->uracu, 0xd8 + (i) * 4, &(reg))
 #define I10NM_GET_DIMMMTR(m, i, j)	\
 	(*(u32 *)((m)->mbase + 0x2080c + (i) * 0x4000 + (j) * 4))
-#define I10NM_GET_MCDDRTCFG(m, i, j)	\
-	(*(u32 *)((m)->mbase + 0x20970 + (i) * 0x4000 + (j) * 4))
+#define I10NM_GET_MCDDRTCFG(m, i)	\
+	(*(u32 *)((m)->mbase + 0x20970 + (i) * 0x4000))
 
 #define I10NM_GET_SCK_MMIO_BASE(reg)	(GET_BITFIELD(reg, 0, 28) << 23)
 #define I10NM_GET_IMC_MMIO_OFFSET(reg)	(GET_BITFIELD(reg, 0, 10) << 12)
@@ -165,11 +165,11 @@ static int i10nm_get_dimm_config(struct mem_ctl_info *mci)
 			continue;
 
 		ndimms = 0;
+		mcddrtcfg = I10NM_GET_MCDDRTCFG(imc, i);
 		for (j = 0; j < I10NM_NUM_DIMMS; j++) {
 			dimm = EDAC_DIMM_PTR(mci->layers, mci->dimms,
 					     mci->n_layers, i, j, 0);
 			mtr = I10NM_GET_DIMMMTR(imc, i, j);
-			mcddrtcfg = I10NM_GET_MCDDRTCFG(imc, i, j);
 			edac_dbg(1, "dimmmtr 0x%x mcddrtcfg 0x%x (mc%d ch%d dimm%d)\n",
 				 mtr, mcddrtcfg, imc->mc, i, j);
 
