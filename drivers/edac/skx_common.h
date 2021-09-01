@@ -65,6 +65,8 @@ struct skx_dev {
 		struct skx_channel {
 			struct pci_dev	*cdev;
 			struct pci_dev	*edev;
+			u32 retry_rd_err_log_s;
+			u32 retry_rd_err_log_d;
 			struct skx_dimm {
 				u8 close_pg;
 				u8 bank_xor_enable;
@@ -118,11 +120,14 @@ struct res_config {
 	unsigned int decs_did;
 	/* Default bus number configuration register offset */
 	int busno_cfg_offset;
+	/* Offsets of retry_rd_err_log registers */
+	u32 *offsets_scrub;
+	u32 *offsets_demand;
 };
 
 typedef int (*get_dimm_config_f)(struct mem_ctl_info *mci);
 typedef bool (*skx_decode_f)(struct decoded_addr *res);
-typedef void (*skx_show_retry_log_f)(struct decoded_addr *res, char *msg, int len);
+typedef void (*skx_show_retry_log_f)(struct decoded_addr *res, char *msg, int len, bool scrub_err);
 
 int __init skx_adxl_get(void);
 void __exit skx_adxl_put(void);
