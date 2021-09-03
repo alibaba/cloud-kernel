@@ -272,6 +272,13 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 		(pdce > 0 && !(events & PCI_EXP_SLTSTA_PDC) && slot_state == OFF_STATE)) {
 		mutex_unlock(&slot->lock);
 		return;
+	} else if (present > 0 && link_active <= 0) {
+		msleep(100);
+		present = pciehp_card_present(ctrl);
+		if (present <= 0) {
+			mutex_unlock(&slot->lock);
+			return;
+		}
 	}
 
 	/* Turn the slot on if it's occupied or link is up */
