@@ -284,6 +284,8 @@ struct smc_cdc_tx_pend {
 	union smc_host_cursor	cursor;		/* tx sndbuf cursor sent */
 	union smc_host_cursor	p_cursor;	/* rx RMBE cursor produced */
 	u16			ctrl_seq;	/* conn. tx sequence # */
+	u16			validation:1;
+	u16			reserved:15;
 };
 
 int smc_cdc_get_free_slot(struct smc_connection *conn,
