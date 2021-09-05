@@ -393,7 +393,12 @@ For 32-bit we have the following conventions - kernel is built with
 .macro GET_PERCPU_BASE reg:req
 	LOAD_CPU_AND_NODE_SEG_LIMIT \reg
 	andq	$VDSO_CPUNODE_MASK, \reg
+#ifdef CONFIG_X86_PIE
+	leaq	__per_cpu_offset(%rip), %rdx
+	movq	(%rdx, \reg, 8), \reg
+#else
 	movq	__per_cpu_offset(, \reg, 8), \reg
+#endif
 .endm
 
 #else
