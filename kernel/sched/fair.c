@@ -5767,12 +5767,7 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	 * narrow margin doesn't have to wait for a full slice.
 	 * This also mitigates buddy induced latencies under load.
 	 */
-#ifdef CONFIG_GROUP_IDENTITY
-	if ((delta_exec < sysctl_sched_min_granularity) &&
-		(!sched_feat(ID_MIX_PREEMPT) || is_highclass(curr)))
-#else
-	if (delta_exec < sysctl_sched_min_granularity)
-#endif
+	if (is_highclass(curr) && delta_exec < sysctl_sched_min_granularity)
 		return;
 
 	/* Must be on expel if no next se, and curr won't be expellee */
