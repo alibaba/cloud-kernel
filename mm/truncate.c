@@ -441,6 +441,21 @@ void truncate_inode_pages_range(struct address_space *mapping,
 				continue;
 
 			lock_page(page);
+			/*
+			 * Already truncated? We can find and get subpage
+			 * of file THP, of which the head page is truncated.
+			 *
+			 * In addition, another race will be avoided, where
+			 * collapse_file rolls back when writer truncates the
+			 * page cache.
+			 */
+			if (page_mapping(page) != mapping) {
+				/* Restart to make sure all gone */
+				unlock_page(page);
+				index = start - 1;
+				break;
+			}
+
 			WARN_ON(page_to_index(page) != index);
 			wait_on_page_writeback(page);
 			truncate_inode_page(mapping, page);
