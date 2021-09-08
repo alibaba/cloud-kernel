@@ -903,4 +903,6 @@ config DUPTEXT
 
 	  If unsure, say N.
 
+source "mm/damon/Kconfig"
+
 endmenu
