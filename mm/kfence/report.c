@@ -97,6 +97,13 @@ static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadat
 			       bool show_alloc)
 {
 	const struct kfence_track *track = show_alloc ? &meta->alloc_track : &meta->free_track;
+	u64 ts_sec = track->ts_nsec;
+	unsigned long rem_nsec = do_div(ts_sec, NSEC_PER_SEC);
+
+	/* Timestamp matches printk timestamp format. */
+	seq_con_printf(seq, "%s by task %d on cpu %d at %lu.%06lus:\n",
+		       show_alloc ? "allocated" : "freed", track->pid,
+		       track->cpu, (unsigned long)ts_sec, rem_nsec / 1000);
 
 	if (track->num_stack_entries) {
 		/* Skip allocation/free internals stack. */
@@ -124,14 +131,15 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
 	}
 
 	seq_con_printf(seq,
-		       "kfence-#%td [0x" PTR_FMT "-0x" PTR_FMT
-		       ", size=%d, cache=%s] allocated by task %d:\n",
+		       "kfence-#%td: 0x" PTR_FMT "-0x" PTR_FMT
+		       ", size=%d, cache=%s\n\n",
 		       meta - kfence_metadata, (void *)start, (void *)(start + size - 1), size,
-		       (cache && cache->name) ? cache->name : "<destroyed>", meta->alloc_track.pid);
+		       (cache && cache->name) ? cache->name : "<destroyed>");
+
 	kfence_print_stack(seq, meta, true);
 
 	if (meta->state == KFENCE_OBJECT_FREED) {
-		seq_con_printf(seq, "\nfreed by task %d:\n", meta->free_track.pid);
+		seq_con_printf(seq, "\n");
 		kfence_print_stack(seq, meta, false);
 	}
 }
