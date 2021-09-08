@@ -27,8 +27,7 @@ struct vmem_altmap;
 	unsigned long ___pfn = pfn;				   \
 	unsigned long ___nr = pfn_to_section_nr(___pfn);	   \
 								   \
-	if (___nr < NR_MEM_SECTIONS && online_section_nr(___nr) && \
-	    pfn_valid_within(___pfn))				   \
+	if (___nr < NR_MEM_SECTIONS && online_section_nr(___nr))   \
 		___page = pfn_to_page(___pfn);			   \
 	___page;						   \
 })
