@@ -12654,7 +12654,20 @@ static void task_set_group_fair(struct task_struct *p)
 
 static void task_move_group_fair(struct task_struct *p)
 {
-	if (p->in_iowait)
+	/*
+	 * p->in_iowait is obvious. If p is in_iowait, we should transfer
+	 * iowait to the new cgroup, otherwise try_to_wake_up will decrease
+	 * from the new cgroup, leaving old cgroup's nr_iowait to be 1, and
+	 * new cgroup's nr_iowait to be -1
+	 *
+	 * !p->on_rq is necessary too, because iowait and on_rq are not
+	 * updated at the same time. After try_to_wake_up, p->in_iowait
+	 * remains 1, while on_rq becomes 1. In this case, p is not at all
+	 * in_iowait already, so don't be stupid to transfer nr_iowait.
+	 * Similarly, when io_schedule, there's a window between setting
+	 * p->in_iowait to 1 and setting p->on_rq to 0, don't either.
+	 */
+	if (p->in_iowait && !p->on_rq)
 		update_nr_iowait_fair(p, -1);
 	detach_task_cfs_rq(p);
 	set_task_rq(p, task_cpu(p));
@@ -12664,7 +12677,8 @@ static void task_move_group_fair(struct task_struct *p)
 	p->se.avg.last_update_time = 0;
 #endif
 	attach_task_cfs_rq(p);
-	if (p->in_iowait)
+	/* Same as above */
+	if (p->in_iowait && !p->on_rq)
 		update_nr_iowait_fair(p, 1);
 }
 
