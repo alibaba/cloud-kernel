@@ -1542,7 +1542,7 @@ int memory_failure(unsigned long pfn, int flags)
 	if (!(flags & MF_COUNT_INCREASED) && !get_hwpoison_page(p)) {
 		if (is_free_buddy_page(p)) {
 			action_result(pfn, MF_MSG_BUDDY, MF_DELAYED);
-			res = res == MF_RECOVERED ? 0 : -EBUSY;
+			res = 0;
 		} else {
 			action_result(pfn, MF_MSG_KERNEL_HIGH_ORDER, MF_IGNORED);
 			res = -EBUSY;
