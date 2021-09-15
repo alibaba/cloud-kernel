@@ -185,7 +185,7 @@ void clear_shadow_from_swap_cache(int type, unsigned long begin,
 		pgoff_t idx = swp_offset(entry);
 
 		xa_lock_irq(&address_space->i_pages);
-		for (i = 0; i < (end - curr) &&
+		for (i = 0; i <= (end - curr) &&
 				i < round_up(curr, SWAP_ADDRESS_SPACE_PAGES); i++) {
 			if (!__radix_tree_lookup(&address_space->i_pages, idx + i,
 							&node, &slot))
