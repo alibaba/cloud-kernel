@@ -6229,8 +6229,8 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 		if (qcfs_rq->load.weight)
 			dequeue = 0;
 	}
-
-	sub_nr_running(rq, task_delta);
+	if (!se)
+		sub_nr_running(rq, task_delta);
 
 	id_commit_make_up(rq, !se);
 
