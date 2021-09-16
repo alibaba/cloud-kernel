@@ -36,6 +36,7 @@
 #include <linux/bootmem.h>
 #include <linux/compaction.h>
 #include <linux/rmap.h>
+#include <linux/kidled.h>
 
 #include <asm/tlbflush.h>
 
@@ -750,12 +751,6 @@ static void __meminit resize_pgdat_range(struct pglist_data *pgdat, unsigned lon
 		pgdat->node_start_pfn = start_pfn;
 
 	pgdat->node_spanned_pages = max(start_pfn + nr_pages, old_end_pfn) - pgdat->node_start_pfn;
-#ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
-	if (pgdat->node_page_age) {
-		vfree(pgdat->node_page_age);
-		pgdat->node_page_age = NULL;
-	}
-#endif
 }
 
 void __ref move_pfn_range_to_zone(struct zone *zone, unsigned long start_pfn,
@@ -764,6 +759,10 @@ void __ref move_pfn_range_to_zone(struct zone *zone, unsigned long start_pfn,
 	struct pglist_data *pgdat = zone->zone_pgdat;
 	int nid = pgdat->node_id;
 	unsigned long flags;
+
+#ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
+	kidled_free_page_age(pgdat);
+#endif
 
 	if (zone_is_empty(zone))
 		init_currently_empty_zone(zone, start_pfn, nr_pages);
@@ -1927,10 +1926,7 @@ void try_offline_node(int nid)
 		return;
 
 #ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
-	if (pgdat->node_page_age) {
-		vfree(pgdat->node_page_age);
-		pgdat->node_page_age = NULL;
-	}
+	kidled_free_page_age(pgdat);
 #endif
 
 	/*
