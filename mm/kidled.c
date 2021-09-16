@@ -391,6 +391,10 @@ static bool kidled_scan_node(pg_data_t *pgdat,
 
 #ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
 	if (unlikely(!pgdat->node_page_age)) {
+		/* This node has none memory, skip it. */
+		if (!pgdat->node_spanned_pages)
+			return true;
+
 		pgdat->node_page_age = vzalloc(pgdat->node_spanned_pages);
 		if (unlikely(!pgdat->node_page_age))
 			return false;
