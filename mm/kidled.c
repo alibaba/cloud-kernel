@@ -391,13 +391,16 @@ static bool kidled_scan_node(pg_data_t *pgdat,
 
 #ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
 	if (unlikely(!pgdat->node_page_age)) {
+		u8 *age;
+
 		/* This node has none memory, skip it. */
 		if (!pgdat->node_spanned_pages)
 			return true;
 
-		pgdat->node_page_age = vzalloc(pgdat->node_spanned_pages);
-		if (unlikely(!pgdat->node_page_age))
+		age = vzalloc(pgdat->node_spanned_pages);
+		if (unlikely(!age))
 			return false;
+		rcu_assign_pointer(pgdat->node_page_age, age);
 	}
 #endif /* KIDLED_AGE_NOT_IN_PAGE_FLAGS */
 
@@ -420,6 +423,20 @@ static bool kidled_scan_node(pg_data_t *pgdat,
 	return pfn >= node_end;
 }
 
+#ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
+void kidled_free_page_age(pg_data_t *pgdat)
+{
+	u8 *age;
+
+	age = rcu_access_pointer(pgdat->node_page_age);
+	if (age) {
+		rcu_assign_pointer(pgdat->node_page_age, NULL);
+		synchronize_rcu();
+		vfree(age);
+	}
+}
+#endif
+
 static inline void kidled_scan_done(struct kidled_scan_period scan_period)
 {
 	kidled_mem_cgroup_scan_done(scan_period);
@@ -439,10 +456,9 @@ static inline void kidled_reset(bool free)
 		if (!pgdat->node_page_age)
 			continue;
 
-		if (free) {
-			vfree(pgdat->node_page_age);
-			pgdat->node_page_age = NULL;
-		} else {
+		if (free)
+			kidled_free_page_age(pgdat);
+		else {
 			memset(pgdat->node_page_age, 0,
 			pgdat->node_spanned_pages);
 		}

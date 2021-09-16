@@ -1468,38 +1468,54 @@ static inline void page_kasan_tag_reset(struct page *page) { }
 #ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
 static inline int kidled_get_page_age(pg_data_t *pgdat, unsigned long pfn)
 {
-	u8 *age = pgdat->node_page_age;
+	u8 *age, age_val;
 
-	if (unlikely(!age))
+	rcu_read_lock();
+	age = rcu_dereference(pgdat->node_page_age);
+	if (unlikely(!age)) {
+		rcu_read_unlock();
 		return -EINVAL;
+	}
 
 	age += (pfn - pgdat->node_start_pfn);
-	return *age;
+	age_val = *age;
+	rcu_read_unlock();
+	return age_val;
 }
 
 static inline int kidled_inc_page_age(pg_data_t *pgdat, unsigned long pfn)
 {
-	u8 *age = pgdat->node_page_age;
+	u8 *age, age_val;
 
-	if (unlikely(!age))
+	rcu_read_lock();
+	age = rcu_dereference(pgdat->node_page_age);
+	if (unlikely(!age)) {
+		rcu_read_unlock();
 		return -EINVAL;
+	}
 
 	age += (pfn - pgdat->node_start_pfn);
-	*age += 1;
+	age_val = ++*age;
+	rcu_read_unlock();
 
-	return *age;
+	return age_val;
 }
 
 static inline void kidled_set_page_age(pg_data_t *pgdat,
 				       unsigned long pfn, int val)
 {
-	u8 *age = pgdat->node_page_age;
+	u8 *age;
 
-	if (unlikely(!age))
+	rcu_read_lock();
+	age = rcu_dereference(pgdat->node_page_age);
+	if (unlikely(!age)) {
+		rcu_read_unlock();
 		return;
+	}
 
 	age += (pfn - pgdat->node_start_pfn);
 	*age = val;
+	rcu_read_unlock();
 }
 #else
 static inline int kidled_get_page_age(pg_data_t *pgdat, unsigned long pfn)

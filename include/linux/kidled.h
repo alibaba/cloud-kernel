@@ -221,6 +221,10 @@ void kidled_mem_cgroup_move_stats(struct mem_cgroup *from,
 				  unsigned int nr_pages);
 #endif /* CONFIG_MEMCG */
 
+#ifdef KIDLED_AGE_NOT_IN_PAGE_FLAGS
+void kidled_free_page_age(pg_data_t *pgdat);
+#endif
+
 #else  /* !CONFIG_KIDLED */
 
 #ifdef CONFIG_MEMCG
