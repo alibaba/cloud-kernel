@@ -93,6 +93,7 @@
 #include <linux/kcov.h>
 #include <linux/livepatch.h>
 #include <linux/thread_info.h>
+#include <linux/fault_event.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -597,14 +598,20 @@ static void check_mm(struct mm_struct *mm)
 	for (i = 0; i < NR_MM_COUNTERS; i++) {
 		long x = atomic_long_read(&mm->rss_stat.count[i]);
 
-		if (unlikely(x))
+		if (unlikely(x)) {
+			report_fault_event(-1, NULL, FATAL_FAULT,
+				FE_MM_STATE, "Bad rss-counter");
 			printk(KERN_ALERT "BUG: Bad rss-counter state "
 					  "mm:%p idx:%d val:%ld\n", mm, i, x);
+		}
 	}
 
-	if (mm_pgtables_bytes(mm))
+	if (mm_pgtables_bytes(mm)) {
+		report_fault_event(-1, NULL, FATAL_FAULT,
+			FE_MM_STATE, "non-zero pgtables_bytes");
 		pr_alert("BUG: non-zero pgtables_bytes on freeing mm: %ld\n",
 				mm_pgtables_bytes(mm));
+	}
 
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
 	VM_BUG_ON_MM(mm->pmd_huge_pte, mm);
