@@ -67,6 +67,7 @@
 #include <linux/lockdep.h>
 #include <linux/nmi.h>
 #include <linux/psi.h>
+#include <linux/fault_event.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -3830,6 +3831,9 @@ void warn_alloc(gfp_t gfp_mask, nodemask_t *nodemask, const char *fmt, ...)
 
 	if ((gfp_mask & __GFP_NOWARN) || !__ratelimit(&nopage_rs))
 		return;
+
+	report_fault_event(smp_processor_id(), current,
+			NORMAL_FAULT, FE_ALLOCFAIL, NULL);
 
 	va_start(args, fmt);
 	vaf.fmt = fmt;
