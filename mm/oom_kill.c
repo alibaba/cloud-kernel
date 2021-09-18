@@ -892,6 +892,8 @@ static void __oom_kill_process(struct task_struct *victim, bool is_memcg)
 	 */
 	do_send_sig_info(SIGKILL, SEND_SIG_FORCED, victim, PIDTYPE_TGID);
 	mark_oom_victim(victim);
+	report_fault_event(smp_processor_id(), victim,
+		NORMAL_FAULT, FE_SIGNAL, "sigkill by oom");
 	if (!suppress_print)
 		pr_err("Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB\n",
 			task_pid_nr(victim), victim->comm,
@@ -931,6 +933,8 @@ static void __oom_kill_process(struct task_struct *victim, bool is_memcg)
 		if (unlikely(p->flags & PF_KTHREAD))
 			continue;
 		do_send_sig_info(SIGKILL, SEND_SIG_FORCED, p, PIDTYPE_TGID);
+		report_fault_event(smp_processor_id(), p, NORMAL_FAULT,
+			FE_SIGNAL, "sigkill by oom");
 	}
 	rcu_read_unlock();
 
