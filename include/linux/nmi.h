@@ -25,6 +25,10 @@ extern unsigned long watchdog_enabled;
 
 extern struct cpumask watchdog_cpumask;
 extern unsigned long *watchdog_cpumask_bits;
+
+extern unsigned int sysctl_unrecovered_softlockup_sample_interval;
+extern unsigned int sysctl_unrecovered_softlockup_thresh_cpus;
+extern unsigned int sysctl_unrecovered_softlockup_thresh_times;
 #ifdef CONFIG_SMP
 extern int sysctl_softlockup_all_cpu_backtrace;
 extern int sysctl_hardlockup_all_cpu_backtrace;
