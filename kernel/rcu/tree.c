@@ -61,6 +61,7 @@
 #include <linux/trace_events.h>
 #include <linux/suspend.h>
 #include <linux/ftrace.h>
+#include <linux/fault_event.h>
 
 #include "tree.h"
 #include "rcu.h"
@@ -1378,6 +1379,9 @@ static void print_other_cpu_stall(struct rcu_state *rsp, unsigned long gp_seq)
 	int ndetected = 0;
 	struct rcu_node *rnp = rcu_get_root(rsp);
 	long totqlen = 0;
+	enum FAULT_CLASS class = SLIGHT_FAULT;
+	int first_cpu = -1;
+	unsigned int stall_cpus = 0;
 
 	/* Kick and suppress, if so configured. */
 	rcu_stall_kick_kthreads(rsp);
@@ -1399,12 +1403,20 @@ static void print_other_cpu_stall(struct rcu_state *rsp, unsigned long gp_seq)
 				if (rnp->qsmask & leaf_node_cpu_bit(rnp, cpu)) {
 					print_cpu_stall_info(rsp, cpu);
 					ndetected++;
+					if (first_cpu == -1)
+						first_cpu = cpu;
+					stall_cpus++;
 				}
 		}
 		raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
 	}
 
 	print_cpu_stall_info_end();
+
+	if (stall_cpus > 1)
+		class = FATAL_FAULT;
+	report_fault_event(first_cpu, NULL, class, FE_RCUSTALL, NULL);
+
 	for_each_possible_cpu(cpu)
 		totqlen += rcu_segcblist_n_cbs(&per_cpu_ptr(rsp->rda,
 							    cpu)->cblist);
@@ -1454,6 +1466,9 @@ static void print_cpu_stall(struct rcu_state *rsp)
 	rcu_stall_kick_kthreads(rsp);
 	if (rcu_cpu_stall_suppress)
 		return;
+
+	report_fault_event(smp_processor_id(), current, SLIGHT_FAULT,
+		FE_RCUSTALL, NULL);
 
 	/*
 	 * OK, time to rat on ourselves...
