@@ -6790,6 +6790,19 @@ void napi_disable(struct napi_struct *n)
 }
 EXPORT_SYMBOL(napi_disable);
 
+void napi_enable(struct napi_struct *n)
+{
+	unsigned long val, new;
+
+	do {
+		val = READ_ONCE(n->state);
+		BUG_ON(!test_bit(NAPI_STATE_SCHED, &val));
+
+		new = val & ~(NAPIF_STATE_SCHED | NAPIF_STATE_NPSVC);
+	} while (cmpxchg(&n->state, val, new) != val);
+}
+EXPORT_SYMBOL(napi_enable);
+
 static void flush_gro_hash(struct napi_struct *napi)
 {
 	int i;
