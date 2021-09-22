@@ -1872,6 +1872,7 @@ static int smc_listen_find_device(struct smc_sock *new_smc,
 				  struct smc_clc_msg_proposal *pclc,
 				  struct smc_init_info *ini)
 {
+	struct net *net = sock_net(&new_smc->sk);
 	int prfx_rc;
 
 	/* check for ISM device matching V2 proposed device */
@@ -1879,10 +1880,12 @@ static int smc_listen_find_device(struct smc_sock *new_smc,
 	if (ini->ism_dev[0])
 		return 0;
 
-	/* check for matching IP prefix and subnet length (V1) */
-	prfx_rc = smc_listen_prfx_check(new_smc, pclc);
-	if (prfx_rc)
-		smc_find_ism_store_rc(prfx_rc, ini);
+	if (!net->smc.sysctl_allow_different_subnet) {
+		/* check for matching IP prefix and subnet length (V1) */
+		prfx_rc = smc_listen_prfx_check(new_smc, pclc);
+		if (prfx_rc)
+			smc_find_ism_store_rc(prfx_rc, ini);
+	}
 
 	/* get vlan id from IP device */
 	if (smc_vlan_by_tcpsk(new_smc->clcsock, ini))
@@ -2830,6 +2833,7 @@ static __net_init int smc_net_init(struct net *net)
 		net->smc.sysctl_rmem_default =
 			init_net.smc.sysctl_rmem_default;
 		net->smc.sysctl_tcp2smc = 0;
+		net->smc.sysctl_allow_different_subnet = 0;
 	}
 
 	return smc_pnet_net_init(net);
@@ -2838,6 +2842,7 @@ static __net_init int smc_net_init(struct net *net)
 static void __net_exit smc_net_exit(struct net *net)
 {
 	net->smc.sysctl_tcp2smc = 0;
+	net->smc.sysctl_allow_different_subnet = 0;
 	smc_pnet_net_exit(net);
 }
 
@@ -2969,6 +2974,7 @@ static int __init smc_init(void)
 	init_net.smc.sysctl_wmem_default = 256 * 1024;
 	init_net.smc.sysctl_rmem_default = 384 * 1024;
 	init_net.smc.sysctl_tcp2smc = 0;
+	init_net.smc.sysctl_allow_different_subnet = 0;
 
 #ifdef CONFIG_SYSCTL
 	smc_sysctl_init();
