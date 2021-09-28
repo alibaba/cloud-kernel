@@ -96,7 +96,8 @@ struct kfence_metadata {
 	struct kfence_track free_track;
 };
 
-extern struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
+extern unsigned long kfence_num_objects;
+extern struct kfence_metadata *kfence_metadata;
 
 /* KFENCE error types for report generation. */
 enum kfence_error_type {

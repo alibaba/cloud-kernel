@@ -591,7 +591,7 @@ static void test_gfpzero(struct kunit *test)
 	char *buf1, *buf2;
 	int i;
 
-	if (CONFIG_KFENCE_SAMPLE_INTERVAL > 100) {
+	if (CONFIG_KFENCE_SAMPLE_INTERVAL > 100 || kfence_num_objects > 255) {
 		kunit_warn(test, "skipping ... would take too long\n");
 		return;
 	}
@@ -609,7 +609,7 @@ static void test_gfpzero(struct kunit *test)
 			break;
 		test_free(buf2);
 
-		if (i == CONFIG_KFENCE_NUM_OBJECTS) {
+		if (i == kfence_num_objects) {
 			kunit_warn(test, "giving up ... cannot get same object back\n");
 			return;
 		}

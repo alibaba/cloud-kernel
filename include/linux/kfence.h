@@ -20,6 +20,7 @@
  * extended guard page, but otherwise has no special purpose.
  */
 #define KFENCE_POOL_SIZE ((CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE)
+extern unsigned long kfence_pool_size;
 extern char *__kfence_pool;
 
 #ifdef CONFIG_KFENCE_STATIC_KEYS
@@ -52,10 +53,11 @@ static __always_inline bool is_kfence_address(const void *addr)
 {
 	/*
 	 * The __kfence_pool != NULL check is required to deal with the case
-	 * where __kfence_pool == NULL && addr < KFENCE_POOL_SIZE. Keep it in
+	 * where __kfence_pool == NULL && addr < kfence_pool_size. Keep it in
 	 * the slow-path after the range-check!
 	 */
-	return unlikely((unsigned long)((char *)addr - __kfence_pool) < KFENCE_POOL_SIZE && __kfence_pool);
+	return unlikely((unsigned long)((char *)addr - __kfence_pool) <
+			kfence_pool_size && __kfence_pool);
 }
 
 /**
