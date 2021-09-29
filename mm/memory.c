@@ -4056,8 +4056,8 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 
 #ifdef CONFIG_HUGETEXT
 	/* Add the candidate hugetext vma into khugepaged scan list */
-	if (pmd_none(*vmf->pmd) && hugetext_enabled()
-			&& vma_is_hugetext(vma, vma->vm_flags)) {
+	if (pmd_none(*vmf->pmd) && hugetext_file_enabled()
+			&& vma_is_hugetext_file(vma, vma->vm_flags)) {
 		unsigned long haddr = vmf->address & HPAGE_PMD_MASK;
 
 		if (transhuge_vma_suitable(vma, haddr))

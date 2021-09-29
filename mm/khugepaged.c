@@ -465,7 +465,7 @@ static bool hugepage_vma_check(struct vm_area_struct *vma,
 		return shmem_huge_enabled(vma);
 
 	/* Enable hugetext does not require THP settings */
-	if (hugetext_enabled() && vma_is_hugetext(vma, vm_flags))
+	if (hugetext_vma_enabled(vma, vm_flags))
 		return true;
 
 	/* THP settings require madvise. */
@@ -498,9 +498,6 @@ void khugepaged_enter_exec_vma(struct vm_area_struct *vma,
 {
 	struct mm_slot *mm_slot;
 	int i;
-
-	if (!vma_is_hugetext(vma, vm_flags))
-		return;
 
 	spin_lock(&khugepaged_mm_lock);
 

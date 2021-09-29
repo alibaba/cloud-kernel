@@ -2279,7 +2279,7 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 		 */
 		struct inode *inode = file_inode(file);
 
-		if (hugetext_enabled() && (inode->i_mode & 0111) &&
+		if (hugetext_file_enabled() && (inode->i_mode & 0111) &&
 				(!file->f_op->get_unmapped_area ||
 				 file->f_op->get_unmapped_area == thp_get_unmapped_area))
 			get_area = hugetext_get_unmapped_area;

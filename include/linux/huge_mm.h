@@ -153,11 +153,21 @@ static inline bool transhuge_vma_enabled(struct vm_area_struct *vma,
 	 ((1<<TRANSPARENT_HUGEPAGE_FILE_TEXT_ENABLED_FLAG) |	\
 	 (1<<TRANSPARENT_HUGEPAGE_ANON_TEXT_ENABLED_FLAG)))
 
+#define hugetext_file_enabled()			\
+	(transparent_hugepage_flags &		\
+	 (1<<TRANSPARENT_HUGEPAGE_FILE_TEXT_ENABLED_FLAG))
+
+#define hugetext_anon_enabled()			\
+	(transparent_hugepage_flags &		\
+	 (1<<TRANSPARENT_HUGEPAGE_ANON_TEXT_ENABLED_FLAG))
+
 extern unsigned long hugetext_get_unmapped_area(struct file *filp,
 		unsigned long addr, unsigned long len, unsigned long pgoff,
 		unsigned long flags);
 #else
 #define hugetext_enabled()	false
+#define hugetext_file_enabled()	false
+#define hugetext_anon_enabled()	false
 
 static inline unsigned long hugetext_get_unmapped_area(struct file *filp,
 		unsigned long addr, unsigned long len, unsigned long pgoff,
@@ -168,7 +178,7 @@ static inline unsigned long hugetext_get_unmapped_area(struct file *filp,
 }
 #endif /* CONFIG_HUGETEXT */
 
-static inline bool vma_is_hugetext(struct vm_area_struct *vma,
+static inline bool vma_is_hugetext_file(struct vm_area_struct *vma,
 				   unsigned long vm_flags)
 {
 	if (!(vm_flags & VM_EXEC))
@@ -178,7 +188,34 @@ static inline bool vma_is_hugetext(struct vm_area_struct *vma,
 		return IS_ALIGNED((vma->vm_start >> PAGE_SHIFT) - vma->vm_pgoff,
 				HPAGE_PMD_NR);
 
+	return false;
+}
+
+static inline bool vma_is_hugetext_anon(struct vm_area_struct *vma,
+				   unsigned long vm_flags)
+{
+	if (!(vm_flags & VM_EXEC))
+		return false;
+
 	if (vma_is_anonymous(vma))
+		return true;
+
+	return false;
+}
+
+static inline bool hugetext_vma_enabled(struct vm_area_struct *vma,
+		unsigned long vm_flags)
+{
+	if (!hugetext_enabled())
+		return false;
+
+	if (!(vm_flags & VM_EXEC))
+		return false;
+
+	if (hugetext_file_enabled() && vma_is_hugetext_file(vma, vm_flags))
+		return true;
+
+	if (hugetext_anon_enabled() && vma_is_hugetext_anon(vma, vm_flags))
 		return true;
 
 	return false;
@@ -209,8 +246,8 @@ static inline bool __transparent_hugepage_enabled(struct vm_area_struct *vma)
 	if (vma_is_dax(vma))
 		return true;
 
-	if (hugetext_enabled() && vma_is_anonymous(vma)
-			&& (vma->vm_flags & VM_EXEC))
+	if (hugetext_anon_enabled()
+			&& vma_is_hugetext_anon(vma, vma->vm_flags))
 		return true;
 
 	if (transparent_hugepage_flags &

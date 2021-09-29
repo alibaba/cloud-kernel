@@ -77,15 +77,15 @@ static inline int khugepaged_enter(struct vm_area_struct *vma,
 	if (!test_bit(MMF_VM_HUGEPAGE, &vma->vm_mm->flags))
 		if ((khugepaged_always() ||
 		     (shmem_file(vma->vm_file) && shmem_huge_enabled(vma)) ||
-		     (hugetext_enabled() && vma_is_hugetext(vma, vm_flags)) ||
+		     hugetext_vma_enabled(vma, vm_flags) ||
 		     (khugepaged_req_madv() && (vm_flags & VM_HUGEPAGE))) &&
 		    !(vm_flags & VM_NOHUGEPAGE) &&
 		    !test_bit(MMF_DISABLE_THP, &vma->vm_mm->flags))
 			if (__khugepaged_enter(vma->vm_mm))
 				return -ENOMEM;
 
-	if (unlikely(vma->vm_flags & VM_EXEC) && hugetext_enabled() &&
-		test_bit(MMF_VM_HUGEPAGE, &vma->vm_mm->flags))
+	if (hugetext_vma_enabled(vma, vm_flags)
+			&& test_bit(MMF_VM_HUGEPAGE, &vma->vm_mm->flags))
 		khugepaged_enter_exec_vma(vma, vm_flags);
 	return 0;
 }
