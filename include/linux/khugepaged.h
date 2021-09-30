@@ -40,7 +40,8 @@ static inline void khugepaged_enter_exec_vma(struct vm_area_struct *vma,
 	(transparent_hugepage_flags &				\
 	 ((1<<TRANSPARENT_HUGEPAGE_FLAG) |			\
 	  (1<<TRANSPARENT_HUGEPAGE_REQ_MADV_FLAG) |		\
-	  (1<<TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG)))
+	  (1<<TRANSPARENT_HUGEPAGE_FILE_TEXT_ENABLED_FLAG) |	\
+	  (1<<TRANSPARENT_HUGEPAGE_ANON_TEXT_ENABLED_FLAG)))
 #else
 #define khugepaged_enabled()					       \
 	(transparent_hugepage_flags &				       \

@@ -319,17 +319,43 @@ static struct kobj_attribute hpage_pmd_size_attr =
 static ssize_t hugetext_enabled_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-	return single_hugepage_flag_show(kobj, attr, buf,
-			TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG);
+	int val = 0;
+
+	if (test_bit(TRANSPARENT_HUGEPAGE_FILE_TEXT_ENABLED_FLAG, &transparent_hugepage_flags))
+		val |= 0x01;
+	if (test_bit(TRANSPARENT_HUGEPAGE_ANON_TEXT_ENABLED_FLAG, &transparent_hugepage_flags))
+		val |= 0x02;
+
+	return sprintf(buf, "%d\n", val);
 }
 
 static ssize_t hugetext_enabled_store(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
-	ssize_t ret = count;
+	ssize_t ret;
+	unsigned long val = 0;
 
-	ret = single_hugepage_flag_store(kobj, attr, buf, count,
-			TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG);
+	if (!buf)
+		return -EINVAL;
+
+	ret = kstrtoul(buf, 0, &val);
+	if (ret < 0 || val > 3)
+		return -EINVAL;
+
+	ret = count;
+	if (val & 0x01)
+		set_bit(TRANSPARENT_HUGEPAGE_FILE_TEXT_ENABLED_FLAG,
+			  &transparent_hugepage_flags);
+	else
+		clear_bit(TRANSPARENT_HUGEPAGE_FILE_TEXT_ENABLED_FLAG,
+			  &transparent_hugepage_flags);
+
+	if (val & 0x02)
+		set_bit(TRANSPARENT_HUGEPAGE_ANON_TEXT_ENABLED_FLAG,
+			  &transparent_hugepage_flags);
+	else
+		clear_bit(TRANSPARENT_HUGEPAGE_ANON_TEXT_ENABLED_FLAG,
+			  &transparent_hugepage_flags);
 
 	if (ret > 0) {
 		int err = start_stop_khugepaged();
@@ -511,24 +537,34 @@ __setup("transparent_hugepage=", setup_transparent_hugepage);
 #ifdef CONFIG_HUGETEXT
 static int __init setup_hugetext(char *str)
 {
-	int ret = 0;
+	int err = -1;
+	unsigned long val = 0;
 
 	if (!str)
 		goto out;
-	if (!strcmp(str, "1")) {
-		set_bit(TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG,
+
+	err = kstrtoul(str, 0, &val);
+	if (err < 0 || val > 3)
+		goto out;
+
+	if (val & 0x01)
+		set_bit(TRANSPARENT_HUGEPAGE_FILE_TEXT_ENABLED_FLAG,
 			  &transparent_hugepage_flags);
-		ret = 1;
-	} else if (!strcmp(str, "0")) {
-		clear_bit(TRANSPARENT_HUGEPAGE_HUGETEXT_ENABLED_FLAG,
-			&transparent_hugepage_flags);
-		ret = 1;
-	}
+	else
+		clear_bit(TRANSPARENT_HUGEPAGE_FILE_TEXT_ENABLED_FLAG,
+			  &transparent_hugepage_flags);
+
+	if (val & 0x02)
+		set_bit(TRANSPARENT_HUGEPAGE_ANON_TEXT_ENABLED_FLAG,
+			  &transparent_hugepage_flags);
+	else
+		clear_bit(TRANSPARENT_HUGEPAGE_ANON_TEXT_ENABLED_FLAG,
+			  &transparent_hugepage_flags);
 
 out:
-	if (!ret)
+	if (err)
 		pr_warn("hugetext= cannot parse, ignored\n");
-	return ret;
+	return !err;
 }
 __setup("hugetext=", setup_hugetext);
 #endif
