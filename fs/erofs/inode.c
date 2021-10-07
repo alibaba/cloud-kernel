@@ -406,7 +406,16 @@ static ssize_t rafs_v6_read_chunk(struct super_block *sb,
 {
 	struct iov_iter titer;
 	ssize_t read = 0;
+	struct erofs_map_dev mdev = {
+		.m_deviceid = device_id,
+		.m_pa = off,
+	};
+	int err;
 
+	err = erofs_map_dev(sb, &mdev);
+	if (err)
+		return err;
+	off = mdev.m_pa;
 	do {
 		struct iovec iovec = iov_iter_iovec(to);
 		ssize_t ret;
@@ -419,7 +428,7 @@ static ssize_t rafs_v6_read_chunk(struct super_block *sb,
 
 		/* TODO async */
 		iov_iter_init(&titer, READ, &iovec, 1, iovec.iov_len);
-		ret = vfs_iter_read(EROFS_SB(sb)->bootstrap, &titer, &off, 0);
+		ret = vfs_iter_read(mdev.m_fp, &titer, &off, 0);
 		if (ret < 0) {
 			pr_err("%s: failed to read blob ret %ld\n", __func__, ret);
 			return ret;
@@ -480,6 +489,7 @@ static vm_fault_t rafs_v6_filemap_fault(struct vm_fault *vmf)
 	pgoff_t npages, orig_pgoff = vmf->pgoff;
 	erofs_off_t pos;
 	struct erofs_map_blocks map = {0};
+	struct erofs_map_dev mdev;
 	struct vm_area_struct lower_vma;
 	int err;
 	vm_fault_t ret;
@@ -497,8 +507,16 @@ static vm_fault_t rafs_v6_filemap_fault(struct vm_fault *vmf)
 	if (err)
 		return vmf_error(err);
 
-	lower_vma.vm_file = EROFS_I_SB(inode)->bootstrap;
-	vmf->pgoff = (map.m_pa + (pos - map.m_la)) >> PAGE_SHIFT;
+	mdev = (struct erofs_map_dev) {
+		.m_deviceid = map.m_deviceid,
+		.m_pa = map.m_pa,
+	};
+	err = erofs_map_dev(inode->i_sb, &mdev);
+	if (err)
+		return vmf_error(err);
+
+	lower_vma.vm_file = mdev.m_fp;
+	vmf->pgoff = (mdev.m_pa + (pos - map.m_la)) >> PAGE_SHIFT;
 	vmf->vma = &lower_vma; /* override vma temporarily */
 	ret = EROFS_I(inode)->lower_vm_ops->fault(vmf);
 	vmf->vma = vma;
