@@ -141,6 +141,7 @@ static unsigned long ghes_estatus_pool_size_request;
 static struct ghes_estatus_cache *ghes_estatus_caches[GHES_ESTATUS_CACHES_SIZE];
 static atomic_t ghes_estatus_cache_alloced;
 
+static bool ghes_sdei_callback;
 static int ghes_panic_timeout __read_mostly = 30;
 
 static void __iomem *ghes_map(u64 pfn, enum fixed_addresses fixmap_idx)
@@ -837,18 +838,30 @@ static void ghes_estatus_cache_add(
 	rcu_read_unlock();
 }
 
-static void __ghes_panic(struct ghes *ghes,
-			 struct acpi_hest_generic_status *estatus,
-			 u64 buf_paddr, enum fixed_addresses fixmap_idx)
+static void sdei_api_restore_ras(void)
 {
-	__ghes_print_estatus(KERN_EMERG, ghes->generic, estatus);
-
-	ghes_clear_estatus(ghes, estatus, buf_paddr, fixmap_idx);
-
 	/* reboot to log the error! */
 	if (!panic_timeout)
 		panic_timeout = ghes_panic_timeout;
 	panic("Fatal hardware error!");
+}
+
+static void __ghes_panic(struct ghes *ghes,
+			 struct acpi_hest_generic_status *estatus,
+			 u64 buf_paddr, enum fixed_addresses fixmap_idx)
+{
+	int err;
+
+	__ghes_print_estatus(KERN_EMERG, ghes->generic, estatus);
+
+	ghes_clear_estatus(ghes, estatus, buf_paddr, fixmap_idx);
+
+	if (ghes_sdei_callback) {
+		err = sdei_api_event_complete_and_resume((unsigned long)sdei_api_restore_ras);
+		if (err)
+			sdei_api_restore_ras();
+	} else
+		sdei_api_restore_ras();
 }
 
 static int ghes_proc(struct ghes *ghes)
@@ -1224,7 +1237,9 @@ static int ghes_sdei_normal_callback(u32 event_num, struct pt_regs *regs,
 	int err;
 
 	raw_spin_lock(&ghes_notify_lock_sdei_normal);
+	ghes_sdei_callback = true;
 	err = __ghes_sdei_callback(ghes, FIX_APEI_GHES_SDEI_NORMAL);
+	ghes_sdei_callback = false;
 	raw_spin_unlock(&ghes_notify_lock_sdei_normal);
 
 	return err;
@@ -1238,7 +1253,9 @@ static int ghes_sdei_critical_callback(u32 event_num, struct pt_regs *regs,
 	int err;
 
 	raw_spin_lock(&ghes_notify_lock_sdei_critical);
+	ghes_sdei_callback = true;
 	err = __ghes_sdei_callback(ghes, FIX_APEI_GHES_SDEI_CRITICAL);
+	ghes_sdei_callback = false;
 	raw_spin_unlock(&ghes_notify_lock_sdei_critical);
 
 	return err;

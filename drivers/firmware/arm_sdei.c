@@ -496,6 +496,20 @@ static int sdei_api_event_unregister(u32 event_num)
 			      0, 0, 0, NULL);
 }
 
+int sdei_api_event_complete_and_resume(u64 addr)
+{
+	int err;
+
+	err = invoke_sdei_fn(SDEI_1_0_FN_SDEI_EVENT_COMPLETE_AND_RESUME, addr,
+			      0, 0, 0, 0, NULL);
+	if (err && err != -EIO) {
+		pr_warn_once("failed to restore CPU[%u]: %d\n", smp_processor_id(), err);
+		return err;
+	}
+
+	return 0;
+}
+
 /* Called directly by the hotplug callbacks */
 static void _local_event_unregister(void *data)
 {
