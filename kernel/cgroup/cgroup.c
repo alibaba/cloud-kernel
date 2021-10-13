@@ -5237,6 +5237,8 @@ cgroup_create_kernfs(struct kernfs_node *parent, const char *name, umode_t mode,
 
 }
 
+unsigned int cgroup_supply_delay_time;
+
 int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name, umode_t mode)
 {
 	struct cgroup *parent, *cgrp;
