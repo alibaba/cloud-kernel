@@ -981,7 +981,7 @@ static void copy_feature(bool from_xstate, struct membuf *to, void *xstate,
 /**
  * __copy_xstate_to_uabi_buf - Copy kernel saved xstate to a UABI buffer
  * @to:		membuf descriptor
- * @xsave:	The xsave from which to copy
+ * @fpstate:	The fpstate buffer from which to copy
  * @pkru_val:	The PKRU value to store in the PKRU component
  * @copy_mode:	The requested copy mode
  *
@@ -991,11 +991,12 @@ static void copy_feature(bool from_xstate, struct membuf *to, void *xstate,
  *
  * It supports partial copy but @to.pos always starts from zero.
  */
-void __copy_xstate_to_uabi_buf(struct membuf to, struct xregs_state *xsave,
+void __copy_xstate_to_uabi_buf(struct membuf to, struct fpstate *fpstate,
 			       u32 pkru_val, enum xstate_copy_mode copy_mode)
 {
 	const unsigned int off_mxcsr = offsetof(struct fxregs_state, mxcsr);
 	struct xregs_state *xinit = &init_fpstate.regs.xsave;
+	struct xregs_state *xsave = &fpstate->regs.xsave;
 	struct xstate_header header;
 	unsigned int zerofrom;
 	u64 mask;
@@ -1015,7 +1016,7 @@ void __copy_xstate_to_uabi_buf(struct membuf to, struct xregs_state *xsave,
 		break;
 
 	case XSTATE_COPY_XSAVE:
-		header.xfeatures &= xfeatures_mask_uabi();
+		header.xfeatures &= fpstate->user_xfeatures;
 		break;
 	}
 
@@ -1058,7 +1059,7 @@ void __copy_xstate_to_uabi_buf(struct membuf to, struct xregs_state *xsave,
 	 * but there is no state to copy from in the compacted
 	 * init_fpstate. The gap tracking will zero these states.
 	 */
-	mask = xfeatures_mask_uabi();
+	mask = fpstate->user_xfeatures;
 
 	for_each_extended_xfeature(i, mask) {
 		/*
@@ -1109,7 +1110,7 @@ out:
 void copy_xstate_to_uabi_buf(struct membuf to, struct task_struct *tsk,
 			     enum xstate_copy_mode copy_mode)
 {
-	__copy_xstate_to_uabi_buf(to, &tsk->thread.fpu.fpstate->regs.xsave,
+	__copy_xstate_to_uabi_buf(to, tsk->thread.fpu.fpstate,
 				  tsk->thread.pkru, copy_mode);
 }
 
