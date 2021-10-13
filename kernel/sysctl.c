@@ -2893,6 +2893,13 @@ static struct ctl_table kern_table[] = {
 		.extra1         = SYSCTL_ZERO,
 		.extra2         = SYSCTL_ONE,
 	},
+	{
+		.procname	= "cgroup_supply_delay_time",
+		.data		= &cgroup_supply_delay_time,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 	{ }
 };
 

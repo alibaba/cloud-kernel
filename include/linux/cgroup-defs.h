@@ -38,6 +38,20 @@ struct poll_table_struct;
 #define MAX_CGROUP_ROOT_NAMELEN 64
 #define MAX_CFTYPE_NAME		64
 
+/*
+ * Normally, 0xffff is an invalid mode and will return err in vfs layer, we use
+ * 0xffff in cgroup_pool_size_write and cgroup_supply_work to distinguish cgroup
+ * created normally and cgroup created to pool.
+ *
+ * If user calls mkdir to create cgroup without specific mode, the mode will be
+ * set to default mode 0x1ed(drwxr-xr-x), which is in most common use, so we set
+ * cgroup in pool to default mode. If pool is enabled, user calls mkdir to
+ * to get cgroup from pool, the cgroup is in default mode, mode set by user is
+ * noneffective.
+ */
+#define CGROUP_MODE_IN_POOL	0xffff
+#define CGROUP_MODE_DEFAULT	0x1ed
+
 /* define the enumeration of all cgroup subsystems */
 #define SUBSYS(_x) _x ## _cgrp_id,
 enum cgroup_subsys_id {
@@ -494,6 +508,15 @@ struct cgroup {
 
 	/* Used to store internal freezer state */
 	struct cgroup_freezer_state freezer;
+
+	/* used for cgroup pool */
+	struct mutex lock;
+	atomic64_t pool_index;	/* name of cgroup be put to pool next. */
+	atomic64_t pool_amount; /* amount of cgroup available in pool. */
+	u64 pool_size;
+	bool enable_pool;
+	struct kernfs_root *hidden_place; /* tree to hide cgroup in pool. */
+	struct delayed_work supply_pool_work;
 
 	/* ids of the ancestors at each level including self */
 	u64 ancestor_ids[];
