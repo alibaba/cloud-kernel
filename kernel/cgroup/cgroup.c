@@ -1910,6 +1910,8 @@ static int cgroup_reconfigure(struct fs_context *fc)
 	return 0;
 }
 
+static void cgroup_supply_work(struct work_struct *work);
+
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
 {
 	struct cgroup_subsys *ss;
@@ -1920,6 +1922,7 @@ static void init_cgroup_housekeeping(struct cgroup *cgrp)
 	INIT_LIST_HEAD(&cgrp->cset_links);
 	INIT_LIST_HEAD(&cgrp->pidlists);
 	mutex_init(&cgrp->pidlist_mutex);
+	mutex_init(&cgrp->lock);
 	cgrp->self.cgroup = cgrp;
 	cgrp->self.flags |= CSS_ONLINE;
 	cgrp->dom_cgrp = cgrp;
@@ -1933,6 +1936,7 @@ static void init_cgroup_housekeeping(struct cgroup *cgrp)
 
 	init_waitqueue_head(&cgrp->offline_waitq);
 	INIT_WORK(&cgrp->release_agent_work, cgroup1_release_agent);
+	INIT_DELAYED_WORK(&cgrp->supply_pool_work, cgroup_supply_work);
 }
 
 void init_cgroup_root(struct cgroup_fs_context *ctx)
@@ -5420,14 +5424,97 @@ fail:
 
 unsigned int cgroup_supply_delay_time;
 
+static void cgroup_supply_work(struct work_struct *work)
+{
+	char name[NAME_MAX + 1];
+	struct cgroup *parent = container_of((struct delayed_work *)work,
+					struct cgroup, supply_pool_work);
+	struct kernfs_node *parent_kn = parent->kn;
+
+	while (atomic64_read(&parent->pool_amount) < parent->pool_size) {
+		sprintf(name, "pool-%llu",
+				atomic64_add_return(1, &parent->pool_index));
+		kernfs_get_active(parent_kn);
+		if (!cgroup_mkdir(parent_kn, name, CGROUP_MODE_IN_POOL))
+			atomic64_add(1, &parent->pool_amount);
+		kernfs_put_active(parent_kn);
+	}
+}
+
+static int cgroup_mkdir_fast_path(struct kernfs_node *parent_kn, const char *name)
+{
+	struct cgroup *parent;
+	struct rb_root *hidden_root;
+	int ret;
+
+	parent = parent_kn->priv;
+
+	if (!cgroup_tryget(parent))
+		return -ENODEV;
+
+	mutex_lock(&parent->lock);
+	if (!parent->enable_pool) {
+		ret = 1;
+		goto out_unlock;
+	}
+
+	hidden_root = &parent->hidden_place->kn->dir.children;
+	if (!hidden_root->rb_node) {
+		ret = 1;
+		goto out_unlock;
+	}
+
+#define rb_to_kn(X) rb_entry((X), struct kernfs_node, rb)
+	ret = kernfs_rename(rb_to_kn(rb_first(hidden_root)), parent_kn, name);
+	if (ret)
+		goto out_unlock;
+
+	/* supply pool if pool_amount is less than 1/4 pool_size */
+	if (atomic64_sub_return(1, &parent->pool_amount) <
+						(parent->pool_size >> 2)) {
+		schedule_delayed_work(&parent->supply_pool_work,
+				msecs_to_jiffies(cgroup_supply_delay_time));
+	}
+
+out_unlock:
+	mutex_unlock(&parent->lock);
+	cgroup_put(parent);
+	return ret;
+}
+
+static void cgroup_hide(struct cgroup *parent, struct cgroup *cgrp, const char *name)
+{
+	kernfs_get_active(parent->hidden_place->kn);
+	WARN_ON(kernfs_rename(cgrp->kn, parent->hidden_place->kn, name));
+	kernfs_put_active(parent->hidden_place->kn);
+}
+
 int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name, umode_t mode)
 {
 	struct cgroup *parent, *cgrp;
-	int ret;
+	int ret = 1;
+	bool hide = false;
 
 	/* do not accept '\n' to prevent making /proc/<pid>/cgroup unparsable */
 	if (strchr(name, '\n'))
 		return -EINVAL;
+
+	/*
+	 * normally, 0xffff is an invalid mode and will return err in vfs layer,
+	 * we use 0xffff in cgroup_pool_size_write and cgroup_supply_work to
+	 * distinguish cgroup created normally and cgroup created to pool.
+	 * cgroup in pool uses default mode 0x1ed.
+	 */
+	if (mode == CGROUP_MODE_IN_POOL) {
+		hide = true;
+		mode = CGROUP_MODE_DEFAULT;
+	}
+
+	/* if poll is not enabled or is empty, go slow path */
+	if (!hide)
+		ret = cgroup_mkdir_fast_path(parent_kn, name);
+	if (ret <= 0)
+		return ret;
 
 	parent = cgroup_kn_lock_live(parent_kn, false);
 	if (!parent)
@@ -5466,6 +5553,9 @@ int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name, umode_t mode)
 
 	/* let's create and online css's */
 	kernfs_activate(cgrp->kn);
+
+	if (hide)
+		cgroup_hide(parent, cgrp, name);
 
 	ret = 0;
 	goto out_unlock;
@@ -5659,10 +5749,17 @@ int cgroup_rmdir(struct kernfs_node *kn)
 	if (!cgrp)
 		return 0;
 
+	/* pool_size is actually protected by cgroup_mutex */
+	if (cgrp->pool_size) {
+		ret = -EBUSY;
+		goto out_unlock;
+	}
+
 	ret = cgroup_destroy_locked(cgrp);
 	if (!ret)
 		TRACE_CGROUP_PATH(rmdir, cgrp);
 
+out_unlock:
 	cgroup_kn_unlock(kn);
 	return ret;
 }
