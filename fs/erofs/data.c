@@ -112,6 +112,7 @@ static int erofs_map_blocks(struct inode *inode,
 	erofs_off_t pos;
 	int err = 0;
 
+	map->m_deviceid = 0;
 	if (map->m_la >= inode->i_size) {
 		/* leave out-of-bound access unmapped */
 		map->m_flags = 0;
@@ -158,14 +159,8 @@ static int erofs_map_blocks(struct inode *inode,
 		map->m_flags = 0;
 		break;
 	default:
-		/* only one device is supported for now */
-		if (idx->device_id) {
-			erofs_err(sb, "invalid device id %u @ %llu for nid %llu",
-				  le16_to_cpu(idx->device_id),
-				  chunknr, vi->nid);
-			err = -EFSCORRUPTED;
-			goto out_unlock;
-		}
+		map->m_deviceid = le16_to_cpu(idx->device_id) &
+			EROFS_SB(sb)->device_id_mask;
 		map->m_pa = blknr_to_addr(le32_to_cpu(idx->blkaddr));
 		map->m_flags = EROFS_MAP_MAPPED;
 		break;
@@ -176,6 +171,49 @@ out_unlock:
 out:
 	map->m_llen = map->m_plen;
 	return err;
+}
+
+int erofs_map_dev(struct super_block *sb, struct erofs_map_dev *map)
+{
+	struct erofs_dev_context *devs = EROFS_SB(sb)->devs;
+	struct erofs_device_info *dif;
+	int id;
+
+	/* primary device by default */
+	map->m_bdev = sb->s_bdev;
+	map->m_fp = EROFS_SB(sb)->bootstrap;
+
+	if (map->m_deviceid) {
+		down_read(&devs->rwsem);
+		dif = idr_find(&devs->tree, map->m_deviceid - 1);
+		if (!dif) {
+			up_read(&devs->rwsem);
+			return -ENODEV;
+		}
+		map->m_bdev = dif->bdev;
+		map->m_fp = dif->blobfile;
+		up_read(&devs->rwsem);
+	} else if (devs->extra_devices) {
+		down_read(&devs->rwsem);
+		idr_for_each_entry(&devs->tree, dif, id) {
+			erofs_off_t startoff, length;
+
+			if (!dif->mapped_blkaddr)
+				continue;
+			startoff = blknr_to_addr(dif->mapped_blkaddr);
+			length = blknr_to_addr(dif->blocks);
+
+			if (map->m_pa >= startoff &&
+			    map->m_pa < startoff + length) {
+				map->m_pa -= startoff;
+				map->m_bdev = dif->bdev;
+				map->m_fp = dif->blobfile;
+				break;
+			}
+		}
+		up_read(&devs->rwsem);
+	}
+	return 0;
 }
 
 static inline struct bio *erofs_read_raw_page(struct bio *bio,
@@ -210,10 +248,19 @@ submit_bio_retry:
 		struct erofs_map_blocks map = {
 			.m_la = blknr_to_addr(current_block),
 		};
+		struct erofs_map_dev mdev;
 		erofs_blk_t blknr;
 		unsigned int blkoff;
 
 		err = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_RAW);
+		if (err)
+			goto err_out;
+
+		mdev = (struct erofs_map_dev) {
+			.m_deviceid = map.m_deviceid,
+			.m_pa = map.m_pa,
+		};
+		err = erofs_map_dev(sb, &mdev);
 		if (err)
 			goto err_out;
 
@@ -229,8 +276,8 @@ submit_bio_retry:
 		/* for RAW access mode, m_plen must be equal to m_llen */
 		DBG_BUGON(map.m_plen != map.m_llen);
 
-		blknr = erofs_blknr(map.m_pa);
-		blkoff = erofs_blkoff(map.m_pa);
+		blknr = erofs_blknr(mdev.m_pa);
+		blkoff = erofs_blkoff(mdev.m_pa);
 
 		/* deal with inline page */
 		if (map.m_flags & EROFS_MAP_META) {
@@ -239,7 +286,7 @@ submit_bio_retry:
 
 			DBG_BUGON(map.m_plen > PAGE_SIZE);
 
-			ipage = erofs_get_meta_page(inode->i_sb, blknr);
+			ipage = erofs_get_meta_page(sb, blknr);
 
 			if (IS_ERR(ipage)) {
 				err = PTR_ERR(ipage);
@@ -275,7 +322,7 @@ submit_bio_retry:
 		bio = bio_alloc(GFP_NOIO, nblocks);
 
 		bio->bi_end_io = erofs_readendio;
-		bio_set_dev(bio, sb->s_bdev);
+		bio_set_dev(bio, mdev.m_bdev);
 		bio->bi_iter.bi_sector = (sector_t)blknr <<
 			LOG_SECTORS_PER_BLOCK;
 		bio->bi_opf = REQ_OP_READ | (ra ? REQ_RAHEAD : 0);

@@ -125,6 +125,89 @@ static bool check_layout_compatibility(struct super_block *sb,
 	return true;
 }
 
+static int erofs_init_devices(struct super_block *sb,
+			      struct erofs_super_block *dsb)
+{
+	struct erofs_sb_info *sbi = EROFS_SB(sb);
+	unsigned int ondisk_extradevs;
+	erofs_off_t pos;
+	struct page *page = NULL;
+	struct erofs_device_info *dif;
+	struct erofs_deviceslot *dis;
+	void *ptr;
+	int id, err = 0;
+
+	sbi->total_blocks = sbi->primarydevice_blocks;
+	if (!erofs_sb_has_device_table(sbi))
+		ondisk_extradevs = 0;
+	else
+		ondisk_extradevs = le16_to_cpu(dsb->extra_devices);
+
+	if (ondisk_extradevs != sbi->devs->extra_devices) {
+		erofs_err(sb, "extra devices don't match (ondisk %u, given %u)",
+			  ondisk_extradevs, sbi->devs->extra_devices);
+		return -EINVAL;
+	}
+	if (!ondisk_extradevs)
+		return 0;
+
+	sbi->device_id_mask = roundup_pow_of_two(ondisk_extradevs + 1) - 1;
+	pos = le16_to_cpu(dsb->devt_slotoff) * EROFS_DEVT_SLOT_SIZE;
+	down_read(&sbi->devs->rwsem);
+	idr_for_each_entry(&sbi->devs->tree, dif, id) {
+		erofs_blk_t blk = erofs_blknr(pos);
+		struct block_device *bdev;
+
+		if (!page || page->index != blk) {
+			if (page) {
+				kunmap(page);
+				unlock_page(page);
+				put_page(page);
+			}
+
+			page = erofs_get_meta_page(sb, blk);
+			if (IS_ERR(page)) {
+				up_read(&sbi->devs->rwsem);
+				return PTR_ERR(page);
+			}
+			ptr = kmap(page);
+		}
+		dis = ptr + erofs_blkoff(pos);
+
+		if (!sbi->bootstrap) {
+			bdev = blkdev_get_by_path(dif->path,
+						  FMODE_READ | FMODE_EXCL,
+						  sb->s_type);
+			if (IS_ERR(bdev)) {
+				err = PTR_ERR(bdev);
+				goto err_out;
+			}
+			dif->bdev = bdev;
+		} else {
+			struct file *f;
+
+			f = filp_open(dif->path, O_RDONLY, 0644);
+			if (IS_ERR(f)) {
+				err = PTR_ERR(f);
+				goto err_out;
+			}
+			dif->blobfile = f;
+		}
+		dif->blocks = le32_to_cpu(dis->blocks);
+		dif->mapped_blkaddr = le32_to_cpu(dis->mapped_blkaddr);
+		sbi->total_blocks += dif->blocks;
+		pos += sizeof(*dis);
+	}
+err_out:
+	up_read(&sbi->devs->rwsem);
+	if (page) {
+		kunmap(page);
+		unlock_page(page);
+		put_page(page);
+	}
+	return err;
+}
+
 static int erofs_read_superblock(struct super_block *sb)
 {
 	struct erofs_sb_info *sbi;
@@ -170,7 +253,7 @@ static int erofs_read_superblock(struct super_block *sb)
 	if (!check_layout_compatibility(sb, dsb))
 		goto out;
 
-	sbi->blocks = le32_to_cpu(dsb->blocks);
+	sbi->primarydevice_blocks = le32_to_cpu(dsb->blocks);
 	sbi->meta_blkaddr = le32_to_cpu(dsb->meta_blkaddr);
 #ifdef CONFIG_EROFS_FS_XATTR
 	sbi->xattr_blkaddr = le32_to_cpu(dsb->xattr_blkaddr);
@@ -191,7 +274,9 @@ static int erofs_read_superblock(struct super_block *sb)
 		ret = -EFSCORRUPTED;
 		goto out;
 	}
-	ret = 0;
+
+	/* handle multiple devices */
+	ret = erofs_init_devices(sb, dsb);
 out:
 	kunmap(page);
 	put_page(page);
@@ -254,6 +339,7 @@ enum {
 	Opt_acl,
 	Opt_noacl,
 	Opt_cache_strategy,
+	Opt_device,
 	Opt_err
 };
 
@@ -263,11 +349,13 @@ static match_table_t erofs_tokens = {
 	{Opt_acl, "acl"},
 	{Opt_noacl, "noacl"},
 	{Opt_cache_strategy, "cache_strategy=%s"},
+	{Opt_device, "device=%s"},
 	{Opt_err, NULL}
 };
 
 static int erofs_parse_options(struct super_block *sb, char *options)
 {
+	struct erofs_sb_info *sbi = EROFS_SB(sb);
 	substring_t args[MAX_OPT_ARGS];
 	char *p;
 	int err;
@@ -277,6 +365,7 @@ static int erofs_parse_options(struct super_block *sb, char *options)
 
 	while ((p = strsep(&options, ","))) {
 		int token;
+		struct erofs_device_info *dif;
 
 		if (!*p)
 			continue;
@@ -319,6 +408,25 @@ static int erofs_parse_options(struct super_block *sb, char *options)
 			err = erofs_build_cache_strategy(sb, args);
 			if (err)
 				return err;
+			break;
+		case Opt_device:
+			dif = kzalloc(sizeof(*dif), GFP_KERNEL);
+			if (!dif)
+				return -ENOMEM;
+			dif->path = match_strdup(&args[0]);
+			if (!dif->path) {
+				kfree(dif);
+				return -ENOMEM;
+			}
+			down_write(&sbi->devs->rwsem);
+			err = idr_alloc(&sbi->devs->tree, dif, 0, 0, GFP_KERNEL);
+			up_write(&sbi->devs->rwsem);
+			if (err < 0) {
+				kfree(dif->path);
+				kfree(dif);
+				return err;
+			}
+			++sbi->devs->extra_devices;
 			break;
 		default:
 			erofs_err(sb, "Unrecognized mount option \"%s\" or missing value", p);
@@ -405,9 +513,12 @@ static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 		return -ENOMEM;
 
 	sb->s_fs_info = sbi;
-	err = erofs_read_superblock(sb);
-	if (err)
-		return err;
+	sbi->devs = kzalloc(sizeof(struct erofs_dev_context), GFP_KERNEL);
+	if (!sbi->devs)
+		return -ENOMEM;
+
+	idr_init(&sbi->devs->tree);
+	init_rwsem(&sbi->devs->rwsem);
 
 	sb->s_flags |= SB_RDONLY | SB_NOATIME;
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
@@ -420,6 +531,10 @@ static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 	erofs_default_options(sbi);
 
 	err = erofs_parse_options(sb, data);
+	if (err)
+		return err;
+
+	err = erofs_read_superblock(sb);
 	if (err)
 		return err;
 
@@ -459,6 +574,27 @@ static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 	return 0;
 }
 
+static int erofs_release_device_info(int id, void *ptr, void *data)
+{
+	struct erofs_device_info *dif = ptr;
+
+	if (dif->bdev)
+		blkdev_put(dif->bdev, FMODE_READ | FMODE_EXCL);
+	if (dif->blobfile)
+		filp_close(dif->blobfile, NULL);
+	kfree(dif->path);
+	kfree(dif);
+	return 0;
+}
+
+static void erofs_free_dev_context(struct erofs_dev_context *devs)
+{
+	if (!devs)
+		return;
+	idr_for_each(&devs->tree, &erofs_release_device_info, NULL);
+	idr_destroy(&devs->tree);
+}
+
 static struct dentry *erofs_mount(struct file_system_type *fs_type, int flags,
 				  const char *dev_name, void *data)
 {
@@ -480,6 +616,7 @@ static void erofs_kill_sb(struct super_block *sb)
 	sbi = EROFS_SB(sb);
 	if (!sbi)
 		return;
+	erofs_free_dev_context(sbi->devs);
 	kfree(sbi);
 	sb->s_fs_info = NULL;
 }
@@ -566,7 +703,7 @@ static int erofs_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 	buf->f_type = sb->s_magic;
 	buf->f_bsize = EROFS_BLKSIZ;
-	buf->f_blocks = sbi->blocks;
+	buf->f_blocks = sbi->total_blocks;
 	buf->f_bfree = buf->f_bavail = 0;
 
 	buf->f_files = ULLONG_MAX;
