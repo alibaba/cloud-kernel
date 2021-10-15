@@ -92,7 +92,7 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 #ifdef CONFIG_VM86
 	dst->thread.vm86 = NULL;
 #endif
-	return fpu_clone(dst);
+	return 0;
 }
 
 /*
@@ -159,6 +159,8 @@ int copy_thread(unsigned long clone_flags, unsigned long sp, unsigned long arg,
 	 */
 	frame->flags = X86_EFLAGS_FIXED;
 #endif
+
+	fpu_clone(p);
 
 	/* Kernel thread ? */
 	if (unlikely(p->flags & PF_KTHREAD)) {
