@@ -42,6 +42,7 @@ struct xdp_umem {
 	struct net_device *dev;
 	u16 queue_id;
 	bool zc;
+	bool delay_unpin;
 	spinlock_t xsk_list_lock;
 	struct list_head xsk_list;
 };
@@ -91,6 +92,9 @@ void xsk_umem_discard_addr(struct xdp_umem *umem);
 void xsk_umem_complete_tx(struct xdp_umem *umem, u32 nb_entries);
 bool xsk_umem_consume_tx(struct xdp_umem *umem, struct xdp_desc *desc);
 void xsk_umem_consume_tx_done(struct xdp_umem *umem);
+
+struct page **xsk_umem_pgs_delay_unpin(struct xdp_umem *umem, u64 *npgs);
+void xsk_umem_unpin_pages(struct page **pgs, u64 npgs);
 
 void xsk_map_try_sock_delete(struct xsk_map *map, struct xdp_sock *xs,
 			     struct xdp_sock **map_entry);

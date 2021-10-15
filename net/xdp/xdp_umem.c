@@ -128,18 +128,34 @@ static void xdp_umem_clear_dev(struct xdp_umem *umem)
 	}
 }
 
-static void xdp_umem_unpin_pages(struct xdp_umem *umem)
+struct page **xsk_umem_pgs_delay_unpin(struct xdp_umem *umem, u64 *npgs)
 {
+	*npgs = umem->npgs;
+	umem->delay_unpin = true;
+	return umem->pgs;
+}
+EXPORT_SYMBOL(xsk_umem_pgs_delay_unpin);
+
+void xsk_umem_unpin_pages(struct page **pgs, u64 npgs)
+{
+	struct page *page;
 	unsigned int i;
 
-	for (i = 0; i < umem->npgs; i++) {
-		struct page *page = umem->pgs[i];
+	for (i = 0; i < npgs; i++) {
+		page = pgs[i];
 
 		set_page_dirty_lock(page);
 		put_page(page);
 	}
 
-	kfree(umem->pgs);
+	kfree(pgs);
+}
+EXPORT_SYMBOL(xsk_umem_unpin_pages);
+
+static void xdp_umem_unpin_pages(struct xdp_umem *umem)
+{
+	xsk_umem_unpin_pages(umem->pgs, umem->npgs);
+
 	umem->pgs = NULL;
 }
 
@@ -165,7 +181,10 @@ static void xdp_umem_release(struct xdp_umem *umem)
 		umem->cq = NULL;
 	}
 
-	xdp_umem_unpin_pages(umem);
+	if (umem->delay_unpin)
+		umem->pgs = NULL;
+	else
+		xdp_umem_unpin_pages(umem);
 
 	kfree(umem->pages);
 	umem->pages = NULL;
