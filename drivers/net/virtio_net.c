@@ -187,6 +187,9 @@ struct send_queue {
 		struct xdp_umem        __rcu *umem;
 		struct virtnet_xsk_hdr __rcu *hdr;
 
+		struct page **pgs;
+		u64           npgs;
+
 		unsigned long          state;
 		u64                    hdr_con;
 		u64                    hdr_pro;
@@ -1507,6 +1510,7 @@ static void virt_xsk_complete(struct send_queue *sq, u32 num, bool xsk_wakeup)
 			struct virtnet_xsk_hdr *hdr = NULL;
 
 			rcu_swap_protected(sq->xsk.hdr, hdr, true);
+			xsk_umem_unpin_pages(sq->xsk.pgs, sq->xsk.npgs);
 			kfree(hdr);
 		}
 		rcu_read_unlock();
@@ -2759,12 +2763,15 @@ static int virtnet_xsk_pool_disable(struct net_device *dev, u16 qid)
 	struct virtnet_info *vi = netdev_priv(dev);
 	struct send_queue *sq = &vi->sq[qid];
 	struct netdev_queue *txq;
+	struct xdp_umem *umem;
 
 	if (qid >= dev->real_num_rx_queues || qid >= dev->real_num_tx_queues)
 		return -EINVAL;
 
 	if (qid >= vi->curr_queue_pairs)
 		return -EINVAL;
+
+	umem = sq->xsk.umem;
 
 	/* Here is already protected by rtnl_lock, so rcu_assign_pointer is
 	 * safe.
@@ -2786,6 +2793,9 @@ static int virtnet_xsk_pool_disable(struct net_device *dev, u16 qid)
 		 */
 		rcu_swap_protected(sq->xsk.hdr, hdr, true);
 		kfree(hdr);
+		sq->xsk.pgs = NULL;
+	} else {
+		sq->xsk.pgs = xsk_umem_pgs_delay_unpin(umem, &sq->xsk.npgs);
 	}
 	__netif_tx_unlock_bh(txq);
 
