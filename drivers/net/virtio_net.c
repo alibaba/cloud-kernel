@@ -2758,6 +2758,7 @@ static int virtnet_xsk_pool_disable(struct net_device *dev, u16 qid)
 {
 	struct virtnet_info *vi = netdev_priv(dev);
 	struct send_queue *sq = &vi->sq[qid];
+	struct netdev_queue *txq;
 
 	if (qid >= dev->real_num_rx_queues || qid >= dev->real_num_tx_queues)
 		return -EINVAL;
@@ -2774,21 +2775,19 @@ static int virtnet_xsk_pool_disable(struct net_device *dev, u16 qid)
 
 	synchronize_rcu(); /* Sync with the XSK wakeup and with NAPI. */
 
+	txq = netdev_get_tx_queue(vi->dev, qid);
+
+	__netif_tx_lock_bh(txq);
 	if (sq->xsk.hdr_pro - sq->xsk.hdr_con == sq->xsk.hdr_n) {
 		struct virtnet_xsk_hdr *hdr = NULL;
-		struct netdev_queue *txq;
-
-		txq = netdev_get_tx_queue(vi->dev, qid);
 
 		/* this has race with the virt_xsk_complete when
 		 * sq->xsk.umem == NULL. So add lock to protect.
 		 */
-		__netif_tx_lock_bh(txq);
 		rcu_swap_protected(sq->xsk.hdr, hdr, true);
-		__netif_tx_unlock_bh(txq);
-
 		kfree(hdr);
 	}
+	__netif_tx_unlock_bh(txq);
 
 	return 0;
 }
