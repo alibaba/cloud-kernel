@@ -3027,10 +3027,12 @@ int split_huge_page_to_list(struct page *page, struct list_head *list)
 			list_del(page_deferred_list(head));
 		}
 		if (mapping) {
-			if (PageSwapBacked(page))
+			if (PageSwapBacked(page)) {
 				__dec_node_page_state(page, NR_SHMEM_THPS);
-			else
+			} else {
 				__dec_node_page_state(page, NR_FILE_THPS);
+				filemap_nr_thps_dec(mapping);
+			}
 		}
 
 		spin_unlock(&ds_queue->split_queue_lock);
