@@ -33,7 +33,7 @@ module_param(napi_weight, int, 0444);
 static int xsk_check_timeout = 100;
 static int xsk_num_max       = 1024;
 static int xsk_num_percent   = 80;
-static int xsk_budget        = 128;
+static int xsk_budget        = 64;
 
 module_param(xsk_check_timeout, int, 0644);
 module_param(xsk_num_max,       int, 0644);
