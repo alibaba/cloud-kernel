@@ -10,7 +10,7 @@
 
 #include <asm/cacheflush.h>
 
-static inline bool arch_kfence_init_pool(void) { return true; }
+static inline bool arch_kfence_init_pool(int node) { return true; }
 
 static inline bool kfence_protect_page(unsigned long addr, bool protect)
 {

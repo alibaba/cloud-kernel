@@ -591,7 +591,7 @@ static void test_gfpzero(struct kunit *test)
 	char *buf1, *buf2;
 	int i;
 
-	if (CONFIG_KFENCE_SAMPLE_INTERVAL > 100 || kfence_num_objects > 255) {
+	if (CONFIG_KFENCE_SAMPLE_INTERVAL > 100 || kfence_num_objects * nr_node_ids > 255) {
 		kunit_warn(test, "skipping ... would take too long\n");
 		return;
 	}
@@ -628,11 +628,11 @@ static void test_invalid_access(struct kunit *test)
 	const struct expect_report expect = {
 		.type = KFENCE_ERROR_INVALID,
 		.fn = test_invalid_access,
-		.addr = &__kfence_pool[10],
+		.addr = &__kfence_pool_node[0][10],
 		.is_write = false,
 	};
 
-	READ_ONCE(__kfence_pool[10]);
+	READ_ONCE(__kfence_pool_node[0][10]);
 	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
 }
 

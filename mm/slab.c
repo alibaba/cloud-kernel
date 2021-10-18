@@ -3221,7 +3221,7 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid, size_t orig_
 	if (unlikely(!cachep))
 		return NULL;
 
-	ptr = kfence_alloc(cachep, orig_size, flags);
+	ptr = kfence_alloc_node(cachep, orig_size, flags, nodeid);
 	if (unlikely(ptr))
 		goto out_hooks;
 

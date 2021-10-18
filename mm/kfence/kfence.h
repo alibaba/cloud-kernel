@@ -29,6 +29,7 @@
  * probability, where similar constants are used.
  */
 #define KFENCE_CANARY_PATTERN(addr) ((u8)0xaa ^ (u8)((unsigned long)(addr) & 0x7))
+#define virt_to_nid(addr) page_to_nid(virt_to_page((unsigned long)addr))
 
 /* Maximum stack depth for reports. */
 #define KFENCE_STACK_DEPTH 64
@@ -97,7 +98,7 @@ struct kfence_metadata {
 };
 
 extern unsigned long kfence_num_objects;
-extern struct kfence_metadata *kfence_metadata;
+extern struct kfence_metadata **kfence_metadata_node;
 
 /* KFENCE error types for report generation. */
 enum kfence_error_type {
@@ -111,6 +112,6 @@ enum kfence_error_type {
 void kfence_report_error(unsigned long address, bool is_write, struct pt_regs *regs,
 			 const struct kfence_metadata *meta, enum kfence_error_type type);
 
-void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta);
+void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta, int node);
 
 #endif /* MM_KFENCE_KFENCE_H */

@@ -2828,7 +2828,7 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 	if (!s)
 		return NULL;
 
-	object = kfence_alloc(s, orig_size, gfpflags);
+	object = kfence_alloc_node(s, orig_size, gfpflags, node);
 	if (unlikely(object))
 		goto out;
 

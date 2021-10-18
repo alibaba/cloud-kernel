@@ -21,7 +21,7 @@
  */
 #define KFENCE_POOL_SIZE ((CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE)
 extern unsigned long kfence_pool_size;
-extern char *__kfence_pool;
+extern char **__kfence_pool_node;
 
 #ifdef CONFIG_KFENCE_STATIC_KEYS
 #include <linux/static_key.h>
@@ -30,6 +30,22 @@ DECLARE_STATIC_KEY_FALSE(kfence_allocation_key);
 #include <linux/atomic.h>
 extern atomic_t kfence_allocation_gate;
 #endif
+
+/**
+ * is_kfence_address_node() - check if an address belongs to KFENCE pool on given node
+ * @addr: address to check
+ * @node: node to check
+ *
+ * Return: true or false depending on whether the address is within the KFENCE
+ * object range on given node.
+ *
+ * This function is used when you already know the node.
+ */
+static __always_inline bool is_kfence_address_node(const void *addr, const int node)
+{
+	return unlikely((unsigned long)((char *)addr - __kfence_pool_node[node]) <
+			kfence_pool_size && __kfence_pool_node[node]);
+}
 
 /**
  * is_kfence_address() - check if an address belongs to KFENCE pool
@@ -51,13 +67,10 @@ extern atomic_t kfence_allocation_gate;
  */
 static __always_inline bool is_kfence_address(const void *addr)
 {
-	/*
-	 * The __kfence_pool != NULL check is required to deal with the case
-	 * where __kfence_pool == NULL && addr < kfence_pool_size. Keep it in
-	 * the slow-path after the range-check!
-	 */
-	return unlikely((unsigned long)((char *)addr - __kfence_pool) <
-			kfence_pool_size && __kfence_pool);
+	if (unlikely(!virt_addr_valid(addr)))
+		return false;
+
+	return unlikely(is_kfence_address_node(addr, page_to_nid(virt_to_page(addr))));
 }
 
 /**
@@ -96,9 +109,9 @@ void kfence_shutdown_cache(struct kmem_cache *s);
 
 /*
  * Allocate a KFENCE object. Allocators must not call this function directly,
- * use kfence_alloc() instead.
+ * use kfence_alloc() or kfence_alloc_node() instead.
  */
-void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);
+void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags, int node);
 
 /**
  * kfence_alloc() - allocate a KFENCE object with a low probability
@@ -123,7 +136,36 @@ static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp
 #else
 	if (unlikely(!atomic_read(&kfence_allocation_gate)))
 #endif
-		return __kfence_alloc(s, size, flags);
+		return __kfence_alloc(s, size, flags, NUMA_NO_NODE);
+	return NULL;
+}
+
+/**
+ * kfence_alloc_node() - allocate a KFENCE object with a low probability
+ * @s:     struct kmem_cache with object requirements
+ * @size:  exact size of the object to allocate (can be less than @s->size
+ *         e.g. for kmalloc caches)
+ * @flags: GFP flags
+ * @node:  alloc from kfence pool on which node
+ *
+ * Return:
+ * * NULL     - must proceed with allocating as usual,
+ * * non-NULL - pointer to a KFENCE object.
+ *
+ * kfence_alloc_node() should be inserted into the heap allocation fast path,
+ * allowing it to transparently return KFENCE-allocated objects with a low
+ * probability using a static branch (the probability is controlled by the
+ * kfence.sample_interval boot parameter).
+ */
+static __always_inline void *kfence_alloc_node(struct kmem_cache *s, size_t size, gfp_t flags,
+					       int node)
+{
+#ifdef CONFIG_KFENCE_STATIC_KEYS
+	if (static_branch_unlikely(&kfence_allocation_key))
+#else
+	if (unlikely(!atomic_read(&kfence_allocation_gate)))
+#endif
+		return __kfence_alloc(s, size, flags, node);
 	return NULL;
 }
 
@@ -205,11 +247,16 @@ bool __must_check kfence_handle_page_fault(unsigned long addr, bool is_write, st
 
 #else /* CONFIG_KFENCE */
 
+static inline bool is_kfence_address_node(const void *addr, const int node) { return false; }
 static inline bool is_kfence_address(const void *addr) { return false; }
 static inline void kfence_alloc_pool(void) { }
 static inline void kfence_init(void) { }
 static inline void kfence_shutdown_cache(struct kmem_cache *s) { }
 static inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
+static inline void *kfence_alloc_node(struct kmem_cache *s, size_t size, gfp_t flags, int node)
+{
+	return NULL;
+}
 static inline size_t kfence_ksize(const void *addr) { return 0; }
 static inline void *kfence_object_start(const void *addr) { return NULL; }
 static inline void __kfence_free(void *addr) { }

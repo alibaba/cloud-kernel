@@ -52,10 +52,10 @@ config KFENCE_NUM_OBJECTS
 	range 1 10000000
 	default 255
 	help
-	  The number of guarded objects available. For each KFENCE object, 2
-	  pages are required; with one containing the object and two adjacent
-	  ones used as guard pages. May be overridden via boot parameter
-	  "kfence.num_objects".
+	  The number of guarded objects available per numa node. For each
+	  KFENCE object, 2 pages are required; with one containing the object
+	  and two adjacent ones used as guard pages. May be overridden via boot
+	  parameter "kfence.num_objects_pernode".
 
 config KFENCE_STRESS_TEST_FAULTS
 	int "Stress testing of fault handling and error reporting" if EXPERT

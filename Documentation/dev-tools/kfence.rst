@@ -55,6 +55,11 @@ The total memory dedicated to the KFENCE memory pool can be computed as::
 Using the default config, and assuming a page size of 4 KiB, results in
 dedicating 2 MiB to the KFENCE memory pool.
 
+You can change the KFENCE memory pool size by setting ``kfence.num_objects_pernode``
+in boot command line, and the pool size of each node will be computed and updated
+in the same way as above. You can set this value as large as possible, so
+please be careful DO NOT use up all memorys.
+
 Note: On architectures that support huge pages, KFENCE will ensure that the
 pool is using pages of size ``PAGE_SIZE``. This will result in additional page
 tables being allocated.
