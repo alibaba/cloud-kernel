@@ -2736,10 +2736,12 @@ int split_huge_page_to_list(struct page *page, struct list_head *list)
 		}
 		spin_unlock(&ds_queue->split_queue_lock);
 		if (mapping) {
-			if (PageSwapBacked(head))
+			if (PageSwapBacked(head)) {
 				__dec_lruvec_page_state(head, NR_SHMEM_THPS);
-			else
+			} else {
 				__dec_lruvec_page_state(head, NR_FILE_THPS);
+				filemap_nr_thps_dec(mapping);
+			}
 		}
 
 		__split_huge_page(page, list, end, flags);
