@@ -132,8 +132,14 @@ struct kfence_freelist_node {
 	raw_spinlock_t lock;
 };
 
+struct kfence_freelist_cpu {
+	struct list_head freelist;
+	unsigned long count;
+};
+
 struct kfence_freelist {
 	struct kfence_freelist_node *node;
+	struct kfence_freelist_cpu __percpu *cpu;
 };
 static struct kfence_freelist freelist;
 
@@ -308,6 +314,88 @@ static __always_inline void for_each_canary(const struct kfence_metadata *meta, 
 	}
 }
 
+static inline struct kfence_metadata *
+get_free_meta_from_node(struct kfence_freelist_node *kfence_freelist)
+{
+	struct kfence_metadata *object = NULL;
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&kfence_freelist->lock, flags);
+	if (!list_empty(&kfence_freelist->freelist)) {
+		object = list_entry(kfence_freelist->freelist.next, struct kfence_metadata, list);
+		list_del_init(&object->list);
+	}
+	raw_spin_unlock_irqrestore(&kfence_freelist->lock, flags);
+
+	return object;
+}
+
+#define KFENCE_FREELIST_PERCPU_SIZE 100
+
+static struct kfence_metadata *
+get_free_meta_slowpath(struct kfence_freelist_cpu *c,
+		       struct kfence_freelist_node *kfence_freelist)
+{
+	struct kfence_metadata *object = NULL;
+	struct list_head *entry = &kfence_freelist->freelist;
+
+	KFENCE_WARN_ON(!list_empty(&c->freelist));
+
+	raw_spin_lock(&kfence_freelist->lock);
+
+	if (list_empty(&kfence_freelist->freelist))
+		goto out;
+
+	object = list_first_entry(entry, struct kfence_metadata, list);
+	list_del_init(&object->list);
+
+	do {
+		entry = READ_ONCE(entry->next);
+
+		if (entry == &kfence_freelist->freelist) {
+			entry = entry->prev;
+			break;
+		}
+
+		c->count++;
+	} while (c->count < KFENCE_FREELIST_PERCPU_SIZE);
+
+	list_cut_position(&c->freelist, &kfence_freelist->freelist, entry);
+
+out:
+	raw_spin_unlock(&kfence_freelist->lock);
+
+	return object;
+}
+
+static struct kfence_metadata *get_free_meta(int node)
+{
+	unsigned long flags;
+	struct kfence_freelist_cpu *c;
+	struct kfence_freelist_node *kfence_freelist = &freelist.node[node];
+	struct kfence_metadata *object;
+
+	/* If target page not on current node, directly get from its nodelist */
+	if (unlikely(node != numa_node_id()))
+		return get_free_meta_from_node(kfence_freelist);
+
+	local_irq_save(flags);
+	c = get_cpu_ptr(freelist.cpu);
+
+	if (unlikely(!c->count)) {
+		object = get_free_meta_slowpath(c, kfence_freelist);
+	} else {
+		object = list_first_entry(&c->freelist, struct kfence_metadata, list);
+		list_del_init(&object->list);
+		c->count--;
+	}
+
+	put_cpu_ptr(c);
+	local_irq_restore(flags);
+
+	return object;
+}
+
 static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t gfp, int node)
 {
 	struct kfence_metadata *meta = NULL;
@@ -320,12 +408,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 		return NULL;
 
 	/* Try to obtain a free object. */
-	raw_spin_lock_irqsave(&kfence_freelist->lock, flags);
-	if (!list_empty(&kfence_freelist->freelist)) {
-		meta = list_entry(kfence_freelist->freelist.next, struct kfence_metadata, list);
-		list_del_init(&meta->list);
-	}
-	raw_spin_unlock_irqrestore(&kfence_freelist->lock, flags);
+	meta = get_free_meta(node);
 	if (!meta)
 		return NULL;
 
@@ -406,11 +489,63 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	return addr;
 }
 
+static inline void put_free_meta_to_node(struct kfence_metadata *object,
+					 struct kfence_freelist_node *kfence_freelist)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&kfence_freelist->lock, flags);
+	list_add_tail(&object->list, &kfence_freelist->freelist);
+	raw_spin_unlock_irqrestore(&kfence_freelist->lock, flags);
+}
+
+static void put_free_meta_slowpath(struct kfence_freelist_cpu *c,
+				   struct kfence_freelist_node *kfence_freelist)
+{
+	struct list_head *entry = &c->freelist, new_list;
+
+	do {
+		entry = entry->next;
+		c->count--;
+	} while (c->count > KFENCE_FREELIST_PERCPU_SIZE);
+
+	list_cut_position(&new_list, &c->freelist, entry);
+	raw_spin_lock(&kfence_freelist->lock);
+	list_splice_tail(&new_list, &kfence_freelist->freelist);
+	raw_spin_unlock(&kfence_freelist->lock);
+}
+
+static void put_free_meta(struct kfence_metadata *object, int node)
+{
+	unsigned long flags;
+	struct kfence_freelist_cpu *c;
+	struct kfence_freelist_node *kfence_freelist = &freelist.node[node];
+
+	KFENCE_WARN_ON(!list_empty(&object->list));
+
+	/* If meta not on current node, just return it to its own nodelist */
+	if (unlikely(node != numa_node_id())) {
+		put_free_meta_to_node(object, kfence_freelist);
+		return;
+	}
+
+	local_irq_save(flags);
+	c = get_cpu_ptr(freelist.cpu);
+
+	list_add_tail(&object->list, &c->freelist);
+	c->count++;
+
+	if (unlikely(c->count == KFENCE_FREELIST_PERCPU_SIZE * 2))
+		put_free_meta_slowpath(c, kfence_freelist);
+
+	put_cpu_ptr(c);
+	local_irq_restore(flags);
+}
+
 static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool zombie)
 {
 	int node = virt_to_nid(addr);
 	struct kcsan_scoped_access assert_page_exclusive;
-	struct kfence_freelist_node *kfence_freelist = &freelist.node[node];
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&meta->lock, flags);
@@ -460,11 +595,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool z
 
 	kcsan_end_scoped_access(&assert_page_exclusive);
 	if (!zombie) {
-		/* Add it to the tail of the freelist for reuse. */
-		raw_spin_lock_irqsave(&kfence_freelist->lock, flags);
-		KFENCE_WARN_ON(!list_empty(&meta->list));
-		list_add_tail(&meta->list, &kfence_freelist->freelist);
-		raw_spin_unlock_irqrestore(&kfence_freelist->lock, flags);
+		put_free_meta(meta, node);
 
 		atomic_long_dec(&counters[KFENCE_COUNTER_ALLOCATED]);
 		atomic_long_inc(&counters[KFENCE_COUNTER_FREES]);
@@ -772,7 +903,7 @@ void __init kfence_alloc_pool(void)
 
 void __init kfence_init(void)
 {
-	int node;
+	int node, i;
 	phys_addr_t metadata_size = sizeof(struct kfence_metadata) * kfence_num_objects;
 
 	if (!READ_ONCE(kfence_sample_interval))
@@ -780,14 +911,18 @@ void __init kfence_init(void)
 
 	freelist.node = kmalloc_array(nr_node_ids, sizeof(struct kfence_freelist_node),
 				      GFP_KERNEL);
+	freelist.cpu = alloc_percpu(struct kfence_freelist_cpu);
 
-	if (!freelist.node)
+	if (!freelist.node || !freelist.cpu)
 		goto fail;
 
 	for_each_node(node) {
 		INIT_LIST_HEAD(&freelist.node[node].freelist);
 		raw_spin_lock_init(&freelist.node[node].lock);
 	}
+
+	for_each_possible_cpu(i)
+		INIT_LIST_HEAD(&per_cpu_ptr(freelist.cpu, i)->freelist);
 
 	if (!kfence_init_pool()) {
 		pr_err("%s failed on all nodes!\n", __func__);
@@ -822,6 +957,8 @@ fail:
 
 	kfree(freelist.node);
 	freelist.node = NULL;
+	free_percpu(freelist.cpu);
+	freelist.cpu = NULL;
 }
 
 static void kfence_shutdown_cache_node(struct kmem_cache *s, int node)
