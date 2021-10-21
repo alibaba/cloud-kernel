@@ -71,6 +71,7 @@
 #include <linux/padata.h>
 #include <linux/khugepaged.h>
 #include <linux/fault_event.h>
+#include <linux/kfence.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -1275,7 +1276,17 @@ static __always_inline bool free_pages_prepare(struct page *page,
 		page->mapping = NULL;
 	if (memcg_kmem_enabled() && PageKmemcg(page))
 		__memcg_kmem_uncharge_page(page, order);
+	/*
+	 * If debug_pagealloc and kfence enabled at the same time,
+	 * there may be problems at here. check_free_page() will check
+	 * order-0 page, however the order-0 page allocated by kfence is
+	 * marked with PG_reserved.
+	 */
+#if defined(CONFIG_DEBUG_PAGEALLOC) && defined(CONFIG_KFENCE)
+	if (check_free && !is_kfence_address(page_to_virt(page)))
+#else
 	if (check_free)
+#endif
 		bad += check_free_page(page);
 	if (bad)
 		return false;
@@ -3203,6 +3214,9 @@ static void free_unref_page_commit(struct page *page, unsigned long pfn)
 	migratetype = get_pcppage_migratetype(page);
 	__count_vm_event(PGFREE);
 
+	if (kfence_free_page(page))
+		return;
+
 	/*
 	 * We only track unmovable, reclaimable and movable on pcp lists.
 	 * Free ISOLATE pages back to the allocator because they are being
@@ -4994,6 +5008,13 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 
 	gfp_mask &= gfp_allowed_mask;
 	alloc_mask = gfp_mask;
+
+	page = kfence_alloc_page(order, preferred_nid, gfp_mask);
+	if (unlikely(page)) {
+		prep_new_page(page, 0, gfp_mask, alloc_mask);
+		goto out;
+	}
+
 	if (!prepare_alloc_pages(gfp_mask, order, preferred_nid, nodemask, &ac, &alloc_mask, &alloc_flags))
 		return NULL;
 

@@ -31,6 +31,7 @@ DECLARE_STATIC_KEY_FALSE(kfence_allocation_key);
 extern atomic_t kfence_allocation_gate;
 #endif
 DECLARE_STATIC_KEY_FALSE(kfence_skip_interval);
+#define GFP_KFENCE_NOT_ALLOC ((GFP_ZONEMASK & ~__GFP_HIGHMEM) | __GFP_NOKFENCE | __GFP_THISNODE)
 
 /**
  * is_kfence_address_node() - check if an address belongs to KFENCE pool on given node
@@ -113,6 +114,7 @@ void kfence_shutdown_cache(struct kmem_cache *s);
  * use kfence_alloc() or kfence_alloc_node() instead.
  */
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags, int node);
+struct page *__kfence_alloc_page(int node, gfp_t flags);
 
 /**
  * kfence_alloc() - allocate a KFENCE object with a low probability
@@ -171,6 +173,30 @@ static __always_inline void *kfence_alloc_node(struct kmem_cache *s, size_t size
 }
 
 /**
+ * kfence_alloc_page() - allocate a KFENCE page with a low probability
+ * @node:  preferred nid
+ * @flags: GFP flags
+ *
+ * Return:
+ * * NULL     - must proceed with allocating as usual,
+ * * non-NULL - pointer to a KFENCE page.
+ *
+ * the order-0 page version of kfence_alloc().
+ */
+static __always_inline struct page *kfence_alloc_page(unsigned int order, int node, gfp_t flags)
+{
+#ifdef CONFIG_KFENCE_STATIC_KEYS
+	if (static_branch_unlikely(&kfence_allocation_key) && !order &&
+	    !((flags & GFP_KFENCE_NOT_ALLOC) || (flags & GFP_USER) == GFP_USER))
+#else
+	if (unlikely(!atomic_read(&kfence_allocation_gate)) && !order &&
+	    !((flags & GFP_KFENCE_NOT_ALLOC) || (flags & GFP_USER) == GFP_USER))
+#endif
+		return __kfence_alloc_page(node, flags);
+	return NULL;
+}
+
+/**
  * kfence_ksize() - get actual amount of memory allocated for a KFENCE object
  * @addr: pointer to a heap object
  *
@@ -207,6 +233,7 @@ void *kfence_object_start(const void *addr);
  * Release a KFENCE object and mark it as freed.
  */
 void __kfence_free(void *addr);
+void __kfence_free_page(struct page *page, void *addr);
 
 /**
  * kfence_free() - try to release an arbitrary heap object to KFENCE pool
@@ -226,6 +253,28 @@ static __always_inline __must_check bool kfence_free(void *addr)
 	if (!is_kfence_address(addr))
 		return false;
 	__kfence_free(addr);
+	return true;
+}
+
+/**
+ * kfence_free_page() - try to release a page to KFENCE pool
+ * @page:  page to be freed
+ *
+ * Return:
+ * * false - page doesn't belong to KFENCE pool and was ignored,
+ * * true  - page was released to KFENCE pool.
+ *
+ * Release a KFENCE page and mark it as freed. May be called on any page,
+ * even non-KFENCE page. The allocator must check the return value to
+ * determine if it was a KFENCE object or not.
+ */
+static __always_inline __must_check bool kfence_free_page(struct page *page)
+{
+	void *addr = page_to_virt(page);
+
+	if (!is_kfence_address_node(addr, page_to_nid(page)))
+		return false;
+	__kfence_free_page(page, addr);
 	return true;
 }
 
@@ -258,10 +307,15 @@ static inline void *kfence_alloc_node(struct kmem_cache *s, size_t size, gfp_t f
 {
 	return NULL;
 }
+static inline struct page *kfence_alloc_page(unsigned int order, int node, gfp_t flags)
+{
+	return NULL;
+}
 static inline size_t kfence_ksize(const void *addr) { return 0; }
 static inline void *kfence_object_start(const void *addr) { return NULL; }
 static inline void __kfence_free(void *addr) { }
 static inline bool __must_check kfence_free(void *addr) { return false; }
+static inline bool __must_check kfence_free_page(struct page *page) { return false; }
 static inline bool __must_check kfence_handle_page_fault(unsigned long addr, bool is_write,
 							 struct pt_regs *regs)
 {
