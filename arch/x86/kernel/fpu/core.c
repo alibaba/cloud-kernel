@@ -156,6 +156,23 @@ void restore_fpregs_from_fpstate(struct fpstate *fpstate, u64 mask)
 
 	if (use_xsave()) {
 		/*
+		 * Dynamically enabled features are enabled in XCR0, but
+		 * usage requires also that the corresponding bits in XFD
+		 * are cleared.  If the bits are set then using a related
+		 * instruction will raise #NM. This allows to do the
+		 * allocation of the larger FPU buffer lazy from #NM or if
+		 * the task has no permission to kill it which would happen
+		 * via #UD if the feature is disabled in XCR0.
+		 *
+		 * XFD state is following the same life time rules as
+		 * XSTATE and to restore state correctly XFD has to be
+		 * updated before XRSTORS otherwise the component would
+		 * stay in or go into init state even if the bits are set
+		 * in fpstate::regs::xsave::xfeatures.
+		 */
+		xfd_update_state(fpstate);
+
+		/*
 		 * Restoring state always needs to modify all features
 		 * which are in @mask even if the current task cannot use
 		 * extended features.
@@ -241,6 +258,7 @@ int fpu_swap_kvm_fpstate(struct fpu_guest *guest_fpu, bool enter_guest)
 
 	cur_fps = fpu->fpstate;
 
+	/* Includes XFD update */
 	restore_fpregs_from_fpstate(cur_fps, XFEATURE_MASK_FPSTATE);
 
 	fpregs_mark_activate();
