@@ -114,4 +114,8 @@ extern int fpu_swap_kvm_fpstate(struct fpu_guest *gfpu, bool enter_guest);
 extern void fpu_copy_guest_fpstate_to_uabi(struct fpu_guest *gfpu, void *buf, unsigned int size, u32 pkru);
 extern int fpu_copy_uabi_to_guest_fpstate(struct fpu_guest *gfpu, const void *buf, u64 xcr0, u32 *vpkru);
 
+/* prctl */
+struct task_struct;
+extern long fpu_xstate_prctl(struct task_struct *tsk, int option, unsigned long arg2);
+
 #endif /* _ASM_X86_FPU_API_H */
