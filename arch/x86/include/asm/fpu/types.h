@@ -381,6 +381,21 @@ struct fpstate {
 	/* @is_guest:		Indicator for guest state (KVM) */
 	unsigned int		is_guest	: 1;
 
+	/*
+	 * @is_confidential:	Indicator for KVM confidential mode.
+	 *			The FPU registers are restored by the
+	 *			vmentry firmware from encrypted guest
+	 *			memory. On vmexit the FPU registers are
+	 *			saved by firmware to encrypted guest memory
+	 *			and the registers are scrubbed before
+	 *			returning to the host. So there is no
+	 *			content which is worth saving and restoring.
+	 *			The fpstate has to be there so that
+	 *			preemption and softirq FPU usage works
+	 *			without special casing.
+	 */
+	unsigned int		is_confidential	: 1;
+
 	/* @in_use:		State is in use */
 	unsigned int		in_use		: 1;
 
