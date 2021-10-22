@@ -472,8 +472,11 @@ static bool hugepage_vma_check(struct vm_area_struct *vma,
 	if (!(vm_flags & VM_HUGEPAGE) && !khugepaged_always())
 		return false;
 
-	/* Only regular file is valid */
-	if (IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS) && vma->vm_file &&
+	/* Only regular file is valid.
+	 * Enable by 1) hugetext, or 2) explicitly madvise MADV_HUGEPAGE.
+	 */
+	if ((vm_flags & VM_HUGEPAGE) &&
+	    IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS) && vma->vm_file &&
 	    (vm_flags & VM_EXEC)) {
 		struct inode *inode = vma->vm_file->f_inode;
 
