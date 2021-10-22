@@ -470,8 +470,12 @@ static bool hugepage_vma_check(struct vm_area_struct *vma,
 	if (!(vm_flags & VM_HUGEPAGE) && !khugepaged_always())
 		return false;
 
-	/* Read-only file mappings need to be aligned for THP to work. */
-	if (IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS) && vma->vm_file &&
+	/*
+	 * Read-only file mappings need to be aligned for THP to work.
+	 * Enable by 1) hugetext, or 2) explicitly madvise MADV_HUGEPAGE.
+	 */
+	if ((vm_flags & VM_HUGEPAGE) &&
+	    IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS) && vma->vm_file &&
 	    !inode_is_open_for_write(vma->vm_file->f_inode) &&
 	    (vm_flags & VM_EXEC)) {
 		if (!IS_ENABLED(CONFIG_TRANSPARENT_HUGE_PAGECACHE))
