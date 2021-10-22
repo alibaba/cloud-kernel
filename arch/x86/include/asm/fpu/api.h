@@ -141,4 +141,14 @@ extern int fpu_copy_uabi_to_guest_fpstate(struct fpu_guest *gfpu, const void *bu
 struct task_struct;
 extern long fpu_xstate_prctl(struct task_struct *tsk, int option, unsigned long arg2);
 
+static inline void fpstate_set_confidential(struct fpu_guest *gfpu)
+{
+	gfpu->fpstate->is_confidential = true;
+}
+
+static inline bool fpstate_is_confidential(struct fpu_guest *gfpu)
+{
+	return gfpu->fpstate->is_confidential;
+}
+
 #endif /* _ASM_X86_FPU_API_H */

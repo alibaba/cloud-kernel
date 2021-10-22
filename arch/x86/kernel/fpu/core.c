@@ -328,7 +328,7 @@ int fpu_swap_kvm_fpstate(struct fpu_guest *guest_fpu, bool enter_guest)
 	struct fpstate *cur_fps = fpu->fpstate;
 
 	fpregs_lock();
-	if (!test_thread_flag(TIF_NEED_FPU_LOAD))
+	if (!cur_fps->is_confidential && !test_thread_flag(TIF_NEED_FPU_LOAD))
 		save_fpregs_to_fpstate(fpu);
 
 	/* Swap fpstate */
@@ -345,7 +345,8 @@ int fpu_swap_kvm_fpstate(struct fpu_guest *guest_fpu, bool enter_guest)
 	cur_fps = fpu->fpstate;
 
 	/* Includes XFD update */
-	restore_fpregs_from_fpstate(cur_fps, XFEATURE_MASK_FPSTATE);
+	if (!cur_fps->is_confidential)
+		restore_fpregs_from_fpstate(cur_fps, XFEATURE_MASK_FPSTATE);
 
 	fpregs_mark_activate();
 	fpregs_unlock();
