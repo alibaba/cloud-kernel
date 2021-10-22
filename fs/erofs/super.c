@@ -220,12 +220,15 @@ static int erofs_read_superblock(struct super_block *sb)
 
 	sbi = EROFS_SB(sb);
 
-	if (sbi->bootstrap)
+	if (sbi->bootstrap) {
 		mapping = sbi->bootstrap->f_inode->i_mapping;
-	else
+		page = read_cache_page(mapping, 0,
+				(filler_t *)mapping->a_ops->readpage,
+				sbi->bootstrap);
+	} else {
 		mapping = sb->s_bdev->bd_inode->i_mapping;
-
-	page = read_mapping_page(mapping, 0, NULL);
+		page = read_mapping_page(mapping, 0, NULL);
+	}
 	if (IS_ERR(page)) {
 		erofs_err(sb, "cannot read erofs superblock");
 		return PTR_ERR(page);

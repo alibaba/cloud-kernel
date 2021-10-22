@@ -6,6 +6,7 @@
  */
 #include "internal.h"
 #include <linux/prefetch.h>
+#include <linux/sched/mm.h>
 
 #include <trace/events/erofs.h>
 
@@ -37,12 +38,20 @@ struct page *erofs_get_meta_page(struct super_block *sb, erofs_blk_t blkaddr)
 	struct address_space *mapping;
 	struct page *page;
 
-	if (EROFS_SB(sb)->bootstrap)
+	if (EROFS_SB(sb)->bootstrap) {
+		unsigned int            nofs_flag;
+
 		mapping = EROFS_SB(sb)->bootstrap->f_inode->i_mapping;
-	else
+		nofs_flag = memalloc_nofs_save();
+		page = read_cache_page(mapping, blkaddr,
+				(filler_t *)mapping->a_ops->readpage,
+				EROFS_SB(sb)->bootstrap);
+		memalloc_nofs_restore(nofs_flag);
+	} else {
 		mapping = sb->s_bdev->bd_inode->i_mapping;
-	page = read_cache_page_gfp(mapping, blkaddr,
-				   mapping_gfp_constraint(mapping, ~__GFP_FS));
+		page = read_cache_page_gfp(mapping, blkaddr,
+				mapping_gfp_constraint(mapping, ~__GFP_FS));
+	}
 	/* should already be PageUptodate */
 	if (!IS_ERR(page))
 		lock_page(page);
