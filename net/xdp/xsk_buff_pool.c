@@ -91,6 +91,22 @@ out:
 	return NULL;
 }
 
+void xp_unpin_pages(struct page **pgs, u64 npgs)
+{
+	unpin_user_pages_dirty_lock(pgs, npgs, true);
+
+	kvfree(pgs);
+}
+EXPORT_SYMBOL(xp_unpin_pages);
+
+struct page **xp_pgs_delay_unpin(struct xsk_buff_pool *pool, u64 *npgs)
+{
+	*npgs = pool->umem->npgs;
+	pool->umem->delay_unpin = true;
+	return pool->umem->pgs;
+}
+EXPORT_SYMBOL(xp_pgs_delay_unpin);
+
 void xp_set_rxq_info(struct xsk_buff_pool *pool, struct xdp_rxq_info *rxq)
 {
 	u32 i;

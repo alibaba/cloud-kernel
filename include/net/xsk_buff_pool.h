@@ -135,6 +135,9 @@ static inline void xp_dma_sync_for_device(struct xsk_buff_pool *pool,
 	xp_dma_sync_for_device_slow(pool, dma, size);
 }
 
+struct page **xp_pgs_delay_unpin(struct xsk_buff_pool *pool, u64 *npgs);
+void xp_unpin_pages(struct page **pgs, u64 npgs);
+
 /* Masks for xdp_umem_page flags.
  * The low 12-bits of the addr will be 0 since this is the page address, so we
  * can use them for flags.

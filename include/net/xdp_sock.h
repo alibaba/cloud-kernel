@@ -28,6 +28,7 @@ struct xdp_umem {
 	refcount_t users;
 	u8 flags;
 	bool zc;
+	bool delay_unpin;
 	struct page **pgs;
 	int id;
 	struct list_head xsk_dma_list;

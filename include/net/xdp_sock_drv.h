@@ -116,6 +116,16 @@ static inline void xsk_buff_raw_dma_sync_for_device(struct xsk_buff_pool *pool,
 	xp_dma_sync_for_device(pool, dma, size);
 }
 
+static inline struct page **xsk_pool_pgs_delay_unpin(struct xsk_buff_pool *pool, u64 *npgs)
+{
+	return xp_pgs_delay_unpin(pool, npgs);
+}
+
+static inline void xsk_pool_unpin_pages(struct page **pgs, u64 npgs)
+{
+	xp_unpin_pages(pgs, npgs);
+}
+
 #else
 
 static inline void xsk_tx_completed(struct xsk_buff_pool *pool, u32 nb_entries)
@@ -232,6 +242,15 @@ static inline void xsk_buff_dma_sync_for_cpu(struct xdp_buff *xdp, struct xsk_bu
 static inline void xsk_buff_raw_dma_sync_for_device(struct xsk_buff_pool *pool,
 						    dma_addr_t dma,
 						    size_t size)
+{
+}
+
+static inline struct page **xsk_pool_pgs_delay_unpin(struct xdp_umem *umem, u64 *npgs)
+{
+	return NULL;
+}
+
+static inline void xsk_pool_unpin_pages(struct page **pgs, u64 npgs)
 {
 }
 

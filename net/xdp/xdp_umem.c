@@ -60,7 +60,11 @@ static void xdp_umem_release(struct xdp_umem *umem)
 	ida_simple_remove(&umem_ida, umem->id);
 
 	xdp_umem_addr_unmap(umem);
-	xdp_umem_unpin_pages(umem);
+
+	if (umem->delay_unpin)
+		umem->pgs = NULL;
+	else
+		xdp_umem_unpin_pages(umem);
 
 	xdp_umem_unaccount_pages(umem);
 	kfree(umem);
