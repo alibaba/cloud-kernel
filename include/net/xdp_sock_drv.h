@@ -126,6 +126,15 @@ static inline void xsk_pool_unpin_pages(struct page **pgs, u64 npgs)
 	xp_unpin_pages(pgs, npgs);
 }
 
+static inline struct page *xsk_pool_get_page(struct xsk_buff_pool *pool, u64 addr)
+{
+	struct xdp_umem *umem = pool->umem;
+
+	addr = pool->unaligned ? xp_unaligned_add_offset_to_addr(addr) : addr;
+
+	return umem->pgs[addr >> PAGE_SHIFT];
+}
+
 #else
 
 static inline void xsk_tx_completed(struct xsk_buff_pool *pool, u32 nb_entries)
@@ -252,6 +261,11 @@ static inline struct page **xsk_pool_pgs_delay_unpin(struct xdp_umem *umem, u64 
 
 static inline void xsk_pool_unpin_pages(struct page **pgs, u64 npgs)
 {
+}
+
+static inline struct page *xsk_pool_get_page(struct xsk_buff_pool *pool, u64 addr)
+{
+	return NULL;
 }
 
 #endif /* CONFIG_XDP_SOCKETS */
