@@ -826,11 +826,16 @@ static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
 	sample.pid = c2c_sample->pid;
 	sample.tid = c2c_sample->tid;
 	sample.addr = c2c_sample->record.addr;
-	srcp[0] = src;
-	srcp[1].val = c2c_sample->record.tot_lat;
-	srcp[2].val = c2c_sample->record.issue_lat;
-	srcp[3].val = c2c_sample->record.trans_lat;
-	sample.data_src = (u64)srcp;
+	if (arm_spe) {
+		srcp[0] = src;
+		srcp[1].val = c2c_sample->record.tot_lat;
+		srcp[2].val = c2c_sample->record.issue_lat;
+		srcp[3].val = c2c_sample->record.trans_lat;
+		sample.data_src = (u64)srcp;
+	} else
+		sample.data_src = src.val;
+
+
 	sample.phys_addr = c2c_sample->record.phys_addr;
 	sample.period = 1;
 	sample.cpu = c2c_queues->cpu;
