@@ -35,7 +35,7 @@
 #include "arm-spe-decoder/arm-spe-pkt-decoder.h"
 
 #define MAX_TIMESTAMP			(~0ULL)
-#define IN_CACHELINE			(0x3FULL)
+#define IN_CACHELINE			(0x7FULL)
 
 struct arm_spe {
 	struct auxtrace			auxtrace;
@@ -98,9 +98,12 @@ struct arm_spe_queue {
 
 struct spe_c2c_sample {
 	struct rb_node			rb_node;
+	struct spe_c2c_sample		*same_cache;
+	bool				accessed;
 	struct arm_spe_record		record;
 	pid_t				pid;
 	pid_t				tid;
+	pid_t				*tid_arry;
 };
 
 struct spe_c2c_sample_queues {
@@ -427,14 +430,27 @@ static int spe_sample_insert(struct rb_root *root, struct spe_c2c_sample *data)
 	while (*tmp) {
 		struct spe_c2c_sample *this = container_of(*tmp,
 				struct spe_c2c_sample, rb_node);
+		uint64_t data_high = data->record.phys_addr & (uint64_t)~IN_CACHELINE;
+		uint64_t data_low  = data->record.phys_addr & (uint64_t)IN_CACHELINE;
+		uint64_t this_high = this->record.phys_addr & (uint64_t)~IN_CACHELINE;
 
 		parent = *tmp;
-		if (data->record.ts < this->record.ts)
+		if (data_high < this_high)
 			tmp = &((*tmp)->rb_left);
-		else if (data->record.ts > this->record.ts)
+		else if (data_high > this_high)
 			tmp = &((*tmp)->rb_right);
-		else
-			return -1;
+		else {
+			if (!this->tid_arry) {
+				this->tid_arry = zalloc(2 * (1 + IN_CACHELINE) * sizeof(pid_t));
+				this->tid_arry[data_low] = data->tid;
+			} else if (this->tid_arry[data_low] != data->tid)
+				this->tid_arry[(1 + IN_CACHELINE) + data_low] = data->tid;
+
+			data->same_cache = this->same_cache;
+			this->same_cache = data;
+
+			return 0;
+		}
 	}
 
 	/* Add new node and rebalance tree. */
@@ -760,24 +776,40 @@ static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
 	struct perf_sample sample = { .ip = 0, };
 	union perf_mem_data_src src;
 	int ret;
+	if (c2c_sample->accessed)
+		return;
 
+	c2c_sample->accessed = true;
 	memset(&src, 0, sizeof(src));
 
-	src.mem_op  = PERF_MEM_OP_LOAD;
-	src.mem_snoop = PERF_MEM_SNOOP_HITM;
+	if (c2c_sample->record.is_ld) {
+		src.mem_op  = PERF_MEM_OP_LOAD;
 
-	if (c2c_sample->record.is_tlb_miss)
-		src.mem_dtlb = PERF_MEM_TLB_MISS;
-	else
-		src.mem_dtlb = PERF_MEM_TLB_HIT;
-
-	if (speq->spe->arm_spe_synth_opts.c2c_remote) {
-		if (c2c_sample->record.is_remote)
-			src.mem_lvl = PERF_MEM_LVL_REM_CCE2;
+		if (c2c_sample->record.is_tlb_miss)
+			src.mem_dtlb = PERF_MEM_TLB_MISS;
 		else
-			return;
+			src.mem_dtlb = PERF_MEM_TLB_HIT;
+
+		if (c2c_sample->record.is_remote) {
+			src.mem_snoop = PERF_MEM_SNOOP_HITM;
+			src.mem_lvl = PERF_MEM_LVL_REM_CCE2;
+		} else {
+			if (c2c_sample->record.is_llc_miss) {
+				src.mem_snoop = PERF_MEM_SNOOP_HITM;
+				src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L3;
+			} else if (c2c_sample->record.is_llc_access) {
+				src.mem_snoop = PERF_MEM_SNOOP_HIT;
+				src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L3;
+			}
+		}
+	} else if (c2c_sample->record.is_st) {
+		src.mem_op  = PERF_MEM_OP_STORE;
+		if (c2c_sample->record.is_l1d_miss)
+			src.mem_lvl = PERF_MEM_LVL_MISS | PERF_MEM_LVL_L1;
+		else
+			src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L1;
 	} else
-		src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L3;
+		return;
 
 	sample.ip = c2c_sample->record.from_ip;
 	sample.cpumode = arm_spe_cpumode(speq->spe, sample.ip);
@@ -798,42 +830,98 @@ static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
 		pr_err("ARM SPE: failed to deliver event, error %d\n", ret);
 }
 
+static struct rb_node*
+find_false_sharing(uint64_t phys_addr, pid_t tid, struct rb_node *root)
+{
+	struct spe_c2c_sample *sample;
+	unsigned int i;
+
+	if (!root)
+		return NULL;
+	sample = rb_entry(root, struct spe_c2c_sample, rb_node);
+
+	if (sample->record.phys_addr != phys_addr && sample->tid != tid)
+		return root;
+
+	if (!sample->tid_arry)
+		return NULL;
+
+	for (i = 0; i <= IN_CACHELINE; i++) {
+		if ((phys_addr & IN_CACHELINE) == i)
+			continue;
+		if (sample->tid_arry[1 + IN_CACHELINE + i])
+			return root;
+		if (sample->tid_arry[i] != tid)
+			return root;
+	}
+	return NULL;
+}
+
+static struct rb_node*
+same_cacheline(uint64_t phys_addr, pid_t tid, struct rb_node *root)
+{
+	struct spe_c2c_sample *sample;
+	uint64_t addr, addr_high, phys_addr_high;
+
+	if (!root)
+		return NULL;
+
+	sample = rb_entry(root, struct spe_c2c_sample, rb_node);
+	addr = sample->record.phys_addr;
+	addr_high = addr & (uint64_t)~IN_CACHELINE;
+	phys_addr_high = phys_addr & (uint64_t)~IN_CACHELINE;
+
+	if (addr_high == phys_addr_high)
+		return root;
+
+	if (addr_high < phys_addr_high)
+		return same_cacheline(phys_addr, tid, root->rb_right);
+
+	return same_cacheline(phys_addr, tid, root->rb_left);
+
+}
+
 static void arm_spe_c2c_get_samples(void *arg)
 {
 	struct rb_root *listA = ((struct spe_c2c_compare_lists *)arg)->listA;
 	struct rb_root *listB = ((struct spe_c2c_compare_lists *)arg)->listB;
 	struct spe_c2c_sample_queues *queues = ((struct spe_c2c_compare_lists *)arg)->queues;
-	struct spe_c2c_sample_queues *oppoqs = ((struct spe_c2c_compare_lists *)arg)->oppoqs;
-	struct arm_spe_queue *speq = queues->speq;
-	struct rb_node *nodeA, *nodeB;
-	struct spe_c2c_sample *sampleA, *sampleB;
-	bool tshare = speq->spe->arm_spe_synth_opts.c2c_tshare;
-	uint64_t xor;
+	struct rb_node *nodeB, *nodeA;
+	struct spe_c2c_sample *sampleA;
+	uint64_t sampleA_paddr;
+
+	if (!listB)
+		return;
 
 	for (nodeA = rb_first(listA); nodeA; nodeA = rb_next(nodeA)) {
-		for (nodeB = rb_first(listB); nodeB; nodeB = rb_next(nodeB)) {
-			sampleA = rb_entry(nodeA, struct spe_c2c_sample, rb_node);
-			sampleB = rb_entry(nodeB, struct spe_c2c_sample, rb_node);
+		sampleA = rb_entry(nodeA, struct spe_c2c_sample, rb_node);
+		sampleA_paddr = sampleA->record.phys_addr;
+		if (sampleA->accessed)
+			continue;
 
-			xor = sampleA->record.phys_addr ^ sampleB->record.phys_addr;
-			if (!(xor & (uint64_t)~IN_CACHELINE)
-					&& (tshare || (xor & IN_CACHELINE))
-					&& (sampleA->tid != sampleB->tid)) {
+		nodeB = same_cacheline(sampleA_paddr, sampleA->tid, listB->rb_node);
+		if (nodeB) {
+			if (find_false_sharing(sampleA_paddr, sampleA->tid, nodeB)) {
 				pthread_mutex_lock(&mut);
 				arm_spe_c2c_sample(queues, sampleA);
-				arm_spe_c2c_sample(oppoqs, sampleB);
 				pthread_mutex_unlock(&mut);
-				break;
 			}
 
+			for (sampleA = sampleA->same_cache; sampleA; sampleA = sampleA->same_cache)
+				if (find_false_sharing(sampleA_paddr, sampleA->tid, nodeB)) {
+					pthread_mutex_lock(&mut);
+					arm_spe_c2c_sample(queues, sampleA);
+					pthread_mutex_unlock(&mut);
+				}
 		}
+
 	}
 }
 
 static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
 {
 	int i, j, k, ret, size;
-	int store = spe->arm_spe_synth_opts.c2c_store ? 1 : 0;
+	int store = spe->arm_spe_synth_opts.c2c_store ? 2 : 0;
 	pthread_t *c2c_threads;
 	struct spe_c2c_compare_lists *c2c_lists;
 
@@ -887,6 +975,17 @@ static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
 						(void *)&c2c_lists[k]);
 				if (ret) {
 					pr_info("ARM SPE: c2c process thread[st->st] create failed! ret=%d\n", ret);
+					return ret;
+				}
+				k++;
+				c2c_lists[k].listA = &(spe_c2c_sample_list[j].st_list);
+				c2c_lists[k].listB = &(spe_c2c_sample_list[i].st_list);
+				c2c_lists[k].queues = &spe_c2c_sample_list[j];
+				c2c_lists[k].oppoqs = &spe_c2c_sample_list[i];
+				ret = pthread_create(&c2c_threads[k], NULL,
+					(void *)arm_spe_c2c_get_samples, (void *)&c2c_lists[k]);
+				if (ret) {
+					pr_info("ARM SPE: c2c process store failed! ret=%d\n", ret);
 					return ret;
 				}
 			}

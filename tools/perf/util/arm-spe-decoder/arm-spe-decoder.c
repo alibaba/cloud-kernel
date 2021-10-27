@@ -217,8 +217,10 @@ static int arm_spe_read_record(struct arm_spe_decoder *decoder)
 			}
 
 			if ((idx == 2 || idx == 4 || idx == 8) &&
-					(payload & BIT(EV_LLC_ACCESS)))
+					(payload & BIT(EV_LLC_ACCESS))) {
 				decoder->record.type |= ARM_SPE_LLC_ACCESS;
+				decoder->record.is_llc_access = true;
+			}
 
 			if ((idx == 2 || idx == 4 || idx == 8) &&
 					(payload & BIT(EV_REMOTE_ACCESS))) {
