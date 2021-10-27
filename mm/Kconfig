@@ -891,4 +891,16 @@ config ARCH_HAS_HUGEPD
 config MAPPING_DIRTY_HELPERS
         bool
 
+config DUPTEXT
+	bool "Enable NUMA text replicas"
+	depends on NUMA
+	default n
+	help
+	  This creates page replicas for only .text on NUMA nodes, when
+	  remote access happens, instead of page migration. This supports
+	  normal page and file THP, and provides global and per-memcg switch
+	  for administrator to control.
+
+	  If unsure, say N.
+
 endmenu

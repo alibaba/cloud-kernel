@@ -139,6 +139,9 @@ enum pageflags {
 #ifdef CONFIG_64BIT
 	PG_arch_2,
 #endif
+#ifdef CONFIG_DUPTEXT
+	PG_dup,			/* Page has NUMA replicas */
+#endif
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
@@ -451,6 +454,11 @@ PAGEFLAG(Idle, idle, PF_ANY)
  * any possible races on the setting or clearing of the bit.
  */
 __PAGEFLAG(Reported, reported, PF_NO_COMPOUND)
+
+#ifdef CONFIG_DUPTEXT
+/* PageDup() is used to track page that has NUMA replicas. */
+PAGEFLAG(Dup, dup, PF_HEAD)
+#endif
 
 /*
  * On an anonymous page mapped into a user virtual memory area,
@@ -822,6 +830,12 @@ static inline void ClearPageSlabPfmemalloc(struct page *page)
 #define __PG_MLOCKED		0
 #endif
 
+#ifdef CONFIG_DUPTEXT
+#define __PG_DUP		(1UL << PG_dup)
+#else
+#define __PG_DUP		0
+#endif
+
 /*
  * Flags checked when a page is freed.  Pages being freed should not have
  * these flags set.  It they are, there is a problem.
@@ -831,7 +845,8 @@ static inline void ClearPageSlabPfmemalloc(struct page *page)
 	 1UL << PG_private	| 1UL << PG_private_2	|	\
 	 1UL << PG_writeback	| 1UL << PG_reserved	|	\
 	 1UL << PG_slab		| 1UL << PG_active 	|	\
-	 1UL << PG_unevictable	| __PG_MLOCKED)
+	 1UL << PG_unevictable	| __PG_MLOCKED		|	\
+	 __PG_DUP)
 
 /*
  * Flags checked when a page is prepped for return by the page allocator.
