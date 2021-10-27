@@ -19,11 +19,27 @@ static const char * const spe_c2c_usage[] = {
 	NULL
 };
 
+static const char * const spe_c2c_record_usage[] = {
+	"perf spe-c2c record",
+	NULL
+};
+
+static const char * const spe_c2c_report_usage[] = {
+	"perf spe-c2c report",
+	NULL
+};
+
 static int perf_spe_c2c__record(int argc, const char **argv)
 {
 	int rec_argc, i = 0, j;
 	const char **rec_argv;
 	int ret;
+	bool all_cpus = false;
+	struct option options[] = {
+	OPT_BOOLEAN('a', "all-cpus", &all_cpus,
+			    "system-wide collection from all CPUs"),
+	OPT_END()
+	};
 
 	rec_argc = argc + 5; /* max number of arguments */
 	rec_argv = calloc(rec_argc + 1, sizeof(char *));
@@ -39,6 +55,8 @@ static int perf_spe_c2c__record(int argc, const char **argv)
 	for (j = 1; j < argc; j++)
 		rec_argv[i++] = argv[j];
 
+	argc = parse_options(argc, argv, options, spe_c2c_record_usage,
+			     PARSE_OPT_KEEP_UNKNOWN);
 	ret = cmd_record(i, rec_argv);
 	free(rec_argv);
 	return ret;
@@ -50,6 +68,10 @@ static int perf_spe_c2c__report(int argc, const char **argv)
 	const char **rep_argv;
 	int ret;
 
+	struct option options[] = {
+	OPT_END()
+	};
+
 	rep_argc = argc + 5; /* max number of arguments */
 	rep_argv = calloc(rep_argc + 1, sizeof(char *));
 	if (!rep_argv)
@@ -60,6 +82,8 @@ static int perf_spe_c2c__report(int argc, const char **argv)
 
 	rep_argv[i++] = "--spe=s";
 
+	argc = parse_options(argc, argv, options, spe_c2c_report_usage,
+			     PARSE_OPT_KEEP_UNKNOWN);
 	ret = perf_c2c__report(i, rep_argv);
 	free(rep_argv);
 	return ret;
