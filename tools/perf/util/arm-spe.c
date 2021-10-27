@@ -99,6 +99,8 @@ struct arm_spe_queue {
 struct spe_c2c_sample {
 	struct rb_node			rb_node;
 	struct spe_c2c_sample		*same_cache;
+	struct spe_c2c_sample		*false_share_next;
+	pthread_mutex_t			mut;
 	bool				accessed;
 	struct arm_spe_record		record;
 	pid_t				pid;
@@ -122,6 +124,8 @@ struct spe_c2c_compare_lists {
 	struct rb_root			*listB;
 	struct spe_c2c_sample_queues	*queues;
 	struct spe_c2c_sample_queues	*oppoqs;	/* the oppo queues */
+	struct spe_c2c_sample		*false_share;
+	uint64_t			num;
 };
 
 #define SPE_C2C_SAMPLE_Q_MAX		128
@@ -767,8 +771,6 @@ static int arm_spe_process_queues(struct arm_spe *spe, u64 timestamp)
 	return 0;
 }
 
-pthread_mutex_t mut;
-
 static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
 		struct spe_c2c_sample *c2c_sample)
 {
@@ -884,38 +886,61 @@ same_cacheline(uint64_t phys_addr, pid_t tid, struct rb_node *root)
 
 static void arm_spe_c2c_get_samples(void *arg)
 {
+	struct spe_c2c_compare_lists *list = arg;
 	struct rb_root *listA = ((struct spe_c2c_compare_lists *)arg)->listA;
 	struct rb_root *listB = ((struct spe_c2c_compare_lists *)arg)->listB;
-	struct spe_c2c_sample_queues *queues = ((struct spe_c2c_compare_lists *)arg)->queues;
 	struct rb_node *nodeB, *nodeA;
-	struct spe_c2c_sample *sampleA;
+	struct spe_c2c_sample *sampleA, *sampleB, *sample;
 	uint64_t sampleA_paddr;
 
-	if (!listB)
+	if (!listB) {
+		ui_progress__update(&prog, 1);
 		return;
+	}
 
 	for (nodeA = rb_first(listA); nodeA; nodeA = rb_next(nodeA)) {
 		sampleA = rb_entry(nodeA, struct spe_c2c_sample, rb_node);
 		sampleA_paddr = sampleA->record.phys_addr;
-		if (sampleA->accessed)
+		if (sampleA->false_share_next)
 			continue;
 
 		nodeB = same_cacheline(sampleA_paddr, sampleA->tid, listB->rb_node);
 		if (nodeB) {
-			if (find_false_sharing(sampleA_paddr, sampleA->tid, nodeB)) {
-				pthread_mutex_lock(&mut);
-				arm_spe_c2c_sample(queues, sampleA);
-				pthread_mutex_unlock(&mut);
+			bool found = false;
+
+			for (sample = sampleA; sample; sample = sample->same_cache) {
+				sampleA_paddr = sample->record.phys_addr;
+				if (find_false_sharing(sampleA_paddr, sample->tid, nodeB)) {
+					found = true;
+					break;
+				}
 			}
 
-			for (sampleA = sampleA->same_cache; sampleA; sampleA = sampleA->same_cache)
-				if (find_false_sharing(sampleA_paddr, sampleA->tid, nodeB)) {
-					pthread_mutex_lock(&mut);
-					arm_spe_c2c_sample(queues, sampleA);
-					pthread_mutex_unlock(&mut);
+			if (found && !pthread_mutex_trylock(&sampleA->mut)) {
+				if (!sampleA->false_share_next) {
+					sample = sampleA;
+					for (; sample; sample = sample->same_cache) {
+						sample->false_share_next = list->false_share;
+						list->false_share = sample;
+						list->num++;
+					}
 				}
-		}
+				pthread_mutex_unlock(&sampleA->mut);
+			}
 
+			sampleB = rb_entry(nodeB, struct spe_c2c_sample, rb_node);
+			if (found && !pthread_mutex_trylock(&sampleB->mut)) {
+				if (!sampleB->false_share_next) {
+					sample = sampleB;
+					for (; sample; sample = sample->same_cache) {
+						sample->false_share_next = list->false_share;
+						list->false_share = sample;
+						list->num++;
+					}
+				}
+				pthread_mutex_unlock(&sampleB->mut);
+			}
+		}
 	}
 	ui_progress__update(&prog, 1);
 }
@@ -923,6 +948,7 @@ static void arm_spe_c2c_get_samples(void *arg)
 static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
 {
 	int i, j, k, ret, size;
+	uint64_t sum = 0;
 	int store = spe->arm_spe_synth_opts.c2c_store ? 2 : 0;
 	pthread_t *c2c_threads;
 	struct spe_c2c_compare_lists *c2c_lists;
@@ -1002,6 +1028,20 @@ static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
 	}
 
 	ui_progress__finish();
+	for (i = 0; i < size; i++)
+		sum += c2c_lists[i].num;
+
+	ui_progress__init(&prog, sum, "Resolving cacheline contention...");
+	for (i = 0; i < size; i++) {
+		struct spe_c2c_sample *sample = c2c_lists[i].false_share;
+
+		for (; sample; sample = sample->false_share_next) {
+			arm_spe_c2c_sample(c2c_lists[i].queues, sample);
+			ui_progress__update(&prog, 1);
+		}
+	}
+	ui_progress__finish();
+
 	free(c2c_threads);
 	free(c2c_lists);
 
