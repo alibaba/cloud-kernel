@@ -43,6 +43,27 @@ static int perf_spe_c2c__record(int argc, const char **argv)
 	return ret;
 }
 
+static int perf_spe_c2c__report(int argc, const char **argv)
+{
+	int rep_argc, i = 0;
+	const char **rep_argv;
+	int ret;
+
+	rep_argc = argc + 5; /* max number of arguments */
+	rep_argv = calloc(rep_argc + 1, sizeof(char *));
+	if (!rep_argv)
+		return -1;
+
+	for (i = 0; i < argc; i++)
+		rep_argv[i] = argv[i];
+
+	rep_argv[i++] = "--spe=s";
+
+	ret = perf_c2c__report(i, rep_argv);
+	free(rep_argv);
+	return ret;
+}
+
 int cmd_spe_c2c(int argc, const char **argv)
 {
 	argc = parse_options(argc, argv, spe_c2c_options, spe_c2c_usage,
@@ -55,7 +76,7 @@ int cmd_spe_c2c(int argc, const char **argv)
 		return perf_spe_c2c__record(argc, argv);
 	else {
 		if (!strncmp(argv[0], "rep", 3))
-			return perf_c2c__report(argc, argv);
+			return perf_spe_c2c__report(argc, argv);
 		usage_with_options(spe_c2c_usage, spe_c2c_options);
 	}
 

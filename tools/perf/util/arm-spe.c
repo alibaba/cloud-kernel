@@ -127,6 +127,7 @@ struct spe_c2c_compare_lists {
 #define SPE_C2C_SAMPLE_Q_MAX		128
 
 int spe_c2c_q_num;
+static struct ui_progress prog;
 
 struct spe_c2c_sample_queues spe_c2c_sample_list[SPE_C2C_SAMPLE_Q_MAX];
 
@@ -916,6 +917,7 @@ static void arm_spe_c2c_get_samples(void *arg)
 		}
 
 	}
+	ui_progress__update(&prog, 1);
 }
 
 static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
@@ -938,8 +940,9 @@ static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
 
 	c2c_threads = (pthread_t *)zalloc(size * sizeof(pthread_t));
 	c2c_lists = (struct spe_c2c_compare_lists *)zalloc(size *
-		sizeof(struct spe_c2c_compare_lists));
+					sizeof(struct spe_c2c_compare_lists));
 
+	ui_progress__init(&prog, size, "Finding false sharing cacheline...");
 	for (i = 0; i < spe_c2c_q_num; i++) {
 		for (j = i + 1; j < spe_c2c_q_num; j++) {
 			c2c_lists[k].listA = &(spe_c2c_sample_list[i].ld_list);
@@ -998,6 +1001,7 @@ static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
 		BUG_ON(ret);
 	}
 
+	ui_progress__finish();
 	free(c2c_threads);
 	free(c2c_lists);
 

@@ -96,6 +96,7 @@ struct perf_c2c {
 	bool			 stats_only;
 	bool			 symbol_full;
 	bool			 stitch_lbr;
+	bool			 arm_spe;
 
 	/* HITM shared clines stats */
 	struct c2c_stats	hitm_stats;
@@ -229,6 +230,10 @@ static void c2c_he__set_node(struct c2c_hist_entry *c2c_he,
 	}
 
 	node = mem2node__node(&c2c.mem2node, sample->phys_addr);
+
+	if (c2c.arm_spe && node < 0)
+		return;
+
 	if (WARN_ONCE(node < 0, "WARNING: failed to find node\n"))
 		return;
 
@@ -2739,6 +2744,9 @@ int perf_c2c__report(int argc, const char **argv)
 
 	if (c2c.stats_only)
 		c2c.use_stdio = true;
+
+	if (arm_spe_synth_opts.set)
+		c2c.arm_spe = true;
 
 	if (!input_name || !strlen(input_name))
 		input_name = "perf.data";
