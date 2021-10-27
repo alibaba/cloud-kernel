@@ -77,5 +77,5 @@ struct symbol_conf {
 };
 
 extern struct symbol_conf symbol_conf;
-
+extern bool arm_spe;
 #endif // __PERF_SYMBOL_CONF

@@ -180,6 +180,19 @@ static int arm_spe_read_record(struct arm_spe_decoder *decoder)
 			}
 			break;
 		case ARM_SPE_COUNTER:
+			switch (idx) {
+			case 0:
+				decoder->record.tot_lat = payload;
+				break;
+			case 1:
+				decoder->record.issue_lat = payload;
+				break;
+			case 2:
+				decoder->record.trans_lat = payload;
+				break;
+			default:
+				break;
+			}
 			break;
 		case ARM_SPE_CONTEXT:
 			break;

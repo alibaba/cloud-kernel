@@ -60,6 +60,9 @@ struct arm_spe_record {
 	u64 addr;
 	u64 phys_addr;
 	u64 timestamp;
+	uint64_t tot_lat;
+	uint64_t issue_lat;
+	uint64_t trans_lat;
 };
 
 struct arm_spe_insn;

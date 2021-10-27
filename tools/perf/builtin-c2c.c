@@ -734,6 +734,48 @@ static uint64_t total_loads(struct c2c_stats *stats)
 }
 
 static int
+trans_lat_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	uint64_t tot_recs;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	tot_recs = c2c_he->stats.issue_lat;
+
+	return scnprintf(hpp->buf, hpp->size, "%*" PRIu64, width, tot_recs);
+}
+
+static int
+issue_lat_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	uint64_t tot_recs;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	tot_recs = c2c_he->stats.trans_lat;
+
+	return scnprintf(hpp->buf, hpp->size, "%*" PRIu64, width, tot_recs);
+}
+
+static int
+tot_lat_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	uint64_t tot_recs;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	tot_recs = c2c_he->stats.tot_lat;
+
+	return scnprintf(hpp->buf, hpp->size, "%*" PRIu64, width, tot_recs);
+}
+
+static int
 tot_loads_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
 		struct hist_entry *he)
 {
@@ -1245,6 +1287,30 @@ cl_idx_empty_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
 		},			\
 	}
 
+static struct c2c_dimension dim_dcacheline_spe = {
+	.header		= HEADER_BOTH("--- Cacheline ----", "Address"),
+	.name		= "spe_dcacheline",
+	.cmp		= dcacheline_cmp,
+	.entry		= dcacheline_entry,
+	.width		= 18,
+};
+
+static struct c2c_dimension dim_load_spe = {
+	.header		= HEADER_LOW("Loads"),
+	.name		= "spe_loads",
+	.cmp		= tot_loads_cmp,
+	.entry		= tot_loads_entry,
+	.width		= 7,
+};
+
+static struct c2c_dimension dim_store_spe = {
+	.header		= HEADER_LOW("Stores"),
+	.name		= "spe_stores",
+	.cmp		= store_cmp,
+	.entry		= store_entry,
+	.width		= 7,
+};
+
 static struct c2c_dimension dim_dcacheline = {
 	.header		= HEADER_SPAN("--- Cacheline ----", "Address", 2),
 	.name		= "dcacheline",
@@ -1270,6 +1336,14 @@ static struct c2c_dimension dim_dcacheline_count = {
 };
 
 static struct c2c_header header_offset_tui = HEADER_SPAN("-----", "Off", 2);
+
+static struct c2c_dimension dim_offset_spe = {
+	.header		= HEADER_LOW("Offset"),
+	.name		= "spe_offset",
+	.cmp		= offset_cmp,
+	.entry		= offset_entry,
+	.width		= 7,
+};
 
 static struct c2c_dimension dim_offset = {
 	.header		= HEADER_SPAN("--- Data address -", "Offset", 2),
@@ -1375,6 +1449,14 @@ static struct c2c_dimension dim_cl_stores_l1miss = {
 	.width		= 7,
 };
 
+static struct c2c_dimension dim_ld_l1hit_spe = {
+	.header		= HEADER_SPAN("-- Core Load Hit --", "L1", 2),
+	.name		= "spe_ld_l1hit",
+	.cmp		= NULL,
+	.entry		= ld_l1hit_entry,
+	.width		= 7,
+};
+
 static struct c2c_dimension dim_ld_fbhit = {
 	.header		= HEADER_SPAN("----- Core Load Hit -----", "FB", 2),
 	.name		= "ld_fbhit",
@@ -1415,12 +1497,44 @@ static struct c2c_dimension dim_ld_rmthit = {
 	.width		= 8,
 };
 
+static struct c2c_dimension dim_tot_recs_spe = {
+	.header		= HEADER_SPAN("---------- Total -----------", "Records", 2),
+	.name		= "spe_recs",
+	.cmp		= tot_recs_cmp,
+	.entry		= tot_recs_entry,
+	.width		= 10,
+};
+
 static struct c2c_dimension dim_tot_recs = {
 	.header		= HEADER_BOTH("Total", "records"),
 	.name		= "tot_recs",
 	.cmp		= tot_recs_cmp,
 	.entry		= tot_recs_entry,
 	.width		= 7,
+};
+
+static struct c2c_dimension dim_tot_lat_spe = {
+	.header		= HEADER_SPAN("---------- Latency (cycles) ----------", "Total", 2),
+	.name		= "tot_lat",
+	.cmp		= NULL,
+	.entry		= tot_lat_entry,
+	.width		= 12,
+};
+
+static struct c2c_dimension dim_trans_lat_spe = {
+	.header		= HEADER_SPAN_LOW("Translation"),
+	.name		= "trans_lat",
+	.cmp		= NULL,
+	.entry		= trans_lat_entry,
+	.width		= 11,
+};
+
+static struct c2c_dimension dim_issue_lat_spe = {
+	.header		= HEADER_SPAN_LOW("Issue"),
+	.name		= "issue_lat",
+	.cmp		= NULL,
+	.entry		= issue_lat_entry,
+	.width		= 11,
 };
 
 static struct c2c_dimension dim_tot_loads = {
@@ -1600,7 +1714,11 @@ static struct c2c_dimension *dimensions[] = {
 	&dim_dcacheline,
 	&dim_dcacheline_node,
 	&dim_dcacheline_count,
+	&dim_dcacheline_spe,
+	&dim_load_spe,
+	&dim_store_spe,
 	&dim_offset,
+	&dim_offset_spe,
 	&dim_offset_node,
 	&dim_iaddr,
 	&dim_tot_hitm,
@@ -1615,11 +1733,16 @@ static struct c2c_dimension *dimensions[] = {
 	&dim_cl_stores_l1miss,
 	&dim_ld_fbhit,
 	&dim_ld_l1hit,
+	&dim_ld_l1hit_spe,
 	&dim_ld_l2hit,
 	&dim_ld_llchit,
 	&dim_ld_rmthit,
 	&dim_tot_recs,
+	&dim_tot_recs_spe,
 	&dim_tot_loads,
+	&dim_issue_lat_spe,
+	&dim_trans_lat_spe,
+	&dim_tot_lat_spe,
 	&dim_percent_hitm,
 	&dim_percent_rmt_hitm,
 	&dim_percent_lcl_hitm,
@@ -2653,6 +2776,25 @@ static int build_cl_output(char *cl_sort, bool no_source)
 		goto err;
 	}
 
+	if (c2c.arm_spe && asprintf(&c2c.cl_output,
+		"%s%s%s%s%s%s%s%s%s%s",
+		c2c.use_stdio ? "cl_num_empty," : "",
+		"percent_rmt_hitm,"
+		"percent_lcl_hitm,"
+		"spe_offset,",
+		add_pid   ? "pid," : "",
+		add_tid   ? "tid," : "",
+		add_iaddr ? "iaddr," : "",
+		"tot_recs,"
+		"cpucnt,",
+		add_sym ? "symbol," : "",
+		add_dso ? "dso," : "",
+		add_src ? "cl_srcline," : "",
+		"node") < 0) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
 	c2c.show_src = add_src;
 err:
 	free(buf);
@@ -2834,6 +2976,22 @@ int perf_c2c__report(int argc, const char **argv)
 			c2c.display == DISPLAY_TOT ? "tot_hitm" :
 			c2c.display == DISPLAY_LCL ? "lcl_hitm" : "rmt_hitm"
 			);
+
+	if (c2c.arm_spe) {
+		c2c_hists__reinit(&c2c.hists,
+				"cl_idx,"
+				"spe_dcacheline,"
+				"spe_recs,"
+				"spe_loads,"
+				"spe_stores,"
+				"percent_hitm,"
+				"tot_hitm,lcl_hitm,rmt_hitm,"
+				"tot_lat,issue_lat,trans_lat,"
+				"spe_ld_l1hit,ld_l2hit",
+				c2c.display == DISPLAY_TOT ? "tot_hitm" :
+				c2c.display == DISPLAY_LCL ? "lcl_hitm" : "rmt_hitm"
+				);
+	}
 
 	ui_progress__init(&prog, c2c.hists.hists.nr_entries, "Sorting...");
 

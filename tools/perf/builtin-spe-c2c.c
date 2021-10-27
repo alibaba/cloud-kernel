@@ -9,6 +9,7 @@
 #include "builtin.h"
 #include <subcmd/parse-options.h>
 
+bool arm_spe;
 static const struct option spe_c2c_options[] = {
 	OPT_END()
 };
@@ -71,6 +72,8 @@ int cmd_spe_c2c(int argc, const char **argv)
 
 	if (!argc)
 		usage_with_options(spe_c2c_usage, spe_c2c_options);
+
+	arm_spe = true;
 
 	if (!strncmp(argv[0], "rec", 3))
 		return perf_spe_c2c__record(argc, argv);
