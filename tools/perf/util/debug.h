@@ -6,6 +6,11 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <linux/compiler.h>
+#include "event.h"
+#include "../ui/helpline.h"
+#include "../ui/progress.h"
+#include "../ui/util.h"
+
 
 extern int verbose;
 extern int debug_peo_args;

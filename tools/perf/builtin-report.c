@@ -1104,6 +1104,7 @@ int cmd_report(int argc, const char **argv)
 {
 	struct perf_session *session;
 	struct itrace_synth_opts itrace_synth_opts = { .set = 0, };
+	struct arm_spe_synth_opts arm_spe_synth_opts = { .set = 0, };
 	struct stat st;
 	bool has_br_stack = false;
 	int branch_mode = -1;
@@ -1275,6 +1276,9 @@ int cmd_report(int argc, const char **argv)
 	OPT_CALLBACK_OPTARG(0, "itrace", &itrace_synth_opts, NULL, "opts",
 			    "Instruction Tracing options\n" ITRACE_HELP,
 			    itrace_parse_synth_opts),
+	OPT_CALLBACK_OPTARG(0, "spe", &arm_spe_synth_opts, NULL, "spe opts",
+			    "ARM SPE Tracing options",
+			    arm_spe_parse_synth_opts),
 	OPT_BOOLEAN(0, "full-source-path", &srcline_full_filename,
 			"Show full source file name path for source lines"),
 	OPT_BOOLEAN(0, "show-ref-call-graph", &symbol_conf.show_ref_callgraph,
@@ -1397,6 +1401,7 @@ repeat:
 	}
 
 	session->itrace_synth_opts = &itrace_synth_opts;
+	session->arm_spe_synth_opts = &arm_spe_synth_opts;
 
 	report.session = session;
 

@@ -11,6 +11,7 @@
 #include <linux/bitops.h>
 #include <linux/kernel.h>
 #include <linux/log2.h>
+#include <pthread.h>
 #include <linux/types.h>
 #include <linux/zalloc.h>
 #include <stdlib.h>
@@ -28,18 +29,20 @@
 #include "thread-stack.h"
 #include "tool.h"
 #include "util/synthetic-events.h"
-
+#include "tsc.h"
 #include "arm-spe.h"
 #include "arm-spe-decoder/arm-spe-decoder.h"
 #include "arm-spe-decoder/arm-spe-pkt-decoder.h"
 
-#define MAX_TIMESTAMP (~0ULL)
+#define MAX_TIMESTAMP			(~0ULL)
+#define IN_CACHELINE			(0x3FULL)
 
 struct arm_spe {
 	struct auxtrace			auxtrace;
 	struct auxtrace_queues		queues;
 	struct auxtrace_heap		heap;
 	struct itrace_synth_opts        synth_opts;
+	struct arm_spe_synth_opts	arm_spe_synth_opts;
 	u32				auxtrace_type;
 	struct perf_session		*session;
 	struct machine			*machine;
@@ -54,6 +57,7 @@ struct arm_spe {
 	u8				sample_tlb;
 	u8				sample_branch;
 	u8				sample_remote_access;
+	u8				sample_c2c_mode;
 
 	u64				l1d_miss_id;
 	u64				l1d_access_id;
@@ -67,6 +71,11 @@ struct arm_spe {
 	u64				kernel_start;
 
 	unsigned long			num_events;
+	int have_sched_switch;
+	struct evsel *switch_evsel;
+	u64				ts_bit;
+	struct perf_tsc_conversion tc;
+	bool cap_user_time_zero;
 };
 
 struct arm_spe_queue {
@@ -84,7 +93,56 @@ struct arm_spe_queue {
 	u64				time;
 	u64				timestamp;
 	struct thread			*thread;
+	bool				have_sample;
 };
+
+struct spe_c2c_sample {
+	struct rb_node			rb_node;
+	struct arm_spe_record		record;
+	pid_t				pid;
+	pid_t				tid;
+};
+
+struct spe_c2c_sample_queues {
+	struct rb_root			ld_list;
+	struct rb_root			st_list;
+
+	struct arm_spe_queue		*speq;
+	bool				valid;
+	int				cpu;
+	uint64_t			ld_num;
+	uint64_t			st_num;
+};
+
+struct spe_c2c_compare_lists {
+	struct rb_root			*listA;
+	struct rb_root			*listB;
+	struct spe_c2c_sample_queues	*queues;
+	struct spe_c2c_sample_queues	*oppoqs;	/* the oppo queues */
+};
+
+#define SPE_C2C_SAMPLE_Q_MAX		128
+
+int spe_c2c_q_num;
+
+struct spe_c2c_sample_queues spe_c2c_sample_list[SPE_C2C_SAMPLE_Q_MAX];
+
+static void spe_c2c_sample_init(void)
+{
+	int i;
+
+	for (i = 0; i < SPE_C2C_SAMPLE_Q_MAX; i++) {
+		spe_c2c_sample_list[i].ld_list = RB_ROOT;
+		spe_c2c_sample_list[i].st_list = RB_ROOT;
+		spe_c2c_sample_list[i].valid = false;
+		spe_c2c_sample_list[i].cpu = -1;
+		spe_c2c_sample_list[i].speq = NULL;
+		spe_c2c_sample_list[i].ld_num = 0;
+		spe_c2c_sample_list[i].st_num = 0;
+	}
+
+	spe_c2c_q_num = 0;
+}
 
 static void arm_spe_dump(struct arm_spe *spe __maybe_unused,
 			 unsigned char *buf, size_t len)
@@ -230,13 +288,14 @@ static void arm_spe_prep_sample(struct arm_spe *spe,
 	struct arm_spe_record *record = &speq->decoder->record;
 
 	if (!spe->timeless_decoding)
-		sample->time = speq->timestamp;
+		sample->time = tsc_to_perf_time(speq->timestamp, &spe->tc);
 
 	sample->ip = record->from_ip;
 	sample->cpumode = arm_spe_cpumode(spe, sample->ip);
 	sample->pid = speq->pid;
 	sample->tid = speq->tid;
-	sample->addr = record->to_ip;
+	sample->addr = record->addr;
+	sample->phys_addr = record->phys_addr;
 	sample->period = 1;
 	sample->cpu = speq->cpu;
 
@@ -274,7 +333,7 @@ arm_spe_deliver_synth_event(struct arm_spe *spe,
 
 static int
 arm_spe_synth_spe_events_sample(struct arm_spe_queue *speq,
-				u64 spe_events_id)
+				u64 spe_events_id __maybe_unused)
 {
 	struct arm_spe *spe = speq->spe;
 	union perf_event *event = speq->event_buf;
@@ -360,31 +419,101 @@ static int arm_spe_sample(struct arm_spe_queue *speq)
 	return 0;
 }
 
-static int arm_spe_run_decoder(struct arm_spe_queue *speq, u64 *timestamp)
+static int spe_sample_insert(struct rb_root *root, struct spe_c2c_sample *data)
 {
+	struct rb_node **tmp = &(root->rb_node), *parent = NULL;
+
+	/* Figure out where to put new node */
+	while (*tmp) {
+		struct spe_c2c_sample *this = container_of(*tmp,
+				struct spe_c2c_sample, rb_node);
+
+		parent = *tmp;
+		if (data->record.ts < this->record.ts)
+			tmp = &((*tmp)->rb_left);
+		else if (data->record.ts > this->record.ts)
+			tmp = &((*tmp)->rb_right);
+		else
+			return -1;
+	}
+
+	/* Add new node and rebalance tree. */
+	rb_link_node(&data->rb_node, parent, tmp);
+	rb_insert_color(&data->rb_node, root);
+
+	return 0;
+}
+
+static void arm_spe_c2c_queue_store(struct arm_spe_queue *speq,
+		       struct spe_c2c_sample_queues *spe_c2cq)
+{
+	const struct arm_spe_record *record = &speq->decoder->record;
+	struct spe_c2c_sample *sample;
+	struct rb_root *root;
+	int ret = 0;
+
+	if (record->ts && (record->is_ld || record->is_st)) {
+		sample = zalloc(sizeof(struct spe_c2c_sample));
+		if (!sample) {
+			pr_err("spe_c2c: Allocate sample error!\n");
+			return;
+		}
+
+		root = record->is_ld ? &(spe_c2cq->ld_list) : &(spe_c2cq->st_list);
+
+		memcpy(&(sample->record), record, sizeof(struct arm_spe_record));
+		sample->pid = speq->pid;
+		sample->tid = speq->tid;
+
+		ret = spe_sample_insert(root, sample);
+		if (ret) {
+			pr_err("spe_c2c: The %lx(%lx) already exists.",
+					record->addr, record->ts);
+			free(sample);
+			return;
+		}
+
+		if (record->is_ld)
+			spe_c2cq->ld_num++;
+		else
+			spe_c2cq->st_num++;
+	}
+}
+static int arm_spe_run_decoder(struct arm_spe_queue *speq, u64 *timestamp,
+				struct spe_c2c_sample_queues *spe_c2cq __maybe_unused)
+{
+	const struct arm_spe_record *record;
 	struct arm_spe *spe = speq->spe;
 	int ret;
 
 	if (!spe->kernel_start)
 		spe->kernel_start = machine__kernel_start(spe->machine);
 
+	pr_debug4("queue %u decoding cpu %d pid %d tid %d\n",
+		     speq->queue_nr, speq->cpu, speq->pid, speq->tid);
+
 	while (1) {
+		if (spe->sample_c2c_mode) {
+			if (spe_c2cq)
+				arm_spe_c2c_queue_store(speq, spe_c2cq);
+		} else {
+			ret = arm_spe_sample(speq);
+			if (ret)
+				return ret;
+		}
 		ret = arm_spe_decode(speq->decoder);
-		if (!ret) {
-			pr_debug("No data or all data has been processed.\n");
-			return 1;
+		if (ret) {
+			if (ret == -ENODATA) {
+				pr_debug("No data or all data has been processed.\n");
+				return 1;
+			}
+			continue;
 		}
 
-		/*
-		 * Error is detected when decode SPE trace data, continue to
-		 * the next trace data and find out more records.
-		 */
-		if (ret < 0)
-			continue;
-
-		ret = arm_spe_sample(speq);
-		if (ret)
-			return ret;
+		record = &speq->decoder->record;
+		if (record->timestamp > speq->timestamp) {
+			speq->timestamp = record->timestamp;
+		}
 
 		if (!spe->timeless_decoding && speq->timestamp >= *timestamp) {
 			*timestamp = speq->timestamp;
@@ -402,18 +531,20 @@ static int arm_spe__setup_queue(struct arm_spe *spe,
 	struct arm_spe_queue *speq = queue->priv;
 	struct arm_spe_record *record;
 
-	if (list_empty(&queue->head) || speq)
+	if (list_empty(&queue->head))
 		return 0;
 
-	speq = arm_spe__alloc_queue(spe, queue_nr);
+	if (!speq) {
+		speq = arm_spe__alloc_queue(spe, queue_nr);
+		if (!speq)
+			return -ENOMEM;
 
-	if (!speq)
-		return -ENOMEM;
+		queue->priv = speq;
 
-	queue->priv = speq;
-
-	if (queue->cpu != -1)
-		speq->cpu = queue->cpu;
+		if (queue->cpu != -1)
+			speq->cpu = queue->cpu;
+		speq->tid = queue->tid;
+	}
 
 	if (!speq->on_heap) {
 		int ret;
@@ -421,18 +552,28 @@ static int arm_spe__setup_queue(struct arm_spe *spe,
 		if (spe->timeless_decoding)
 			return 0;
 
-retry:
-		ret = arm_spe_decode(speq->decoder);
+		pr_debug4("queue %u getting timestamp\n", queue_nr);
+		pr_debug4("queue %u decoding cpu %d pid %d tid %d\n",
+			     queue_nr, speq->cpu, speq->pid, speq->tid);
 
-		if (!ret)
-			return 0;
-
-		if (ret < 0)
-			goto retry;
-
-		record = &speq->decoder->record;
+		while (1) {
+			ret = arm_spe_decode(speq->decoder);
+			if (ret) {
+				if (ret == -ENODATA) {
+					pr_debug("queue %u has no timestamp\n",
+							queue_nr);
+					return 0;
+				}
+				continue;
+			}
+			record = &speq->decoder->record;
+			if (record->timestamp)
+				break;
+		}
 
 		speq->timestamp = record->timestamp;
+		pr_debug4("queue %u timestamp 0x%" PRIx64 "\n",
+			     queue_nr, speq->timestamp);
 		ret = auxtrace_heap__add(&spe->heap, queue_nr, speq->timestamp);
 		if (ret)
 			return ret;
@@ -466,19 +607,41 @@ static int arm_spe__update_queues(struct arm_spe *spe)
 	return 0;
 }
 
-static bool arm_spe__is_timeless_decoding(struct arm_spe *spe)
+static bool arm_spe_get_config(struct arm_spe *spe,
+				struct perf_event_attr *attr, u64 *config)
+{
+	if (attr->type == spe->pmu_type) {
+		if (config)
+			*config = attr->config;
+		return true;
+	}
+
+	return false;
+}
+
+static bool arm_spe__is_timeless_decoding(struct arm_spe *spe)	// FIXXUE
 {
 	struct evsel *evsel;
 	struct evlist *evlist = spe->session->evlist;
 	bool timeless_decoding = true;
+	u64 config;
+
+	if (!spe->ts_bit || !spe->cap_user_time_zero)
+		return true;
 
 	/*
 	 * Circle through the list of event and complain if we find one
 	 * with the time bit set.
 	 */
 	evlist__for_each_entry(evlist, evsel) {
-		if ((evsel->core.attr.sample_type & PERF_SAMPLE_TIME))
-			timeless_decoding = false;
+		if (!(evsel->core.attr.sample_type & PERF_SAMPLE_TIME))
+			return true;
+		if (arm_spe_get_config(spe, &evsel->core.attr, &config)) {
+			if (config & spe->ts_bit)
+				timeless_decoding = false;
+			else
+				return true;
+		}
 	}
 
 	return timeless_decoding;
@@ -488,14 +651,11 @@ static void arm_spe_set_pid_tid_cpu(struct arm_spe *spe,
 				    struct auxtrace_queue *queue)
 {
 	struct arm_spe_queue *speq = queue->priv;
-	pid_t tid;
 
-	tid = machine__get_current_tid(spe->machine, speq->cpu);
-	if (tid != -1) {
-		speq->tid = tid;
+	if (queue->tid == -1 || spe->have_sched_switch) {
+		speq->tid = machine__get_current_tid(spe->machine, speq->cpu);
 		thread__zput(speq->thread);
-	} else
-		speq->tid = queue->tid;
+	}
 
 	if ((!speq->thread) && (speq->tid != -1)) {
 		speq->thread = machine__find_thread(spe->machine, -1,
@@ -509,8 +669,33 @@ static void arm_spe_set_pid_tid_cpu(struct arm_spe *spe,
 	}
 }
 
+static struct spe_c2c_sample_queues*
+arm_spe_get_c2c_queue(struct arm_spe_queue *speq)
+{
+	int i;
+
+	for (i = 0; i < SPE_C2C_SAMPLE_Q_MAX; i++) {
+		if (!spe_c2c_sample_list[i].valid) {
+			spe_c2c_sample_list[i].valid = true;
+			spe_c2c_sample_list[i].cpu = speq->cpu;
+			spe_c2c_sample_list[i].speq = speq;
+			spe_c2c_q_num++;
+			return &spe_c2c_sample_list[i];
+		}
+
+		if (spe_c2c_sample_list[i].cpu == speq->cpu)
+			return &spe_c2c_sample_list[i];
+	}
+
+	pr_warning("spe_c2c: Now only support sample for %u cpus!\n",
+			SPE_C2C_SAMPLE_Q_MAX);
+
+	return NULL;
+}
+
 static int arm_spe_process_queues(struct arm_spe *spe, u64 timestamp)
 {
+	struct spe_c2c_sample_queues *spe_c2cq;
 	unsigned int queue_nr;
 	u64 ts;
 	int ret;
@@ -529,6 +714,10 @@ static int arm_spe_process_queues(struct arm_spe *spe, u64 timestamp)
 		queue = &spe->queues.queue_array[queue_nr];
 		speq = queue->priv;
 
+		pr_debug4("queue %u processing 0x%" PRIx64 " to 0x%" PRIx64 "\n",
+			     queue_nr, spe->heap.heap_array[0].ordinal,
+			     timestamp);
+
 		auxtrace_heap__pop(&spe->heap);
 
 		if (spe->heap.heap_cnt) {
@@ -541,7 +730,9 @@ static int arm_spe_process_queues(struct arm_spe *spe, u64 timestamp)
 
 		arm_spe_set_pid_tid_cpu(spe, queue);
 
-		ret = arm_spe_run_decoder(speq, &ts);
+		spe_c2cq = arm_spe_get_c2c_queue(speq);
+
+		ret = arm_spe_run_decoder(speq, &ts, spe_c2cq);
 		if (ret < 0) {
 			auxtrace_heap__add(&spe->heap, queue_nr, ts);
 			return ret;
@@ -559,9 +750,228 @@ static int arm_spe_process_queues(struct arm_spe *spe, u64 timestamp)
 	return 0;
 }
 
+pthread_mutex_t mut;
+
+static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
+		struct spe_c2c_sample *c2c_sample)
+{
+	struct arm_spe_queue *speq = c2c_queues->speq;
+	union perf_event *event = speq->event_buf;
+	struct perf_sample sample = { .ip = 0, };
+	union perf_mem_data_src src;
+	int ret;
+
+	memset(&src, 0, sizeof(src));
+
+	src.mem_op  = PERF_MEM_OP_LOAD;
+	src.mem_snoop = PERF_MEM_SNOOP_HITM;
+
+	if (c2c_sample->record.is_tlb_miss)
+		src.mem_dtlb = PERF_MEM_TLB_MISS;
+	else
+		src.mem_dtlb = PERF_MEM_TLB_HIT;
+
+	if (speq->spe->arm_spe_synth_opts.c2c_remote) {
+		if (c2c_sample->record.is_remote)
+			src.mem_lvl = PERF_MEM_LVL_REM_CCE2;
+		else
+			return;
+	} else
+		src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L3;
+
+	sample.ip = c2c_sample->record.from_ip;
+	sample.cpumode = arm_spe_cpumode(speq->spe, sample.ip);
+	sample.pid = c2c_sample->pid;
+	sample.tid = c2c_sample->tid;
+	sample.addr = c2c_sample->record.addr;
+	sample.data_src = src.val;
+	sample.phys_addr = c2c_sample->record.phys_addr;
+	sample.period = 1;
+	sample.cpu = c2c_queues->cpu;
+
+	event->sample.header.type = PERF_RECORD_SAMPLE;
+	event->sample.header.misc = sample.cpumode;
+	event->sample.header.size = sizeof(struct perf_event_header);
+
+	ret = perf_session__deliver_synth_event(speq->spe->session, event, &sample);
+	if (ret)
+		pr_err("ARM SPE: failed to deliver event, error %d\n", ret);
+}
+
+static void arm_spe_c2c_get_samples(void *arg)
+{
+	struct rb_root *listA = ((struct spe_c2c_compare_lists *)arg)->listA;
+	struct rb_root *listB = ((struct spe_c2c_compare_lists *)arg)->listB;
+	struct spe_c2c_sample_queues *queues = ((struct spe_c2c_compare_lists *)arg)->queues;
+	struct spe_c2c_sample_queues *oppoqs = ((struct spe_c2c_compare_lists *)arg)->oppoqs;
+	struct arm_spe_queue *speq = queues->speq;
+	struct rb_node *nodeA, *nodeB;
+	struct spe_c2c_sample *sampleA, *sampleB;
+	bool tshare = speq->spe->arm_spe_synth_opts.c2c_tshare;
+	uint64_t xor;
+
+	for (nodeA = rb_first(listA); nodeA; nodeA = rb_next(nodeA)) {
+		for (nodeB = rb_first(listB); nodeB; nodeB = rb_next(nodeB)) {
+			sampleA = rb_entry(nodeA, struct spe_c2c_sample, rb_node);
+			sampleB = rb_entry(nodeB, struct spe_c2c_sample, rb_node);
+
+			xor = sampleA->record.phys_addr ^ sampleB->record.phys_addr;
+			if (!(xor & (uint64_t)~IN_CACHELINE)
+					&& (tshare || (xor & IN_CACHELINE))
+					&& (sampleA->tid != sampleB->tid)) {
+				pthread_mutex_lock(&mut);
+				arm_spe_c2c_sample(queues, sampleA);
+				arm_spe_c2c_sample(oppoqs, sampleB);
+				pthread_mutex_unlock(&mut);
+				break;
+			}
+
+		}
+	}
+}
+
+static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
+{
+	int i, j, k, ret, size;
+	int store = spe->arm_spe_synth_opts.c2c_store ? 1 : 0;
+	pthread_t *c2c_threads;
+	struct spe_c2c_compare_lists *c2c_lists;
+
+	if (spe_c2c_q_num == 0)
+		return 0;
+
+	if (spe_c2c_q_num < 2) {
+		pr_err("ARM SPE: c2c mode requires data recorded on at least two CPUs!\n");
+		return -1;
+	}
+
+	k = 0;
+	size = (2 + store) * spe_c2c_q_num * (spe_c2c_q_num - 1) / 2;
+
+	c2c_threads = (pthread_t *)zalloc(size * sizeof(pthread_t));
+	c2c_lists = (struct spe_c2c_compare_lists *)zalloc(size *
+		sizeof(struct spe_c2c_compare_lists));
+
+	for (i = 0; i < spe_c2c_q_num; i++) {
+		for (j = i + 1; j < spe_c2c_q_num; j++) {
+			c2c_lists[k].listA = &(spe_c2c_sample_list[i].ld_list);
+			c2c_lists[k].listB = &(spe_c2c_sample_list[j].st_list);
+			c2c_lists[k].queues = &spe_c2c_sample_list[i];
+			c2c_lists[k].oppoqs = &spe_c2c_sample_list[j];
+			ret = pthread_create(&c2c_threads[k], NULL, (void *)arm_spe_c2c_get_samples,
+					(void *)&c2c_lists[k]);
+			if (ret) {
+				pr_info("ARM SPE: c2c process thread[ld->st] create failed! ret=%d\n", ret);
+				return ret;
+			}
+
+			k++;
+			c2c_lists[k].listA = &(spe_c2c_sample_list[j].ld_list);
+			c2c_lists[k].listB = &(spe_c2c_sample_list[i].st_list);
+			c2c_lists[k].queues = &spe_c2c_sample_list[j];
+			c2c_lists[k].oppoqs = &spe_c2c_sample_list[i];
+			ret = pthread_create(&c2c_threads[k], NULL, (void *)arm_spe_c2c_get_samples,
+					(void *)&c2c_lists[k]);
+			if (ret) {
+				pr_info("ARM SPE: c2c process thread[st->ld] create failed! ret=%d\n", ret);
+				return ret;
+			}
+
+			if (store) {
+				k++;
+				c2c_lists[k].listA = &(spe_c2c_sample_list[i].st_list);
+				c2c_lists[k].listB = &(spe_c2c_sample_list[j].st_list);
+				c2c_lists[k].queues = &spe_c2c_sample_list[i];
+				c2c_lists[k].oppoqs = &spe_c2c_sample_list[j];
+				ret = pthread_create(&c2c_threads[k], NULL, (void *)arm_spe_c2c_get_samples,
+						(void *)&c2c_lists[k]);
+				if (ret) {
+					pr_info("ARM SPE: c2c process thread[st->st] create failed! ret=%d\n", ret);
+					return ret;
+				}
+			}
+			k++;
+		}
+	}
+
+	for (i = 0; i < size; i++) {
+		ret = pthread_join(c2c_threads[i], NULL);
+		BUG_ON(ret);
+	}
+
+	free(c2c_threads);
+	free(c2c_lists);
+
+	spe_c2c_q_num = 0;
+
+	return ret;
+}
+
+static int arm_spe_process_switch(struct arm_spe *spe,
+				   struct perf_sample *sample)
+{
+	struct evsel *evsel;
+	pid_t tid;
+	int cpu;
+
+	evsel = perf_evlist__id2evsel(spe->session->evlist, sample->id);
+	if (evsel != spe->switch_evsel)
+		return 0;
+
+	tid = evsel__intval(evsel, sample, "next_pid");
+	cpu = sample->cpu;
+
+	pr_debug4("sched_switch: cpu %d tid %d time %"PRIu64" tsc %#"PRIx64"\n",
+		     cpu, tid, sample->time, perf_time_to_tsc(sample->time,
+		     &spe->tc));
+
+	return machine__set_current_tid(spe->machine, cpu, -1, tid);
+}
+
+static int arm_spe_context_switch(struct arm_spe *spe, union perf_event *event,
+				   struct perf_sample *sample)
+{
+	bool out = event->header.misc & PERF_RECORD_MISC_SWITCH_OUT;
+	pid_t pid, tid;
+	int cpu;
+
+	cpu = sample->cpu;
+
+	if (out)
+		return 0;
+	pid = sample->pid;
+	tid = sample->tid;
+
+	if (tid == -1) {
+		pr_err("context_switch event has no tid\n");
+		return -EINVAL;
+	}
+
+	pr_debug4("context_switch: cpu %d pid %d tid %d time %"PRIu64" tsc %#"PRIx64"\n",
+		     cpu, pid, tid, sample->time, perf_time_to_tsc(sample->time,
+		     &spe->tc));
+
+	return machine__set_current_tid(spe->machine, cpu, pid, tid);
+}
+
+static int arm_spe_process_itrace_start(struct arm_spe *spe,
+					union perf_event *event,
+					struct perf_sample *sample)
+{
+	pr_debug4("itrace_start: cpu %d pid %d tid %d time %"PRIu64" tsc %#"PRIx64"\n",
+		     sample->cpu, event->itrace_start.pid,
+		     event->itrace_start.tid, sample->time,
+		     perf_time_to_tsc(sample->time, &spe->tc));
+
+	return machine__set_current_tid(spe->machine, sample->cpu,
+					event->itrace_start.pid,
+					event->itrace_start.tid);
+}
+
 static int arm_spe_process_timeless_queues(struct arm_spe *spe, pid_t tid,
 					    u64 time_)
 {
+	struct spe_c2c_sample_queues *spe_c2cq = NULL;
 	struct auxtrace_queues *queues = &spe->queues;
 	unsigned int i;
 	u64 ts = 0;
@@ -573,7 +983,7 @@ static int arm_spe_process_timeless_queues(struct arm_spe *spe, pid_t tid,
 		if (speq && (tid == -1 || speq->tid == tid)) {
 			speq->time = time_;
 			arm_spe_set_pid_tid_cpu(spe, queue);
-			arm_spe_run_decoder(speq, &ts);
+			arm_spe_run_decoder(speq, &ts, spe_c2cq);
 		}
 	}
 	return 0;
@@ -598,7 +1008,7 @@ static int arm_spe_process_event(struct perf_session *session,
 	}
 
 	if (sample->time && (sample->time != (u64) -1))
-		timestamp = sample->time;
+		timestamp = perf_time_to_tsc(sample->time, &spe->tc);
 	else
 		timestamp = 0;
 
@@ -615,12 +1025,22 @@ static int arm_spe_process_event(struct perf_session *session,
 					sample->time);
 		}
 	} else if (timestamp) {
-		if (event->header.type == PERF_RECORD_EXIT) {
-			err = arm_spe_process_queues(spe, timestamp);
-			if (err)
-				return err;
-		}
+		err = arm_spe_process_queues(spe, timestamp);
+		if (err)
+			return err;
 	}
+
+	if (spe->switch_evsel && event->header.type == PERF_RECORD_SAMPLE)
+		err = arm_spe_process_switch(spe, sample);
+	else if (event->header.type == PERF_RECORD_ITRACE_START)
+		err = arm_spe_process_itrace_start(spe, event, sample);
+	else if (event->header.type == PERF_RECORD_SWITCH ||
+		 event->header.type == PERF_RECORD_SWITCH_CPU_WIDE)
+		err = arm_spe_context_switch(spe, event, sample);
+
+	pr_debug4("event %s (%u): cpu %d time %"PRIu64" tsc %#"PRIx64"\n",
+		     perf_event__name(event->header.type), event->header.type,
+		     sample->cpu, sample->time, timestamp);
 
 	return err;
 }
@@ -685,7 +1105,14 @@ static int arm_spe_flush(struct perf_session *session __maybe_unused,
 		return arm_spe_process_timeless_queues(spe, -1,
 				MAX_TIMESTAMP - 1);
 
-	return arm_spe_process_queues(spe, MAX_TIMESTAMP);
+	ret = arm_spe_process_queues(spe, MAX_TIMESTAMP);
+	if (ret < 0)
+		return ret;
+
+	if (spe->sample_c2c_mode)
+		ret = arm_spe_c2c_process(spe);
+
+	return ret;
 }
 
 static void arm_spe_free_queue(void *priv)
@@ -787,6 +1214,32 @@ static void arm_spe_set_event_name(struct evlist *evlist, u64 id,
 			break;
 		}
 	}
+}
+
+static struct evsel *arm_spe_find_sched_switch(struct evlist *evlist)
+{
+	struct evsel *evsel;
+
+	evlist__for_each_entry_reverse(evlist, evsel) {
+		const char *name = evsel__name(evsel);
+
+		if (!strcmp(name, "sched:sched_switch"))
+			return evsel;
+	}
+
+	return NULL;
+}
+
+static bool arm_spe_find_switch(struct evlist *evlist)
+{
+	struct evsel *evsel;
+
+	evlist__for_each_entry(evlist, evsel) {
+		if (evsel->core.attr.context_switch)
+			return true;
+	}
+
+	return false;
 }
 
 static int
@@ -949,6 +1402,12 @@ int arm_spe_process_auxtrace_info(union perf_event *event,
 	spe->machine = &session->machines.host; /* No kvm support */
 	spe->auxtrace_type = auxtrace_info->type;
 	spe->pmu_type = auxtrace_info->priv[ARM_SPE_PMU_TYPE];
+	spe->tc.time_shift = auxtrace_info->priv[ARM_SPE_TIME_SHIFT];
+	spe->tc.time_mult = auxtrace_info->priv[ARM_SPE_TIME_MULT];
+	spe->tc.time_zero = auxtrace_info->priv[ARM_SPE_TIME_ZERO];
+	spe->cap_user_time_zero = auxtrace_info->priv[ARM_SPE_CAP_USER_TIME_ZERO];
+	spe->ts_bit = auxtrace_info->priv[ARM_SPE_TS_ENABLE];
+	spe->have_sched_switch = auxtrace_info->priv[ARM_SPE_HAVE_SCHED_SWITCH];
 
 	spe->timeless_decoding = arm_spe__is_timeless_decoding(spe);
 	spe->auxtrace.process_event = arm_spe_process_event;
@@ -964,14 +1423,39 @@ int arm_spe_process_auxtrace_info(union perf_event *event,
 	if (dump_trace)
 		return 0;
 
+	if (spe->have_sched_switch == 1) {
+		spe->switch_evsel = arm_spe_find_sched_switch(session->evlist);
+		if (!spe->switch_evsel) {
+			pr_err("%s: missing sched_switch event\n", __func__);
+			err = -EINVAL;
+			goto err_free_queues;
+		}
+	} else if (spe->have_sched_switch == 2 &&
+		   !arm_spe_find_switch(session->evlist)) {
+		pr_err("%s: missing context_switch attribute flag\n", __func__);
+		err = -EINVAL;
+		goto err_free_queues;
+	}
+
 	if (session->itrace_synth_opts && session->itrace_synth_opts->set)
 		spe->synth_opts = *session->itrace_synth_opts;
 	else
 		itrace_synth_opts__set_default(&spe->synth_opts, false);
 
-	err = arm_spe_synth_events(spe, session);
-	if (err)
-		goto err_free_queues;
+	if (session->arm_spe_synth_opts && (session->arm_spe_synth_opts->set
+				|| session->arm_spe_synth_opts->c2c_mode))
+		spe->arm_spe_synth_opts = *session->arm_spe_synth_opts;
+	else
+		arm_spe_synth_opts__set_default(&spe->arm_spe_synth_opts);
+
+	if (spe->arm_spe_synth_opts.c2c_mode) {
+		spe->sample_c2c_mode = true;
+		spe_c2c_sample_init();
+	} else {
+		err = arm_spe_synth_events(spe, session);
+		if (err)
+			goto err_free_queues;
+	}
 
 	err = auxtrace_queues__process_index(&spe->queues, session);
 	if (err)
@@ -979,6 +1463,9 @@ int arm_spe_process_auxtrace_info(union perf_event *event,
 
 	if (spe->queues.populated)
 		spe->data_queued = true;
+
+	if (spe->timeless_decoding)
+		pr_debug2("ARM SPE decoding without timestamps\n");
 
 	return 0;
 

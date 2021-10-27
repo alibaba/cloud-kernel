@@ -99,10 +99,11 @@ static int arm_spe_get_data(struct arm_spe_decoder *decoder)
 	decoder->buf = buffer.buf;
 	decoder->len = buffer.len;
 
-	if (!decoder->len)
+	if (!decoder->len) {
 		pr_debug("No more data\n");
-
-	return decoder->len;
+		return -ENODATA;
+	}
+	return 0;
 }
 
 static int arm_spe_get_next_packet(struct arm_spe_decoder *decoder)
@@ -131,7 +132,7 @@ static int arm_spe_get_next_packet(struct arm_spe_decoder *decoder)
 		decoder->len -= ret;
 	} while (decoder->packet.type == ARM_SPE_PAD);
 
-	return 1;
+	return 0;
 }
 
 static int arm_spe_read_record(struct arm_spe_decoder *decoder)
@@ -144,7 +145,7 @@ static int arm_spe_read_record(struct arm_spe_decoder *decoder)
 
 	while (1) {
 		err = arm_spe_get_next_packet(decoder);
-		if (err <= 0)
+		if (err)
 			return err;
 
 		idx = decoder->packet.index;
@@ -153,46 +154,77 @@ static int arm_spe_read_record(struct arm_spe_decoder *decoder)
 		switch (decoder->packet.type) {
 		case ARM_SPE_TIMESTAMP:
 			decoder->record.timestamp = payload;
-			return 1;
+			decoder->record.ts = payload;
+			return 0;
 		case ARM_SPE_END:
-			return 1;
+			decoder->record.timestamp = 0;
+			decoder->record.ts = 0;
+			return 0;
 		case ARM_SPE_ADDRESS:
 			ip = arm_spe_calc_ip(idx, payload);
-			if (idx == SPE_ADDR_PKT_HDR_INDEX_INS)
+			switch (idx) {
+			case SPE_ADDR_PKT_HDR_INDEX_INS:
 				decoder->record.from_ip = ip;
-			else if (idx == SPE_ADDR_PKT_HDR_INDEX_BRANCH)
+				break;
+			case SPE_ADDR_PKT_HDR_INDEX_BRANCH:
 				decoder->record.to_ip = ip;
+				break;
+			case SPE_ADDR_PKT_HDR_INDEX_DATA_VIRT:
+				decoder->record.addr = ip;
+				break;
+			case SPE_ADDR_PKT_HDR_INDEX_DATA_PHYS:
+				decoder->record.phys_addr = ip;
+				break;
+			default:
+				break;
+			}
 			break;
 		case ARM_SPE_COUNTER:
 			break;
 		case ARM_SPE_CONTEXT:
 			break;
 		case ARM_SPE_OP_TYPE:
+			if (idx == 0x1) {
+				if (payload & 0x1)
+					decoder->record.is_st = true;
+				else
+					decoder->record.is_ld = true;
+			}
 			break;
 		case ARM_SPE_EVENTS:
-			if (payload & BIT(EV_L1D_REFILL))
+			if (payload & BIT(EV_L1D_REFILL)) {
 				decoder->record.type |= ARM_SPE_L1D_MISS;
+				decoder->record.is_l1d_miss = true;
+			}
 
-			if (payload & BIT(EV_L1D_ACCESS))
+			if (payload & BIT(EV_L1D_ACCESS)) {
 				decoder->record.type |= ARM_SPE_L1D_ACCESS;
+				decoder->record.is_l1d_access = true;
+			}
 
-			if (payload & BIT(EV_TLB_WALK))
+			if (payload & BIT(EV_TLB_WALK)) {
 				decoder->record.type |= ARM_SPE_TLB_MISS;
+				decoder->record.is_tlb_miss = true;
+			}
 
 			if (payload & BIT(EV_TLB_ACCESS))
 				decoder->record.type |= ARM_SPE_TLB_ACCESS;
 
 			if ((idx == 2 || idx == 4 || idx == 8) &&
-			    (payload & BIT(EV_LLC_MISS)))
+					(payload & BIT(EV_LLC_MISS))) {
 				decoder->record.type |= ARM_SPE_LLC_MISS;
+				decoder->record.is_llc_miss = true;
+			}
 
 			if ((idx == 2 || idx == 4 || idx == 8) &&
-			    (payload & BIT(EV_LLC_ACCESS)))
+					(payload & BIT(EV_LLC_ACCESS)))
 				decoder->record.type |= ARM_SPE_LLC_ACCESS;
 
 			if ((idx == 2 || idx == 4 || idx == 8) &&
-			    (payload & BIT(EV_REMOTE_ACCESS)))
+					(payload & BIT(EV_REMOTE_ACCESS))) {
 				decoder->record.type |= ARM_SPE_REMOTE_ACCESS;
+				decoder->record.is_remote = true;
+			}
 
 			if (payload & BIT(EV_MISPRED))
 				decoder->record.type |= ARM_SPE_BRANCH_MISS;

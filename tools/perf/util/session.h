@@ -26,6 +26,7 @@ struct perf_session {
 	struct evlist	*evlist;
 	struct auxtrace		*auxtrace;
 	struct itrace_synth_opts *itrace_synth_opts;
+	struct arm_spe_synth_opts *arm_spe_synth_opts;
 	struct list_head	auxtrace_index;
 	struct trace_event	tevent;
 	struct perf_record_time_conv	time_conv;

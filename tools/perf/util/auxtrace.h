@@ -139,6 +139,19 @@ struct itrace_synth_opts {
 	unsigned int		log_plus_flags;
 	unsigned int		log_minus_flags;
 	unsigned int		quick;
+
+};
+
+/**
+ * struct arm_spe_synth_opts - ARM SPE tracing synthesis options.
+ * @set: indicates whether or not options have been set
+ */
+struct arm_spe_synth_opts {
+	bool			set;
+	bool			c2c_mode;
+	bool			c2c_remote;
+	bool			c2c_store;
+	bool			c2c_tshare;
 };
 
 /**
@@ -596,6 +609,9 @@ int itrace_parse_synth_opts(const struct option *opt, const char *str,
 			    int unset);
 void itrace_synth_opts__set_default(struct itrace_synth_opts *synth_opts,
 				    bool no_sample);
+int arm_spe_parse_synth_opts(const struct option *opt, const char *str,
+			     int unset);
+void arm_spe_synth_opts__set_default(struct arm_spe_synth_opts *synth_opts);
 
 size_t perf_event__fprintf_auxtrace_error(union perf_event *event, FILE *fp);
 void perf_session__auxtrace_error_inc(struct perf_session *session,

@@ -15,6 +15,7 @@
 #include "../../../util/event.h"
 #include "../../../util/evsel.h"
 #include "../../../util/evlist.h"
+#include "../../../util/mmap.h"
 #include "../../../util/session.h"
 #include <internal/lib.h> // page_size
 #include "../../../util/pmu.h"
@@ -22,6 +23,8 @@
 #include "../../../util/auxtrace.h"
 #include "../../../util/record.h"
 #include "../../../util/arm-spe.h"
+#include "../../../util/tsc.h"
+#include "../../../util/perf_api_probe.h"
 
 #define KiB(x) ((x) * 1024)
 #define MiB(x) ((x) * 1024 * 1024)
@@ -30,6 +33,7 @@ struct arm_spe_recording {
 	struct auxtrace_record		itr;
 	struct perf_pmu			*arm_spe_pmu;
 	struct evlist		*evlist;
+	int				have_sched_switch;
 };
 
 static size_t
@@ -37,6 +41,43 @@ arm_spe_info_priv_size(struct auxtrace_record *itr __maybe_unused,
 		       struct evlist *evlist __maybe_unused)
 {
 	return ARM_SPE_AUXTRACE_PRIV_SIZE;
+}
+
+static int arm_spe_parse_terms_with_default(const char *pmu_name,
+						 struct list_head *formats,
+					     const char *str,
+					     u64 *config)
+{
+	struct list_head *terms;
+	struct perf_event_attr attr = { .size = 0, };
+	int err;
+
+	terms = malloc(sizeof(struct list_head));
+	if (!terms)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(terms);
+
+	err = parse_events_terms(terms, str);
+	if (err)
+		goto out_free;
+
+	attr.config = *config;
+	err = perf_pmu__config_terms(pmu_name, formats, &attr, terms, true, NULL);
+	if (err)
+		goto out_free;
+
+	*config = attr.config;
+out_free:
+	parse_events_terms__delete(terms);
+	return err;
+}
+
+static int arm_spe_parse_terms(const char *pmu_name, struct list_head *formats,
+				const char *str, u64 *config)
+{
+	*config = 0;
+	return arm_spe_parse_terms_with_default(pmu_name, formats, str, config);
 }
 
 static int arm_spe_info_fill(struct auxtrace_record *itr,
@@ -47,15 +88,70 @@ static int arm_spe_info_fill(struct auxtrace_record *itr,
 	struct arm_spe_recording *sper =
 			container_of(itr, struct arm_spe_recording, itr);
 	struct perf_pmu *arm_spe_pmu = sper->arm_spe_pmu;
+	struct perf_event_mmap_page *pc;
+	struct perf_tsc_conversion tc = { .time_mult = 0, };
+	bool cap_user_time_zero = false;
+	u64 ts_enable;
+	int err;
 
 	if (priv_size != ARM_SPE_AUXTRACE_PRIV_SIZE)
 		return -EINVAL;
 
+	arm_spe_parse_terms(arm_spe_pmu->name, &arm_spe_pmu->format, "ts_enable", &ts_enable);
+
 	if (!session->evlist->core.nr_mmaps)
 		return -EINVAL;
 
+	pc = session->evlist->mmap[0].core.base;
+	if (pc) {
+		err = perf_read_tsc_conversion(pc, &tc);
+		if (err) {
+			if (err != -EOPNOTSUPP)
+				return err;
+		} else {
+			cap_user_time_zero = tc.time_mult != 0;
+		}
+		if (!cap_user_time_zero)
+			ui__warning("ARM SPE: TSC not available\n");
+	}
+
 	auxtrace_info->type = PERF_AUXTRACE_ARM_SPE;
 	auxtrace_info->priv[ARM_SPE_PMU_TYPE] = arm_spe_pmu->type;
+	auxtrace_info->priv[ARM_SPE_TIME_SHIFT] = tc.time_shift;
+	auxtrace_info->priv[ARM_SPE_TIME_MULT] = tc.time_mult;
+	auxtrace_info->priv[ARM_SPE_TIME_ZERO] = tc.time_zero;
+	auxtrace_info->priv[ARM_SPE_CAP_USER_TIME_ZERO] = cap_user_time_zero;
+	auxtrace_info->priv[ARM_SPE_TS_ENABLE] = ts_enable;
+	auxtrace_info->priv[ARM_SPE_HAVE_SCHED_SWITCH] =
+						sper->have_sched_switch;
+
+	return 0;
+}
+
+static int arm_spe_track_switches(struct evlist *evlist)
+{
+	const char *sched_switch = "sched:sched_switch";
+	struct evsel *evsel;
+	int err;
+
+	if (!perf_evlist__can_select_event(evlist, sched_switch))
+		return -EPERM;
+
+	err = parse_events(evlist, sched_switch, NULL);
+	if (err) {
+		pr_debug2("%s: failed to parse %s, error %d\n",
+			  __func__, sched_switch, err);
+		return err;
+	}
+
+	evsel = evlist__last(evlist);
+
+	evsel__set_sample_bit(evsel, CPU);
+	evsel__set_sample_bit(evsel, TIME);
+
+	evsel->core.system_wide = true;
+	evsel->no_aux_samples = true;
+	evsel->immediate = true;
 
 	return 0;
 }
@@ -67,7 +163,9 @@ static int arm_spe_recording_options(struct auxtrace_record *itr,
 	struct arm_spe_recording *sper =
 			container_of(itr, struct arm_spe_recording, itr);
 	struct perf_pmu *arm_spe_pmu = sper->arm_spe_pmu;
+	bool need_immediate = false;
 	struct evsel *evsel, *arm_spe_evsel = NULL;
+	const struct perf_cpu_map *cpus = evlist->core.cpus;
 	bool privileged = perf_event_paranoid_check(-1);
 	struct evsel *tracking_evsel;
 	int err;
@@ -84,6 +182,60 @@ static int arm_spe_recording_options(struct auxtrace_record *itr,
 			evsel->core.attr.sample_period = 1;
 			arm_spe_evsel = evsel;
 			opts->full_auxtrace = true;
+		}
+	}
+
+	/*
+	 * Per-cpu recording needs sched_switch events to distinguish different
+	 * threads.
+	 */
+	if (!perf_cpu_map__empty(cpus)) {
+		if (perf_can_record_switch_events()) {
+			bool cpu_wide = !target__none(&opts->target) &&
+					!target__has_task(&opts->target);
+
+			if (!cpu_wide && perf_can_record_cpu_wide()) {
+				struct evsel *switch_evsel;
+
+				err = parse_events(evlist, "dummy:u", NULL);
+				if (err)
+					return err;
+
+				switch_evsel = evlist__last(evlist);
+
+				switch_evsel->core.attr.freq = 0;
+				switch_evsel->core.attr.sample_period = 1;
+				switch_evsel->core.attr.context_switch = 1;
+
+				switch_evsel->core.system_wide = true;
+				switch_evsel->no_aux_samples = true;
+				switch_evsel->immediate = true;
+
+				evsel__set_sample_bit(switch_evsel, TID);
+				evsel__set_sample_bit(switch_evsel, TIME);
+				evsel__set_sample_bit(switch_evsel, CPU);
+				evsel__reset_sample_bit(switch_evsel,
+								BRANCH_STACK);
+
+				opts->record_switch_events = false;
+				sper->have_sched_switch = 3;
+			} else {
+				opts->record_switch_events = true;
+				need_immediate = true;
+				if (cpu_wide)
+					sper->have_sched_switch = 3;
+				else
+					sper->have_sched_switch = 2;
+			}
+		} else {
+			err = arm_spe_track_switches(evlist);
+			if (err == -EPERM)
+				pr_debug2("Unable to select sched:sched_switch\n");
+			else {
+				if (err)
+					return err;
+				sper->have_sched_switch = 1;
+			}
 		}
 	}
 
@@ -113,7 +265,6 @@ static int arm_spe_recording_options(struct auxtrace_record *itr,
 		}
 	}
 
-
 	/*
 	 * To obtain the auxtrace buffer file descriptor, the auxtrace event
 	 * must come first.
@@ -134,9 +285,19 @@ static int arm_spe_recording_options(struct auxtrace_record *itr,
 
 	tracking_evsel->core.attr.freq = 0;
 	tracking_evsel->core.attr.sample_period = 1;
+	if (need_immediate)
+		tracking_evsel->immediate = true;
 	evsel__set_sample_bit(tracking_evsel, TIME);
 	evsel__set_sample_bit(tracking_evsel, CPU);
 	evsel__reset_sample_bit(tracking_evsel, BRANCH_STACK);
+
+	/*
+	 * Warn the user when we do not have enough information to decode i.e.
+	 * per-cpu with no sched_switch (except workload-only).
+	 */
+	if (!sper->have_sched_switch && !perf_cpu_map__empty(cpus) &&
+	    !target__none(&opts->target))
+		ui__warning("ARM SPE decoding will not be possible except for kernel tracing!\n");
 
 	return 0;
 }
