@@ -11,6 +11,7 @@
 
 #include <linux/mm.h>
 #include <linux/types.h>
+#include <linux/static_key.h>
 
 #ifdef CONFIG_KFENCE
 
@@ -24,12 +25,12 @@ extern unsigned long kfence_pool_size;
 extern char **__kfence_pool_node;
 
 #ifdef CONFIG_KFENCE_STATIC_KEYS
-#include <linux/static_key.h>
 DECLARE_STATIC_KEY_FALSE(kfence_allocation_key);
 #else
 #include <linux/atomic.h>
 extern atomic_t kfence_allocation_gate;
 #endif
+DECLARE_STATIC_KEY_FALSE(kfence_skip_interval);
 
 /**
  * is_kfence_address_node() - check if an address belongs to KFENCE pool on given node

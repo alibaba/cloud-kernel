@@ -57,6 +57,9 @@ config KFENCE_NUM_OBJECTS
 	  and two adjacent ones used as guard pages. May be overridden via boot
 	  parameter "kfence.num_objects_pernode".
 
+	  If larger than 65535, sample_interval will be invalid, and KFENCE will
+	  alloc pages from its pool at all time if possible.
+
 config KFENCE_STRESS_TEST_FAULTS
 	int "Stress testing of fault handling and error reporting" if EXPERT
 	default 0

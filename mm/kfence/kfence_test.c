@@ -520,10 +520,10 @@ static void test_free_bulk(struct kunit *test)
 						     (iter & 1) ? ctor_set_x : NULL);
 		void *objects[] = {
 			test_alloc(test, size, GFP_KERNEL, ALLOCATE_RIGHT),
-			test_alloc(test, size, GFP_KERNEL, ALLOCATE_NONE),
+			test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY),
 			test_alloc(test, size, GFP_KERNEL, ALLOCATE_LEFT),
-			test_alloc(test, size, GFP_KERNEL, ALLOCATE_NONE),
-			test_alloc(test, size, GFP_KERNEL, ALLOCATE_NONE),
+			test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY),
+			test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY),
 		};
 
 		kmem_cache_free_bulk(test_cache, ARRAY_SIZE(objects), objects);

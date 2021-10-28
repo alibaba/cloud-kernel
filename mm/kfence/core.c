@@ -54,6 +54,11 @@ EXPORT_SYMBOL(kfence_pool_size);
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
+#ifdef CONFIG_KFENCE_STATIC_KEYS
+/* The static key to set up a KFENCE allocation. */
+DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
+#endif
+DEFINE_STATIC_KEY_FALSE(kfence_skip_interval);
 
 static int param_set_sample_interval(const char *val, const struct kernel_param *kp)
 {
@@ -63,10 +68,14 @@ static int param_set_sample_interval(const char *val, const struct kernel_param 
 	if (ret < 0)
 		return ret;
 
-	if (!num) /* Using 0 to indicate KFENCE is disabled. */
+	if (!num) { /* Using 0 to indicate KFENCE is disabled. */
 		WRITE_ONCE(kfence_enabled, false);
-	else if (!READ_ONCE(kfence_enabled) && system_state != SYSTEM_BOOTING)
+#ifdef CONFIG_KFENCE_STATIC_KEYS
+		static_branch_disable(&kfence_allocation_key);
+#endif
+	} else if (!READ_ONCE(kfence_enabled) && system_state != SYSTEM_BOOTING) {
 		return -EINVAL; /* Cannot (re-)enable KFENCE on-the-fly. */
+	}
 
 	*((unsigned long *)kp->arg) = num;
 	return 0;
@@ -142,11 +151,6 @@ struct kfence_freelist {
 	struct kfence_freelist_cpu __percpu *cpu;
 };
 static struct kfence_freelist freelist;
-
-#ifdef CONFIG_KFENCE_STATIC_KEYS
-/* The static key to set up a KFENCE allocation. */
-DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
-#endif
 
 /* Gates the allocation, ensuring only one succeeds in a given period. */
 atomic_t kfence_allocation_gate = ATOMIC_INIT(1);
@@ -901,6 +905,7 @@ void __init kfence_alloc_pool(void)
 	}
 }
 
+#define KFENCE_MAX_SIZE_WITH_INTERVAL 65535
 void __init kfence_init(void)
 {
 	int node, i;
@@ -930,7 +935,13 @@ void __init kfence_init(void)
 	}
 
 	WRITE_ONCE(kfence_enabled, true);
-	queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
+	if (kfence_num_objects > KFENCE_MAX_SIZE_WITH_INTERVAL) {
+		static_branch_enable(&kfence_skip_interval);
+		static_branch_enable(&kfence_allocation_key);
+	} else {
+		queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
+	}
+
 	for_each_node(node) {
 		if (!__kfence_pool_node[node])
 			continue;
@@ -1052,6 +1063,9 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags, int node)
 	    (s->flags & (SLAB_CACHE_DMA | SLAB_CACHE_DMA32)))
 		return NULL;
 
+	if (static_branch_likely(&kfence_skip_interval))
+		goto alloc;
+
 	/*
 	 * allocation_gate only needs to become non-zero, so it doesn't make
 	 * sense to continue writing to it and pay the associated contention
@@ -1073,6 +1087,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags, int node)
 	}
 #endif
 
+alloc:
 	if (!READ_ONCE(kfence_enabled))
 		return NULL;
 
