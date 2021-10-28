@@ -1,0 +1,11 @@
+#PDX-License-Identifier: GPL-2.0-only
+#
+# Performance Monitor Drivers for THead M1 chip
+#
+config THEAD_M1_PMU
+    tristate "THead M1 SoC PMU drivers"
+	depends on (ARM64 && ACPI)
+	default m
+	  help
+	  Support for PMU events monitoring on Alibaba THead M1 SoC,
+		includes CMN-700, DDR Subsystem, and PCIe Controller
