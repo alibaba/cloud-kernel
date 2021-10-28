@@ -263,9 +263,16 @@ EXPORT_SYMBOL_GPL(hooker_uninstall);
 #ifdef CONFIG_X86
 static inline unsigned int hookers_clear_cr0(void)
 {
+	struct static_key *orig_key;
 	unsigned int cr0 = read_cr0();
+	unsigned long val = cr0 & 0xfffeffff;
 
-	write_cr0(cr0 & 0xfffeffff);
+	orig_key = (struct static_key *)kallsyms_lookup_name("cr_pinning");
+	if (!orig_key || !static_key_enabled(orig_key))
+		write_cr0(val);
+	else
+		asm volatile("mov %0,%%cr0" : "+r" (val) : : "memory");
+
 	return cr0;
 }
 
