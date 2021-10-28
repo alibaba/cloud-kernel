@@ -408,6 +408,10 @@ struct mem_cgroup {
 	unsigned long offline_jiffies;
 	unsigned long reap_background;
 
+#ifdef CONFIG_DUPTEXT
+	bool allow_duptext;
+#endif
+
 	CK_HOTFIX_RESERVE(1)
 	CK_HOTFIX_RESERVE(2)
 	CK_HOTFIX_RESERVE(3)

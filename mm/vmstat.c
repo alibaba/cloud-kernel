@@ -1215,6 +1215,9 @@ const char * const vmstat_text[] = {
 #if IS_ENABLED(CONFIG_SHADOW_CALL_STACK)
 	"nr_shadow_call_stack",
 #endif
+#ifdef CONFIG_DUPTEXT
+	"nr_duptext",
+#endif
 
 	/* enum writeback_stat_item counters */
 	"nr_dirty_threshold",

@@ -169,6 +169,11 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		    global_zone_page_state(NR_FREE_CMA_PAGES));
 #endif
 
+#ifdef CONFIG_DUPTEXT
+	show_val_kb(m, "DupText:        ",
+		    global_node_page_state(NR_DUPTEXT));
+#endif
+
 	hugetlb_report_meminfo(m);
 
 	arch_report_meminfo(m);

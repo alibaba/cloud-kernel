@@ -209,6 +209,9 @@ enum node_stat_item {
 #if IS_ENABLED(CONFIG_SHADOW_CALL_STACK)
 	NR_KERNEL_SCS_KB,	/* measured in KiB */
 #endif
+#ifdef CONFIG_DUPTEXT
+	NR_DUPTEXT,
+#endif
 	NR_VM_NODE_STAT_ITEMS
 };
 

@@ -19,6 +19,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
+#include <linux/page_dup.h>
 
 #include <asm/elf.h>
 #include <asm/tlb.h>
@@ -391,6 +392,9 @@ struct mem_size_stats {
 	unsigned long swap;
 	unsigned long shared_hugetlb;
 	unsigned long private_hugetlb;
+#ifdef CONFIG_DUPTEXT
+	unsigned long duptext;
+#endif
 	u64 pss;
 	u64 pss_anon;
 	u64 pss_file;
@@ -498,6 +502,10 @@ static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 
 	if (pte_present(*pte)) {
 		page = vm_normal_page(vma, addr, *pte);
+#ifdef CONFIG_DUPTEXT
+		if (!IS_ERR_OR_NULL(page) && page_dup_slave(page))
+			mss->duptext += PAGE_SIZE;
+#endif
 	} else if (is_swap_pte(*pte)) {
 		swp_entry_t swpent = pte_to_swp_entry(*pte);
 
@@ -553,6 +561,10 @@ static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 	}
 	if (IS_ERR_OR_NULL(page))
 		return;
+#ifdef CONFIG_DUPTEXT
+	if (page_dup_slave(page))
+		mss->duptext += HPAGE_PMD_SIZE;
+#endif
 	if (PageAnon(page))
 		mss->anonymous_thp += HPAGE_PMD_SIZE;
 	else if (PageSwapBacked(page))
@@ -807,6 +819,9 @@ static void __show_smap(struct seq_file *m, const struct mem_size_stats *mss,
 					mss->swap_pss >> PSS_SHIFT);
 	SEQ_PUT_DEC(" kB\nLocked:         ",
 					mss->pss_locked >> PSS_SHIFT);
+#ifdef CONFIG_DUPTEXT
+	SEQ_PUT_DEC(" kB\nDupText:        ", mss->duptext);
+#endif
 	seq_puts(m, " kB\n");
 }
 

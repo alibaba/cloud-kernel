@@ -458,6 +458,10 @@ struct address_space {
 	/* number of thp, only for non-shmem files */
 	atomic_t		nr_thps;
 #endif
+#ifdef CONFIG_DUPTEXT
+	/* number of dup text, in pages */
+	atomic_t                nr_duptext;
+#endif
 	struct rb_root_cached	i_mmap;
 	struct rw_semaphore	i_mmap_rwsem;
 	unsigned long		nrpages;

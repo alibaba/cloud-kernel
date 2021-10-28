@@ -155,6 +155,24 @@ static inline void filemap_nr_thps_dec(struct address_space *mapping)
 #endif
 }
 
+static inline int filemap_nr_duptext(struct address_space *mapping)
+{
+#ifdef CONFIG_DUPTEXT
+	return atomic_read(&mapping->nr_duptext);
+#else
+	return 0;
+#endif
+}
+
+static inline void filemap_nr_duptext_add(struct address_space *mapping, int val)
+{
+#ifdef CONFIG_DUPTEXT
+	atomic_add(val, &mapping->nr_duptext);
+#else
+	WARN_ON_ONCE(1);
+#endif
+}
+
 void release_pages(struct page **pages, int nr);
 
 /*
