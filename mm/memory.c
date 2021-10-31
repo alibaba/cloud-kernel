@@ -74,6 +74,7 @@
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
 #include <linux/khugepaged.h>
+#include <linux/page_dup.h>
 
 #include <trace/events/kmem.h>
 
@@ -3921,6 +3922,11 @@ vm_fault_t finish_fault(struct vm_fault *vmf)
 	else
 		page = vmf->page;
 
+#ifdef CONFIG_DUPTEXT
+	if (!(vmf->flags & FAULT_FLAG_WRITE) && vmf->dup_page)
+		page = vmf->dup_page;
+#endif
+
 	/*
 	 * check even for read faults because we might have lost our CoWed
 	 * page
@@ -4080,10 +4086,22 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		return ret;
 
+#ifdef CONFIG_DUPTEXT
+	vmf->dup_page = dup_page(vmf->page, vmf->vma);
+#endif
+
 	ret |= finish_fault(vmf);
 	unlock_page(vmf->page);
-	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
+#ifdef CONFIG_DUPTEXT
+	if (vmf->dup_page)
 		put_page(vmf->page);
+#endif
+	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
+#ifdef CONFIG_DUPTEXT
+		put_page(vmf->dup_page ?: vmf->page);
+#else
+		put_page(vmf->page);
+#endif
 	return ret;
 }
 

@@ -519,6 +519,9 @@ struct vm_fault {
 	pte_t orig_pte;			/* Value of PTE at the time of fault */
 
 	struct page *cow_page;		/* Page handler may use for COW fault */
+#ifdef CONFIG_DUPTEXT
+	struct page *dup_page;		/* Duplicated page for remote node */
+#endif
 	struct page *page;		/* ->fault handlers should return a
 					 * page here, unless VM_FAULT_NOPAGE
 					 * is set (which is also implied by

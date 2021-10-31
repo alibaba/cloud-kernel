@@ -72,6 +72,7 @@
 #include <linux/page_idle.h>
 #include <linux/memremap.h>
 #include <linux/userfaultfd_k.h>
+#include <linux/page_dup.h>
 
 #include <asm/tlbflush.h>
 
@@ -1214,11 +1215,13 @@ void page_add_file_rmap(struct page *page, bool compound)
 			__inc_node_page_state(page, NR_FILE_PMDMAPPED);
 	} else {
 		if (PageTransCompound(page) && page_mapping(page)) {
-			VM_WARN_ON_ONCE(!PageLocked(page));
+			struct page *m_page = dup_page_master(page);
 
-			SetPageDoubleMap(compound_head(page));
-			if (PageMlocked(page))
-				clear_page_mlock(compound_head(page));
+			VM_WARN_ON_ONCE(!PageLocked(m_page));
+
+			SetPageDoubleMap(compound_head(m_page));
+			if (PageMlocked(m_page))
+				clear_page_mlock(compound_head(m_page));
 		}
 		if (!atomic_inc_and_test(&page->_mapcount))
 			goto out;
@@ -1231,6 +1234,7 @@ out:
 static void page_remove_file_rmap(struct page *page, bool compound)
 {
 	int i, nr = 1;
+	struct page *m_page;
 
 	VM_BUG_ON_PAGE(compound && !PageHead(page), page);
 
@@ -1265,8 +1269,9 @@ static void page_remove_file_rmap(struct page *page, bool compound)
 	 */
 	__mod_lruvec_page_state(page, NR_FILE_MAPPED, -nr);
 
-	if (unlikely(PageMlocked(page)))
-		clear_page_mlock(page);
+	m_page = dup_page_master(page);
+	if (unlikely(PageMlocked(m_page)))
+		clear_page_mlock(m_page);
 }
 
 static void page_remove_anon_compound_rmap(struct page *page)
