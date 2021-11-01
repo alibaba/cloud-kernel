@@ -82,6 +82,7 @@
 #include <linux/io_uring.h>
 #include <linux/blk-cgroup.h>
 #include <linux/audit.h>
+#include <linux/cgroup.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/io_uring.h>
@@ -6919,6 +6920,92 @@ static void io_sqd_init_new(struct io_sq_data *sqd)
 	io_sqd_update_thread_idle(sqd);
 }
 
+struct cgrp_migr_info {
+	pid_t pid;
+	char *path;
+	struct work_struct work;
+};
+
+static void io_sq_cgrp_migr_work(struct work_struct *work)
+{
+	struct cgrp_migr_info *info;
+	struct file *file;
+	char pid_str[16] = {0};
+	loff_t pos = 0;
+
+	info = container_of(work, struct cgrp_migr_info, work);
+
+	file = filp_open(info->path, O_RDWR, 0600);
+	if (IS_ERR(file)) {
+		kfree(info->path);
+		printk(KERN_ERR "io_uring: open %s failed, error code:%ld\n",
+		       info->path, PTR_ERR(file));
+		return;
+	}
+
+	snprintf(pid_str, sizeof(pid_str), "%d", info->pid);
+	kernel_write(file, pid_str, strlen(pid_str), &pos);
+	filp_close(file, NULL);
+	kfree(info->path);
+}
+
+static int io_sq_attach_cpu_cgroup(struct task_struct *sqo_thread)
+{
+	struct cgroup_subsys_state *css_owner, *css_sq;
+	char *buf = NULL;
+	int ret = 0, len, size = 0;
+	struct cgrp_migr_info info;
+
+	/*
+	 * if they are in the same cgroup, just return.
+	 * two cases lead to the same cgroup situation:
+	 * - we've done the cgroup move before
+	 * - the cgroup of current task is in root cgroup
+	 *   (as sqthread is in root cgroup)
+	 */
+	css_owner = task_get_css(current, cpuacct_cgrp_id);
+	css_sq = task_get_css(sqo_thread, cpuacct_cgrp_id);
+	if (css_owner->cgroup == css_sq->cgroup)
+		goto out;
+
+	buf = kzalloc(4096, GFP_KERNEL);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	size = snprintf(buf, 4096, "/sys/fs/cgroup/cpuacct");
+	ret = cgroup_path(css_owner->cgroup, buf + size, 4096 - size);
+	if (ret < 0)
+		goto out;
+	else if (ret >= (4096 - size)) {
+		ret = -ENAMETOOLONG;
+		goto out;
+	}
+	size += ret;
+
+	len = strlen("/tasks") + 1;
+	if (len > (4096 - size)) {
+		ret = -ENAMETOOLONG;
+		goto out;
+	}
+	snprintf(buf + size, len, "/tasks");
+
+	info.pid = task_pid_nr(sqo_thread);
+	info.path = buf;
+	INIT_WORK(&info.work, io_sq_cgrp_migr_work);
+
+	schedule_work(&info.work);
+	flush_scheduled_work();
+
+out:
+	css_put(css_owner);
+	css_put(css_sq);
+	if (ret < 0 && buf)
+		kfree(buf);
+	return ret;
+}
+
 static int io_sq_thread(void *data)
 {
 	struct cgroup_subsys_state *cur_css = NULL;
@@ -9700,6 +9787,23 @@ static int io_uring_create(unsigned entries, struct io_uring_params *p,
 
 	if (!(p->flags & IORING_SETUP_R_DISABLED))
 		io_sq_offload_start(ctx);
+
+	if ((p->flags & IORING_SETUP_SQ_AFF) &&
+	    (ctx->flags & IORING_SETUP_SQPOLL_PERCPU) && percpu_sqd) {
+		int cpu = p->sq_thread_cpu;
+		struct io_sq_data *sqd;
+
+		mutex_lock(&percpu_sqd_lock);
+		sqd = *per_cpu_ptr(percpu_sqd, cpu);
+		io_sq_thread_park(sqd);
+		sqd->thread->flags &= ~PF_NO_SETAFFINITY;
+		ret = io_sq_attach_cpu_cgroup(sqd->thread);
+		sqd->thread->flags |= PF_NO_SETAFFINITY;
+		io_sq_thread_unpark(sqd);
+		mutex_unlock(&percpu_sqd_lock);
+		if (ret < 0)
+			goto err;
+	}
 
 	memset(&p->sq_off, 0, sizeof(p->sq_off));
 	p->sq_off.head = offsetof(struct io_rings, sq.head);
