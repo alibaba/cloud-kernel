@@ -88,6 +88,7 @@
 #include <trace/events/io_uring.h>
 
 #include <uapi/linux/io_uring.h>
+#include <uapi/linux/sched/types.h>
 
 #include "internal.h"
 #include "io-wq.h"
@@ -8272,8 +8273,10 @@ static void io_sq_offload_start(struct io_ring_ctx *ctx)
 	struct io_sq_data *sqd = ctx->sq_data;
 
 	ctx->flags &= ~IORING_SETUP_R_DISABLED;
-	if ((ctx->flags & IORING_SETUP_SQPOLL) && sqd && sqd->thread)
+	if ((ctx->flags & IORING_SETUP_SQPOLL) && sqd && sqd->thread) {
 		wake_up_process(sqd->thread);
+		set_user_nice(sqd->thread, MIN_NICE);
+	}
 }
 
 static inline void __io_unaccount_mem(struct user_struct *user,
