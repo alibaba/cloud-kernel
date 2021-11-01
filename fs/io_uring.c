@@ -7449,6 +7449,7 @@ static struct io_sq_data *io_find_or_create_percpu_sq_thread(struct io_ring_ctx 
 	struct io_sq_data *sqd;
 	struct task_struct *tsk;
 	int cpu = p->sq_thread_cpu;
+	char buf[TASK_COMM_LEN];
 
 	mutex_lock(&percpu_sqd_lock);
 	sqd = *per_cpu_ptr(percpu_sqd, cpu);
@@ -7458,8 +7459,8 @@ static struct io_sq_data *io_find_or_create_percpu_sq_thread(struct io_ring_ctx 
 			mutex_unlock(&percpu_sqd_lock);
 			return sqd;
 		}
-
-		tsk = kthread_create_on_cpu(io_sq_thread, sqd, cpu, "io_uring-sq");
+		snprintf(buf, sizeof(buf), "iou-sqp-%d", current->pid);
+		tsk = kthread_create_on_cpu(io_sq_thread, sqd, cpu, buf);
 		if (IS_ERR(tsk)) {
 			kfree(sqd);
 			sqd = ERR_PTR(PTR_ERR(tsk));
