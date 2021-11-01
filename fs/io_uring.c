@@ -2053,6 +2053,7 @@ static int io_req_task_work_add(struct io_kiocb *req, bool twa_signal_ok)
 	struct io_ring_ctx *ctx = req->ctx;
 	enum task_work_notify_mode notify;
 	int ret;
+	bool sqpoll_mode, submit_on_idle;
 
 	if (tsk->flags & PF_EXITING)
 		return -ESRCH;
@@ -2064,7 +2065,10 @@ static int io_req_task_work_add(struct io_kiocb *req, bool twa_signal_ok)
 	 * will do the job.
 	 */
 	notify = TWA_NONE;
-	if (!(ctx->flags & IORING_SETUP_SQPOLL) && twa_signal_ok)
+	sqpoll_mode = ctx->flags & IORING_SETUP_SQPOLL;
+	submit_on_idle = ctx->sq_data && ctx->sq_data->thread &&
+			 (ctx->sq_data->thread != req->task);
+	if ((!sqpoll_mode || submit_on_idle) && twa_signal_ok)
 		notify = TWA_SIGNAL;
 
 	ret = task_work_add(tsk, &req->task_work, notify);
@@ -2751,10 +2755,11 @@ static void io_iopoll_req_issued(struct io_kiocb *req, bool in_async)
 
 	/*
 	 * If IORING_SETUP_SQPOLL is enabled, sqes are either handled in sq thread
-	 * task context or in io worker task context. If current task context is
-	 * sq thread, we don't need to check whether should wake up sq thread.
+	 * task context or in io worker task context or in original context. If
+	 * current task context is sq thread, we don't need to check whether should
+	 * wake up sq thread.
 	 */
-	if (in_async && (ctx->flags & IORING_SETUP_SQPOLL) &&
+	if ((ctx->flags & IORING_SETUP_SQPOLL) && (current != ctx->sq_data->thread) &&
 	    wq_has_sleeper(&ctx->sq_data->wait))
 		wake_up(&ctx->sq_data->wait);
 }
@@ -9264,7 +9269,8 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 	io_run_task_work();
 
 	if (flags & ~(IORING_ENTER_GETEVENTS | IORING_ENTER_SQ_WAKEUP |
-			IORING_ENTER_SQ_WAIT | IORING_ENTER_EXT_ARG))
+			IORING_ENTER_SQ_WAIT | IORING_ENTER_EXT_ARG |
+			IORING_ENTER_SQ_SUBMIT_ON_IDLE))
 		return -EINVAL;
 
 	f = fdget(fd);
@@ -9297,8 +9303,19 @@ SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
 			ret = -EOWNERDEAD;
 			goto out;
 		}
-		if (flags & IORING_ENTER_SQ_WAKEUP)
+		if (flags & IORING_ENTER_SQ_WAKEUP) {
 			wake_up(&ctx->sq_data->wait);
+			if ((flags & IORING_ENTER_SQ_SUBMIT_ON_IDLE) &&
+			    same_thread_group(ctx->sq_data->thread, current)) {
+				bool has_lock;
+
+				has_lock = mutex_trylock(&ctx->uring_lock);
+				if (has_lock) {
+					io_submit_sqes(ctx, min(to_submit, 8U));
+					mutex_unlock(&ctx->uring_lock);
+				}
+			}
+		}
 		if (flags & IORING_ENTER_SQ_WAIT) {
 			ret = io_sqpoll_wait_sq(ctx);
 			if (ret)
