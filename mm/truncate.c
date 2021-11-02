@@ -257,7 +257,7 @@ int invalidate_inode_page(struct page *page)
 		return 0;
 	if (PageDirty(page) || PageWriteback(page))
 		return 0;
-	if (page_mapped(page))
+	if (page_mapped(page) || dup_page_mapped(page))
 		return 0;
 	return invalidate_complete_page(mapping, page);
 }
