@@ -249,6 +249,8 @@ static void page_cache_free_page(struct address_space *mapping,
 	if (freepage)
 		freepage(page);
 
+	dedup_page(page, false);
+
 	if (PageTransHuge(page) && !PageHuge(page)) {
 		page_ref_sub(page, thp_nr_pages(page));
 		VM_BUG_ON_PAGE(page_count(page) <= 0, page);
@@ -822,6 +824,9 @@ int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask)
 	xas_unlock_irqrestore(&xas, flags);
 	if (freepage)
 		freepage(old);
+
+	dedup_page(old, false);
+
 	put_page(old);
 
 	return 0;

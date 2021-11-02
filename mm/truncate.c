@@ -24,6 +24,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/cleancache.h>
 #include <linux/rmap.h>
+#include <linux/page_dup.h>
 #include "internal.h"
 
 /*
@@ -687,6 +688,8 @@ invalidate_complete_page2(struct address_space *mapping, struct page *page)
 
 	if (mapping->a_ops->freepage)
 		mapping->a_ops->freepage(page);
+
+	dedup_page(page, false);
 
 	put_page(page);	/* pagecache ref */
 	return 1;

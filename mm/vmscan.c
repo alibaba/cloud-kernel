@@ -51,6 +51,7 @@
 #include <linux/printk.h>
 #include <linux/dax.h>
 #include <linux/psi.h>
+#include <linux/page_dup.h>
 
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -935,6 +936,8 @@ static int __remove_mapping(struct address_space *mapping, struct page *page,
 
 		if (freepage != NULL)
 			freepage(page);
+
+		dedup_page(page, false);
 	}
 
 	return 1;
