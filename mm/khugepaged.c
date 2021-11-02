@@ -18,6 +18,7 @@
 #include <linux/page_idle.h>
 #include <linux/swapops.h>
 #include <linux/shmem_fs.h>
+#include <linux/page_dup.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -1883,6 +1884,8 @@ static void collapse_file(struct mm_struct *mm,
 
 		if (page_mapped(page))
 			unmap_mapping_pages(mapping, index, 1, false);
+
+		dedup_page(page, false);
 
 		xas_lock_irq(&xas);
 		xas_set(&xas, index);
