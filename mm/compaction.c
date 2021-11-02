@@ -23,6 +23,7 @@
 #include <linux/freezer.h>
 #include <linux/page_owner.h>
 #include <linux/psi.h>
+#include <linux/page_dup.h>
 #include "internal.h"
 
 #ifdef CONFIG_COMPACTION
@@ -1152,6 +1153,9 @@ static bool suitable_migration_source(struct compact_control *cc,
 	int block_mt;
 
 	if (pageblock_skip_persistent(page))
+		return false;
+
+	if (page_dup_any(page))
 		return false;
 
 	if ((cc->mode != MIGRATE_ASYNC) || !cc->direct_compaction)

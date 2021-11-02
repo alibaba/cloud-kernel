@@ -99,6 +99,7 @@
 #include <linux/mmu_notifier.h>
 #include <linux/printk.h>
 #include <linux/swapops.h>
+#include <linux/page_dup.h>
 
 #include <asm/tlbflush.h>
 #include <linux/uaccess.h>
@@ -1773,6 +1774,10 @@ bool vma_migratable(struct vm_area_struct *vma)
 		gfp_zone(mapping_gfp_mask(vma->vm_file->f_mapping))
 			< policy_zone)
 		return false;
+
+	if (dup_page_suitable(vma, vma->vm_mm))
+		return false;
+
 	return true;
 }
 

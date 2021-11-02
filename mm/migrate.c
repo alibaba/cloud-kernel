@@ -49,6 +49,7 @@
 #include <linux/sched/mm.h>
 #include <linux/ptrace.h>
 #include <linux/oom.h>
+#include <linux/page_dup.h>
 
 #include <asm/tlbflush.h>
 
@@ -1047,6 +1048,15 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 			goto out;
 
 		lock_page(page);
+	}
+
+	/*
+	 * Check PG_dup with page lock here. A page can become PG_dup after the
+	 * check of suitable_migration_source or vma_migratable.
+	 */
+	if (page_dup_any(page)) {
+		rc = -EBUSY;
+		goto out_unlock;
 	}
 
 	if (PageWriteback(page)) {
