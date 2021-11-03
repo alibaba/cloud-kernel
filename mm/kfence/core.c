@@ -164,7 +164,10 @@ enum kfence_counter_id {
 	KFENCE_COUNTER_BUGS,
 	KFENCE_COUNTER_COUNT,
 };
-static atomic_long_t counters[KFENCE_COUNTER_COUNT];
+struct kfence_counter {
+	s64 counter[KFENCE_COUNTER_COUNT];
+};
+static struct kfence_counter __percpu *counters;
 static const char *const counter_names[] = {
 	[KFENCE_COUNTER_ALLOCATED]	= "currently allocated",
 	[KFENCE_COUNTER_ALLOCS]		= "total allocations",
@@ -282,7 +285,7 @@ static inline bool check_canary_byte(u8 *addr)
 	if (likely(*addr == KFENCE_CANARY_PATTERN(addr)))
 		return true;
 
-	atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
+	raw_cpu_ptr(counters)->counter[KFENCE_COUNTER_BUGS]++;
 	kfence_report_error((unsigned long)addr, false, NULL, addr_to_metadata((unsigned long)addr),
 			    KFENCE_ERROR_CORRUPTION);
 	return false;
@@ -292,7 +295,13 @@ static inline bool check_canary_byte(u8 *addr)
 static __always_inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn)(u8 *))
 {
 	const unsigned long pageaddr = ALIGN_DOWN(meta->addr, PAGE_SIZE);
-	unsigned long addr;
+	unsigned long addr, start = pageaddr, end = pageaddr + PAGE_SIZE;
+
+	/* this func will take most cost so we shrink it when no interval limit */
+	if (static_branch_likely(&kfence_skip_interval)) {
+		start = max(ALIGN_DOWN(meta->addr - 1, cache_line_size()), start);
+		end = min(ALIGN(meta->addr + meta->size + 1, cache_line_size()), end);
+	}
 
 	lockdep_assert_held(&meta->lock);
 
@@ -306,13 +315,13 @@ static __always_inline void for_each_canary(const struct kfence_metadata *meta, 
 	 */
 
 	/* Apply to left of object. */
-	for (addr = pageaddr; addr < meta->addr; addr++) {
+	for (addr = start; addr < meta->addr; addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
 
 	/* Apply to right of object. */
-	for (addr = meta->addr + meta->size; addr < pageaddr + PAGE_SIZE; addr++) {
+	for (addr = meta->addr + meta->size; addr < end; addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
@@ -404,6 +413,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 {
 	struct kfence_metadata *meta = NULL;
 	struct kfence_freelist_node *kfence_freelist = &freelist.node[node];
+	struct kfence_counter *this_cpu_counter = raw_cpu_ptr(counters);
 	unsigned long flags;
 	struct page *page;
 	void *addr;
@@ -447,7 +457,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	 * is that the out-of-bounds accesses detected are deterministic for
 	 * such allocations.
 	 */
-	if (prandom_u32_max(2)) {
+	if (this_cpu_counter->counter[KFENCE_COUNTER_ALLOCS] % 2) {
 		/* Allocate on the "right" side, re-calculate address. */
 		meta->addr += PAGE_SIZE - size;
 		meta->addr = ALIGN_DOWN(meta->addr, cache->align);
@@ -487,8 +497,8 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (CONFIG_KFENCE_STRESS_TEST_FAULTS && !prandom_u32_max(CONFIG_KFENCE_STRESS_TEST_FAULTS))
 		kfence_protect(meta->addr); /* Random "faults" by protecting the object. */
 
-	atomic_long_inc(&counters[KFENCE_COUNTER_ALLOCATED]);
-	atomic_long_inc(&counters[KFENCE_COUNTER_ALLOCS]);
+	this_cpu_counter->counter[KFENCE_COUNTER_ALLOCATED]++;
+	this_cpu_counter->counter[KFENCE_COUNTER_ALLOCS]++;
 
 	return addr;
 }
@@ -550,13 +560,14 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool z
 {
 	int node = virt_to_nid(addr);
 	struct kcsan_scoped_access assert_page_exclusive;
+	struct kfence_counter *this_cpu_counter = raw_cpu_ptr(counters);
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&meta->lock, flags);
 
 	if (meta->state != KFENCE_OBJECT_ALLOCATED || meta->addr != (unsigned long)addr) {
 		/* Invalid or double-free, bail out. */
-		atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
+		this_cpu_counter->counter[KFENCE_COUNTER_BUGS]++;
 		kfence_report_error((unsigned long)addr, false, NULL, meta,
 				    KFENCE_ERROR_INVALID_FREE);
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
@@ -601,11 +612,11 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool z
 	if (!zombie) {
 		put_free_meta(meta, node);
 
-		atomic_long_dec(&counters[KFENCE_COUNTER_ALLOCATED]);
-		atomic_long_inc(&counters[KFENCE_COUNTER_FREES]);
+		this_cpu_counter->counter[KFENCE_COUNTER_ALLOCATED]--;
+		this_cpu_counter->counter[KFENCE_COUNTER_FREES]++;
 	} else {
 		/* See kfence_shutdown_cache(). */
-		atomic_long_inc(&counters[KFENCE_COUNTER_ZOMBIES]);
+		this_cpu_counter->counter[KFENCE_COUNTER_ZOMBIES]++;
 	}
 }
 
@@ -732,11 +743,24 @@ static bool __init kfence_init_pool(void)
 
 static int stats_show(struct seq_file *seq, void *v)
 {
-	int i;
+	int i, cpu;
 
 	seq_printf(seq, "enabled: %i\n", READ_ONCE(kfence_enabled));
-	for (i = 0; i < KFENCE_COUNTER_COUNT; i++)
-		seq_printf(seq, "%s: %ld\n", counter_names[i], atomic_long_read(&counters[i]));
+
+	if (!counters)
+		return 0;
+
+	for (i = 0; i < KFENCE_COUNTER_COUNT; i++) {
+		s64 sum = 0;
+		/*
+		 * This calculation may not accurate, but don't mind since we are
+		 * mostly interested in bugs and zombies. They are rare and likely
+		 * not changed during calculating.
+		 */
+		for_each_possible_cpu(cpu)
+			sum += per_cpu_ptr(counters, cpu)->counter[i];
+		seq_printf(seq, "%s: %lld\n", counter_names[i], sum);
+	}
 
 	return 0;
 }
@@ -917,8 +941,9 @@ void __init kfence_init(void)
 	freelist.node = kmalloc_array(nr_node_ids, sizeof(struct kfence_freelist_node),
 				      GFP_KERNEL);
 	freelist.cpu = alloc_percpu(struct kfence_freelist_cpu);
+	counters = alloc_percpu(struct kfence_counter);
 
-	if (!freelist.node || !freelist.cpu)
+	if (!freelist.node || !freelist.cpu || !counters)
 		goto fail;
 
 	for_each_node(node) {
@@ -970,6 +995,8 @@ fail:
 	freelist.node = NULL;
 	free_percpu(freelist.cpu);
 	freelist.cpu = NULL;
+	free_percpu(counters);
+	counters = NULL;
 }
 
 static void kfence_shutdown_cache_node(struct kmem_cache *s, int node)
@@ -1151,7 +1178,7 @@ bool kfence_handle_page_fault(unsigned long addr, bool is_write, struct pt_regs 
 	if (!READ_ONCE(kfence_enabled)) /* If disabled at runtime ... */
 		return kfence_unprotect(addr); /* ... unprotect and proceed. */
 
-	atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
+	raw_cpu_ptr(counters)->counter[KFENCE_COUNTER_BUGS]++;
 
 	page_index = (addr - (unsigned long)__kfence_pool_node[node]) / PAGE_SIZE;
 

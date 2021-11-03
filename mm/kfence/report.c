@@ -157,7 +157,11 @@ static void print_diff_canary(unsigned long address, size_t bytes_to_show,
 
 	/* Do not show contents of object nor read into following guard page. */
 	end = (const u8 *)(address < meta->addr ? min(show_until_addr, meta->addr)
-						: min(show_until_addr, PAGE_ALIGN(address)));
+						: static_branch_likely(&kfence_skip_interval) ?
+						  min(show_until_addr,
+						      ALIGN(meta->addr + meta->size + 1,
+							    cache_line_size())) :
+						  min(show_until_addr, PAGE_ALIGN(address)));
 
 	pr_cont("[");
 	for (cur = (const u8 *)address; cur < end; cur++) {
