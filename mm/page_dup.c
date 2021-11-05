@@ -307,6 +307,19 @@ struct page *__dup_page(struct page *page, struct vm_area_struct *vma)
 			return NULL;
 		}
 
+		/*
+		 * Paired with smp_mb() in do_dentry_open() to ensure
+		 * i_writecount is up to date and the update to nr_duptext
+		 * is visible. Ensures the page cache will be truncated if
+		 * the file is opened writable.
+		 */
+		smp_mb();
+		if (inode_is_open_for_write(hpage->mapping->host)) {
+			__delete_from_dup_pages(new_hpage, hpage);
+			put_page(new_hpage);
+			return NULL;
+		}
+
 		dup_hpage = new_hpage;
 	}
 
