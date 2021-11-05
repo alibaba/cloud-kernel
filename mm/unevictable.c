@@ -258,34 +258,34 @@ static void unevict_pid(pid_t pid)
 	}
 }
 
-static ssize_t proc_read_add_pid(struct file *file,
-		char __user *buf, size_t count, loff_t *ppos)
+struct add_pid_seq_context {
+	int idx;
+	int count;
+	int pids[0];
+};
+
+/*
+ * Note there exists a race condition that we may get inconsistent snapshots
+ * of pid array if call add_pid_start() more than one round due to users add
+ * or delete the pid. However, I think it's acceptable because the pid may
+ * still change even we get a consistent snapshot to show.
+ */
+static void *add_pid_start(struct seq_file *m, loff_t *pos)
 {
-	char *to;
-	int *pids;
+	struct add_pid_seq_context *ctx = NULL;
 	struct evict_pid_entry *pid_entry;
-	int i, len, len1, len2, pid_count = 0;
 	struct task_struct *tsk;
 	struct evict_pid_entry *tmp;
-	int ret = 0, buf_size = 1024;
-	loff_t pos = *ppos;
 	pid_t pid;
 
-	len = 0;
-	len1 = 0;
-	len2 = 0;
-	to = kmalloc(buf_size, GFP_KERNEL);
-	if (!to)
-		return -ENOMEM;
-
 	mutex_lock(&pid_mutex);
+	if (*pos >= proc_pids_count)
+		goto done;
+	ctx = vzalloc(sizeof(*ctx) + proc_pids_count * sizeof(int));
+	if (unlikely(!ctx))
+		goto done;
+
 	if (proc_pids_count > 0) {
-		pids = kcalloc(proc_pids_count, sizeof(int), GFP_KERNEL);
-		if (!pids) {
-			mutex_unlock(&pid_mutex);
-			goto out;
-		}
-		i = 0;
 		list_for_each_entry_safe(pid_entry, tmp, &pid_list, list) {
 			rcu_read_lock();
 			tsk = find_task_by_pid_ns(pid_entry->rootpid,
@@ -301,52 +301,59 @@ static ssize_t proc_read_add_pid(struct file *file,
 			rcu_read_unlock();
 
 			if (pid != -1) {
-				pids[i++] = pid;
+				ctx->pids[ctx->count++] = pid;
 			} else {
 				list_del(&pid_entry->list);
 				__remove_entry(pid_entry);
 				kfree(pid_entry);
 			}
 		}
-		pid_count = i;
-		mutex_unlock(&pid_mutex);
-
-		i = len = 0;
-		for (; i < pid_count - 1 && len < buf_size - 32; i++) {
-			len1 = sprintf(to, "%d,", pids[i]);
-			to += len1;
-			len += len1;
-			len2 += len1;
-		}
-		if (i == pid_count - 1 && len < PAGE_SIZE - 16) {
-			len1 = sprintf(to, "%d\n", pids[i]);
-			len += len1;
-		}
-		kfree(pids);
-	} else {
-		mutex_unlock(&pid_mutex);
-		len = sprintf(to, "%s\n", " ");
 	}
+	if (*pos >= ctx->count)
+		goto done;
+	mutex_unlock(&pid_mutex);
+	ctx->idx = *pos;
+	m->private = ctx;
+	return ctx;
+done:
+	mutex_unlock(&pid_mutex);
+	vfree(ctx);
+	return NULL;
+}
 
-	to -= len2;
-	if (pos >= len)
-		goto out;
+static void *add_pid_next(struct seq_file *m, void *p, loff_t *pos)
+{
+	struct add_pid_seq_context *ctx = p;
 
-	if (count >= len)
-		count = len;
-	if (count + pos >= len)
-		count = len - pos;
-	if (copy_to_user(buf, to, len)) {
-		ret = -EFAULT;
-		goto out;
-	}
+	ctx->idx = ++*pos;
+	return (ctx->idx < ctx->count) ? ctx : NULL;
+}
 
-	*ppos += len;
-	ret = count;
+static void add_pid_stop(struct seq_file *m, void *p)
+{
+	vfree(m->private);
+	m->private = NULL;
+}
 
-out:
-	kfree(to);
-	return ret;
+static int add_pid_show(struct seq_file *m, void *p)
+{
+	struct add_pid_seq_context *ctx = p;
+
+	seq_printf(m, "%d", ctx->pids[ctx->idx]);
+	seq_putc(m, (ctx->idx == ctx->count - 1) ? '\n' : ',');
+	return 0;
+}
+
+static const struct seq_operations seq_add_pid_op = {
+	.start = add_pid_start,
+	.next  = add_pid_next,
+	.stop  = add_pid_stop,
+	.show  = add_pid_show,
+};
+
+static int proc_open_add_pid(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &seq_add_pid_op);
 }
 
 static void execute_vm_lock(struct work_struct *unused)
@@ -494,8 +501,11 @@ out:
 }
 
 const static struct proc_ops add_proc_fops = {
-	.proc_read  = proc_read_add_pid,
+	.proc_open  = proc_open_add_pid,
+	.proc_read  = seq_read,
 	.proc_write = proc_write_add_pid,
+	.proc_lseek = seq_lseek,
+	.proc_release = seq_release,
 };
 
 const static struct proc_ops del_proc_fops = {
