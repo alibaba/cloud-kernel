@@ -417,23 +417,36 @@ static ssize_t rafs_v6_read_chunk(struct super_block *sb,
 		return err;
 	off = mdev.m_pa;
 	do {
-		struct iovec iovec = iov_iter_iovec(to);
 		ssize_t ret;
 
-		if (iovec.iov_len > size)
-			iovec.iov_len = size;
+		if (iov_iter_is_pipe(to)) {
+			iov_iter_pipe(&titer, READ, to->pipe, size - read);
 
-		pr_debug("%s: off %llu size %llu blob_index %u\n", __func__, off,
-			 size, device_id);
+			ret = vfs_iter_read(mdev.m_fp, &titer, &off, 0);
+			pr_debug("pipe ret %ld off %llu size %llu read %ld\n",
+				 ret, off, size, read);
+			if (ret <= 0) {
+				pr_err("%s: failed to read blob ret %ld\n", __func__, ret);
+				return ret;
+			}
+		} else {
+			struct iovec iovec = iov_iter_iovec(to);
 
-		/* TODO async */
-		iov_iter_init(&titer, READ, &iovec, 1, iovec.iov_len);
-		ret = vfs_iter_read(mdev.m_fp, &titer, &off, 0);
-		if (ret < 0) {
-			pr_err("%s: failed to read blob ret %ld\n", __func__, ret);
-			return ret;
-		} else if (ret < iovec.iov_len) {
-			return read;
+			if (iovec.iov_len > size - read)
+				iovec.iov_len = size - read;
+
+			pr_debug("%s: off %llu size %llu iov_len %lu blob_index %u\n",
+				 __func__, off, size, iovec.iov_len, device_id);
+
+			/* TODO async */
+			iov_iter_init(&titer, READ, &iovec, 1, iovec.iov_len);
+			ret = vfs_iter_read(mdev.m_fp, &titer, &off, 0);
+			if (ret <= 0) {
+				pr_err("%s: failed to read blob ret %ld\n", __func__, ret);
+				return ret;
+			} else if (ret < iovec.iov_len) {
+				return read;
+			}
 		}
 		iov_iter_advance(to, ret);
 		read += ret;
@@ -467,6 +480,8 @@ static ssize_t rafs_v6_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 		}
 		delta = pos - map.m_la;
 		size = min_t(u64, map.m_llen - delta, total);
+		pr_debug("inode i_size %llu pa %llu delta %llu size %llu",
+			 inode->i_size, map.m_pa, delta, size);
 		read = rafs_v6_read_chunk(inode->i_sb, to, map.m_pa + delta,
 					  size, map.m_deviceid);
 		if (read < size) {
