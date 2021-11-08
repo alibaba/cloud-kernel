@@ -7,6 +7,7 @@
 #include <linux/slab.h>
 #include <linux/rmap.h>
 #include <linux/pagemap.h>
+#include <linux/pagevec.h>
 #include <linux/migrate.h>
 #include <linux/memcontrol.h>
 #include <linux/fs.h>
@@ -88,6 +89,16 @@ static int add_to_dup_pages(struct page *new_page, struct page *page)
 
 	get_page(new_page);
 	xas_lock_irqsave(&xas, flags);
+
+	/*
+	 * Check the global enabled key inside xa_lock, in order to ensure
+	 * this dup_page not to be added, or truncation not to miss this
+	 * dup_page.
+	 */
+	if (!static_branch_likely(&duptext_enabled_key)) {
+		ret = -EBUSY;
+		goto out;
+	}
 
 	list = xas_load(&xas);
 	if (!list) {
@@ -338,6 +349,56 @@ void __dedup_page(struct page *page, bool locked)
 	delete_from_dup_pages(page, locked);
 }
 
+static unsigned int find_get_master_pages(struct pagevec *pvec, int nid,
+					  unsigned long start_pfn, unsigned long end_pfn)
+{
+	XA_STATE(xas, &dup_pages[nid], start_pfn);
+	struct page *page;
+	void *entry;
+
+	pagevec_init(pvec);
+
+	rcu_read_lock();
+	xas_for_each(&xas, entry, end_pfn) {
+		if (xas_retry(&xas, entry))
+			continue;
+
+		page = pfn_to_online_page(xas.xa_index);
+		if (!page || !page_cache_get_speculative(page))
+			continue;
+
+		if (pagevec_add(pvec, page) == 0)
+			break;
+	}
+	rcu_read_unlock();
+
+	return pagevec_count(pvec);
+}
+
+static void truncate_dup_pages(void)
+{
+	int nid;
+
+	for_each_online_node(nid) {
+		unsigned long start_pfn = node_start_pfn(nid);
+		unsigned long end_pfn = node_end_pfn(nid);
+		struct pagevec pvec;
+		struct page *page;
+		int i;
+
+		while (find_get_master_pages(&pvec, nid, start_pfn, end_pfn)) {
+			for (i = 0; i < pagevec_count(&pvec); i++) {
+				page = pvec.pages[i];
+
+				lock_page(page);
+				__dedup_page(page, false);
+				unlock_page(page);
+				put_page(page);
+			}
+		}
+	}
+}
+
 static int __init setup_duptext(char *s)
 {
 	if (!strcmp(s, "1"))
@@ -358,14 +419,37 @@ static ssize_t duptext_enabled_store(struct kobject *kobj,
 				     struct kobj_attribute *attr,
 				     const char *buf, size_t count)
 {
+	static DEFINE_MUTEX(mutex);
+	ssize_t ret = count;
+
+	mutex_lock(&mutex);
+
 	if (!strncmp(buf, "1", 1))
 		static_branch_enable(&duptext_enabled_key);
-	else if (!strncmp(buf, "0", 1))
-		static_branch_disable(&duptext_enabled_key);
-	else
-		return -EINVAL;
+	else if (!strncmp(buf, "0", 1)) {
+		int nid;
 
-	return count;
+		static_branch_disable(&duptext_enabled_key);
+		/*
+		 * Grab xa_lock of each dup_pages xarray after disable the
+		 * global enabled key, in order to prevent new dup_page from
+		 * being added, or wait for all inflight dup_page to be added.
+		 *
+		 * On the other hand, PG_locked will serialize
+		 * page_add_file_rmap() and truncate_dup_pages() for each
+		 * identical page.
+		 */
+		for_each_online_node(nid) {
+			xa_lock(&dup_pages[nid]);
+			xa_unlock(&dup_pages[nid]);
+		}
+
+		truncate_dup_pages();
+	} else
+		ret = -EINVAL;
+
+	mutex_unlock(&mutex);
+	return ret;
 }
 static struct kobj_attribute duptext_enabled_attr =
 	__ATTR(enabled, 0644, duptext_enabled_show,
