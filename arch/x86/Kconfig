@@ -1009,6 +1009,16 @@ config NR_CPUS
 config SCHED_SMT
 	def_bool y if SMP
 
+config HT_STABLE
+	bool "Make noise when hyperthread is idle"
+	depends on SCHED_SMT
+	help
+	  Loop in idle thread to provide noise for stabilizing peer
+	  hyper-thread performance. This works beacase HT can make
+	  different impact depending on whether idle or not.
+
+	  If unsure say N here.
+
 config SCHED_MC
 	def_bool y
 	prompt "Multi-core scheduler support"

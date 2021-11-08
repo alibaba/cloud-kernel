@@ -33,6 +33,62 @@ void cpu_idle_poll_ctrl(bool enable)
 	}
 }
 
+#ifdef CONFIG_HT_STABLE
+void wake_up_idle_ht(struct rq *rq)
+{
+	int ht, cpu = smp_processor_id();
+	struct task_group *tg;
+
+	if (!sched_feat(HT_STABLE))
+		return;
+
+	if (rq->idle == current) {
+		rq->need_ht_stable = false;
+		return;
+	}
+
+	rcu_read_lock();
+	tg = container_of(task_css(current, cpu_cgrp_id),
+		  struct task_group, css);
+	rq->need_ht_stable = tg && tg->need_ht_stable;
+#ifdef CONFIG_CFS_BANDWIDTH
+	rq->need_ht_stable = rq->need_ht_stable &&
+				tg->cfs_bandwidth.runtime <= tg->cfs_bandwidth.quota;
+#endif
+	rcu_read_unlock();
+
+	if (!rq->need_ht_stable)
+		return;
+	for_each_cpu(ht, cpu_smt_mask(cpu)) {
+		if (cpu == ht || !cpu_online(ht))
+			continue;
+		rq = cpu_rq(ht);
+		if (rq->idle == rq->curr && !rq->in_ht_stable)
+			smp_send_reschedule(ht);
+	}
+}
+
+bool need_ht_stable(void)
+{
+	int cpu, ht;
+	struct rq *rq;
+
+	if (!sched_feat(HT_STABLE))
+		return false;
+
+	cpu = smp_processor_id();
+	for_each_cpu(ht, cpu_smt_mask(cpu)) {
+		if (cpu == ht || !cpu_online(ht))
+			continue;
+		rq = cpu_rq(ht);
+		if (rq->need_ht_stable)
+			return true;
+	}
+
+	return false;
+}
+#endif
+
 #ifdef CONFIG_GENERIC_IDLE_POLL_SETUP
 static int __init cpu_idle_poll_setup(char *__unused)
 {
@@ -53,14 +109,29 @@ __setup("hlt", cpu_idle_nopoll_setup);
 
 static noinline int __cpuidle cpu_idle_poll(void)
 {
+#ifdef CONFIG_HT_STABLE
+	struct rq *rq = this_rq();
+#endif
+
 	rcu_idle_enter();
 	trace_cpu_idle_rcuidle(0, smp_processor_id());
 	local_irq_enable();
 	stop_critical_timings();
 
-	while (!tif_need_resched() &&
-		(cpu_idle_force_poll || tick_check_broadcast_expired()))
-		cpu_relax();
+#ifdef CONFIG_HT_STABLE
+	if (need_ht_stable()) {
+		rq->in_ht_stable = true;
+		while (!tif_need_resched() && need_ht_stable())
+			;
+		rq->in_ht_stable = false;
+	} else {
+#endif
+		while (!tif_need_resched() &&
+			(cpu_idle_force_poll || tick_check_broadcast_expired()))
+			cpu_relax();
+#ifdef CONFIG_HT_STABLE
+	}
+#endif
 	start_critical_timings();
 	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
 	rcu_idle_exit();
@@ -256,7 +327,11 @@ static void do_idle(void)
 		 * broadcast device expired for us, we don't want to go deep
 		 * idle as we know that the IPI is going to arrive right away.
 		 */
+#ifdef CONFIG_HT_STABLE
+		if (need_ht_stable() || cpu_idle_force_poll || tick_check_broadcast_expired()) {
+#else
 		if (cpu_idle_force_poll || tick_check_broadcast_expired()) {
+#endif
 			tick_nohz_idle_restart_tick();
 			cpu_idle_poll();
 		} else {

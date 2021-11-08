@@ -415,6 +415,9 @@ struct task_group {
 #endif
 
 	struct cfs_bandwidth	cfs_bandwidth;
+#ifdef CONFIG_HT_STABLE
+	bool			need_ht_stable;
+#endif
 
 	ALI_HOTFIX_RESERVE(1)
 	ALI_HOTFIX_RESERVE(2)
@@ -1001,6 +1004,11 @@ struct rq {
 #ifdef CONFIG_CPU_IDLE
 	/* Must be inspected within a rcu lock section */
 	struct cpuidle_state	*idle_state;
+#endif
+
+#ifdef CONFIG_HT_STABLE
+	bool need_ht_stable;
+	bool in_ht_stable;
 #endif
 
 	ALI_HOTFIX_RESERVE(1)
@@ -2383,4 +2391,9 @@ extern struct cftype cgroup_v1_psi_files[];
 #ifndef CONFIG_RICH_CONTAINER_CG_SWITCH
 long tg_get_cfs_quota(struct task_group *tg);
 long tg_get_cfs_period(struct task_group *tg);
+#endif
+
+#ifdef CONFIG_HT_STABLE
+extern void wake_up_idle_ht(struct rq *rq);
+extern bool need_ht_stable(void);
 #endif
