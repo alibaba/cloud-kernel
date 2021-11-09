@@ -2301,6 +2301,8 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
 		}
 
 		block = es.es_lblk + es.es_len;
+
+		cond_resched();
 	}
 
 	ext4_ext_drop_refs(path);
