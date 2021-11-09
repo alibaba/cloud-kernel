@@ -641,7 +641,7 @@ __setup("transparent_hugepage=", setup_transparent_hugepage);
 #ifdef CONFIG_HUGETEXT
 static int __init setup_hugetext(char *str)
 {
-	int err;
+	int err = -1;
 	unsigned long val = 0;
 
 	if (!str)
