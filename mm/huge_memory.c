@@ -33,6 +33,7 @@
 #include <linux/oom.h>
 #include <linux/numa.h>
 #include <linux/page_owner.h>
+#include <linux/page_dup.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -2818,7 +2819,14 @@ int split_huge_page_to_list(struct page *page, struct list_head *list)
 		goto out_unlock;
 	}
 
+	if (page_dup_slave(head)) {
+		ret = -EBUSY;
+		goto out_unlock;
+	}
+
 	unmap_page(head);
+
+	dedup_page(head, true);
 
 	/* prevent PageLRU to go away from under us, and freeze lru stats */
 	spin_lock_irqsave(&pgdata->lru_lock, flags);
