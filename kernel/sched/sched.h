@@ -276,6 +276,15 @@ struct rt_bandwidth {
 	u64			rt_runtime;
 	struct hrtimer		rt_period_timer;
 	unsigned int		rt_period_active;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 void __dl_clear_params(struct task_struct *p);
@@ -313,6 +322,15 @@ struct dl_bw {
 	raw_spinlock_t		lock;
 	u64			bw;
 	u64			total_bw;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 static inline void __dl_update(struct dl_bw *dl_b, s64 bw);
@@ -402,6 +420,15 @@ struct cfs_bandwidth {
 	int			nr_burst;
 	u64			throttled_time;
 	u64			burst_time;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 #endif
 };
 
@@ -462,6 +489,12 @@ struct task_group {
 
 	CK_HOTFIX_RESERVE(1)
 	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -665,6 +698,10 @@ struct cfs_rq {
 	CK_HOTFIX_RESERVE(2)
 	CK_HOTFIX_RESERVE(3)
 	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 static inline int rt_bandwidth_enabled(void)
@@ -713,6 +750,15 @@ struct rt_rq {
 #endif
 
 	unsigned long		nr_uninterruptible;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 static inline bool rt_rq_is_runnable(struct rt_rq *rt_rq)
@@ -775,6 +821,15 @@ struct dl_rq {
 	 * by the GRUB algorithm.
 	 */
 	u64			bw_ratio;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -892,6 +947,15 @@ struct root_domain {
 	 * CPUs of the rd. Protected by RCU.
 	 */
 	struct perf_domain __rcu *pd;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 extern void init_defrootdomain(void);
@@ -1147,6 +1211,10 @@ struct rq {
 	CK_HOTFIX_RESERVE(2)
 	CK_HOTFIX_RESERVE(3)
 	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -1570,6 +1638,15 @@ struct sched_group_capacity {
 	int			id;
 #endif
 
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
+
 	unsigned long		cpumask[];		/* Balance mask */
 };
 
@@ -1580,6 +1657,15 @@ struct sched_group {
 	unsigned int		group_weight;
 	struct sched_group_capacity *sgc;
 	int			asym_prefer_cpu;	/* CPU of highest priority in group */
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 
 	/*
 	 * The CPUs this group covers.
@@ -1939,6 +2025,15 @@ struct sched_class {
 
 	void (*update_nr_uninterruptible)(struct task_struct *p, long inc);
 	void (*update_nr_iowait)(struct task_struct *p, long inc);
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 } __aligned(STRUCT_ALIGNMENT); /* STRUCT_ALIGN(), vmlinux.lds.h */
 
 static inline void put_prev_task(struct rq *rq, struct task_struct *prev)

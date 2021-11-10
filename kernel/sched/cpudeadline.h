@@ -13,6 +13,15 @@ struct cpudl {
 	int			size;
 	cpumask_var_t		free_cpus;
 	struct cpudl_item	*elements;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 #ifdef CONFIG_SMP

@@ -316,6 +316,14 @@ struct sched_info {
 	/* When were we last queued to run? */
 	unsigned long long		last_queued;
 
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 #endif /* CONFIG_SCHED_INFO */
 };
 
@@ -336,6 +344,15 @@ struct sched_info {
 struct load_weight {
 	unsigned long			weight;
 	u32				inv_weight;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 /**
@@ -429,6 +446,15 @@ struct sched_avg {
 	unsigned long			runnable_avg;
 	unsigned long			util_avg;
 	struct util_est			util_est;
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 } ____cacheline_aligned;
 
 struct sched_statistics {
@@ -472,6 +498,12 @@ struct sched_statistics {
 
 	CK_HOTFIX_RESERVE(1)
 	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 #endif
 };
 
@@ -535,6 +567,12 @@ struct sched_entity {
 
 	CK_HOTFIX_RESERVE(1)
 	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 struct sched_rt_entity {
@@ -553,6 +591,15 @@ struct sched_rt_entity {
 	/* rq "owned" by this entity/group: */
 	struct rt_rq			*my_q;
 #endif
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 } __randomize_layout;
 
 struct sched_dl_entity {
@@ -630,6 +677,15 @@ struct sched_dl_entity {
 	 */
 	struct sched_dl_entity *pi_se;
 #endif
+
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(5)
+	CK_HOTFIX_RESERVE(6)
+	CK_HOTFIX_RESERVE(7)
+	CK_HOTFIX_RESERVE(8)
 };
 
 #ifdef CONFIG_UCLAMP_TASK
