@@ -186,7 +186,7 @@ static int erofs_init_devices(struct super_block *sb,
 		} else {
 			struct file *f;
 
-			f = filp_open(dif->path, O_RDONLY, 0644);
+			f = filp_open(dif->path, O_RDONLY | O_LARGEFILE, 0);
 			if (IS_ERR(f)) {
 				err = PTR_ERR(f);
 				goto err_out;
@@ -521,7 +521,7 @@ static int rafs_v6_fill_super(struct super_block *sb, void *data)
 	if (sbi->bootstrap_path) {
 		struct file *f;
 
-		f = filp_open(sbi->bootstrap_path, O_RDONLY, 0644);
+		f = filp_open(sbi->bootstrap_path, O_RDONLY | O_LARGEFILE, 0);
 		if (IS_ERR(f))
 			return PTR_ERR(f);
 		sbi->bootstrap = f;
