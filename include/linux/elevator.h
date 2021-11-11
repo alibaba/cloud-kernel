@@ -120,8 +120,8 @@ struct elevator_mq_ops {
 	void (*init_icq)(struct io_cq *);
 	void (*exit_icq)(struct io_cq *);
 
-	ALI_HOTFIX_RESERVE_P(1)
-	ALI_HOTFIX_RESERVE_P(2)
+	CK_HOTFIX_RESERVE_P(1)
+	CK_HOTFIX_RESERVE_P(2)
 };
 
 #define ELV_NAME_MAX	(16)

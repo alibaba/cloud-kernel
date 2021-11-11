@@ -445,8 +445,8 @@ struct address_space {
 	void			*private_data;	/* ditto */
 	errseq_t		wb_err;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } __attribute__((aligned(sizeof(long)))) __randomize_layout;
 	/*
 	 * On most architectures that alignment is already the case; but
@@ -492,8 +492,8 @@ struct block_device {
 	/* Mutex for freeze */
 	struct mutex		bd_fsfreeze_mutex;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } __randomize_layout;
 
 /*
@@ -714,8 +714,8 @@ struct inode {
 
 	void			*i_private; /* fs or device private pointer */
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } __randomize_layout;
 
 static inline unsigned int i_blocksize(const struct inode *node)

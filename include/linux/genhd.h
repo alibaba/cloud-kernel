@@ -132,8 +132,8 @@ struct hd_struct {
 	struct percpu_ref ref;
 	struct rcu_work rcu_work;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 #define GENHD_FL_REMOVABLE			1
@@ -216,8 +216,8 @@ struct gendisk {
 	struct badblocks *bb;
 	struct lockdep_map lockdep_map;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 static inline struct gendisk *part_to_disk(struct hd_struct *part)

@@ -8,7 +8,7 @@
 #include <linux/netfilter.h>
 #include <uapi/linux/netfilter/x_tables.h>
 
-#include <linux/ali_hotfix.h>
+#include <linux/ck_hotfix.h>
 
 /* Test a struct->invflags and a boolean for inequality */
 #define NF_INVF(ptr, flag, boolean)					\
@@ -220,8 +220,8 @@ struct xt_target {
 
 	unsigned short family;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 /* Furniture shopping... */

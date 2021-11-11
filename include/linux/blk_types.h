@@ -11,7 +11,7 @@
 #include <linux/ktime.h>
 #include <linux/sched/clock.h>
 
-#include <linux/ali_hotfix.h>
+#include <linux/ck_hotfix.h>
 
 struct bio_set;
 struct bio;
@@ -216,7 +216,7 @@ struct bio {
 
 	unsigned long		bi_ext_flags;	/* extend the bi_flags */
 
-	ALI_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(1)
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid

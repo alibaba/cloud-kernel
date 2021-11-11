@@ -39,8 +39,8 @@ struct dst_ops {
 
 	struct kmem_cache	*kmem_cachep;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 
 	struct percpu_counter	pcpuc_entries ____cacheline_aligned_in_smp;
 };

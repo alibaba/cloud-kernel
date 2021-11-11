@@ -515,8 +515,8 @@ struct sock {
 
 	pid_t			sk_pid;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 enum sk_pacing {

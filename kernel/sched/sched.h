@@ -419,8 +419,8 @@ struct task_group {
 	bool			need_ht_stable;
 #endif
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -622,10 +622,10 @@ struct cfs_rq {
 
 	unsigned long nr_uninterruptible;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
-	ALI_HOTFIX_RESERVE(3)
-	ALI_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
 };
 
 static inline int rt_bandwidth_enabled(void)
@@ -1011,10 +1011,10 @@ struct rq {
 	bool in_ht_stable;
 #endif
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
-	ALI_HOTFIX_RESERVE(3)
-	ALI_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
 };
 
 static inline int cpu_of(struct rq *rq)

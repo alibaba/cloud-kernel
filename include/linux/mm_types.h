@@ -17,7 +17,7 @@
 
 #include <asm/mmu.h>
 
-#include <linux/ali_hotfix.h>
+#include <linux/ck_hotfix.h>
 
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
@@ -343,10 +343,10 @@ struct vm_area_struct {
 #endif
 	struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
-	ALI_HOTFIX_RESERVE(3)
-	ALI_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
 } __randomize_layout;
 
 struct core_thread {
@@ -517,8 +517,8 @@ struct mm_struct {
 #endif
 	} __randomize_layout;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 
 	/*
 	 * The mm_cpumask needs to be at the end of mm_struct, because it

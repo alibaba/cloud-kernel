@@ -233,8 +233,8 @@ struct signal_struct {
 					 * credential calculations
 					 * (notably. ptrace) */
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } __randomize_layout;
 
 /*

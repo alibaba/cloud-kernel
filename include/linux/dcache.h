@@ -14,7 +14,7 @@
 #include <linux/stringhash.h>
 #include <linux/wait.h>
 
-#include <linux/ali_hotfix.h>
+#include <linux/ck_hotfix.h>
 
 struct path;
 struct vfsmount;
@@ -120,8 +120,8 @@ struct dentry {
 	 	struct rcu_head d_rcu;
 	} d_u;
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 } __randomize_layout;
 
 /*

@@ -8,7 +8,7 @@
 #include <linux/debugobjects.h>
 #include <linux/stringify.h>
 
-#include <linux/ali_hotfix.h>
+#include <linux/ck_hotfix.h>
 
 struct timer_list {
 	/*
@@ -24,8 +24,8 @@ struct timer_list {
 	struct lockdep_map	lockdep_map;
 #endif
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 #ifdef CONFIG_LOCKDEP

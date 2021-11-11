@@ -81,8 +81,8 @@ struct writeback_control {
 	size_t wb_tcand_bytes;		/* bytes written by this candidate */
 #endif
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
 };
 
 static inline int wbc_to_write_flags(struct writeback_control *wbc)

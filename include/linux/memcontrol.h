@@ -407,10 +407,10 @@ struct mem_cgroup {
 	int thp_reclaim_threshold;
 #endif
 
-	ALI_HOTFIX_RESERVE(1)
-	ALI_HOTFIX_RESERVE(2)
-	ALI_HOTFIX_RESERVE(3)
-	ALI_HOTFIX_RESERVE(4)
+	CK_HOTFIX_RESERVE(1)
+	CK_HOTFIX_RESERVE(2)
+	CK_HOTFIX_RESERVE(3)
+	CK_HOTFIX_RESERVE(4)
 
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */
