@@ -23,6 +23,7 @@
 #include <linux/hugetlb.h>
 #include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
+#include <linux/page_dup.h>
 
 #include "internal.h"
 
@@ -94,6 +95,10 @@ void mlock_vma_page(struct page *page)
 
 	VM_BUG_ON_PAGE(PageTail(page), page);
 	VM_BUG_ON_PAGE(PageCompound(page) && PageDoubleMap(page), page);
+
+	/* TODO Do not mlock slave duplicated page */
+	if (page_dup_slave(page))
+		return;
 
 	if (!TestSetPageMlocked(page)) {
 		int nr_pages = thp_nr_pages(page);
