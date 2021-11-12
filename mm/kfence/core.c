@@ -417,10 +417,43 @@ static struct kfence_metadata *get_free_meta(int node)
 	return object;
 }
 
+static inline void __init_meta(struct kfence_metadata *meta, size_t size, int node,
+			       struct kmem_cache *cache)
+{
+	struct kfence_counter *this_cpu_counter = raw_cpu_ptr(counters);
+
+	lockdep_assert_held(&meta->lock);
+
+	meta->addr = metadata_to_pageaddr(meta, node);
+	/* Unprotect if we're reusing this page. */
+	if (meta->state == KFENCE_OBJECT_FREED)
+		kfence_unprotect(meta->addr);
+
+	/*
+	 * Note: for allocations made before RNG initialization, will always
+	 * return zero. We still benefit from enabling KFENCE as early as
+	 * possible, even when the RNG is not yet available, as this will allow
+	 * KFENCE to detect bugs due to earlier allocations. The only downside
+	 * is that the out-of-bounds accesses detected are deterministic for
+	 * such allocations.
+	 */
+	if (cache && this_cpu_counter->counter[KFENCE_COUNTER_ALLOCS] % 2) {
+		/* Allocate on the "right" side, re-calculate address. */
+		meta->addr += PAGE_SIZE - size;
+		meta->addr = ALIGN_DOWN(meta->addr, cache->align);
+	}
+
+	/* Update remaining metadata. */
+	metadata_update_state(meta, KFENCE_OBJECT_ALLOCATED);
+	/* Pairs with READ_ONCE() in kfence_shutdown_cache(). */
+	WRITE_ONCE(meta->cache, cache);
+	meta->size = size;
+}
+
+static void put_free_meta(struct kfence_metadata *object, int node);
 static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t gfp, int node)
 {
-	struct kfence_metadata *meta = NULL;
-	struct kfence_freelist_node *kfence_freelist = &freelist.node[node];
+	struct kfence_metadata *meta;
 	struct kfence_counter *this_cpu_counter = raw_cpu_ptr(counters);
 	unsigned long flags;
 	struct page *page;
@@ -443,41 +476,16 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 		 * reporting on. While it has never been observed, lockdep does
 		 * report that there is a possibility of deadlock. Fix it by
 		 * using trylock and bailing out gracefully.
+		 * Put the object back on the freelist.
 		 */
-		raw_spin_lock_irqsave(&kfence_freelist->lock, flags);
-		/* Put the object back on the freelist. */
-		list_add_tail(&meta->list, &kfence_freelist->freelist);
-		raw_spin_unlock_irqrestore(&kfence_freelist->lock, flags);
+		put_free_meta(meta, node);
 
 		return NULL;
 	}
 
-	meta->addr = metadata_to_pageaddr(meta, node);
-	/* Unprotect if we're reusing this page. */
-	if (meta->state == KFENCE_OBJECT_FREED)
-		kfence_unprotect(meta->addr);
-
-	/*
-	 * Note: for allocations made before RNG initialization, will always
-	 * return zero. We still benefit from enabling KFENCE as early as
-	 * possible, even when the RNG is not yet available, as this will allow
-	 * KFENCE to detect bugs due to earlier allocations. The only downside
-	 * is that the out-of-bounds accesses detected are deterministic for
-	 * such allocations.
-	 */
-	if (this_cpu_counter->counter[KFENCE_COUNTER_ALLOCS] % 2) {
-		/* Allocate on the "right" side, re-calculate address. */
-		meta->addr += PAGE_SIZE - size;
-		meta->addr = ALIGN_DOWN(meta->addr, cache->align);
-	}
+	__init_meta(meta, size, node, cache);
 
 	addr = (void *)meta->addr;
-
-	/* Update remaining metadata. */
-	metadata_update_state(meta, KFENCE_OBJECT_ALLOCATED);
-	/* Pairs with READ_ONCE() in kfence_shutdown_cache(). */
-	WRITE_ONCE(meta->cache, cache);
-	meta->size = size;
 	for_each_canary(meta, set_canary_byte);
 
 	/* Set required struct page fields. */
@@ -514,8 +522,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 
 static struct page *kfence_guarded_alloc_page(int node)
 {
-	struct kfence_metadata *meta = NULL;
-	struct kfence_freelist_node *kfence_freelist = &freelist.node[node];
+	struct kfence_metadata *meta;
 	struct kfence_counter *this_cpu_counter = raw_cpu_ptr(counters);
 	unsigned long flags;
 	struct page *page;
@@ -538,28 +545,16 @@ static struct page *kfence_guarded_alloc_page(int node)
 		 * reporting on. While it has never been observed, lockdep does
 		 * report that there is a possibility of deadlock. Fix it by
 		 * using trylock and bailing out gracefully.
+		 * Put the object back on the freelist.
 		 */
-		raw_spin_lock_irqsave(&kfence_freelist->lock, flags);
-		/* Put the object back on the freelist. */
-		list_add_tail(&meta->list, &kfence_freelist->freelist);
-		raw_spin_unlock_irqrestore(&kfence_freelist->lock, flags);
+		put_free_meta(meta, node);
 
 		return NULL;
 	}
 
-	meta->addr = metadata_to_pageaddr(meta, node);
-	/* Unprotect if we're reusing this page. */
-	if (meta->state == KFENCE_OBJECT_FREED)
-		kfence_unprotect(meta->addr);
+	__init_meta(meta, PAGE_SIZE, node, NULL);
 
 	addr = (void *)meta->addr;
-
-	/* Update remaining metadata. */
-	metadata_update_state(meta, KFENCE_OBJECT_ALLOCATED);
-	/* Pairs with READ_ONCE() in kfence_shutdown_cache(). */
-	WRITE_ONCE(meta->cache, NULL);
-	meta->size = PAGE_SIZE;
-
 	page = virt_to_page(addr);
 	__ClearPageSlab(page);
 #ifdef CONFIG_DEBUG_VM
@@ -630,9 +625,8 @@ static void put_free_meta(struct kfence_metadata *object, int node)
 	local_irq_restore(flags);
 }
 
-static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool zombie)
+static inline bool __free_meta(void *addr, struct kfence_metadata *meta, bool zombie, bool is_page)
 {
-	int node = virt_to_nid(addr);
 	struct kcsan_scoped_access assert_page_exclusive;
 	struct kfence_counter *this_cpu_counter = raw_cpu_ptr(counters);
 	unsigned long flags;
@@ -645,7 +639,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool z
 		kfence_report_error((unsigned long)addr, false, NULL, meta,
 				    KFENCE_ERROR_INVALID_FREE);
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
-		return;
+		return false;
 	}
 
 	/* Detect racy use-after-free, or incorrect reallocation of this page by KFENCE. */
@@ -663,16 +657,18 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool z
 		meta->unprotected_page = 0;
 	}
 
-	/* Check canary bytes for memory corruption. */
-	for_each_canary(meta, check_canary_byte);
+	if (!is_page) {
+		/* Check canary bytes for memory corruption. */
+		for_each_canary(meta, check_canary_byte);
 
-	/*
-	 * Clear memory if init-on-free is set. While we protect the page, the
-	 * data is still there, and after a use-after-free is detected, we
-	 * unprotect the page, so the data is still accessible.
-	 */
-	if (!zombie && unlikely(slab_want_init_on_free(meta->cache)))
-		memzero_explicit(addr, meta->size);
+		/*
+		 * Clear memory if init-on-free is set. While we protect the page, the
+		 * data is still there, and after a use-after-free is detected, we
+		 * unprotect the page, so the data is still accessible.
+		 */
+		if (!zombie && unlikely(slab_want_init_on_free(meta->cache)))
+			memzero_explicit(addr, meta->size);
+	}
 
 	/* Mark the object as freed. */
 	metadata_update_state(meta, KFENCE_OBJECT_FREED);
@@ -683,6 +679,18 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool z
 	kfence_protect((unsigned long)addr);
 
 	kcsan_end_scoped_access(&assert_page_exclusive);
+
+	return true;
+}
+
+static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool zombie)
+{
+	int node = virt_to_nid(addr);
+	struct kfence_counter *this_cpu_counter = raw_cpu_ptr(counters);
+
+	if (!__free_meta(addr, meta, zombie, false))
+		return;
+
 	if (!zombie) {
 		put_free_meta(meta, node);
 
@@ -697,42 +705,10 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool z
 static void kfence_guarded_free_page(struct page *page, void *addr, struct kfence_metadata *meta)
 {
 	int node = page_to_nid(page);
-	struct kcsan_scoped_access assert_page_exclusive;
 	struct kfence_counter *this_cpu_counter = raw_cpu_ptr(counters);
-	unsigned long flags;
 
-	raw_spin_lock_irqsave(&meta->lock, flags);
-
-	if (meta->state != KFENCE_OBJECT_ALLOCATED) {
-		/* double-free, bail out. */
-		this_cpu_counter->counter[KFENCE_COUNTER_BUGS]++;
-		kfence_report_error((unsigned long)addr, false, NULL, meta,
-				    KFENCE_ERROR_INVALID_FREE);
-		raw_spin_unlock_irqrestore(&meta->lock, flags);
+	if (!__free_meta(addr, meta, false, true))
 		return;
-	}
-
-	/* Detect racy use-after-free, or incorrect reallocation of this page by KFENCE. */
-	kcsan_begin_scoped_access((void *)ALIGN_DOWN((unsigned long)addr, PAGE_SIZE), PAGE_SIZE,
-				  KCSAN_ACCESS_SCOPED | KCSAN_ACCESS_WRITE | KCSAN_ACCESS_ASSERT,
-				  &assert_page_exclusive);
-
-	/* Restore page protection if there was an OOB access. */
-	if (meta->unprotected_page) {
-		memzero_explicit((void *)ALIGN_DOWN(meta->unprotected_page, PAGE_SIZE), PAGE_SIZE);
-		kfence_protect(meta->unprotected_page);
-		meta->unprotected_page = 0;
-	}
-
-	/* Mark the object as freed. */
-	metadata_update_state(meta, KFENCE_OBJECT_FREED);
-
-	raw_spin_unlock_irqrestore(&meta->lock, flags);
-
-	/* Protect to detect use-after-frees. */
-	kfence_protect((unsigned long)addr);
-
-	kcsan_end_scoped_access(&assert_page_exclusive);
 
 	put_free_meta(meta, node);
 
@@ -760,6 +736,67 @@ static inline void kfence_clear_page_info(unsigned long addr, unsigned long size
 		page->mapping = NULL;
 		atomic_set(&page->_refcount, 1);
 		kfence_unprotect(i);
+	}
+}
+
+static bool __init_freelist(void)
+{
+	int i;
+
+	freelist.node = kmalloc_array(nr_node_ids, sizeof(struct kfence_freelist_node),
+				      GFP_KERNEL);
+	freelist.cpu = alloc_percpu(struct kfence_freelist_cpu);
+	counters = alloc_percpu(struct kfence_counter);
+
+	if (!freelist.node || !freelist.cpu || !counters)
+		return false;
+
+	for_each_node(i) {
+		INIT_LIST_HEAD(&freelist.node[i].freelist);
+		raw_spin_lock_init(&freelist.node[i].lock);
+	}
+
+	for_each_possible_cpu(i)
+		INIT_LIST_HEAD(&per_cpu_ptr(freelist.cpu, i)->freelist);
+
+	return true;
+}
+
+static void __free_freelist(void)
+{
+	kfree(freelist.node);
+	freelist.node = NULL;
+	free_percpu(freelist.cpu);
+	freelist.cpu = NULL;
+	free_percpu(counters);
+	counters = NULL;
+}
+
+#define KFENCE_MAX_SIZE_WITH_INTERVAL 65535
+static struct delayed_work kfence_timer;
+static void __start_kfence(void)
+{
+	int node;
+
+	for_each_node(node) {
+		if (!__kfence_pool_node[node])
+			continue;
+		pr_info("initialized - using %lu bytes for %lu objects on node %d",
+			kfence_pool_size, kfence_num_objects, node);
+		if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
+			pr_cont(" at 0x%px-0x%px\n", (void *)__kfence_pool_node[node],
+				(void *)(__kfence_pool_node[node] + kfence_pool_size));
+		else
+			pr_cont("\n");
+	}
+
+	WRITE_ONCE(kfence_enabled, true);
+	static_branch_enable(&kfence_once_inited);
+	if (kfence_num_objects > KFENCE_MAX_SIZE_WITH_INTERVAL) {
+		static_branch_enable(&kfence_skip_interval);
+		static_branch_enable(&kfence_allocation_key);
+	} else {
+		queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
 	}
 }
 
@@ -1063,56 +1100,23 @@ void __init kfence_alloc_pool(void)
 	}
 }
 
-#define KFENCE_MAX_SIZE_WITH_INTERVAL 65535
 void __init kfence_init(void)
 {
-	int node, i;
+	int node;
 	phys_addr_t metadata_size = sizeof(struct kfence_metadata) * kfence_num_objects;
 
 	if (!READ_ONCE(kfence_sample_interval))
 		return;
 
-	freelist.node = kmalloc_array(nr_node_ids, sizeof(struct kfence_freelist_node),
-				      GFP_KERNEL);
-	freelist.cpu = alloc_percpu(struct kfence_freelist_cpu);
-	counters = alloc_percpu(struct kfence_counter);
-
-	if (!freelist.node || !freelist.cpu || !counters)
+	if (!__init_freelist())
 		goto fail;
-
-	for_each_node(node) {
-		INIT_LIST_HEAD(&freelist.node[node].freelist);
-		raw_spin_lock_init(&freelist.node[node].lock);
-	}
-
-	for_each_possible_cpu(i)
-		INIT_LIST_HEAD(&per_cpu_ptr(freelist.cpu, i)->freelist);
 
 	if (!kfence_init_pool()) {
 		pr_err("%s failed on all nodes!\n", __func__);
 		goto fail;
 	}
 
-	WRITE_ONCE(kfence_enabled, true);
-	static_branch_enable(&kfence_once_inited);
-	if (kfence_num_objects > KFENCE_MAX_SIZE_WITH_INTERVAL) {
-		static_branch_enable(&kfence_skip_interval);
-		static_branch_enable(&kfence_allocation_key);
-	} else {
-		queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
-	}
-
-	for_each_node(node) {
-		if (!__kfence_pool_node[node])
-			continue;
-		pr_info("initialized - using %lu bytes for %lu objects on node %d",
-			kfence_pool_size, kfence_num_objects, node);
-		if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
-			pr_cont(" at 0x%px-0x%px\n", (void *)__kfence_pool_node[node],
-				(void *)(__kfence_pool_node[node] + kfence_pool_size));
-		else
-			pr_cont("\n");
-	}
+	__start_kfence();
 
 	return;
 
@@ -1126,12 +1130,7 @@ fail:
 		}
 	}
 
-	kfree(freelist.node);
-	freelist.node = NULL;
-	free_percpu(freelist.cpu);
-	freelist.cpu = NULL;
-	free_percpu(counters);
-	counters = NULL;
+	__free_freelist();
 }
 
 static void kfence_shutdown_cache_node(struct kmem_cache *s, int node)
