@@ -95,10 +95,10 @@ struct kfence_metadata {
 	/* Allocation and free stack information. */
 	struct kfence_track alloc_track;
 	struct kfence_track free_track;
+	struct kfence_pool_area *kpa;
 };
 
 extern unsigned long kfence_num_objects;
-extern struct kfence_metadata **kfence_metadata_node;
 
 /* KFENCE error types for report generation. */
 enum kfence_error_type {
@@ -112,6 +112,38 @@ enum kfence_error_type {
 void kfence_report_error(unsigned long address, bool is_write, struct pt_regs *regs,
 			 const struct kfence_metadata *meta, enum kfence_error_type type);
 
-void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta, int node);
+void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta);
+
+extern struct rb_root kfence_pool_root;
+#define kfence_rbentry(cur) rb_entry((cur), struct kfence_pool_area, rb_node)
+#define kfence_for_each_area(kpa, iter)			\
+	for ((iter) = rb_first(&kfence_pool_root);	\
+	     (iter) && ((kpa) = kfence_rbentry((iter)));\
+	     (iter) = rb_next((iter)))
+
+/**
+ * get_kfence_pool_area() - find the kfence pool area of the address
+ * @addr: address to check
+ *
+ * Return: the kfence pool area, NULL if not a kfence address
+ */
+static inline struct kfence_pool_area *get_kfence_pool_area(const void *addr)
+{
+	struct rb_node *cur;
+	struct kfence_pool_area *res = NULL;
+
+	for (cur = kfence_pool_root.rb_node; cur;) {
+		struct kfence_pool_area *kpa = kfence_rbentry(cur);
+
+		if ((unsigned long)addr < (unsigned long)kpa->addr)
+			cur = cur->rb_left;
+		else {
+			res = kpa;
+			cur = cur->rb_right;
+		}
+	}
+
+	return is_kfence_address_area(addr, res) ? res : NULL;
+}
 
 #endif /* MM_KFENCE_KFENCE_H */

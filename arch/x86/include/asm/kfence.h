@@ -19,12 +19,12 @@
 #include <asm/tlbflush.h>
 
 /* Force 4K pages for __kfence_pool. */
-static inline bool arch_kfence_init_pool(int node)
+static inline bool arch_kfence_init_pool(struct kfence_pool_area *kpa)
 {
 	unsigned long addr;
-	char *__kfence_pool = __kfence_pool_node[node];
+	char *__kfence_pool = kpa->addr;
 
-	for (addr = (unsigned long)__kfence_pool; is_kfence_address_node((void *)addr, node);
+	for (addr = (unsigned long)__kfence_pool; is_kfence_address_area((void *)addr, kpa);
 	     addr += PAGE_SIZE) {
 		unsigned int level;
 

@@ -8,9 +8,11 @@
 #ifndef __ASM_KFENCE_H
 #define __ASM_KFENCE_H
 
+#include <linux/kfence.h>
+
 #include <asm/cacheflush.h>
 
-static inline bool arch_kfence_init_pool(int node) { return true; }
+static inline bool arch_kfence_init_pool(struct kfence_pool_area *kpa) { return true; }
 
 static inline bool kfence_protect_page(unsigned long addr, bool protect)
 {

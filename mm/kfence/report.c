@@ -117,9 +117,9 @@ static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadat
 	}
 }
 
-void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta, int node)
+void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta)
 {
-	struct kfence_metadata *kfence_metadata = kfence_metadata_node[node];
+	struct kfence_metadata *kfence_metadata = meta->kpa->meta;
 	const int size = abs(meta->size);
 	const unsigned long start = meta->addr;
 	const struct kmem_cache *const cache = meta->cache;
@@ -185,7 +185,6 @@ static const char *get_access_type(bool is_write)
 void kfence_report_error(unsigned long address, bool is_write, struct pt_regs *regs,
 			 const struct kfence_metadata *meta, enum kfence_error_type type)
 {
-	int node;
 	unsigned long stack_entries[KFENCE_STACK_DEPTH] = { 0 };
 	ptrdiff_t object_index = -1;
 	int num_stack_entries;
@@ -204,8 +203,7 @@ void kfence_report_error(unsigned long address, bool is_write, struct pt_regs *r
 
 	if (meta) {
 		lockdep_assert_held(&meta->lock);
-		node = virt_to_nid(meta->addr);
-		object_index = meta - kfence_metadata_node[node];
+		object_index = meta - meta->kpa->meta;
 	}
 
 	/*
@@ -263,7 +261,7 @@ void kfence_report_error(unsigned long address, bool is_write, struct pt_regs *r
 
 	if (meta) {
 		pr_err("\n");
-		kfence_print_object(NULL, meta, node);
+		kfence_print_object(NULL, meta);
 	}
 
 	/* Print report footer. */

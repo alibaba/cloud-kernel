@@ -729,14 +729,21 @@ static void test_gfpzero(struct kunit *test)
 
 static void test_invalid_access(struct kunit *test)
 {
-	const struct expect_report expect = {
+	struct expect_report expect = {
 		.type = KFENCE_ERROR_INVALID,
 		.fn = test_invalid_access,
-		.addr = &__kfence_pool_node[0][10],
 		.is_write = false,
 	};
+	struct rb_node *cur = kfence_pool_root.rb_node;
+	char *__kfence_pool;
 
-	READ_ONCE(__kfence_pool_node[0][10]);
+	if (!cur)
+		return;
+
+	__kfence_pool = kfence_rbentry(cur)->addr;
+	expect.addr = &__kfence_pool[10];
+
+	READ_ONCE(__kfence_pool[10]);
 	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
 }
 

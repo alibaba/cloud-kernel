@@ -13,16 +13,16 @@
 #include <linux/types.h>
 #include <linux/static_key.h>
 
-#ifdef CONFIG_KFENCE
+struct kfence_pool_area {
+	struct rb_node rb_node; /* binary tree linked to root */
+	struct kfence_metadata *meta; /* metadata per area */
+	char *addr; /* start kfence pool address */
+	unsigned long pool_size; /* size of kfence pool of this area */
+	unsigned long nr_objects; /* max object number of this area */
+	int node; /* the numa node this area belongs to */
+};
 
-/*
- * We allocate an even number of pages, as it simplifies calculations to map
- * address to metadata indices; effectively, the very first page serves as an
- * extended guard page, but otherwise has no special purpose.
- */
-#define KFENCE_POOL_SIZE ((CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE)
-extern unsigned long kfence_pool_size;
-extern char **__kfence_pool_node;
+#ifdef CONFIG_KFENCE
 
 #ifdef CONFIG_KFENCE_STATIC_KEYS
 DECLARE_STATIC_KEY_FALSE(kfence_allocation_key);
@@ -35,19 +35,19 @@ DECLARE_STATIC_KEY_FALSE(kfence_once_inited);
 #define GFP_KFENCE_NOT_ALLOC ((GFP_ZONEMASK & ~__GFP_HIGHMEM) | __GFP_NOKFENCE | __GFP_THISNODE)
 
 /**
- * is_kfence_address_node() - check if an address belongs to KFENCE pool on given node
+ * is_kfence_address_area() - check if an address belongs to KFENCE pool in given area
  * @addr: address to check
- * @node: node to check
+ * @kpa: area to check
  *
  * Return: true or false depending on whether the address is within the KFENCE
- * object range on given node.
+ * object range in given area.
  *
- * This function is used when you already know the node.
+ * This function is used when you already know the nearest leftside area.
  */
-static __always_inline bool is_kfence_address_node(const void *addr, const int node)
+static __always_inline bool is_kfence_address_area(const void *addr,
+						   const struct kfence_pool_area *kpa)
 {
-	return unlikely((unsigned long)((char *)addr - __kfence_pool_node[node]) <
-			kfence_pool_size && __kfence_pool_node[node]);
+	return unlikely(kpa && (unsigned long)((char *)addr - kpa->addr) < kpa->pool_size);
 }
 
 /**
@@ -297,7 +297,10 @@ bool __must_check kfence_handle_page_fault(unsigned long addr, bool is_write, st
 
 #else /* CONFIG_KFENCE */
 
-static inline bool is_kfence_address_node(const void *addr, const int node) { return false; }
+static inline bool is_kfence_address_area(const void *addr, const struct kfence_pool_area *kpa)
+{
+	return false;
+}
 static inline bool is_kfence_address(const void *addr) { return false; }
 static inline void kfence_alloc_pool(void) { }
 static inline void kfence_init(void) { }
