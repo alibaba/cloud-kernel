@@ -286,7 +286,7 @@ static inline bool kidled_need_check_idle(pg_data_t *pgdat, unsigned long pfn)
 	 * for each round when system has many huge pages, 1GB is not
 	 * considered here.
 	 */
-	if (PageTransHuge(page))
+	if (PageHead(page))
 		pfn >>= compound_order(page);
 
 	pseudo_random = pfn + kidled_scan_rounds;
@@ -357,7 +357,7 @@ static inline int kidled_scan_page(pg_data_t *pgdat, unsigned long pfn)
 		}
 	}
 
-	if (PageTransHuge(page))
+	if (PageHead(page))
 		nr_pages = 1 << compound_order(page);
 
 	if (idle) {
