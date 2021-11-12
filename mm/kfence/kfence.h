@@ -113,6 +113,7 @@ void kfence_report_error(unsigned long address, bool is_write, struct pt_regs *r
 			 const struct kfence_metadata *meta, enum kfence_error_type type);
 
 void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta);
+void kfence_init_late(void);
 
 extern struct rb_root kfence_pool_root;
 #define kfence_rbentry(cur) rb_entry((cur), struct kfence_pool_area, rb_node)

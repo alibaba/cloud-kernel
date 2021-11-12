@@ -20,6 +20,7 @@ struct kfence_pool_area {
 	unsigned long pool_size; /* size of kfence pool of this area */
 	unsigned long nr_objects; /* max object number of this area */
 	int node; /* the numa node this area belongs to */
+	struct list_head list; /* ready to be added to kfence_pool_root */
 };
 
 #ifdef CONFIG_KFENCE
