@@ -922,9 +922,24 @@ static bool __init kfence_init_pool(void)
 
 /* === DebugFS Interface ==================================================== */
 
+static inline void print_pool_size(struct seq_file *seq, unsigned long byte)
+{
+	if (byte < SZ_1K)
+		seq_printf(seq, "%lu B\n", byte);
+	else if (byte < SZ_1M)
+		seq_printf(seq, "%lu KB\n", byte / SZ_1K);
+	else if (byte < SZ_1G)
+		seq_printf(seq, "%lu MB\n", byte / SZ_1M);
+	else
+		seq_printf(seq, "%lu GB\n", byte / SZ_1G);
+}
+
 static int stats_show(struct seq_file *seq, void *v)
 {
 	int i, cpu;
+	struct kfence_pool_area *kpa;
+	struct rb_node *iter;
+	unsigned long *size_count;
 
 	seq_printf(seq, "enabled: %i\n", READ_ONCE(kfence_enabled));
 
@@ -940,8 +955,25 @@ static int stats_show(struct seq_file *seq, void *v)
 		 */
 		for_each_possible_cpu(cpu)
 			sum += per_cpu_ptr(counters, cpu)->counter[i];
-		seq_printf(seq, "%s: %lld\n", counter_names[i], sum);
+		seq_printf(seq, "%-30s:%20lld\n", counter_names[i], sum);
 	}
+
+	size_count = kmalloc_array(nr_node_ids * 2, sizeof(unsigned long), GFP_KERNEL | __GFP_ZERO);
+	if (!size_count)
+		return 0;
+
+	kfence_for_each_area(kpa, iter) {
+		size_count[kpa->node] += kpa->nr_objects;
+		size_count[kpa->node + nr_node_ids] += kpa->pool_size;
+	}
+
+	seq_puts(seq, "\nnode\tobject_size\tpool_size\n");
+	for_each_node(i) {
+		seq_printf(seq, "%-8d%-16lu", i, size_count[i]);
+		print_pool_size(seq, size_count[i + nr_node_ids]);
+	}
+
+	kfree(size_count);
 
 	return 0;
 }
