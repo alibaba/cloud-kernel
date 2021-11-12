@@ -254,7 +254,7 @@ static inline void xsk_buff_raw_dma_sync_for_device(struct xsk_buff_pool *pool,
 {
 }
 
-static inline struct page **xsk_pool_pgs_delay_unpin(struct xdp_umem *umem, u64 *npgs)
+static inline struct page **xsk_pool_pgs_delay_unpin(struct xsk_buff_pool *pool, u64 *npgs)
 {
 	return NULL;
 }
