@@ -60,6 +60,9 @@ DEFINE_STATIC_KEY_FALSE(kfence_skip_interval);
 DEFINE_STATIC_KEY_FALSE(kfence_once_inited);
 EXPORT_SYMBOL(kfence_once_inited);
 
+#define KFENCE_MAX_SIZE_WITH_INTERVAL 65535
+#define KFENCE_MAX_OBJECTS_PER_AREA (PUD_SIZE / PAGE_SIZE / 2 - 1)
+
 static int param_set_sample_interval(const char *val, const struct kernel_param *kp)
 {
 	unsigned long num;
@@ -128,7 +131,7 @@ module_param_cb(num_objects_pernode, &num_objects_param_ops, &kfence_num_objects
  * The pool of pages used for guard pages and objects.
  * Only used in booting init state. Will be cleared after that.
  */
-char **__kfence_pool_node;
+char **__kfence_pool_area;
 
 /* The binary tree maintaining all kfence pool areas */
 struct rb_root kfence_pool_root = RB_ROOT;
@@ -755,7 +758,6 @@ static void __free_freelist(void)
 	counters = NULL;
 }
 
-#define KFENCE_MAX_SIZE_WITH_INTERVAL 65535
 static struct delayed_work kfence_timer;
 static void __start_kfence(void)
 {
@@ -866,25 +868,55 @@ static bool kfence_rb_less(struct rb_node *a, const struct rb_node *b)
 	return (unsigned long)kfence_rbentry(a)->addr < (unsigned long)kfence_rbentry(b)->addr;
 }
 
-static bool __init kfence_init_pool_node(int node)
+static void __init kfence_alloc_pool_node(int node)
 {
-	char *__kfence_pool = __kfence_pool_node[node];
+	unsigned long nr_need = kfence_num_objects;
+	unsigned long nr_request = min(nr_need, KFENCE_MAX_OBJECTS_PER_AREA);
+	unsigned long nr_area_pernode = (nr_need - 1) / KFENCE_MAX_OBJECTS_PER_AREA + 1;
+	unsigned long index = nr_area_pernode * node;
+
+	while (nr_need) {
+		unsigned long kfence_pool_size = (nr_request + 1) * 2 * PAGE_SIZE;
+
+		__kfence_pool_area[index] = memblock_alloc_node(kfence_pool_size, PUD_SIZE, node);
+		if (!__kfence_pool_area[index]) {
+			pr_err("kfence alloc pool on node %d failed\n", node);
+			break;
+		}
+		index++;
+		nr_need -= nr_request;
+		nr_request = min(nr_request, nr_need);
+	}
+}
+
+static bool __init kfence_init_pool_area(int node, int area)
+{
+	unsigned long nr_area_pernode = (kfence_num_objects - 1) / KFENCE_MAX_OBJECTS_PER_AREA + 1;
+	int index = node * nr_area_pernode + area;
+	char *__kfence_pool = __kfence_pool_area[index];
 	struct kfence_pool_area *kpa;
-	unsigned long metadata_size = sizeof(struct kfence_metadata) * kfence_num_objects;
-	unsigned long kfence_pool_size = (kfence_num_objects + 1) * 2 * PAGE_SIZE;
+	unsigned long nr_objects, pool_size;
 
 	if (!__kfence_pool)
 		return false;
 
+	/*
+	 * We have aligned kfence_num_objects up to KFENCE_MAX_OBJECTS_PER_AREA,
+	 * unless kfence_num_objects < 65535 (the upstream mode). So nr_objects
+	 * should be either 1~65535 (upstream) or KFENCE_MAX_OBJECTS_PER_AREA.
+	 */
+	nr_objects = min(kfence_num_objects, KFENCE_MAX_OBJECTS_PER_AREA);
+	pool_size = (nr_objects + 1) * 2 * PAGE_SIZE;
+
 	kpa = kzalloc_node(sizeof(struct kfence_pool_area), GFP_KERNEL, node);
 	if (!kpa)
 		goto fail;
-	kpa->meta = vzalloc_node(metadata_size, node);
+	kpa->meta = vzalloc_node(sizeof(struct kfence_metadata) * nr_objects, node);
 	if (!kpa->meta)
 		goto fail;
 	kpa->addr = __kfence_pool;
-	kpa->pool_size = kfence_pool_size;
-	kpa->nr_objects = kfence_num_objects;
+	kpa->pool_size = pool_size;
+	kpa->nr_objects = nr_objects;
 	kpa->node = node;
 
 	if (!__kfence_init_pool_area(kpa))
@@ -895,8 +927,8 @@ static bool __init kfence_init_pool_node(int node)
 	return true;
 
 fail:
-	memblock_free_late(__pa(__kfence_pool), kfence_pool_size);
-	__kfence_pool_node[node] = NULL;
+	memblock_free_late(__pa(__kfence_pool), pool_size);
+	__kfence_pool_area[index] = NULL;
 	if (kpa) {
 		vfree(kpa->meta);
 		kfree(kpa);
@@ -907,14 +939,17 @@ fail:
 
 static bool __init kfence_init_pool(void)
 {
-	int node;
+	int area, node;
 	bool success_once = false;
+	unsigned long nr_area_pernode = (kfence_num_objects - 1) / KFENCE_MAX_OBJECTS_PER_AREA + 1;
 
 	for_each_node(node) {
-		if (kfence_init_pool_node(node))
-			success_once = true;
-		else
-			pr_err("failed to init kfence pool on node %d\n", node);
+		for (area = 0; area < nr_area_pernode; area++) {
+			if (kfence_init_pool_area(node, area))
+				success_once = true;
+			else
+				pr_err("failed to init pool in area %d on node %d\n", area, node);
+		}
 	}
 
 	return success_once;
@@ -1127,31 +1162,37 @@ static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 void __init kfence_alloc_pool(void)
 {
 	int node;
-	unsigned long kfence_pool_size = (kfence_num_objects + 1) * 2 * PAGE_SIZE;
+	unsigned long nr_area_pernode;
 
 	/* Setting kfence_sample_interval to 0 on boot disables KFENCE. */
 	if (!READ_ONCE(kfence_sample_interval))
 		return;
 
-	__kfence_pool_node = memblock_alloc(sizeof(char *) * nr_node_ids, PAGE_SIZE);
+	/*
+	 * If num less than this value, use the upstream mode;
+	 * else, align pool size up to 1GiB, for tlb split and
+	 * recover thought.
+	 */
+	if (kfence_num_objects > KFENCE_MAX_SIZE_WITH_INTERVAL)
+		kfence_num_objects = roundup(kfence_num_objects, KFENCE_MAX_OBJECTS_PER_AREA);
+	nr_area_pernode = (kfence_num_objects - 1) / KFENCE_MAX_OBJECTS_PER_AREA + 1;
 
-	if (!__kfence_pool_node) {
+	__kfence_pool_area = memblock_alloc(sizeof(char *) * nr_node_ids * nr_area_pernode,
+					    PAGE_SIZE);
+
+	if (!__kfence_pool_area) {
 		WRITE_ONCE(kfence_sample_interval, 0);
 		return;
 	}
 
-	for_each_node(node) {
-		__kfence_pool_node[node] = memblock_alloc_node(kfence_pool_size, PAGE_SIZE, node);
-		if (!__kfence_pool_node[node]) {
-			pr_err("kfence alloc pool on node %d failed\n", node);
-		}
-	}
+	for_each_node(node)
+		kfence_alloc_pool_node(node);
 }
 
 void __init kfence_init(void)
 {
-	int node;
-	unsigned long kfence_pool_size = (kfence_num_objects + 1) * 2 * PAGE_SIZE;
+	int area;
+	unsigned long nr_area_pernode = (kfence_num_objects - 1) / KFENCE_MAX_OBJECTS_PER_AREA + 1;
 
 	if (!READ_ONCE(kfence_sample_interval))
 		return;
@@ -1168,18 +1209,23 @@ void __init kfence_init(void)
 	goto out;
 
 fail:
-	for_each_node(node) {
-		if (__kfence_pool_node[node]) {
-			memblock_free_late(__pa(__kfence_pool_node[node]), kfence_pool_size);
-			__kfence_pool_node[node] = NULL;
+	for (area = 0; area < nr_area_pernode * nr_node_ids; area++) {
+		if (__kfence_pool_area[area]) {
+			unsigned long nr_objects = min(kfence_num_objects,
+						       KFENCE_MAX_OBJECTS_PER_AREA);
+			unsigned long kfence_pool_size = (nr_objects + 1) * 2 * PAGE_SIZE;
+
+			memblock_free_late(__pa(__kfence_pool_area[area]), kfence_pool_size);
+			__kfence_pool_area[area] = NULL;
 		}
 	}
 
 	__free_freelist();
 
 out:
-	memblock_free_late(__pa(__kfence_pool_node), sizeof(char *) * nr_node_ids);
-	__kfence_pool_node = NULL;
+	memblock_free_late(__pa(__kfence_pool_area), sizeof(char *) * nr_node_ids *
+			   nr_area_pernode);
+	__kfence_pool_area = NULL;
 }
 
 static void kfence_shutdown_cache_area(struct kmem_cache *s, struct kfence_pool_area *kpa)
