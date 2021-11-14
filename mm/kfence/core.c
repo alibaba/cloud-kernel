@@ -44,7 +44,7 @@
 /* === Data ================================================================= */
 
 static bool kfence_enabled __read_mostly;
-
+static DEFINE_MUTEX(kfence_mutex);
 static unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE_INTERVAL;
 unsigned long kfence_num_objects __read_mostly = CONFIG_KFENCE_NUM_OBJECTS;
 EXPORT_SYMBOL(kfence_num_objects);
@@ -77,14 +77,11 @@ static int param_set_sample_interval(const char *val, const struct kernel_param 
 #ifdef CONFIG_KFENCE_STATIC_KEYS
 		static_branch_disable(&kfence_allocation_key);
 #endif
-	} else if (!READ_ONCE(kfence_enabled) && system_state != SYSTEM_BOOTING &&
-		   static_branch_unlikely(&kfence_once_inited)) {
-		return -EINVAL; /* Cannot (re-)enable KFENCE on-the-fly. */
 	}
 
 	*((unsigned long *)kp->arg) = num;
 
-	if (system_state != SYSTEM_BOOTING)
+	if (system_state != SYSTEM_BOOTING && !READ_ONCE(kfence_enabled))
 		kfence_init_late();
 
 	return 0;
@@ -112,9 +109,8 @@ static int param_set_num_objects(const char *val, const struct kernel_param *kp)
 	if (ret < 0)
 		return ret;
 
-	if ((system_state != SYSTEM_BOOTING &&
-	     static_branch_unlikely(&kfence_once_inited)) || !num)
-		return -EINVAL;
+	if (READ_ONCE(kfence_enabled) || !num)
+		return -EINVAL; /* can not change num_objects when enabled */
 
 	*((unsigned long *)kp->arg) = num;
 	return 0;
@@ -733,6 +729,14 @@ static bool __init_freelist(void)
 {
 	int i;
 
+	/*
+	 * freelist.node, freelist.cpu and counters are inited together,
+	 * we only need to check one of them and know whether we are now
+	 * in re-enabling.
+	 */
+	if (counters)
+		return true;
+
 	freelist.node = kmalloc_array(nr_node_ids, sizeof(struct kfence_freelist_node),
 				      GFP_KERNEL);
 	freelist.cpu = alloc_percpu(struct kfence_freelist_cpu);
@@ -793,7 +797,7 @@ static bool __kfence_init_pool_area(struct kfence_pool_area *kpa)
 	char *__kfence_pool = kpa->addr;
 	struct kfence_metadata *kfence_metadata = kpa->meta;
 	struct kfence_freelist_node *kfence_freelist = &freelist.node[kpa->node];
-	unsigned long addr = (unsigned long)__kfence_pool;
+	unsigned long addr = (unsigned long)__kfence_pool, flags;
 	struct page *pages;
 	int i;
 
@@ -834,6 +838,15 @@ static bool __kfence_init_pool_area(struct kfence_pool_area *kpa)
 		addr += PAGE_SIZE;
 	}
 
+	/* Protect the right redzone. */
+	for (i = 0; i < kpa->nr_objects; i++) {
+		if (unlikely(!kfence_protect(addr + PAGE_SIZE)))
+			goto err;
+		addr += 2 * PAGE_SIZE;
+	}
+
+	addr = (unsigned long)__kfence_pool + 2 * PAGE_SIZE;
+	raw_spin_lock_irqsave(&kfence_freelist->lock, flags);
 	for (i = 0; i < kpa->nr_objects; i++) {
 		struct kfence_metadata *meta = &kfence_metadata[i];
 
@@ -845,12 +858,9 @@ static bool __kfence_init_pool_area(struct kfence_pool_area *kpa)
 		meta->kpa = kpa;
 		list_add_tail(&meta->list, &kfence_freelist->freelist);
 
-		/* Protect the right redzone. */
-		if (unlikely(!kfence_protect(addr + PAGE_SIZE)))
-			goto err;
-
 		addr += 2 * PAGE_SIZE;
 	}
+	raw_spin_unlock_irqrestore(&kfence_freelist->lock, flags);
 
 	/*
 	 * The pool is live and will never be deallocated from this point on.
@@ -959,11 +969,14 @@ static bool __init kfence_init_pool(void)
 	return success_once;
 }
 
-static void kfence_alloc_pool_late_node(int node, struct list_head *ready)
+static void kfence_alloc_pool_late_node(int node, unsigned long nr_exist, struct list_head *ready)
 {
 	unsigned long nr_need, nr_request;
 
-	nr_need = roundup(kfence_num_objects, KFENCE_MAX_OBJECTS_PER_AREA);
+	if (nr_exist >= kfence_num_objects)
+		return;
+
+	nr_need = roundup(kfence_num_objects - nr_exist, KFENCE_MAX_OBJECTS_PER_AREA);
 	nr_request = KFENCE_MAX_OBJECTS_PER_AREA;
 
 	while (nr_need) {
@@ -1063,10 +1076,12 @@ static int stats_show(struct seq_file *seq, void *v)
 	if (!size_count)
 		return 0;
 
+	mutex_lock(&kfence_mutex);
 	kfence_for_each_area(kpa, iter) {
 		size_count[kpa->node] += kpa->nr_objects;
 		size_count[kpa->node + nr_node_ids] += kpa->pool_size;
 	}
+	mutex_unlock(&kfence_mutex);
 
 	seq_puts(seq, "\nnode\tobject_size\tpool_size\n");
 	for_each_node(i) {
@@ -1090,6 +1105,7 @@ static void *start_object(struct seq_file *seq, loff_t *pos)
 	struct kfence_pool_area *kpa;
 	struct rb_node *iter;
 
+	mutex_lock(&kfence_mutex);
 	kfence_for_each_area(kpa, iter) {
 		if (index >= kpa->nr_objects) {
 			index -= kpa->nr_objects;
@@ -1102,6 +1118,7 @@ static void *start_object(struct seq_file *seq, loff_t *pos)
 
 static void stop_object(struct seq_file *seq, void *v)
 {
+	mutex_unlock(&kfence_mutex);
 }
 
 static void *next_object(struct seq_file *seq, void *v, loff_t *pos)
@@ -1300,39 +1317,46 @@ void kfence_init_late(void)
 {
 	int node;
 	LIST_HEAD(ready_list);
+	struct kfence_pool_area *kpa;
+	struct rb_node *iter;
+	unsigned long *nr_exist;
 
-	if (!READ_ONCE(kfence_sample_interval) || static_branch_unlikely(&kfence_once_inited))
+	if (!READ_ONCE(kfence_sample_interval))
 		return;
 
-	/*
-	 * We enable kfence_once_inited at here, and not care whether kfence
-	 * finally inited successfully or not. Because we have tried to enable
-	 * kfence, even if we failed. If failed, there may be problems,
-	 * do not try again. (This is a temp action, trying again will be
-	 * allowed in the next patch.)
-	 * Another goal of kfence_once_inited is to improve performance while
-	 * disabling kfence. So whenevner we try to enable it, meaning we do
-	 * not care so much about performance. This will be fine.
-	 */
-	static_branch_enable(&kfence_once_inited);
+	mutex_lock(&kfence_mutex);
+
+	if (READ_ONCE(kfence_enabled))
+		goto out;
 
 	if (!__init_freelist())
 		goto fail;
 
-	for_each_node(node)
-		kfence_alloc_pool_late_node(node, &ready_list);
+	nr_exist = kmalloc_array(nr_node_ids, sizeof(unsigned long), GFP_KERNEL | __GFP_ZERO);
+	if (!nr_exist)
+		goto fail;
 
-	if (list_empty(&ready_list))
+	kfence_for_each_area(kpa, iter)
+		nr_exist[kpa->node] += kpa->nr_objects;
+
+	for_each_node(node)
+		kfence_alloc_pool_late_node(node, nr_exist[node], &ready_list);
+	kfree(nr_exist);
+
+	if (list_empty(&ready_list) && !static_branch_unlikely(&kfence_once_inited))
 		goto fail;
 
 	stop_machine(kfence_update_pool_root, &ready_list, NULL);
 
 	__start_kfence();
+out:
+	mutex_unlock(&kfence_mutex);
 	return;
 
 fail:
 	__free_freelist();
 	WRITE_ONCE(kfence_sample_interval, 0);
+	mutex_unlock(&kfence_mutex);
 }
 
 static void kfence_shutdown_cache_area(struct kmem_cache *s, struct kfence_pool_area *kpa)
