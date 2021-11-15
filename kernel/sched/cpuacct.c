@@ -26,6 +26,8 @@ struct cpuacct_usage {
 	struct prev_cputime prev_cputime2; /* user and nice */
 	struct prev_cputime prev_cputime3; /* sys and irq + softirq */
 	struct prev_cputime prev_cputime4; /* irq and softirq */
+	struct prev_cputime prev_cputime5; /* (user - guest) and guest */
+	struct prev_cputime prev_cputime6; /* (nice - guest_nice) and guest_nice */
 } ____cacheline_aligned;
 
 #ifdef CONFIG_SCHED_SLI
@@ -411,6 +413,8 @@ static void cpuacct_init(struct cpuacct *ca)
 		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime2);
 		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime3);
 		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime4);
+		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime5);
+		prev_cputime_init(&per_cpu_ptr(ca->cpuusage, i)->prev_cputime6);
 	}
 
 	ca->avenrun[0] = ca->avenrun[1] = ca->avenrun[2] = 0;
@@ -960,6 +964,7 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 	struct cpuacct_usage *cpuusage;
 	struct task_cputime cputime;
 	u64 tick_user, tick_nice, tick_sys, tick_irq, tick_softirq;
+	u64 tick_guest, tick_guest_nice;
 	u64 left, right, left2, right2;
 	struct sched_entity *se;
 
@@ -976,6 +981,8 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 	tick_sys = kcpustat->cpustat[CPUTIME_SYSTEM];
 	tick_irq = kcpustat->cpustat[CPUTIME_IRQ];
 	tick_softirq = kcpustat->cpustat[CPUTIME_SOFTIRQ];
+	tick_guest = kcpustat->cpustat[CPUTIME_GUEST];
+	tick_guest_nice = kcpustat->cpustat[CPUTIME_GUEST_NICE];
 
 	/* Calculate system run time */
 	cputime.sum_exec_runtime = cpuusage->usages[CPUACCT_STAT_USER] +
@@ -1006,6 +1013,20 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 	cputime_adjust(&cputime, &cpuusage->prev_cputime4, &left, &right);
 	res->irq = left;
 	res->softirq = right;
+
+	/* Calculate (user - guest) and guest run time */
+	cputime.sum_exec_runtime = res->user; /* user */
+	cputime.utime = tick_user - tick_guest;
+	cputime.stime = tick_guest;
+	cputime_adjust(&cputime, &cpuusage->prev_cputime5, &left, &right);
+	res->guest = right;
+
+	/* Calculate (nice - guest_nice) and guest_nice run time */
+	cputime.sum_exec_runtime = res->nice; /* nice */
+	cputime.utime = tick_nice - tick_guest_nice;
+	cputime.stime = tick_guest_nice;
+	cputime_adjust(&cputime, &cpuusage->prev_cputime6, &left, &right);
+	res->guest_nice = right;
 
 	if (se && schedstat_enabled()) {
 		unsigned int seq;
@@ -1045,8 +1066,6 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 	} else {
 		res->idle = res->iowait = res->steal = 0;
 	}
-	res->guest = kcpustat->cpustat[CPUTIME_GUEST];
-	res->guest_nice = kcpustat->cpustat[CPUTIME_GUEST_NICE];
 }
 
 static int cpuacct_proc_stats_show(struct seq_file *sf, void *v)
