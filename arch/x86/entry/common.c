@@ -222,7 +222,7 @@ __visible inline void prepare_exit_to_usermode(struct pt_regs *regs)
 	mds_user_clear_cpu_buffers();
 }
 
-noinstr void _prepare_exit_to_usermode(struct pt_regs *regs)
+void _prepare_exit_to_usermode(struct pt_regs *regs)
 {
 	prepare_exit_to_usermode(regs);
 }
