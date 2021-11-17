@@ -12,15 +12,19 @@
 #include <linux/mm.h>
 #include <linux/types.h>
 #include <linux/static_key.h>
+#include <linux/percpu-refcount.h>
+#include <linux/workqueue.h>
 
 struct kfence_pool_area {
 	struct rb_node rb_node; /* binary tree linked to root */
 	struct kfence_metadata *meta; /* metadata per area */
 	char *addr; /* start kfence pool address */
 	unsigned long pool_size; /* size of kfence pool of this area */
-	unsigned long nr_objects; /* max object number of this area */
+	unsigned long nr_objects; /* max object number of this area, 0 marked as zombie area */
 	int node; /* the numa node this area belongs to */
 	struct list_head list; /* ready to be added to kfence_pool_root */
+	struct percpu_ref refcnt; /* count in use objects */
+	struct work_struct work; /* use workqueue to free unused area */
 };
 
 #ifdef CONFIG_KFENCE
