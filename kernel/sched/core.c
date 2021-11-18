@@ -7341,3 +7341,7 @@ const u32 sched_prio_to_wmult[40] = {
 };
 
 #undef CREATE_TRACE_POINTS
+
+void sched_task_release(struct task_struct *p)
+{
+}

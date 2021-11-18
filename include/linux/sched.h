@@ -2136,4 +2136,6 @@ void create_rich_container_reaper(struct task_struct *tsk);
 static inline void create_rich_container_reaper(struct task_struct *tsk) { }
 #endif
 
+extern void sched_task_release(struct task_struct *p);
+
 #endif
