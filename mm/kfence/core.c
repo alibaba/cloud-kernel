@@ -1134,6 +1134,41 @@ static inline bool kfence_flush_all_and_wait(void)
 	return true;
 }
 
+static bool kfence_can_recover_tlb(struct kfence_pool_area *kpa)
+{
+#ifdef CONFIG_X86_64
+	/* only recover 1GiB aligned tlb */
+	return kpa->pool_size == PUD_SIZE;
+#else
+	/*
+	 * On arm64, the direct mapping area is already splited to page granularity
+	 * with CONFIG_RODATA_FULL_DEFAULT_ENABLED=y, or CONFIG_KFENCE=y. So we will
+	 * not recover tlb to pud huge. See upstream commit 840b23986344
+	 * ("arm64, kfence: enable KFENCE for ARM64") in detail.
+	 */
+	return false;
+#endif
+}
+
+static inline void __kfence_recover_tlb(unsigned long addr)
+{
+	if (!arch_kfence_free_pool(addr)) {
+		pr_warn("fail to recover tlb to 1G");
+		if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
+			pr_cont(" at 0x%px-0x%px\n", (void *)addr, (void *)(addr + PUD_SIZE));
+		else
+			pr_cont("\n");
+	}
+}
+
+static inline void kfence_recover_tlb(struct kfence_pool_area *kpa)
+{
+	unsigned long base = ALIGN_DOWN((unsigned long)kpa->addr, PUD_SIZE);
+
+	if (kfence_can_recover_tlb(kpa))
+		__kfence_recover_tlb(base);
+}
+
 /* Free a specific area. The refcnt has been down to 0. */
 static void kfence_free_area(struct work_struct *work)
 {
@@ -1164,6 +1199,7 @@ static void kfence_free_area(struct work_struct *work)
 		pr_cont("\n");
 
 	kfence_clear_page_info((unsigned long)kpa->addr, kpa->pool_size);
+	kfence_recover_tlb(kpa);
 	page = virt_to_page(kpa->addr);
 
 	if (PageReserved(page))

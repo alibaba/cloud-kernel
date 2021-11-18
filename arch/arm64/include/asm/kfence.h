@@ -21,4 +21,6 @@ static inline bool kfence_protect_page(unsigned long addr, bool protect)
 	return true;
 }
 
+static inline bool arch_kfence_free_pool(unsigned long addr) { return false; }
+
 #endif /* __ASM_KFENCE_H */
