@@ -69,6 +69,54 @@ static inline bool kfence_protect_page(unsigned long addr, bool protect)
 	return true;
 }
 
+/*
+ * This function is used to recover TLB to 1G kernel mapping.
+ * The caller MUST make sure there're no other active kfence
+ * pools in this 1G area.
+ */
+static inline bool arch_kfence_free_pool(unsigned long addr)
+{
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud, new_pud, old_pud;
+
+	addr = ALIGN_DOWN(addr, PUD_SIZE);
+
+	pgd = pgd_offset_k(addr);
+	if (pgd_none(*pgd))
+		return false;
+
+	p4d = p4d_offset(pgd, addr);
+	if (p4d_none(*p4d))
+		return false;
+
+	if (p4d_large(*p4d) || !p4d_present(*p4d))
+		return false;
+
+	pud = pud_offset(p4d, addr);
+	if (pud_none(*pud))
+		return false;
+
+	if (pud_large(*pud) || !pud_present(*pud))
+		return false;
+
+	new_pud = pfn_pud((unsigned long)__phys_to_pfn(__pa(addr)),
+			  __pgprot(__PAGE_KERNEL_LARGE));
+
+	old_pud = xchg(pud, new_pud);
+
+	flush_tlb_kernel_range(addr, addr + PUD_SIZE);
+	if (!pud_free_pmd_page(&old_pud, addr)) {
+		pr_warn("free old TLB error");
+		if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
+			pr_cont(" at 0x%px-0x%px\n", (void *)addr, (void *)(addr + PUD_SIZE));
+		else
+			pr_cont("\n");
+	}
+
+	return true;
+}
+
 #endif /* !MODULE */
 
 #endif /* _ASM_X86_KFENCE_H */
