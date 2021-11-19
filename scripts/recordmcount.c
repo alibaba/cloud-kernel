@@ -173,6 +173,7 @@ umalloc(size_t size)
 
 static char rel_type_nop;
 static int (*make_nop)(void *map, size_t const offset);
+static int make_nop_x86(void *map, size_t const offset);
 static unsigned char *ideal_nop;
 
 static unsigned char ideal_nop4_arm_le[4] = { 0x00, 0x00, 0xa0, 0xe1 }; /* mov r0, r0 */
@@ -436,7 +437,7 @@ static size_t stub_x86_size;
 static int make_nop_x86(void *map, size_t const offset)
 {
 	uint32_t *ptr;
-	size_t stub_offset = offset - stub_x86_size;
+	size_t stub_offset = offset - (stub_x86_size - 1);
 
 	/* confirm we have the expected stub */
 	ptr = map + stub_offset;
