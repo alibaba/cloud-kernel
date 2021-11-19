@@ -40,10 +40,10 @@ static const char *xfeature_names[] =
 	"Processor Trace (unused)"	,
 	"Protection Keys User registers",
 	"PASID state",
-	"unknown xstate feature"	,
-	"unknown xstate feature",
-	"unknown xstate feature",
-	"unknown xstate feature",
+	"unknown xstate feature 11",
+	"unknown xstate feature 12",
+	"unknown xstate feature 13",
+	"User Interrupts registers",
 	"unknown xstate feature",
 	"unknown xstate feature",
 	"AMX Tile config",
@@ -69,7 +69,8 @@ static struct xfeature_capflag_info xfeature_capflags[] __initdata = {
 	{ XFEATURE_PKRU,			X86_FEATURE_PKU },
 	{ XFEATURE_PASID,			X86_FEATURE_ENQCMD },
 	{ XFEATURE_XTILE_CFG,			X86_FEATURE_AMX_TILE },
-	{ XFEATURE_XTILE_DATA,			X86_FEATURE_AMX_TILE }
+	{ XFEATURE_XTILE_DATA,			X86_FEATURE_AMX_TILE }, 
+	{ XFEATURE_UINTR,			X86_FEATURE_UINTR }
 };
 
 /*
@@ -486,6 +487,7 @@ static void __init print_xstate_features(void)
 	print_xstate_feature(XFEATURE_MASK_PASID);
 	print_xstate_feature(XFEATURE_MASK_XTILE_CFG);
 	print_xstate_feature(XFEATURE_MASK_XTILE_DATA);
+	print_xstate_feature(XFEATURE_MASK_UINTR);
 }
 
 /*
@@ -623,7 +625,8 @@ static void __init print_xstate_offset_size(void)
 	 XFEATURE_MASK_PKRU |			\
 	 XFEATURE_MASK_BNDREGS |		\
 	 XFEATURE_MASK_BNDCSR |			\
-	 XFEATURE_MASK_PASID)
+	 XFEATURE_MASK_PASID |			\
+	 XFEATURE_MASK_UINTR)
 
 /*
  * setup the xstate image representing the init state
@@ -845,6 +848,7 @@ static void check_xstate_against_struct(int nr)
 	XCHECK_SZ(sz, nr, XFEATURE_PKRU,      struct pkru_state);
 	XCHECK_SZ(sz, nr, XFEATURE_PASID,     struct ia32_pasid_state);
 	XCHECK_SZ(sz, nr, XFEATURE_XTILE_CFG, struct xtile_cfg);
+	XCHECK_SZ(sz, nr, XFEATURE_UINTR,     struct uintr_state);
 
 	/* The tile data size varies between implementations */
 	if (nr == XFEATURE_XTILE_DATA)
@@ -856,9 +860,13 @@ static void check_xstate_against_struct(int nr)
 	 * numbers.
 	 */
 	if ((nr < XFEATURE_YMM) ||
-	    (nr >= XFEATURE_MAX) ||
 	    (nr == XFEATURE_PT_UNIMPLEMENTED_SO_FAR) ||
-	    ((nr >= XFEATURE_RSRVD_COMP_11) && (nr <= XFEATURE_LBR))) {
+	    (nr == XFEATURE_RSRVD_COMP_11) ||
+	    (nr == XFEATURE_RSRVD_COMP_12) ||
+	    (nr == XFEATURE_RSRVD_COMP_13) ||
+	    (nr == XFEATURE_LBR) ||
+	    (nr == XFEATURE_RSRVD_COMP_16) ||
+	    (nr >= XFEATURE_MAX)) {
 		WARN_ONCE(1, "no structure for xstate: %d\n", nr);
 		XSTATE_WARN_ON(1);
 	}

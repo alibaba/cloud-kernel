@@ -38,7 +38,8 @@
 				    XFEATURE_MASK_XTILE)
 
 /* All currently supported supervisor features */
-#define XFEATURE_MASK_SUPERVISOR_SUPPORTED (XFEATURE_MASK_PASID)
+#define XFEATURE_MASK_SUPERVISOR_SUPPORTED (XFEATURE_MASK_PASID | \
+					    XFEATURE_MASK_UINTR)
 
 /*
  * A supervisor state component may not always contain valuable information,

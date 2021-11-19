@@ -118,7 +118,7 @@ enum xfeature {
 	XFEATURE_RSRVD_COMP_11,
 	XFEATURE_RSRVD_COMP_12,
 	XFEATURE_RSRVD_COMP_13,
-	XFEATURE_RSRVD_COMP_14,
+	XFEATURE_UINTR,
 	XFEATURE_LBR,
 	XFEATURE_RSRVD_COMP_16,
 	XFEATURE_XTILE_CFG,
@@ -138,6 +138,7 @@ enum xfeature {
 #define XFEATURE_MASK_PT		(1 << XFEATURE_PT_UNIMPLEMENTED_SO_FAR)
 #define XFEATURE_MASK_PKRU		(1 << XFEATURE_PKRU)
 #define XFEATURE_MASK_PASID		(1 << XFEATURE_PASID)
+#define XFEATURE_MASK_UINTR		(1 << XFEATURE_UINTR)
 #define XFEATURE_MASK_LBR		(1 << XFEATURE_LBR)
 #define XFEATURE_MASK_XTILE_CFG	(1 << XFEATURE_XTILE_CFG)
 #define XFEATURE_MASK_XTILE_DATA	(1 << XFEATURE_XTILE_DATA)
@@ -251,6 +252,23 @@ struct avx_512_hi16_state {
 struct pkru_state {
 	u32				pkru;
 	u32				pad;
+} __packed;
+
+/*
+ * State component 14 is supervisor state used for User Interrupts state.
+ * The size of this state is 48 bytes
+ */
+struct uintr_state {
+	u64 handler;
+	u64 stack_adjust;
+	u32 uitt_size;
+	u8  uinv;
+	u8  pad1;
+	u8  pad2;
+	u8  uif_pad3;		/* bit 7 - UIF, bits 6:0 - reserved */
+	u64 upid_addr;
+	u64 uirr;
+	u64 uitt_addr;
 } __packed;
 
 /*
