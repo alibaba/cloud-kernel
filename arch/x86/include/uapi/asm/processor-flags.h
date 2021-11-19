@@ -130,6 +130,8 @@
 #define X86_CR4_SMAP		_BITUL(X86_CR4_SMAP_BIT)
 #define X86_CR4_PKE_BIT		22 /* enable Protection Keys support */
 #define X86_CR4_PKE		_BITUL(X86_CR4_PKE_BIT)
+#define X86_CR4_UINTR_BIT	25 /* enable User Interrupts support */
+#define X86_CR4_UINTR		_BITUL(X86_CR4_UINTR_BIT)
 
 /*
  * x86-64 Task Priority Register, CR8

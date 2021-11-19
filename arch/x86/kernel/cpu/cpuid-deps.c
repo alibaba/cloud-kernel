@@ -76,6 +76,7 @@ static const struct cpuid_dep cpuid_deps[] = {
 	{ X86_FEATURE_AMX_TILE,			X86_FEATURE_XSAVE     },
 	{ X86_FEATURE_AMX_INT8,			X86_FEATURE_AMX_TILE  },
 	{ X86_FEATURE_AMX_BF16,			X86_FEATURE_AMX_TILE  },
+	{ X86_FEATURE_UINTR,			X86_FEATURE_XSAVES    },
 	{}
 };
 

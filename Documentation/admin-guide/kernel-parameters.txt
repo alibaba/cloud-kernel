@@ -3154,6 +3154,8 @@
 
 	nofsgsbase	[X86] Disables FSGSBASE instructions.
 
+	nouintr		[X86-64] Disables User Interrupts support.
+
 	no_console_suspend
 			[HW] Never suspend the console
 			Disable suspending of consoles during suspend and
