@@ -2304,4 +2304,6 @@ int sched_trace_rq_nr_running(struct rq *rq);
 
 const struct cpumask *sched_trace_rd_span(struct root_domain *rd);
 
+extern void sched_task_release(struct task_struct *p);
+
 #endif
