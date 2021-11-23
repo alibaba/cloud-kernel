@@ -295,6 +295,9 @@ fi
 info LD vmlinux
 vmlinux_link "${kallsymso}" vmlinux
 
+info SYSMAP System.map
+mksysmap vmlinux System.map
+
 if [ -n "${CONFIG_BUILDTIME_TABLE_SORT}" ]; then
 	info SORTTAB vmlinux
 	if ! sorttable vmlinux; then
@@ -302,9 +305,6 @@ if [ -n "${CONFIG_BUILDTIME_TABLE_SORT}" ]; then
 		exit 1
 	fi
 fi
-
-info SYSMAP System.map
-mksysmap vmlinux System.map
 
 # step a (see comment above)
 if [ -n "${CONFIG_KALLSYMS}" ]; then

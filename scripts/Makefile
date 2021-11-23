@@ -22,6 +22,7 @@ hostprogs-$(CONFIG_SYSTEM_TRUSTED_KEYRING) += extract-cert
 hostprogs-$(CONFIG_SYSTEM_EXTRA_CERTIFICATE) += insert-sys-cert
 
 HOSTCFLAGS_sorttable.o = -I$(srctree)/tools/include
+HOSTLDLIBS_sorttable = -lpthread
 HOSTCFLAGS_asn1_compiler.o = -I$(srctree)/include
 HOSTLDLIBS_sign-file = -lcrypto
 HOSTLDLIBS_extract-cert = -lcrypto
@@ -29,7 +30,6 @@ HOSTLDLIBS_extract-cert = -lcrypto
 ifdef CONFIG_UNWINDER_ORC
 HOSTCFLAGS_sorttable.o += -I$(srctree)/tools/objtool/arch/$(SRCARCH)/include
 HOSTCFLAGS_sorttable.o += -DUNWINDER_ORC_ENABLED
-HOSTLDLIBS_sorttable = -lpthread
 endif
 
 always		:= $(hostprogs-y) $(hostprogs-m)
