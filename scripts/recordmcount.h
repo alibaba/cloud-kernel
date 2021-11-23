@@ -310,6 +310,8 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
 			       uint_t const recval,
 			       unsigned const reltype)
 {
+	Elf_Shdr *const shdr0 = (Elf_Shdr *)(_w(ehdr->e_shoff) + (void *)ehdr);
+	Elf_Shdr const *const shdr = &shdr0[w(relhdr->sh_info)];
 	uint_t *const mloc0 = mlocp;
 	Elf_Rel *mrelp = *mrelpp;
 	Elf_Sym const *sym0;
@@ -323,6 +325,7 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
 	get_sym_str_and_relp(relhdr, ehdr, &sym0, &str0, &relp);
 
 	for (t = nrel; t; --t) {
+		int ret = -1;
 		if (!mcountsym)
 			mcountsym = get_mcountsym(sym0, relp, str0);
 
@@ -340,6 +343,18 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
 				*mlocp++ = addend;
 
 			mrelp = (Elf_Rel *)(rel_entsize + (void *)mrelp);
+			/* convert mcount into nop */
+			if (make_nop == make_nop_x86) {
+				ret = make_nop((void *)ehdr,
+						_w(shdr->sh_offset) + _w(relp->r_offset));
+				if (!ret) {
+					Elf_Rel rel;
+					rel = *(Elf_Rel *)relp;
+					Elf_r_info(&rel, Elf_r_sym(relp), rel_type_nop);
+					ulseek(fd_map, (void *)relp - (void *)ehdr, SEEK_SET);
+					uwrite(fd_map, &rel, sizeof(rel));
+				}
+			}
 		}
 		relp = (Elf_Rel const *)(rel_entsize + (void *)relp);
 	}
