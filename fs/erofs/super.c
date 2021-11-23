@@ -696,6 +696,9 @@ static void erofs_kill_sb(struct super_block *sb)
 	if (!sbi)
 		return;
 	erofs_free_dev_context(sbi->devs);
+	if (sbi->bootstrap)
+		filp_close(sbi->bootstrap, NULL);
+	kfree(sbi->bootstrap_path);
 	kfree(sbi);
 	sb->s_fs_info = NULL;
 }
@@ -707,9 +710,6 @@ static void erofs_put_super(struct super_block *sb)
 
 	DBG_BUGON(!sbi);
 
-	if (sbi->bootstrap)
-		filp_close(sbi->bootstrap, NULL);
-	kfree(sbi->bootstrap_path);
 	erofs_shrinker_unregister(sb);
 #ifdef CONFIG_EROFS_FS_ZIP
 	iput(sbi->managed_cache);
