@@ -305,8 +305,8 @@ static __always_inline void for_each_canary(const struct kfence_metadata *meta, 
 
 	/* this func will take most cost so we shrink it when no interval limit */
 	if (static_branch_likely(&kfence_skip_interval)) {
-		start = max(ALIGN_DOWN(meta->addr - 1, cache_line_size()), start);
-		end = min(ALIGN(meta->addr + meta->size + 1, cache_line_size()), end);
+		start = max(ALIGN_DOWN(meta->addr - 1, L1_CACHE_BYTES), start);
+		end = min(ALIGN(meta->addr + meta->size + 1, L1_CACHE_BYTES), end);
 	}
 
 	lockdep_assert_held(&meta->lock);

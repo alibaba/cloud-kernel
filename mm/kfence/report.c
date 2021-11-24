@@ -162,7 +162,7 @@ static void print_diff_canary(unsigned long address, size_t bytes_to_show,
 						: static_branch_likely(&kfence_skip_interval) ?
 						  min(show_until_addr,
 						      ALIGN(meta->addr + meta->size + 1,
-							    cache_line_size())) :
+							    L1_CACHE_BYTES)) :
 						  min(show_until_addr, PAGE_ALIGN(address)));
 
 	pr_cont("[");
