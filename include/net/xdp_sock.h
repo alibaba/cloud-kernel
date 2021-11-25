@@ -173,12 +173,12 @@ static inline struct page *xdp_umem_get_page(struct xdp_umem *umem, u64 addr)
 	return NULL;
 }
 
-struct page **xsk_umem_pgs_delay_unpin(struct xdp_umem *umem, u64 *npgs)
+static inline struct page **xsk_umem_pgs_delay_unpin(struct xdp_umem *umem, u64 *npgs)
 {
 	return NULL;
 }
 
-void xsk_umem_unpin_pages(struct page **pgs, u64 npgs)
+static inline void xsk_umem_unpin_pages(struct page **pgs, u64 npgs)
 {
 }
 #endif /* CONFIG_XDP_SOCKETS */
