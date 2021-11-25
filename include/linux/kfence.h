@@ -31,6 +31,7 @@ DECLARE_STATIC_KEY_FALSE(kfence_allocation_key);
 extern atomic_t kfence_allocation_gate;
 #endif
 DECLARE_STATIC_KEY_FALSE(kfence_skip_interval);
+DECLARE_STATIC_KEY_FALSE(kfence_once_inited);
 #define GFP_KFENCE_NOT_ALLOC ((GFP_ZONEMASK & ~__GFP_HIGHMEM) | __GFP_NOKFENCE | __GFP_THISNODE)
 
 /**
@@ -69,7 +70,7 @@ static __always_inline bool is_kfence_address_node(const void *addr, const int n
  */
 static __always_inline bool is_kfence_address(const void *addr)
 {
-	if (unlikely(!virt_addr_valid(addr)))
+	if (!static_branch_unlikely(&kfence_once_inited) || unlikely(!virt_addr_valid(addr)))
 		return false;
 
 	return unlikely(is_kfence_address_node(addr, page_to_nid(virt_to_page(addr))));

@@ -59,6 +59,8 @@ EXPORT_SYMBOL(kfence_pool_size);
 DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
 #endif
 DEFINE_STATIC_KEY_FALSE(kfence_skip_interval);
+DEFINE_STATIC_KEY_FALSE(kfence_once_inited);
+EXPORT_SYMBOL(kfence_once_inited);
 
 static int param_set_sample_interval(const char *val, const struct kernel_param *kp)
 {
@@ -1093,6 +1095,8 @@ void __init kfence_init(void)
 			pr_cont("\n");
 	}
 
+	static_branch_enable(&kfence_once_inited);
+
 	return;
 
 fail:
@@ -1273,7 +1277,12 @@ alloc:
 
 size_t kfence_ksize(const void *addr)
 {
-	const struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
+	struct kfence_metadata *meta;
+
+	if (!static_branch_unlikely(&kfence_once_inited))
+		return 0;
+
+	meta = addr_to_metadata((unsigned long)addr);
 
 	/*
 	 * Read locklessly -- if there is a race with __kfence_alloc(), this is
