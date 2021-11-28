@@ -627,13 +627,6 @@ static inline void switch_fpu_finish(struct fpu *old_fpu, struct fpu *new_fpu)
 		pkru_val = pk ? pk->pkru : 0;
 	}
 	__write_pkru(pkru_val);
-
-	/*
-	 * Expensive PASID MSR write will be avoided in update_pasid() because
-	 * TIF_NEED_FPU_LOAD was set. And the PASID state won't be updated
-	 * unless it's different from mm->pasid to reduce overhead.
-	 */
-	update_pasid();
 }
 
 #endif /* _ASM_X86_FPU_INTERNAL_H */
