@@ -10033,14 +10033,12 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 		goto free_emulate_ctxt;
 	}
 
-	vcpu->arch.user_fpu->state = &vcpu->arch.user_fpu->__default_state;
 	vcpu->arch.guest_fpu = kmem_cache_zalloc(x86_fpu_cache,
 						 GFP_KERNEL_ACCOUNT);
 	if (!vcpu->arch.guest_fpu) {
 		pr_err("kvm: failed to allocate vcpu's fpu\n");
 		goto free_user_fpu;
 	}
-	vcpu->arch.guest_fpu->state = &vcpu->arch.guest_fpu->__default_state;
 	fx_init(vcpu);
 
 	vcpu->arch.maxphyaddr = cpuid_query_maxphyaddr(vcpu);
