@@ -121,27 +121,13 @@ static ssize_t show_mem_start_phys_index(struct device *dev,
 }
 
 /*
- * Show whether the section of memory is likely to be hot-removable
+ * Legacy interface that we cannot remove. Always indicate "removable"
+ * with CONFIG_MEMORY_HOTREMOVE - bad heuristic.
  */
 static ssize_t show_mem_removable(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
-	unsigned long i, pfn;
-	int ret = 1;
-	struct memory_block *mem = to_memory_block(dev);
-
-	if (mem->state != MEM_ONLINE)
-		goto out;
-
-	for (i = 0; i < sections_per_block; i++) {
-		if (!present_section_nr(mem->start_section_nr + i))
-			continue;
-		pfn = section_nr_to_pfn(mem->start_section_nr + i);
-		ret &= is_mem_section_removable(pfn, PAGES_PER_SECTION);
-	}
-
-out:
-	return sprintf(buf, "%d\n", ret);
+	return sprintf(buf, "%d\n", (int)IS_ENABLED(CONFIG_MEMORY_HOTREMOVE));
 }
 
 /*
