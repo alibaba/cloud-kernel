@@ -562,6 +562,9 @@ static struct page *kfence_guarded_alloc_page(int node)
 
 	page = virt_to_page(addr);
 	__ClearPageSlab(page);
+#ifdef CONFIG_DEBUG_VM
+	atomic_set(&page->_refcount, 0);
+#endif
 
 	raw_spin_unlock_irqrestore(&meta->lock, flags);
 
