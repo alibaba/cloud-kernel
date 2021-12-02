@@ -1628,6 +1628,40 @@ int __weak arch_check_ftrace_location(struct kprobe *p)
 	return 0;
 }
 
+#ifdef CONFIG_FUNCTION_TRACER
+/*
+ * Check if some module bypassed kprobe, and directly patched this address.
+ *
+ * We'd better just reject kprobe_register. We don't want to mess around with
+ * these modules. They either know what they're doing and don't want kprobe
+ * to get invovled, or they're malicious and we should sense that and remove
+ * them. In the latter case, the warning senses it. And in both cases, we
+ * avoid them working together.
+ */
+static bool module_patched(unsigned long addr)
+{
+	unsigned char replaced[MCOUNT_INSN_SIZE];
+	unsigned long target_addr;
+
+	if (copy_from_kernel_nofault(replaced, (void *)addr, MCOUNT_INSN_SIZE))
+		return false;
+
+	if (replaced[0] != 0xe9)
+		return false;
+
+	target_addr = (*(int *)&replaced[1]) + addr + MCOUNT_INSN_SIZE;
+
+	if (is_module_address(target_addr)) {
+		WARN_ONCE(1, "0x%lx has been patched by a module. Don't probe it.\n", addr);
+		return true;
+	}
+
+	return false;
+}
+#else
+static inline bool module_patched(unsigned long addr) { return false; }
+#endif
+
 static int check_kprobe_address_safe(struct kprobe *p,
 				     struct module **probed_mod)
 {
@@ -1644,7 +1678,8 @@ static int check_kprobe_address_safe(struct kprobe *p,
 	    within_kprobe_blacklist((unsigned long) p->addr) ||
 	    jump_label_text_reserved(p->addr, p->addr) ||
 	    static_call_text_reserved(p->addr, p->addr) ||
-	    find_bug((unsigned long)p->addr)) {
+	    find_bug((unsigned long)p->addr) ||
+	    module_patched((unsigned long)p->addr)) {
 		ret = -EINVAL;
 		goto out;
 	}
