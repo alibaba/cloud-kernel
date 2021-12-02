@@ -92,7 +92,8 @@ static int psp_check_tee_support(struct psp_device *psp,
 				 unsigned int capability)
 {
 	/* Check if device supports TEE feature */
-	if (!(capability & 2)) {
+	if (!(capability & 2) ||
+	    (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)) {
 		dev_dbg(psp->dev, "psp does not support TEE\n");
 		return -ENODEV;
 	}
