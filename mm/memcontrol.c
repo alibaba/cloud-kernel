@@ -6329,7 +6329,9 @@ static void mem_cgroup_clean_up(void **ptr)
 	struct memcg_vmstats_percpu __percpu *vmstats_percpu = memcg->vmstats_percpu;
 	struct memcg_vmstats_percpu __percpu *vmstats_local = memcg->vmstats_local;
 	struct mem_cgroup_exstat_cpu __percpu *exstat_cpu = memcg->exstat_cpu;
+#ifdef CONFIG_MEMSLI
 	struct mem_cgroup_lat_stat_cpu __percpu *lat_stat_cpu = memcg->lat_stat_cpu;
+#endif
 	int i;
 	int node;
 
@@ -6337,7 +6339,9 @@ static void mem_cgroup_clean_up(void **ptr)
 		memset(per_cpu_ptr(vmstats_percpu, i), 0, sizeof(*vmstats_percpu));
 		memset(per_cpu_ptr(vmstats_local, i), 0, sizeof(*vmstats_local));
 		memset(per_cpu_ptr(exstat_cpu, i), 0, sizeof(*exstat_cpu));
+#ifdef CONFIG_MEMSLI
 		memset(per_cpu_ptr(lat_stat_cpu, i), 0, sizeof(*lat_stat_cpu));
+#endif
 	}
 
 	memset(memcg, 0, offsetof(struct mem_cgroup, nodeinfo));
@@ -6345,7 +6349,9 @@ static void mem_cgroup_clean_up(void **ptr)
 	memcg->vmstats_percpu = vmstats_percpu;
 	memcg->vmstats_local = vmstats_local;
 	memcg->exstat_cpu = exstat_cpu;
+#ifdef CONFIG_MEMSLI
 	memcg->lat_stat_cpu = lat_stat_cpu;
+#endif
 
 	for_each_node(node)
 		mem_cgroup_per_node_clean_up(memcg, node);
@@ -6357,8 +6363,12 @@ static bool mem_cgroup_check_integrity(struct mem_cgroup *memcg)
 	int node;
 
 	if (!memcg->exstat_cpu || !memcg->vmstats_percpu ||
-			!memcg->vmstats_local || !memcg->lat_stat_cpu)
+						!memcg->vmstats_local)
 		return false;
+#ifdef CONFIG_MEMSLI
+	if (!memcg->lat_stat_cpu)
+		return false;
+#endif
 
 	for_each_node(node)
 		if (!memcg->nodeinfo[node])
