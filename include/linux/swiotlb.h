@@ -124,7 +124,7 @@ void __init swiotlb_adjust_size(unsigned long new_size);
 #else
 static inline void swiotlb_exit(void) { }
 static inline unsigned int swiotlb_max_segment(void) { return 0; }
-static inline size_t swiotlb_max_mapping_size(struct device *dev);
+static inline size_t swiotlb_max_mapping_size(struct device *dev)
 {
 	return SIZE_MAX;
 }
