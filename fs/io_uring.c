@@ -1584,12 +1584,12 @@ static void __io_free_req(struct io_kiocb *req)
 		int ret;
 
 		init_task_work(&req->task_work, io_req_task_file_table_put);
-		ret = task_work_add(req->task, &req->task_work, TWA_RESUME);
+		ret = task_work_add(req->task, &req->task_work, TWA_SIGNAL);
 		if (unlikely(ret)) {
 			struct task_struct *tsk;
 
 			tsk = io_wq_get_task(req->ctx->io_wq);
-			task_work_add(tsk, &req->task_work, 0);
+			task_work_add(tsk, &req->task_work, TWA_NONE);
 		}
 	}
 }
@@ -2260,7 +2260,7 @@ static bool io_rw_reissue(struct io_kiocb *req, long res)
 	init_task_work(&req->task_work, io_rw_resubmit);
 	percpu_ref_get(&req->ctx->refs);
 
-	ret = task_work_add(tsk, &req->task_work, TWA_RESUME);
+	ret = task_work_add(tsk, &req->task_work, TWA_SIGNAL);
 	if (!ret)
 		return true;
 #endif
@@ -2986,12 +2986,12 @@ static int io_async_buf_func(struct wait_queue_entry *wait, unsigned mode,
 	/* submit ref gets dropped, acquire a new one */
 	refcount_inc(&req->refs);
 	tsk = req->task;
-	ret = task_work_add(tsk, &rw->task_work, TWA_RESUME);
+	ret = task_work_add(tsk, &rw->task_work, TWA_SIGNAL);
 	if (unlikely(ret)) {
 		/* queue just for cancelation */
 		init_task_work(&rw->task_work, io_async_buf_cancel);
 		tsk = io_wq_get_task(req->ctx->io_wq);
-		task_work_add(tsk, &rw->task_work, TWA_RESUME);
+		task_work_add(tsk, &rw->task_work, TWA_SIGNAL);
 	}
 	wake_up_process(tsk);
 	return 1;
