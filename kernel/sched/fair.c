@@ -150,7 +150,7 @@ int sysctl_sched_expel_idle_balance_delay = -1;
  *
  *  Default: 10, units: ms
  */
-const_debug unsigned long sysctl_sched_expel_update_interval = 10;
+unsigned long sysctl_sched_expel_update_interval = 10;
 #endif
 #endif
 
