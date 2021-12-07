@@ -991,6 +991,7 @@ id_idle_cpu(struct task_struct *p, int cpu, bool expellee, bool *idle)
 	return avg_idle >= sysctl_sched_idle_saver_wmark;
 }
 
+#ifdef CONFIG_CFS_BANDWIDTH
 static noinline void
 id_update_make_up(struct task_group *tg, struct rq *rq, struct cfs_rq *cfs_rq,
 		  int coefficient)
@@ -1015,6 +1016,7 @@ id_commit_make_up(struct rq *rq, bool commit)
 	rq->nr_high_make_up = 0;
 	rq->nr_under_make_up = 0;
 }
+#endif
 
 static __always_inline void
 id_update_nr_running(struct task_group *tg, struct rq *rq, long delta)
@@ -1720,11 +1722,13 @@ static inline unsigned long expel_score(struct rq *rq)
 	return 0;
 }
 
+#ifdef CONFIG_SMP
 static int
 id_can_migrate_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq)
 {
 	return -1;
 }
+#endif
 
 static inline bool
 id_wake_affine(struct task_struct *p, int this_cpu, int prev_cpu)
@@ -1799,6 +1803,7 @@ id_preempt_all(struct sched_entity *curr, struct sched_entity *se)
 	return 0;
 }
 
+#ifdef CONFIG_CFS_BANDWIDTH
 static inline void
 id_update_make_up(struct task_group *tg, struct rq *rq, struct cfs_rq *cfs_rq,
 		  int coefficient)
@@ -1809,6 +1814,7 @@ static noinline void
 id_commit_make_up(struct rq *rq, bool commit)
 {
 }
+#endif
 
 static __always_inline void
 id_update_nr_running(struct task_group *tg, struct rq *rq, long delta)
