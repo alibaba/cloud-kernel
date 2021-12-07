@@ -4396,6 +4396,9 @@ account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	if (entity_is_task(se)) {
 		account_numa_dequeue(rq_of(cfs_rq), task_of(se));
 		list_del_init(&se->group_node);
+#ifdef CONFIG_GROUP_IDENTITY
+		cfs_rq->nr_tasks--;
+#endif
 	}
 #endif
 	cfs_rq->nr_running--;
