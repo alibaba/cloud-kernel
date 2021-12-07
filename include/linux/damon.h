@@ -32,6 +32,8 @@ struct damon_addr_range {
  * @nr_accesses:	Access frequency of this region.
  * @list:		List head for siblings.
  * @age:		Age of this region.
+ * @local:		Local numa node accesses.
+ * @remote:		Remote numa node accesses.
  *
  * @age is initially zero, increased for each aggregation interval, and reset
  * to zero again if the access frequency is significantly changed.  If two
@@ -47,6 +49,8 @@ struct damon_region {
 	unsigned int age;
 /* private: Internal value for age calculation. */
 	unsigned int last_nr_accesses;
+	unsigned long local;
+	unsigned long remote;
 };
 
 /**

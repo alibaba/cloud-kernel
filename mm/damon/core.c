@@ -47,6 +47,8 @@ struct damon_region *damon_new_region(unsigned long start, unsigned long end)
 
 	region->age = 0;
 	region->last_nr_accesses = 0;
+	region->local = 0;
+	region->remote = 0;
 
 	return region;
 }
@@ -578,6 +580,8 @@ static void damon_merge_two_regions(struct damon_target *t,
 
 	l->nr_accesses = (l->nr_accesses * sz_l + r->nr_accesses * sz_r) /
 			(sz_l + sz_r);
+	l->remote = (l->remote * sz_l + r->remote * sz_r) / (sz_l + sz_r);
+	l->local = (l->local * sz_l + r->local * sz_r) / (sz_l + sz_r);
 	l->age = (l->age * sz_l + r->age * sz_r) / (sz_l + sz_r);
 	l->ar.end = r->ar.end;
 	damon_destroy_region(r, t);
@@ -652,6 +656,8 @@ static void damon_split_region_at(struct damon_ctx *ctx,
 
 	new->age = r->age;
 	new->last_nr_accesses = r->last_nr_accesses;
+	new->local = r->local;
+	new->remote = r->remote;
 
 	damon_insert_region(new, r, damon_next_region(r), t);
 }
