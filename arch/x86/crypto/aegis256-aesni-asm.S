@@ -273,8 +273,8 @@ ENTRY(crypto_aegis256_aesni_init)
 	movdqa T3, STATE1
 
 	/* load the constants: */
-	movdqa .Laegis256_const_0, STATE3
-	movdqa .Laegis256_const_1, STATE2
+	movdqa .Laegis256_const_0(%rip), STATE3
+	movdqa .Laegis256_const_1(%rip), STATE2
 	pxor STATE3, STATE4
 	pxor STATE2, STATE5
 
@@ -647,7 +647,7 @@ ENTRY(crypto_aegis256_aesni_dec_tail)
 	punpcklbw T0, T0
 	punpcklbw T0, T0
 	punpcklbw T0, T0
-	movdqa .Laegis256_counter, T1
+	movdqa .Laegis256_counter(%rip), T1
 	pcmpgtb T1, T0
 	pand T0, MSG
 

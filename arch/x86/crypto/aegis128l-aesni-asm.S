@@ -331,8 +331,8 @@ ENTRY(crypto_aegis128l_aesni_init)
 	pxor MSG0, STATE4
 
 	/* load the constants: */
-	movdqa .Laegis128l_const_0, STATE2
-	movdqa .Laegis128l_const_1, STATE1
+	movdqa .Laegis128l_const_0(%rip), STATE2
+	movdqa .Laegis128l_const_1(%rip), STATE1
 	movdqa STATE1, STATE3
 	pxor STATE2, STATE5
 	pxor STATE1, STATE6
@@ -765,8 +765,8 @@ ENTRY(crypto_aegis128l_aesni_dec_tail)
 	punpcklbw T0, T0
 	punpcklbw T0, T0
 	movdqa T0, T1
-	movdqa .Laegis128l_counter0, T2
-	movdqa .Laegis128l_counter1, T3
+	movdqa .Laegis128l_counter0(%rip), T2
+	movdqa .Laegis128l_counter1(%rip), T3
 	pcmpgtb T2, T0
 	pcmpgtb T3, T1
 	pand T0, MSG0

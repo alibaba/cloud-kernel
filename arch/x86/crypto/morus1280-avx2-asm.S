@@ -258,7 +258,7 @@ ENTRY(crypto_morus1280_avx2_init)
 	/* load all zeros: */
 	vpxor STATE3, STATE3, STATE3
 	/* load the constant: */
-	vmovdqa .Lmorus1280_const, STATE4
+	vmovdqa .Lmorus1280_const(%rip), STATE4
 
 	/* update 16 times with zero: */
 	call __morus1280_update_zero
@@ -555,7 +555,7 @@ ENTRY(crypto_morus1280_avx2_dec_tail)
 	/* mask with byte count: */
 	movq %rcx, T0_LOW
 	vpbroadcastb T0_LOW, T0
-	vmovdqa .Lmorus1280_counter, T1
+	vmovdqa .Lmorus1280_counter(%rip), T1
 	vpcmpgtb T1, T0, T0
 	vpand T0, MSG, MSG
 
