@@ -238,8 +238,8 @@ ENTRY(crypto_morus640_sse2_init)
 	/* load all ones: */
 	pcmpeqd STATE2, STATE2
 	/* load the constants: */
-	movdqa .Lmorus640_const_0, STATE3
-	movdqa .Lmorus640_const_1, STATE4
+	movdqa .Lmorus640_const_0(%rip), STATE3
+	movdqa .Lmorus640_const_1(%rip), STATE4
 
 	/* update 16 times with zero: */
 	call __morus640_update_zero
@@ -545,7 +545,7 @@ ENTRY(crypto_morus640_sse2_dec_tail)
 	punpcklbw T0, T0
 	punpcklbw T0, T0
 	punpcklbw T0, T0
-	movdqa .Lmorus640_counter, T1
+	movdqa .Lmorus640_counter(%rip), T1
 	pcmpgtb T1, T0
 	pand T0, MSG
 

@@ -387,8 +387,8 @@ ENTRY(crypto_morus1280_sse2_init)
 	pxor STATE3_LO, STATE3_LO
 	pxor STATE3_HI, STATE3_HI
 	/* load the constant: */
-	movdqa .Lmorus640_const_0, STATE4_LO
-	movdqa .Lmorus640_const_1, STATE4_HI
+	movdqa .Lmorus640_const_0(%rip), STATE4_LO
+	movdqa .Lmorus640_const_1(%rip), STATE4_HI
 
 	/* update 16 times with zero: */
 	call __morus1280_update_zero
@@ -802,8 +802,8 @@ ENTRY(crypto_morus1280_sse2_dec_tail)
 	punpcklbw T0_LO, T0_LO
 	punpcklbw T0_LO, T0_LO
 	movdqa T0_LO, T0_HI
-	movdqa .Lmorus640_counter_0, T1_LO
-	movdqa .Lmorus640_counter_1, T1_HI
+	movdqa .Lmorus640_counter_0(%rip), T1_LO
+	movdqa .Lmorus640_counter_1(%rip), T1_HI
 	pcmpgtb T1_LO, T0_LO
 	pcmpgtb T1_HI, T0_HI
 	pand T0_LO, MSG_LO
