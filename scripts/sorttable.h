@@ -200,6 +200,7 @@ static int compare_extable(const void *a, const void *b)
 		return 1;
 	return 0;
 }
+#ifdef CONFIG_FUNCTION_TRACER
 struct elf_mcount_loc {
 	Elf_Ehdr *ehdr;
 	Elf_Shdr *init_data_sec;
@@ -256,6 +257,7 @@ static void get_mcount_loc(uint_t *_start, uint_t *_stop)
 	pclose(file_start);
 	pclose(file_stop);
 }
+#endif
 
 static int do_sort(Elf_Ehdr *ehdr,
 		   char const *const fname,
@@ -282,10 +284,13 @@ static int do_sort(Elf_Ehdr *ehdr,
 	int idx;
 	unsigned int shnum;
 	unsigned int shstrndx;
+#ifdef CONFIG_FUNCTION_TRACER
 	struct elf_mcount_loc mstruct;
 	uint_t _start_mcount_loc = 0;
 	uint_t _stop_mcount_loc = 0;
 	pthread_t mcount_sort_thread;
+#endif
+
 #if defined(SORTTABLE_64) && defined(UNWINDER_ORC_ENABLED)
 	unsigned int orc_ip_size = 0;
 	unsigned int orc_size = 0;
@@ -322,6 +327,7 @@ static int do_sort(Elf_Ehdr *ehdr,
 			symtab_shndx = (Elf32_Word *)((const char *)ehdr +
 						      _r(&s->sh_offset));
 
+#ifdef CONFIG_FUNCTION_TRACER
 		/* locate the .init.data section in vmlinux */
 		if (!strcmp(secstrings + idx, ".init.data")) {
 			get_mcount_loc(&_start_mcount_loc, &_stop_mcount_loc);
@@ -330,6 +336,8 @@ static int do_sort(Elf_Ehdr *ehdr,
 			mstruct.start_mcount_loc = _start_mcount_loc;
 			mstruct.stop_mcount_loc = _stop_mcount_loc;
 		}
+#endif
+
 #if defined(SORTTABLE_64) && defined(UNWINDER_ORC_ENABLED)
 		/* locate the ORC unwind tables */
 		if (!strcmp(secstrings + idx, ".orc_unwind_ip")) {
@@ -371,6 +379,8 @@ static int do_sort(Elf_Ehdr *ehdr,
 		goto out;
 	}
 #endif
+
+#ifdef CONFIG_FUNCTION_TRACER
 	if (!mstruct.init_data_sec || !_start_mcount_loc || !_stop_mcount_loc) {
 		fprintf(stderr,
 			"incomplete mcount's sort in file: %s\n",
@@ -385,6 +395,7 @@ static int do_sort(Elf_Ehdr *ehdr,
 			strerror(errno), fname);
 		goto out;
 	}
+#endif
 
 	if (!extab_sec) {
 		fprintf(stderr,	"no __ex_table in file: %s\n", fname);
@@ -468,6 +479,8 @@ out:
 		}
 	}
 #endif
+
+#ifdef CONFIG_FUNCTION_TRACER
 	if (mcount_sort_thread) {
 		void *retval = NULL;
 		/* wait for mcount sort done */
@@ -483,5 +496,6 @@ out:
 				(char *)retval, fname);
 		}
 	}
+#endif
 	return rc;
 }

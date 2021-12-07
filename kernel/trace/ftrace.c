@@ -5550,7 +5550,11 @@ static int ftrace_process_locs(struct module *mod,
 	if (!count)
 		return 0;
 
-	if (mod) {
+	/* Sorting mcount in vmlinux at build time depend on
+	 * CONFIG_BUILDTIME_TABLE_SORT, while mcount loc in
+	 * modules can not be sorted at build time.
+	 */
+	if (!IS_ENABLED(CONFIG_BUILDTIME_TABLE_SORT) || mod) {
 		sort(start, count, sizeof(*start),
 		     ftrace_cmp_ips, NULL);
 	}
