@@ -108,7 +108,9 @@
 
 #if defined(CONFIG_SYSCTL)
 
+#ifdef CONFIG_MEMCG
 static unsigned long penalty_extra_delay_max = HZ;
+#endif
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
