@@ -79,12 +79,6 @@ struct smc_diag_conninfo {
 	struct smc_diag_cursor	tx_prep;	/* prepared to be sent cursor */
 	struct smc_diag_cursor	tx_sent;	/* sent cursor */
 	struct smc_diag_cursor	tx_fin;		/* confirmed sent cursor */
-	__u64			rx_cnt;		/* rx counter */
-	__u64			tx_cnt;		/* tx counter */
-	__u64			tx_corked_cnt;	/* tx counter with MSG_MORE flag or corked */
-	__u64			rx_bytes;	/* rx size */
-	__u64			tx_bytes;	/* tx size */
-	__u64			tx_corked_bytes;/* tx size with MSG_MORE flag or corked */
 };
 
 /* SMC_DIAG_LINKINFO */
