@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
+ * Shared Memory Communications over RDMA (SMC-R) and RoCE
  *
  *  PNET table queries
  *
@@ -58,12 +58,12 @@ int smc_pnet_init(void) __init;
 int smc_pnet_net_init(struct net *net);
 void smc_pnet_exit(void);
 void smc_pnet_net_exit(struct net *net);
-void smc_pnet_find_ib_resource(struct sock *sk, struct smc_init_info *ini);
+void smc_pnet_find_roce_resource(struct sock *sk, struct smc_init_info *ini);
 void smc_pnet_find_ism_resource(struct sock *sk, struct smc_init_info *ini);
 int smc_pnetid_by_table_ib(struct smc_ib_device *smcibdev, u8 ib_port);
 int smc_pnetid_by_table_smcd(struct smcd_dev *smcd);
-void smc_pnet_find_alt_ib(struct smc_link_group *lgr,
-			  struct smc_init_info *ini,
+void smc_pnet_find_alt_roce(struct smc_link_group *lgr,
+			    struct smc_init_info *ini,
 			    struct smc_ib_device *known_dev);
 bool smc_pnet_is_ndev_pnetid(struct net *net, u8 *pnetid);
 bool smc_pnet_is_pnetid_set(u8 *pnetid);

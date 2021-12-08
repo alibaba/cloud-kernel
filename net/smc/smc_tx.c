@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
+ * Shared Memory Communications over RDMA (SMC-R) and RoCE
  *
  * Manage send buffer.
  * Producer:
@@ -295,7 +295,7 @@ static int smc_tx_rdma_write(struct smc_connection *conn, int peer_rmbe_offset,
 		/* offset within RMBE */
 		peer_rmbe_offset;
 	rdma_wr->rkey = lgr->rtokens[conn->rtoken_idx][link->link_idx].rkey;
-	rc = ib_post_send(link->ib_qp, &rdma_wr->wr, NULL);
+	rc = ib_post_send(link->roce_qp, &rdma_wr->wr, NULL);
 	if (rc)
 		smcr_link_down_cond_sched(link);
 	return rc;

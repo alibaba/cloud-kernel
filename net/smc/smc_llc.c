@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- *  Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
+ *  Shared Memory Communications over RDMA (SMC-R) and RoCE
  *
  *  Link Layer Control (LLC)
  *
@@ -396,7 +396,7 @@ int smc_llc_send_confirm_link(struct smc_link *link,
 	memcpy(confllc->sender_mac, link->smcibdev->mac[link->ibport - 1],
 	       ETH_ALEN);
 	memcpy(confllc->sender_gid, link->gid, SMC_GID_SIZE);
-	hton24(confllc->sender_qp_num, link->ib_qp->qp_num);
+	hton24(confllc->sender_qp_num, link->roce_qp->qp_num);
 	confllc->link_num = link->link_id;
 	memcpy(confllc->link_uid, link->link_uid, SMC_LGR_ID_SIZE);
 	confllc->max_links = SMC_LLC_ADD_LNK_MAX_LINKS;
@@ -494,7 +494,7 @@ int smc_llc_send_add_link(struct smc_link *link, u8 mac[], u8 gid[],
 	memcpy(addllc->sender_gid, gid, SMC_GID_SIZE);
 	if (link_new) {
 		addllc->link_num = link_new->link_id;
-		hton24(addllc->sender_qp_num, link_new->ib_qp->qp_num);
+		hton24(addllc->sender_qp_num, link_new->roce_qp->qp_num);
 		hton24(addllc->initial_psn, link_new->psn_initial);
 		if (reqresp == SMC_LLC_REQ)
 			addllc->qp_mtu = link_new->path_mtu;
@@ -770,7 +770,7 @@ static int smc_llc_cli_conf_link(struct smc_link *link,
 	struct smc_llc_qentry *qentry = NULL;
 	int rc = 0;
 
-	/* receive CONFIRM LINK request over IB fabric */
+	/* receive CONFIRM LINK request over RoCE fabric */
 	qentry = smc_llc_wait(lgr, NULL, SMC_LLC_WAIT_FIRST_TIME, 0);
 	if (!qentry) {
 		rc = smc_llc_send_delete_link(link, link_new->link_id,
@@ -803,7 +803,7 @@ static int smc_llc_cli_conf_link(struct smc_link *link,
 		return -ENOLINK;
 	}
 
-	/* send CONFIRM LINK response over IB fabric */
+	/* send CONFIRM LINK response over RoCE fabric */
 	rc = smc_llc_send_confirm_link(link_new, SMC_LLC_RESP);
 	if (rc) {
 		smc_llc_send_delete_link(link, link_new->link_id, SMC_LLC_REQ,
@@ -843,7 +843,7 @@ int smc_llc_cli_add_link(struct smc_link *link, struct smc_llc_qentry *qentry)
 		goto out_reject;
 
 	ini.vlan_id = lgr->vlan_id;
-	smc_pnet_find_alt_ib(lgr, &ini, link->smcibdev);
+	smc_pnet_find_alt_roce(lgr, &ini, link->smcibdev);
 	if (!memcmp(llc->sender_gid, link->peer_gid, SMC_GID_SIZE) &&
 	    !memcmp(llc->sender_mac, link->peer_mac, ETH_ALEN)) {
 		if (!ini.ib_dev)
@@ -910,7 +910,7 @@ static void smc_llc_cli_add_link_invite(struct smc_link *link,
 		goto out;
 
 	ini.vlan_id = lgr->vlan_id;
-	smc_pnet_find_alt_ib(lgr, &ini, link->smcibdev);
+	smc_pnet_find_alt_roce(lgr, &ini, link->smcibdev);
 	if (!ini.ib_dev)
 		goto out;
 
@@ -1092,11 +1092,11 @@ static int smc_llc_srv_conf_link(struct smc_link *link,
 	struct smc_llc_qentry *qentry = NULL;
 	int rc;
 
-	/* send CONFIRM LINK request over the IB fabric */
+	/* send CONFIRM LINK request over the RoCE fabric */
 	rc = smc_llc_send_confirm_link(link_new, SMC_LLC_REQ);
 	if (rc)
 		return -ENOLINK;
-	/* receive CONFIRM LINK response over the IB fabric */
+	/* receive CONFIRM LINK response over the RoCE fabric */
 	qentry = smc_llc_wait(lgr, link, SMC_LLC_WAIT_FIRST_TIME, 0);
 	if (!qentry ||
 	    qentry->msg.raw.hdr.common.type != SMC_LLC_CONFIRM_LINK) {
@@ -1130,7 +1130,7 @@ int smc_llc_srv_add_link(struct smc_link *link)
 
 	/* ignore client add link recommendation, start new flow */
 	ini.vlan_id = lgr->vlan_id;
-	smc_pnet_find_alt_ib(lgr, &ini, link->smcibdev);
+	smc_pnet_find_alt_roce(lgr, &ini, link->smcibdev);
 	if (!ini.ib_dev) {
 		lgr_new_t = SMC_LGR_ASYMMETRIC_LOCAL;
 		ini.ib_dev = link->smcibdev;
@@ -1150,7 +1150,7 @@ int smc_llc_srv_add_link(struct smc_link *link)
 				   link_new->gid, link_new, SMC_LLC_REQ);
 	if (rc)
 		goto out_err;
-	/* receive ADD LINK response over the IB fabric */
+	/* receive ADD LINK response over the RoCE fabric */
 	qentry = smc_llc_wait(lgr, link, SMC_LLC_WAIT_TIME, SMC_LLC_ADD_LINK);
 	if (!qentry) {
 		rc = -ETIMEDOUT;
@@ -1727,7 +1727,7 @@ static void smc_llc_testlink_work(struct work_struct *work)
 	}
 	reinit_completion(&link->llc_testlink_resp);
 	smc_llc_send_test_link(link, user_data);
-	/* receive TEST LINK response over IB fabric */
+	/* receive TEST LINK response over RoCE fabric */
 	rc = wait_for_completion_interruptible_timeout(&link->llc_testlink_resp,
 						       SMC_LLC_WAIT_TIME);
 	if (!smc_link_active(link))
@@ -1820,7 +1820,7 @@ int smc_llc_do_confirm_rkey(struct smc_link *send_link,
 	rc = smc_llc_send_confirm_rkey(send_link, rmb_desc);
 	if (rc)
 		goto out;
-	/* receive CONFIRM RKEY response from server over IB fabric */
+	/* receive CONFIRM RKEY response from server over RoCE fabric */
 	qentry = smc_llc_wait(lgr, send_link, SMC_LLC_WAIT_TIME,
 			      SMC_LLC_CONFIRM_RKEY);
 	if (!qentry || (qentry->msg.raw.hdr.flags & SMC_LLC_FLAG_RKEY_NEG))
@@ -1847,7 +1847,7 @@ int smc_llc_do_delete_rkey(struct smc_link_group *lgr,
 	rc = smc_llc_send_delete_rkey(send_link, rmb_desc);
 	if (rc)
 		goto out;
-	/* receive DELETE RKEY response from server over IB fabric */
+	/* receive DELETE RKEY response from server over RoCE fabric */
 	qentry = smc_llc_wait(lgr, send_link, SMC_LLC_WAIT_TIME,
 			      SMC_LLC_DELETE_RKEY);
 	if (!qentry || (qentry->msg.raw.hdr.flags & SMC_LLC_FLAG_RKEY_NEG))

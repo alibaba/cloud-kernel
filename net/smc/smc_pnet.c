@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- *  Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
+ *  Shared Memory Communications over RDMA (SMC-R) and RoCE
  *
  *  Generic netlink support functions to configure an SMC-R PNET table
  *
@@ -954,10 +954,10 @@ static int smc_pnet_find_ndev_pnetid_by_table(struct net_device *ndev,
 	return rc;
 }
 
-/* find a IB device for the given pnetid */
-static void _smc_pnet_find_ib_by_pnetid(u8 *pnet_id,
-					struct smc_init_info *ini,
-					struct smc_ib_device *known_dev)
+/* find a roce device for the given pnetid */
+static void _smc_pnet_find_roce_by_pnetid(u8 *pnet_id,
+					  struct smc_init_info *ini,
+					  struct smc_ib_device *known_dev)
 {
 	struct smc_ib_device *ibdev;
 	int i;
@@ -985,15 +985,15 @@ out:
 	mutex_unlock(&smc_ib_devices.mutex);
 }
 
-/* find alternate IB device with same pnet_id and vlan_id */
-void smc_pnet_find_alt_ib(struct smc_link_group *lgr,
-			  struct smc_init_info *ini,
-			  struct smc_ib_device *known_dev)
+/* find alternate roce device with same pnet_id and vlan_id */
+void smc_pnet_find_alt_roce(struct smc_link_group *lgr,
+			    struct smc_init_info *ini,
+			    struct smc_ib_device *known_dev)
 {
-	_smc_pnet_find_ib_by_pnetid(lgr->pnet_id, ini, known_dev);
+	_smc_pnet_find_roce_by_pnetid(lgr->pnet_id, ini, known_dev);
 }
 
-/* if handshake network device belongs to a IB device, return its
+/* if handshake network device belongs to a roce device, return its
  * IB device and port
  */
 static void smc_pnet_find_rdma_dev(struct net_device *netdev,
@@ -1035,8 +1035,8 @@ static void smc_pnet_find_rdma_dev(struct net_device *netdev,
  * If nothing found, check pnetid table.
  * If nothing found, try to use handshake device
  */
-static void smc_pnet_find_ib_by_pnetid(struct net_device *ndev,
-				       struct smc_init_info *ini)
+static void smc_pnet_find_roce_by_pnetid(struct net_device *ndev,
+					 struct smc_init_info *ini)
 {
 	u8 ndev_pnetid[SMC_MAX_PNETID_LEN];
 
@@ -1047,7 +1047,7 @@ static void smc_pnet_find_ib_by_pnetid(struct net_device *ndev,
 		smc_pnet_find_rdma_dev(ndev, ini);
 		return; /* pnetid could not be determined */
 	}
-	_smc_pnet_find_ib_by_pnetid(ndev_pnetid, ini, NULL);
+	_smc_pnet_find_roce_by_pnetid(ndev_pnetid, ini, NULL);
 }
 
 static void smc_pnet_find_ism_by_pnetid(struct net_device *ndev,
@@ -1080,7 +1080,7 @@ static void smc_pnet_find_ism_by_pnetid(struct net_device *ndev,
  * determine ib_device and port belonging to used internal TCP socket
  * ethernet interface.
  */
-void smc_pnet_find_ib_resource(struct sock *sk, struct smc_init_info *ini)
+void smc_pnet_find_roce_resource(struct sock *sk, struct smc_init_info *ini)
 {
 	struct dst_entry *dst = sk_dst_get(sk);
 
@@ -1091,7 +1091,7 @@ void smc_pnet_find_ib_resource(struct sock *sk, struct smc_init_info *ini)
 	if (!dst->dev)
 		goto out_rel;
 
-	smc_pnet_find_ib_by_pnetid(dst->dev, ini);
+	smc_pnet_find_roce_by_pnetid(dst->dev, ini);
 
 out_rel:
 	dst_release(dst);

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
+ * Shared Memory Communications over RDMA (SMC-R) and RoCE
  *
  * Work Requests exploiting Infiniband API
  *
@@ -81,7 +81,7 @@ static inline int smc_wr_rx_post(struct smc_link *link)
 	temp_wr_id = wr_id;
 	index = do_div(temp_wr_id, link->wr_rx_cnt);
 	link->wr_rx_ibs[index].wr_id = wr_id;
-	rc = ib_post_recv(link->ib_qp, &link->wr_rx_ibs[index], NULL);
+	rc = ib_post_recv(link->roce_qp, &link->wr_rx_ibs[index], NULL);
 	return rc;
 }
 

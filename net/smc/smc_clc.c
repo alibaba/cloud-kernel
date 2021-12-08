@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- *  Shared Memory Communications over RDMA (SMC-R), RoCE and iWARP
+ *  Shared Memory Communications over RDMA (SMC-R) and RoCE
  *
  *  CLC (connection layer control) handshake over initial TCP socket to
  *  prepare for RDMA traffic
@@ -691,7 +691,7 @@ static int smc_clc_send_confirm_accept(struct smc_sock *smc,
 		memcpy(&clc->r0.lcl.gid, link->gid, SMC_GID_SIZE);
 		memcpy(&clc->r0.lcl.mac, &link->smcibdev->mac[link->ibport - 1],
 		       ETH_ALEN);
-		hton24(clc->r0.qpn, link->ib_qp->qp_num);
+		hton24(clc->r0.qpn, link->roce_qp->qp_num);
 		clc->r0.rmb_rkey =
 			htonl(conn->rmb_desc->mr_rx[link->link_idx]->rkey);
 		clc->r0.rmbe_idx = 1; /* for now: 1 RMB = 1 RMBE */
