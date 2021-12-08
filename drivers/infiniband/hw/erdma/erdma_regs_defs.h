@@ -61,7 +61,17 @@
 #define ERDMA_REGS_AEQ_ADDR_H_REG           0x44
 #define ERDMA_REGS_AEQ_DEPTH_REG            0x48
 
+#define ERDMA_REGS_GRP_NUM_REG              0x4c
+
 #define ERDMA_REGS_AEQ_DB_REG               0x50
+#define ERDMA_QBLK_NUM_REG                  0x58
+
+#define ERDMA_CMDQ_SQ_DB_HOST_ADDR		0x60
+#define ERDMA_CMDQ_CQ_DB_HOST_ADDR		0x68
+#define ERDMA_CMDQ_EQ_DB_HOST_ADDR		0x70
+#define ERDMA_AEQ_DB_HOST_ADDR			0x78
+
+#define ERDMA_REGS_RES_CNT_REG              0x5c
 
 #define ERDMA_REGS_CEQ_DB_BASE_REG          0x100
 
@@ -74,6 +84,7 @@
 /* when start reset, the value should be set to 0 if reset not done. */
 #define ERDMA_REG_DEV_ST_RESET_DONE_MASK    0x00000001U
 #define ERDMA_REG_DEV_ST_INIT_DONE_MASK     0x00000002U /*  */
+#define ERDMA_REG_DEV_ST_SUSPEND_MASK       0x00000004U
 
 /* erdma PCIe BAR0 regs definition. */
 #define ERDMA_DBS_CMDQ_DB_BASE      0x0

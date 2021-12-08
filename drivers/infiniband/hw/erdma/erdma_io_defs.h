@@ -77,12 +77,26 @@ struct erdma_write_sqe {
 	struct erdma_sge sgl[0];
 };
 
-struct erdma_reg_mr_sqe {
+struct erdma_fast_reg_mr_sqe {
 	struct erdma_sqe_common_hdr hdr;
 	__u64 addr;
 	__u32 length;
 	__u32 stag;
 	__u64 reserved;
+};
+
+struct erdma_reg_mr_sqe {
+	struct erdma_sqe_common_hdr hdr;
+	__u64 addr;
+	__u32 length;
+	__u32 stag;
+	__u32 access_mode:2,
+		  access_right:4,
+		  mtt_type:2,
+		  rsvd0:4,
+		  mtt_cnt:20;
+	__u32 reserved;
+	__u64 inline_addr[0];
 };
 
 struct erdma_send_sqe {
@@ -92,16 +106,18 @@ struct erdma_send_sqe {
 	struct erdma_sge sgl[0];
 };
 
-struct erdma_readreq_sqe {
+struct erdma_read_sqe {
 	struct erdma_sqe_common_hdr hdr;
-	__u32 rsvd0;
+	__u32 invalid_stag;
 	__u32 length;
 
-	__u64 sink_to;
 	__u32 sink_stag;
+	__u32 sink_to_low;
+	__u32 sink_to_high;
 
-	__u32 src_stag; /* make aligned. */
-	__u64 src_to;
+	__u32 rsvd1;
+
+	struct erdma_sge sgl[0];
 };
 
 

@@ -56,6 +56,7 @@
 #define ERDMA_MSIX_VECTOR_CMDQ  0
 
 /* Db page allocation. */
+#define ERDMA_DWQE_MAX_GRP_CNT     24
 #define ERDMA_SDB_NPAGE            64
 #define ERDMA_SQB_NENTRY           496
 
@@ -73,7 +74,7 @@
 #define ERDMA_MAX_SGE_RD            1	            /* iwarp limitation. we could relax */
 #define ERDMA_MAX_CQ                (1024 * 256)
 #define ERDMA_MAX_CQE               (ERDMA_MAX_QP_WR * 100)
-#define ERDMA_MAX_MR                (ERDMA_MAX_QP * 10)
+#define ERDMA_MAX_MR                (ERDMA_MAX_QP * 2)
 #define ERDMA_MAX_MR_SIZE           (2U * 1024 * 1024 * 1024) /* 2GBytes */
 #define ERDMA_MAX_PD                ERDMA_MAX_QP
 #define ERDMA_MAX_MW                0               /* to be set if MW's are supported */

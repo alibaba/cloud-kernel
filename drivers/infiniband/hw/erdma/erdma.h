@@ -200,6 +200,9 @@ struct erdma_mr {
 	__u32                mtt_size;
 	__u32                total_mtt_size;
 	__u32                mtt_nents;
+	bool hw_kicked;
+	__u32                prealloc_mtt_nents;
+	bool validated;
 };
 
 struct erdma_mw {
@@ -224,13 +227,25 @@ struct erdma_cq {
 	dma_addr_t              qbuf_dma_addr;
 	__u32                   depth;
 	__u32                   assoc_eqn;
+	__u32                   user_cq;
 
 	__u32 ci;
 	__u32 owner;
 	void *db;
+
+	void *backup_db_addr;
+	dma_addr_t backup_db_dma_addr;
 #ifdef ERDMA_ENABLE_DEBUG
 	__u8                    *snapshot;
 #endif
+	struct ib_umem          *umem;
+	void                    *mtt_buf;
+
+	__u32                   mtt_cnt;
+	__u32                   page_size;
+	__u32                   mtt_type;
+	__u64                   mtt_entry[6];
+	__u32					first_page_offset;
 };
 
 enum erdma_qp_state {
@@ -310,6 +325,9 @@ struct erdma_queue {
 	__u32       size;
 
 	u64 *wr_tbl;
+
+	void *backup_db_addr;
+	dma_addr_t backup_db_dma_addr;
 };
 
 struct erdma_qp {
@@ -330,15 +348,22 @@ struct erdma_qp {
 	struct erdma_queue      recvq;
 
 	spinlock_t lock;
-	bool is_kernel_qp;
+	spinlock_t sq_lock;
 	__u32 sq_pi;
 	__u32 sq_ci;
-	__u32 rq_pi;
-	__u32 rq_ci;
 	void *sq_db;
-	void *rq_db;
+
+	bool is_kernel_qp;
 	void *cq_db;
 	bool without_cm;
+	__u8 cc_method;
+	u64 reserved;
+
+	spinlock_t rq_lock;
+	__u32 rq_pi;
+	__u32 rq_ci;
+	void *rq_db;
+
 #ifdef ERDMA_ENABLE_DEBUG
 	__u8                    *snapshot;
 #endif
@@ -370,6 +395,8 @@ void erdma_qp_put_ref(struct ib_qp *qp);
 void erdma_qp_event(struct erdma_qp *qp, enum ib_event_type type);
 void erdma_cq_event(struct erdma_cq *cq, enum ib_event_type type);
 void erdma_port_event(struct erdma_dev *dev, __u8 port, enum ib_event_type type);
+
+extern const struct attribute_group erdma_attr_group;
 
 static inline struct erdma_dev *to_edev(struct ib_device *ibdev)
 {

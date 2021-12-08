@@ -56,6 +56,16 @@ enum erdma_cmd_status {
 	ERDMA_CMD_ABORTED
 };
 
+#define COMPROMISE_CC ERDMA_CC_CUBIC
+enum erdma_cc_method {
+	ERDMA_CC_NEWRENO = 0,
+	ERDMA_CC_CUBIC,
+	ERDMA_CC_HPCC_RTT,
+	ERDMA_CC_HPCC_ECN,
+	ERDMA_CC_HPCC_INT,
+	ERDMA_CC_METHODS_NUM
+};
+
 struct erdma_comp_ctx {
 	struct completion wait_event;
 	struct erdma_cmdq_cq_entry *cqe;
@@ -81,6 +91,9 @@ struct erdma_cmdq_sq {
 
 	__u16 ci;
 	__u16 pi;
+
+	void *backup_db_addr;
+	dma_addr_t backup_db_dma_addr;
 };
 
 struct erdma_cmdq_cq {
@@ -93,6 +106,9 @@ struct erdma_cmdq_cq {
 
 	__u32 ci; /* we only care about the ci of the cmdq, cqe is available when owner changes. */
 	__u16 owner;
+
+	void *backup_db_addr;
+	dma_addr_t backup_db_dma_addr;
 };
 
 struct erdma_eq {
@@ -110,6 +126,9 @@ struct erdma_eq {
 	atomic64_t event_num;
 	atomic64_t notify_num;
 	__u32    max_poll_cnt;
+
+	void *backup_db_addr;
+	dma_addr_t backup_db_dma_addr;
 };
 
 struct erdma_cmdq_stats {
@@ -126,7 +145,7 @@ enum {
 };
 
 #define ERDMA_CMDQ_POLL_INTERVAL_MS 10  /* 100ms */
-#define ERDMA_CMDQ_TIMEOUT_MS       10000
+#define ERDMA_CMDQ_TIMEOUT_MS       15000
 
 #define ERDMA_REG_ACCESS_WAIT_MS    10
 
@@ -262,6 +281,8 @@ struct erdma_dev {
 
 	__u32 next_alloc_qpn;
 	__u32 next_alloc_cqn;
+	__u32 next_alloc_mrn;
+	__u32 next_alloc_pdn;
 
 	spinlock_t db_bitmap_lock;
 	/* sdb_page + sdb_entry = 64 * 4096 + 496 * 2 * 128 = 380K */
@@ -277,6 +298,17 @@ struct erdma_dev {
 	atomic_t num_cep;
 	atomic_t num_mem;
 	atomic_t num_ctx;
+	atomic_t num_total_connect;
+	atomic_t num_success_connect;
+	atomic_t num_failed_connect;
+	atomic_t num_total_accept;
+	atomic_t num_success_accept;
+	atomic_t num_failed_accept;
+	atomic_t num_reject;
+	atomic_t num_total_listen;
+	atomic_t num_success_listen;
+	atomic_t num_failed_listen;
+	atomic_t num_destroy_listen;
 
 	struct list_head qp_list;
 	struct list_head cep_list;
@@ -285,17 +317,29 @@ struct erdma_dev {
 	struct dentry *debugfs;
 
 	int numa_node;
+	int cc_method;
+	int grp_num;
+	int disable_dwqe;
+	int dwqe_pages;
+	int dwqe_entries;
+
 };
 
 __u32 erdma_reg_read32(struct erdma_dev *dev, __u32 reg);
 __u64 erdma_reg_read64(struct erdma_dev *dev, __u32 reg);
 void erdma_reg_write32(struct erdma_dev *dev, __u32 reg, __u32 value);
+void erdma_reg_write64(struct erdma_dev *dev, __u32 reg, __u64 value);
 
 static inline __u32 erdma_reg_read32_filed(struct erdma_dev *dev, __u32 reg, __u32 filed_mask)
 {
 	__u32 val = erdma_reg_read32(dev, reg);
 
 	return FIELD_GET(filed_mask, val);
+}
+
+static inline void native_store_db(void *db, void *db_addr)
+{
+	*(__u64 *)db_addr = *(__u64 *)db;
 }
 
 static inline void kick_cmdq_db(void *db, void *cmdq_db_addr)
@@ -312,6 +356,9 @@ static inline void arm_cmdq_cq(struct erdma_cmd_queue *cmdq)
 
 	db[1] = 0;
 
+	*(__u64 *)cmdq->cq.backup_db_addr = *(__u64 *)db;
+	/* data should be ready when tlp get down*/
+	mb();
 	*(__u64 *)cmdq->cq.db_addr = *(__u64 *)db;
 
 	atomic64_inc(&cmdq->stats.cq_armed_num);
@@ -325,6 +372,9 @@ static inline void notify_eq(struct erdma_eq *eq)
 		eq->ci;
 	db[1] = 0;
 
+	*(__u64 *)eq->backup_db_addr = *(__u64 *)db;
+	/* data should be ready when tlp get down*/
+	mb();
 	*(__u64 *)eq->db_addr = *(__u64 *)db;
 
 	atomic64_inc(&eq->notify_num);

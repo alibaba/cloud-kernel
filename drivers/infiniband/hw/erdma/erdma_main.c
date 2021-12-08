@@ -65,7 +65,7 @@
 
 MODULE_AUTHOR("Alibaba");
 MODULE_DESCRIPTION(DESC);
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_VERSION("1.0");
 
 #define DRV_VER_MAJOR 0
@@ -112,6 +112,7 @@ static void erdma_device_register(struct erdma_dev *edev)
 	memcpy(&ibdev->node_guid, netdev->dev_addr, 6);
 
 	ibdev->phys_port_cnt = 1;
+	rdma_set_device_sysfs_group(ibdev, &erdma_attr_group);
 	rv = ib_device_set_netdev(ibdev, edev->netdev, 1);
 	if (rv)
 		return;
@@ -155,6 +156,17 @@ static void erdma_device_deregister(struct erdma_dev *edev)
 	WARN_ON(atomic_read(&edev->num_mem));
 	WARN_ON(atomic_read(&edev->num_pd));
 	WARN_ON(atomic_read(&edev->num_cep));
+	WARN_ON(atomic_read(&edev->num_total_connect));
+	WARN_ON(atomic_read(&edev->num_success_connect));
+	WARN_ON(atomic_read(&edev->num_failed_connect));
+	WARN_ON(atomic_read(&edev->num_total_accept));
+	WARN_ON(atomic_read(&edev->num_success_accept));
+	WARN_ON(atomic_read(&edev->num_failed_accept));
+	WARN_ON(atomic_read(&edev->num_reject));
+	WARN_ON(atomic_read(&edev->num_total_listen));
+	WARN_ON(atomic_read(&edev->num_success_listen));
+	WARN_ON(atomic_read(&edev->num_failed_listen));
+	WARN_ON(atomic_read(&edev->num_destroy_listen));
 	i = 0;
 
 	while (!list_empty(&edev->cep_list)) {
@@ -320,7 +332,7 @@ static void erdma_disable_msix(struct erdma_dev *dev)
 
 static int erdma_set_mgmt_irq(struct erdma_dev *dev)
 {
-	__u32 cpu;
+	__u32 cpu = 0;
 	int err;
 	struct erdma_irq *irq = &dev->cmd_irq;
 
@@ -329,7 +341,8 @@ static int erdma_set_mgmt_irq(struct erdma_dev *dev)
 	irq->data = dev;
 	irq->vector = pci_irq_vector(dev->pdev, ERDMA_MSIX_VECTOR_CMDQ);
 
-	cpu = cpumask_first(cpumask_of_node(dev->numa_node));
+	if (dev->numa_node >= 0)
+		cpu = cpumask_first(cpumask_of_node(dev->numa_node));
 
 	irq->cpu = cpu;
 	cpumask_set_cpu(cpu, &dev->cmd_irq.affinity_hint_mask);
@@ -358,13 +371,49 @@ static void erdma_free_mgmt_irq(struct erdma_dev *dev)
 	free_irq(irq->vector, irq->data);
 }
 
+static void __erdma_dwqe_resource_init(struct erdma_dev *dev, int grp_num)
+{
+	int total_pages, type0, type1, shared;
+
+	if (grp_num < 4)
+		dev->disable_dwqe = 1;
+	else
+		dev->disable_dwqe = 0;
+
+	/* One page contains 4 goups. */
+	total_pages = grp_num * 4;
+	shared = 1;
+	if (grp_num >= ERDMA_DWQE_MAX_GRP_CNT) {
+		grp_num = ERDMA_DWQE_MAX_GRP_CNT;
+		type0 = ERDMA_SDB_NPAGE;
+		type1 = ERDMA_SQB_NENTRY / ERDMA_SDB_NENTRY_PER_PAGE;
+	} else {
+		type1 = total_pages / 3;
+		type0 = total_pages - type1;
+	}
+
+	dev->dwqe_pages = type0;
+	dev->dwqe_entries = type1 * ERDMA_SDB_NENTRY_PER_PAGE;
+
+	pr_info("grp_num:%d, total pages:%d, type0:%d, type1:%d, type1_db_cnt:%d, shared:%d\n",
+		grp_num, total_pages, type0, type1, type1 * 16, shared);
+}
+
 /* do device flr. */
 static int erdma_device_init(struct erdma_dev *dev, struct pci_dev *pdev)
 {
 	int err;
 
+	erdma_reg_write32(dev, ERDMA_REGS_RES_CNT_REG, 0);
+
 	erdma_reg_write32(dev, ERDMA_REGS_AEQ_ADDR_H_REG, dev->func_bar_addr >> 32);
 	erdma_reg_write32(dev, ERDMA_REGS_AEQ_ADDR_L_REG, dev->func_bar_addr & 0xFFFFFFFF);
+
+	dev->grp_num = erdma_reg_read32(dev, ERDMA_REGS_GRP_NUM_REG);
+
+	dev_info(&pdev->dev, "hardware returned grp_num:%d\n", dev->grp_num);
+
+	__erdma_dwqe_resource_init(dev, dev->grp_num);
 
 	/* force dma width to 64. */
 	dev->dma_width = 64;
@@ -444,6 +493,11 @@ static int erdma_ceq_init_one(struct erdma_dev *dev, __u16 eqn)
 	if (!eq->qbuf)
 		return -ENOMEM;
 
+	eq->backup_db_addr = dma_alloc_coherent(&dev->pdev->dev, 8,
+			&eq->backup_db_dma_addr, GFP_KERNEL);
+	if (!eq->backup_db_addr)
+		return -ENOMEM;
+
 	memset(eq->qbuf, 0, buf_size);
 
 	spin_lock_init(&eq->lock);
@@ -464,6 +518,7 @@ static int erdma_ceq_init_one(struct erdma_dev *dev, __u16 eqn)
 	params.vector_idx = eqn;
 	params.depth = ERDMA_DEFAULT_EQ_DEPTH;
 	params.queue_addr = eq->dma_addr;
+	params.db_dma_addr = eq->backup_db_dma_addr;
 	dprint(DBG_DM, "CEQ(%u), va:%p,pa:%llx,size:0x%x,depth:%u, db_addr:%p\n",
 		eqn - 1, eq->qbuf, eq->dma_addr, buf_size, eq->depth, eq->db_addr);
 
@@ -569,6 +624,10 @@ static int erdma_probe_dev(struct pci_dev *pdev)
 	pci_set_drvdata(pdev, edev);
 	edev->pdev = pdev;
 	edev->numa_node = pdev->dev.numa_node;
+	edev->next_alloc_qpn = 1;
+	edev->next_alloc_cqn = 1;
+	edev->next_alloc_mrn = 1;
+	edev->next_alloc_pdn = 1;
 
 	bars = pci_select_bars(pdev, IORESOURCE_MEM);
 	err = pci_request_selected_regions(pdev, bars, DRV_MODULE_NAME);
@@ -622,7 +681,6 @@ static int erdma_probe_dev(struct pci_dev *pdev)
 		dev_err(&pdev->dev, "erdma_set_mgmt_irq failed.\n");
 		goto err_clear_devid;
 	}
-
 
 	err = erdma_aeq_init(edev);
 	if (err)
@@ -926,6 +984,8 @@ static const struct ib_device_ops erdma_device_ops = {
 	.iw_get_qp = erdma_get_ibqp,
 
 	.disassociate_ucontext = erdma_disassociate_ucontext,
+	.drain_sq = erdma_drain_sq,
+	.drain_rq = erdma_drain_rq,
 
 	INIT_RDMA_OBJ_SIZE(ib_cq, erdma_cq, ibcq),
 	INIT_RDMA_OBJ_SIZE(ib_pd, erdma_pd, ibpd),
@@ -974,6 +1034,7 @@ static int erdma_ib_device_add(struct pci_dev *pdev)
 	ibdev->phys_port_cnt = 1;
 
 	ibdev->num_comp_vectors = dev->irq_num - 1;
+	ibdev->dev.parent = &pdev->dev;
 
 	ib_set_device_ops(ibdev, &erdma_device_ops);
 
@@ -994,6 +1055,18 @@ static int erdma_ib_device_add(struct pci_dev *pdev)
 	atomic_set(&dev->num_mem, 0);
 	atomic_set(&dev->num_pd, 0);
 	atomic_set(&dev->num_cep, 0);
+	atomic_set(&dev->num_total_connect, 0);
+	atomic_set(&dev->num_success_connect, 0);
+	atomic_set(&dev->num_failed_connect, 0);
+	atomic_set(&dev->num_total_accept, 0);
+	atomic_set(&dev->num_success_accept, 0);
+	atomic_set(&dev->num_failed_accept, 0);
+	atomic_set(&dev->num_reject, 0);
+	atomic_set(&dev->num_total_listen, 0);
+	atomic_set(&dev->num_success_listen, 0);
+	atomic_set(&dev->num_failed_listen, 0);
+	atomic_set(&dev->num_destroy_listen, 0);
+
 
 	dprint(DBG_INIT, "ib device create ok.\n");
 

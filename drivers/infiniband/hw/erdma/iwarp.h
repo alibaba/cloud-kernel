@@ -66,7 +66,8 @@ enum {
 	MPA_RR_FLAG_MARKERS	= __cpu_to_be16(0x8000),
 	MPA_RR_FLAG_CRC		= __cpu_to_be16(0x4000),
 	MPA_RR_FLAG_REJECT	= __cpu_to_be16(0x2000),
-	MPA_RR_RESERVED		= __cpu_to_be16(0x1f00),
+	MPA_RR_DESIRED_CC	= __cpu_to_be16(0x0f00),
+	MPA_RR_RESERVED		= __cpu_to_be16(0x1000),
 	MPA_RR_MASK_REVISION	= __cpu_to_be16(0x00ff)
 };
 
@@ -78,6 +79,18 @@ struct mpa_rr {
 	struct mpa_rr_params params;
 };
 
+static inline void __mpa_rr_set_cc(__u16 *bits, __u16 cc)
+{
+	*bits = (*bits & ~MPA_RR_DESIRED_CC)
+		| (cc & MPA_RR_DESIRED_CC);
+}
+
+static inline __u8 __mpa_rr_cc(__u16 mpa_rr_bits)
+{
+	__u16 rev = (mpa_rr_bits & MPA_RR_DESIRED_CC);
+
+	return (__u8)rev;
+}
 
 static inline void __mpa_rr_set_revision(__u16 *bits, __u8 rev)
 {

@@ -63,7 +63,7 @@ extern int erdma_query_pkey(struct ib_device *dev, __u8 port, __u16 idx, __u16 *
 extern int erdma_query_gid(struct ib_device *dev, __u8 port, int idx, union ib_gid *gid);
 
 extern int erdma_alloc_pd(struct ib_pd *pd, struct ib_udata *data);
-extern int erdma_dealloc_pd(struct ib_pd *pd, struct ib_udata *data);
+extern int erdma_dealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata);
 
 extern struct ib_qp *erdma_create_qp(struct ib_pd *pd, struct ib_qp_init_attr *attr,
 				   struct ib_udata *data);
@@ -73,7 +73,7 @@ extern int erdma_modify_qp(struct ib_qp *qp, struct ib_qp_attr *attr, int mask,
 			      struct ib_udata *data);
 extern int erdma_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata);
 
-extern int erdma_destroy_cq(struct ib_cq *cq, struct ib_udata *data);
+extern int erdma_destroy_cq(struct ib_cq *ibcq, struct ib_udata *udata);
 extern int erdma_req_notify_cq(struct ib_cq *cq, enum ib_cq_notify_flags flags);
 extern struct ib_mr *erdma_reg_user_mr(struct ib_pd *ibpd, __u64 start, __u64 len,
 				__u64 rnic_va, int access, struct ib_udata *udata);
@@ -96,11 +96,13 @@ extern int erdma_modify_port(struct ib_device *ibdev, __u8 port, int mask,
 			   struct ib_port_modify *props);
 
 extern struct ib_mr *
-erdma_ib_alloc_mr(struct ib_pd *pd, enum ib_mr_type mr_type, u32 max_num_sg);
+erdma_ib_alloc_mr(struct ib_pd *ibpd, enum ib_mr_type mr_type, u32 max_num_sg);
 
 extern int erdma_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg,
 				int sg_nents, unsigned int *sg_offset);
 extern struct net_device *erdma_get_netdev(struct ib_device *device, u8 port_num);
 extern void erdma_disassociate_ucontext(struct ib_ucontext *ibcontext);
+extern void erdma_drain_rq(struct ib_qp *qp);
+extern void erdma_drain_sq(struct ib_qp *qp);
 
 #endif

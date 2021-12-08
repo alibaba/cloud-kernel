@@ -47,7 +47,7 @@
 #include "erdma_obj.h"
 #include "erdma_cm.h"
 
-static int qn_fast_reuse = 1;
+static int qn_fast_reuse;
 module_param(qn_fast_reuse, int, 0644);
 MODULE_PARM_DESC(qn_fast_reuse, "Fast reuse CQN/EQN enable.");
 
@@ -102,7 +102,7 @@ try_twice:
 	dprint(DBG_OBJ, "alloc idr between 0x%x and 0x%x.\n", prefer_id, max_id);
 
 	spin_lock_irqsave(lock, flags);
-	id = idr_alloc(idr, obj, prefer_id, max_id, GFP_KERNEL);
+	id = idr_alloc(idr, obj, prefer_id, max_id, GFP_NOWAIT);
 	spin_unlock_irqrestore(lock, flags);
 
 	if (id >= 0) {
@@ -135,11 +135,13 @@ void erdma_remove_obj(spinlock_t *lock, struct idr *idr,
 
 int erdma_pd_add(struct erdma_dev *edev, struct erdma_pd *pd)
 {
-	int rv = erdma_add_obj(&edev->idr_lock, &edev->pd_idr, &pd->hdr, 1, ERDMA_MAX_PD);
+	int rv = erdma_add_obj(&edev->idr_lock, &edev->pd_idr, &pd->hdr,
+		qn_fast_reuse ? 1 : edev->next_alloc_pdn, ERDMA_MAX_PD);
 
 	if (!rv) {
 		dprint(DBG_OBJ, "(PD%d): New Object\n", pd->hdr.id);
 		pd->hdr.edev = edev;
+		edev->next_alloc_pdn = PD_ID(pd) + 1;
 	}
 
 	return rv;
@@ -245,9 +247,19 @@ static void erdma_free_cq(struct kref *ref)
 	dprint(DBG_OBJ, "(CQN%d): Free Object\n", cq->hdr.id);
 
 	atomic_dec(&cq->hdr.edev->num_cq);
-	if (cq->queue)
+
+	if (cq->user_cq && cq->mtt_type == 1) {
+		dma_unmap_single(&cq->hdr.edev->pdev->dev, cq->mtt_entry[0],
+				cq->mtt_cnt * 8, DMA_TO_DEVICE);
+		free_pages_exact(cq->mtt_buf, cq->mtt_cnt * 8);
+	}
+
+	if (cq->queue && !cq->user_cq)
 		dma_free_coherent(&cq->hdr.edev->pdev->dev,
 			cq->depth * sizeof(struct erdma_cqe), cq->queue, cq->qbuf_dma_addr);
+	else if (cq->umem && cq->user_cq)
+		ib_umem_release(cq->umem);
+
 #ifdef ERDMA_ENABLE_DEBUG
 	if (cq->snapshot)
 		free_pages_exact(cq->snapshot, 4096);
@@ -279,26 +291,16 @@ struct erdma_cq *erdma_cq_id2obj(struct erdma_dev *edev, int id, int ref)
  */
 int erdma_mem_add(struct erdma_dev *edev, struct erdma_mem *m)
 {
-	unsigned long flags;
-	int id;
+	int rv = erdma_add_obj(&edev->idr_lock, &edev->mem_idr, &m->hdr,
+		qn_fast_reuse ? 1 : edev->next_alloc_mrn, edev->attrs.max_mr);
 
-	spin_lock_irqsave(&edev->idr_lock, flags);
-	/* avoid zero stag. */
-	id = idr_alloc(&edev->mem_idr, m, 1, edev->attrs.max_mr, GFP_KERNEL);
-	spin_unlock_irqrestore(&edev->idr_lock, flags);
-
-	if (id == -ENOSPC || id > ERDMA_STAG_MAX) {
-		dprint(DBG_OBJ|DBG_MM|DBG_ON,
-			"(MPT): New Object failed, max_mr = %d, id = %d.\n",
-			edev->attrs.max_mr, id);
-		return -ENOSPC;
+	if (!rv) {
+		dprint(DBG_OBJ, "(PD%d): New Object\n", m->hdr.id);
+		m->hdr.edev = edev;
+		edev->next_alloc_mrn = m->hdr.id + 1;
 	}
 
-	erdma_objhdr_init(&m->hdr);
-	m->hdr.id = id;
-	m->hdr.edev = edev;
-
-	return 0;
+	return rv;
 }
 
 static void erdma_free_mem(struct kref *ref)

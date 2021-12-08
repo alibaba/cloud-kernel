@@ -144,7 +144,9 @@ static int erdma_modify_qp_state_to_rts(struct erdma_qp *qp,
 	params.ts_enable = tp->rx_opt.tstamp_ok;
 	params.ts_ecr = tp->rx_opt.ts_recent;
 	params.ts_val = tcp_time_stamp(tp) + tp->tsoffset;
-	dprint(DBG_CM, "dport:%u, sport:%u.\n", params.dport, params.sport);
+	params.cc_method = qp->cc_method;
+	dprint(DBG_CM, "dport:%u, sport:%u cc method:%u.\n",
+			params.dport, params.sport, params.cc_method);
 
 	rv = erdma_exec_modify_qp_cmd(dev, &params);
 	if (rv)
@@ -234,6 +236,7 @@ int erdma_modify_qp_internal_raw(struct erdma_qp *qp, struct erdma_qp_attrs *att
 	params.ts_enable = 0;
 	params.ts_ecr = 0;
 	params.ts_val = 0;
+	params.cc_method = dev->cc_method;
 
 	dprint(DBG_CM, "dport:%u, sport:%u.\n", params.dport, params.sport);
 

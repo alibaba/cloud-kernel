@@ -54,14 +54,18 @@
 #define ERDMA_MAX_RECV_SGE		1
 #define ERDMA_MAX_UOBJ_KEY	0xfffffffe
 #define ERDMA_INVAL_UOBJ_KEY	(ERDMA_MAX_UOBJ_KEY + 1)
+struct erdma_ureq_create_cq {
+	__u64 qbuf_va;
+
+	__u32 qbuf_len;
+	__u32 rsvd0;
+};
 
 struct erdma_uresp_create_cq {
 	__u32 cq_id;
 	__u32 num_cqe;
-	__u64 cq_key;
 	__u64 dbg_key;
-
-	__u32 rsvd1;
+	__u64 host_db_addr_key;
 };
 
 struct erdma_uresp_create_qp {
@@ -72,6 +76,8 @@ struct erdma_uresp_create_qp {
 	__aligned_u64 sq_key;
 	__aligned_u64 rq_key;
 	__aligned_u64 dbg_key; /* share memory between kernel and user space. */
+	__aligned_u64 sq_host_db_key;
+	__aligned_u64 rq_host_db_key;
 };
 
 struct erdma_ureq_reg_mr {
@@ -117,9 +123,14 @@ enum erdma_opcode {
 
 	ERDMA_OP_RECV_ERR       = 10,
 
-	ERDMA_OP_REG_MR        = 11,
-	ERDMA_NUM_OPCODES        = 12,
-	ERDMA_OP_INVALID         = ERDMA_NUM_OPCODES + 1
+	ERDMA_OP_INVALIDATE		= 11,
+	ERDMA_OP_RSP_SEND_IMM	= 12,
+	ERDMA_OP_SEND_WITH_INV	= 13,
+	ERDMA_OP_REG_MR			= 14,
+	ERDMA_OP_LOCAL_INV		= 15,
+	ERDMA_OP_READ_WITH_INV	= 16,
+	ERDMA_NUM_OPCODES		= 17,
+	ERDMA_OP_INVALID		= ERDMA_NUM_OPCODES + 1
 };
 
 /* Keep it same as ibv_sge to allow for memcpy */
@@ -130,7 +141,12 @@ struct erdma_sge {
 	__u32 lkey;
 };
 
-#define ERDMA_MAX_INLINE	(sizeof(struct erdma_sge) * ERDMA_MAX_SEND_SGE)
+/*
+ * Inline data are kept within the work request itself occupying
+ * the space of sge[1] .. sge[n]. Therefore, inline data cannot be
+ * supported if ERDMA_MAX_SGE is below 2 elements.
+ */
+#define ERDMA_MAX_INLINE	(sizeof(struct erdma_sge) * (ERDMA_MAX_SEND_SGE))
 
 enum erdma_wqe_flags {
 	ERDMA_WQE_VALID = 1,

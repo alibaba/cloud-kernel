@@ -87,12 +87,14 @@ int erdma_exec_query_device_cmd(struct erdma_dev *dev,
 	result->max_send_sge = resp.max_sge;
 	result->max_recv_sge = 1;
 	result->local_dma_key = resp.local_dma_key;
+	result->default_cc = resp.default_cc;
 
 	if (resp.max_qblk != 0) {
 		result->max_qp = 1024 * resp.max_qblk;
 		result->max_mr = 2 * result->max_qp;
 		result->max_cq =  2  * result->max_qp;
 	}
+	dprint(DBG_CMDQ, "default_cc: %d\n", resp.default_cc);
 	dprint(DBG_CMDQ, "device cap: max_cq:0x%x, max_cqe:0x%x\n",
 				result->max_cq, result->max_cqe);
 	dprint(DBG_CMDQ, "device cap: max_mr:0x%x, max_mr_size:0x%x\n",
@@ -131,7 +133,8 @@ int erdma_exec_create_qp_cmd(struct erdma_dev *dev,
 	req->sq_buf_addr = params->sq_buf_addr;
 
 	req->sq_depth = ffs(params->sq_depth) - 1;
-
+	req->sq_db_dma_addr = params->sq_db_dma_addr;
+	req->rq_db_dma_addr = params->rq_db_dma_addr;
 	rv = erdma_command_exec(&dev->cmdq, &base_req,
 		sizeof(struct erdma_cmdq_sq_entry), &resp);
 
@@ -170,7 +173,7 @@ int erdma_exec_modify_qp_cmd(struct erdma_dev *dev,
 	req->send_nxt = params->snd_nxt;
 	req->recv_nxt = params->rcv_nxt;
 
-	req->ts_ok = params->ts_enable;
+	req->cc_method = params->cc_method;
 	req->ts_ecr = params->ts_ecr;
 	req->ts_val = params->ts_val;
 
@@ -224,12 +227,12 @@ int erdma_exec_reg_mr_cmd(struct erdma_dev *dev,
 	int mtt_cnt = 0;
 	int total_mtt_cnt;
 	struct ib_block_iter biter;
+	__u32                        page_size;
 
 	ERDMA_CMDQ_BUILD_REQ_HDR(&base_req, CMDQ_SUBMOD_RDMA, CMDQ_OPCODE_REG_MR,
 			ERDMA_SQE_64B_WQEBB_CNT);
 
 	regmr_req->valid = params->valid;
-	regmr_req->page_size = params->page_size;
 	regmr_req->key = params->stag & 0xFF;
 	regmr_req->mpt_idx = params->stag >> 8;
 	regmr_req->pd = params->pd_id;
@@ -240,14 +243,15 @@ int erdma_exec_reg_mr_cmd(struct erdma_dev *dev,
 	regmr_req->start_va = params->start_va;
 	regmr_req->size = params->len;
 
-	total_mtt_cnt = ib_umem_num_dma_blocks(umem, PAGE_SIZE);
+	page_size = ib_umem_find_best_pgsz(umem, (SZ_2G - SZ_4K), params->start_va);
+	total_mtt_cnt = ib_umem_num_dma_blocks(umem, page_size);
 
 	dprint(DBG_MM, "(MPT%u): total_sgl_cnt %d.\n",
 		MR_ID(mr), total_mtt_cnt);
 
 	if (total_mtt_cnt <= 4) {
 		phy_addr = regmr_req->phy_addr;
-		rdma_umem_for_each_dma_block(umem, &biter, PAGE_SIZE) {
+		rdma_umem_for_each_dma_block(umem, &biter, page_size) {
 			*phy_addr = rdma_block_iter_dma_address(&biter);
 			phy_addr++;
 			mtt_cnt++;
@@ -268,9 +272,10 @@ int erdma_exec_reg_mr_cmd(struct erdma_dev *dev,
 				&mr->mtt_dma_addr, GFP_KERNEL);
 		if (!mr->mtt_va_addr)
 			return -ENOMEM;
+		mr->total_mtt_size = mr->mtt_size;
 
 		phy_addr = mr->mtt_va_addr;
-		rdma_umem_for_each_dma_block(umem, &biter, PAGE_SIZE) {
+		rdma_umem_for_each_dma_block(umem, &biter, page_size) {
 			*phy_addr = rdma_block_iter_dma_address(&biter);
 			phy_addr++;
 			mtt_cnt++;
@@ -282,33 +287,15 @@ int erdma_exec_reg_mr_cmd(struct erdma_dev *dev,
 		*phy_addr = mr->mtt_dma_addr;
 	}
 
+	regmr_req->log_page_size = ilog2(page_size);
+
 	rv = erdma_command_exec(&dev->cmdq, &base_req,
 		sizeof(struct erdma_cmdq_sq_entry), &resp);
 
 	return rv;
 }
 
-static int erdma_set_page(struct ib_mr *ibmr, u64 addr)
-{
-	struct erdma_mr *mr = to_emr(ibmr);
-	__u64 *entry;
-
-	if (mr->mtt_size >= mr->total_mtt_size) {
-		pr_info("error: too many mtt to reg");
-		return -1;
-	}
-
-	entry = (__u64 *)mr->mtt_va_addr;
-	entry = entry + mr->mtt_nents;
-	*entry = addr;
-	mr->mtt_nents++;
-	mr->mtt_size = mr->mtt_nents * 8;
-
-	return 0;
-}
-
-int erdma_exec_reg_mr_cmd_no_umem(struct erdma_dev *dev, struct erdma_reg_mr_params *params,
-		struct scatterlist *sg, int sg_nents, unsigned int *sg_offset)
+int erdma_exec_alloc_mr_cmd(struct erdma_dev *dev, struct erdma_reg_mr_params *params)
 {
 	struct erdma_mr              *mr          = params->mr;
 	struct erdma_cmdq_sq_entry   base_req     = {0};
@@ -316,14 +303,12 @@ int erdma_exec_reg_mr_cmd_no_umem(struct erdma_dev *dev, struct erdma_reg_mr_par
 	struct erdma_cmdq_cq_entry   resp;
 	__u64                        *phy_addr;
 	int                          rv;
-	int                          total_mtt_cnt;
 	int num;
 
 	ERDMA_CMDQ_BUILD_REQ_HDR(&base_req, CMDQ_SUBMOD_RDMA,
 			CMDQ_OPCODE_REG_MR, ERDMA_SQE_64B_WQEBB_CNT);
 
 	regmr_req->valid = params->valid;
-	regmr_req->page_size = params->page_size;
 	regmr_req->key = params->stag & 0xFF;
 	regmr_req->mpt_idx = params->stag >> 8;
 	regmr_req->pd = params->pd_id;
@@ -333,14 +318,13 @@ int erdma_exec_reg_mr_cmd_no_umem(struct erdma_dev *dev, struct erdma_reg_mr_par
 
 	regmr_req->start_va = params->start_va;
 	regmr_req->size = params->len;
-
-	dprint(DBG_MM, "(MPT%u): total_sgl_cnt %d.\n",
-		MR_ID(mr), total_mtt_cnt);
-
-	num = ib_sg_to_pages(&mr->ibmr, sg, sg_nents, sg_offset, erdma_set_page);
+	mr->ibmr.page_size = SZ_4K;
+	regmr_req->log_page_size = ilog2(mr->ibmr.page_size);
+	if (mr->ibmr.page_size != SZ_4K)
+		pr_warn("erdma: mr page size is not 4K");
 
 	regmr_req->mtt_type = 1;
-	regmr_req->mtt_cnt = mr->mtt_nents;
+	regmr_req->mtt_cnt = mr->prealloc_mtt_nents;
 
 	phy_addr = regmr_req->phy_addr;
 	*phy_addr = mr->mtt_dma_addr;
@@ -356,10 +340,10 @@ int erdma_exec_reg_mr_cmd_no_umem(struct erdma_dev *dev, struct erdma_reg_mr_par
 int erdma_exec_create_cq_cmd(struct erdma_dev *dev,
 			     struct erdma_create_cq_params *params)
 {
-	int err;
-	struct erdma_cmdq_sq_entry base_req = {0};
-	struct erdma_cmdq_create_cq_req *req = (struct erdma_cmdq_create_cq_req *)&base_req;
-	struct erdma_cmdq_cq_entry resp;
+	int                                 i, err;
+	struct erdma_cmdq_sq_entry          base_req = {0};
+	struct erdma_cmdq_create_cq_req     *req     = (struct erdma_cmdq_create_cq_req *)&base_req;
+	struct erdma_cmdq_cq_entry          resp;
 
 	ERDMA_CMDQ_BUILD_REQ_HDR(&base_req, CMDQ_SUBMOD_RDMA,
 			CMDQ_OPCODE_CREATE_CQ, ERDMA_SQE_64B_WQEBB_CNT);
@@ -371,8 +355,25 @@ int erdma_exec_create_cq_cmd(struct erdma_dev *dev,
 	}
 
 	req->cq_depth = ffs(params->depth) - 1;
-	req->cq_buf_addr = params->queue_addr;
 	req->eqn = params->eqn;
+	req->cq_buf_addr0 = params->mtt_entry[0];
+	req->page_size = ffs(params->page_size) - 13;
+	req->mtt_cnt = params->mtt_cnt;
+	req->type = params->mtt_type;
+	req->cq_host_db_addr_l = *(__u32 *)(&params->host_db_dma_addr);
+	req->cq_host_db_addr_h = *((__u32 *)(&params->host_db_dma_addr) + 1);
+	req->first_page_offset = params->first_page_offset;
+
+	dprint(DBG_CTRL, "page_size:%u,mtt_cnt:%u,type:%u", req->page_size,
+			req->mtt_cnt, req->type);
+	dprint(DBG_CTRL, "addr0:%llx\n", req->cq_buf_addr0);
+
+	if (req->type == 0) {
+		for (i = 1; i < req->mtt_cnt; i++) {
+			req->cq_buf_addr1[i - 1] = params->mtt_entry[i];
+			dprint(DBG_CTRL, "addr1[%d]:%llx\n", i - 1, req->cq_buf_addr1[i - 1]);
+		}
+	}
 
 	err = erdma_command_exec(&dev->cmdq, &base_req,
 		sizeof(struct erdma_cmdq_sq_entry), (struct erdma_cmdq_cq_entry *)&resp);
@@ -451,6 +452,8 @@ int erdma_exec_create_eq_cmd(struct erdma_dev *dev,
 	req->qbuf_addr = params->queue_addr;
 	req->qtype = eq_type;
 	req->vector_idx = params->vector_idx;
+	req->db_dma_addr_l = *(__u32 *)(&params->db_dma_addr);
+	req->db_dma_addr_h = *((__u32 *)(&params->db_dma_addr) + 1);
 
 	err = erdma_command_exec(&dev->cmdq, &base_req,
 		sizeof(struct erdma_cmdq_sq_entry), (struct erdma_cmdq_cq_entry *)&resp);

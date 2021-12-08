@@ -69,6 +69,13 @@ void erdma_reg_write32(struct erdma_dev *dev, __u32 reg, __u32 value)
 	writel(value, dev->func_bar + reg);
 }
 
+void erdma_reg_write64(struct erdma_dev *dev, __u32 reg, __u64 value)
+{
+	dprint(DBG_CTRL, "write [%p] with value [%llu(0x%llx)].\n",
+		dev->func_bar + reg, value, value);
+	writeq(value, dev->func_bar + reg);
+}
+
 void avx_check(void)
 {
 	if (static_cpu_has(X86_FEATURE_AVX2))
@@ -226,6 +233,12 @@ static int erdma_cmdq_sq_init(struct erdma_dev *dev)
 	if (!sq->qbuf)
 		return -ENOMEM;
 
+	sq->backup_db_addr = dma_alloc_coherent(&dev->pdev->dev, 8,
+			&sq->backup_db_dma_addr, GFP_KERNEL);
+	if (!sq->backup_db_addr)
+		return -ENOMEM;
+	memset(sq->backup_db_addr, 0, 8);
+
 	spin_lock_init(&sq->lock);
 
 	sq->ci = 0;
@@ -236,6 +249,7 @@ static int erdma_cmdq_sq_init(struct erdma_dev *dev)
 	erdma_reg_write32(dev, ERDMA_REGS_CMDQ_SQ_ADDR_H_REG, (sq->dma_addr >> 32) & 0xFFFFFFFF);
 	erdma_reg_write32(dev, ERDMA_REGS_CMDQ_SQ_ADDR_L_REG, sq->dma_addr & 0xFFFFFFFF);
 	erdma_reg_write32(dev, ERDMA_REGS_CMDQ_DEPTH_REG, ERDMA_CMDQ_DEPTH);
+	erdma_reg_write64(dev, ERDMA_CMDQ_SQ_DB_HOST_ADDR, sq->backup_db_dma_addr);
 
 	return 0;
 }
@@ -246,11 +260,18 @@ static int erdma_cmdq_cq_init(struct erdma_dev *dev)
 	struct erdma_cmdq_cq   *cq   = &cmdq->cq;
 	__u32 buf_size               = cmdq->depth * sizeof(struct erdma_cmdq_cq_entry);
 
-	cq->qbuf = dma_alloc_coherent(&dev->pdev->dev, buf_size, &cq->dma_addr, GFP_KERNEL);
+	cq->qbuf = dma_alloc_coherent(&dev->pdev->dev, buf_size,
+			&cq->dma_addr, GFP_KERNEL);
 	if (!cq->qbuf)
 		return -ENOMEM;
 
+	cq->backup_db_addr = dma_alloc_coherent(&dev->pdev->dev, 8,
+			&cq->backup_db_dma_addr, GFP_KERNEL);
+	if (!cq->backup_db_addr)
+		return -ENOMEM;
+
 	memset(cq->qbuf, 0, buf_size);
+	memset(cq->backup_db_addr, 0, 8);
 
 	spin_lock_init(&cq->lock);
 
@@ -261,6 +282,7 @@ static int erdma_cmdq_cq_init(struct erdma_dev *dev)
 
 	erdma_reg_write32(dev, ERDMA_REGS_CMDQ_CQ_ADDR_H_REG, (cq->dma_addr >> 32) & 0xFFFFFFFF);
 	erdma_reg_write32(dev, ERDMA_REGS_CMDQ_CQ_ADDR_L_REG, cq->dma_addr & 0xFFFFFFFF);
+	erdma_reg_write64(dev, ERDMA_CMDQ_CQ_DB_HOST_ADDR, cq->backup_db_dma_addr);
 
 	return 0;
 }
@@ -271,11 +293,18 @@ static int erdma_cmdq_eq_init(struct erdma_dev *dev)
 	struct erdma_eq   *eq        = &cmdq->eq;
 	__u32 buf_size               = cmdq->depth * sizeof(struct erdma_ceq_entry);
 
-	eq->qbuf = dma_alloc_coherent(&dev->pdev->dev, buf_size, &eq->dma_addr, GFP_KERNEL);
+	eq->qbuf = dma_alloc_coherent(&dev->pdev->dev, buf_size,
+			&eq->dma_addr, GFP_KERNEL);
 	if (!eq->qbuf)
 		return -ENOMEM;
 
+	eq->backup_db_addr = dma_alloc_coherent(&dev->pdev->dev,
+			8, &eq->backup_db_dma_addr, GFP_KERNEL);
+	if (!eq->backup_db_addr)
+		return -ENOMEM;
+
 	memset(eq->qbuf, 0, buf_size);
+	memset(eq->backup_db_addr, 0, 8);
 
 	spin_lock_init(&eq->lock);
 	atomic64_set(&eq->event_num, 0);
@@ -288,6 +317,7 @@ static int erdma_cmdq_eq_init(struct erdma_dev *dev)
 	erdma_reg_write32(dev, ERDMA_REGS_CMDQ_EQ_ADDR_H_REG, (eq->dma_addr >> 32) & 0xFFFFFFFF);
 	erdma_reg_write32(dev, ERDMA_REGS_CMDQ_EQ_ADDR_L_REG, eq->dma_addr & 0xFFFFFFFF);
 	erdma_reg_write32(dev, ERDMA_REGS_CMDQ_EQ_DEPTH_REG, cmdq->depth);
+	erdma_reg_write64(dev, ERDMA_CMDQ_EQ_DB_HOST_ADDR, eq->backup_db_dma_addr);
 
 	return 0;
 }
@@ -396,6 +426,10 @@ void erdma_cmdq_destroy(struct erdma_dev *dev)
 		cmdq->cq.qbuf, cmdq->cq.dma_addr, size);
 	dma_free_coherent(&dev->pdev->dev, size, cmdq->cq.qbuf, cmdq->cq.dma_addr);
 
+	dma_free_coherent(&dev->pdev->dev, 8, cmdq->sq.backup_db_addr, cmdq->sq.backup_db_dma_addr);
+	dma_free_coherent(&dev->pdev->dev, 8, cmdq->cq.backup_db_addr, cmdq->cq.backup_db_dma_addr);
+	dma_free_coherent(&dev->pdev->dev, 8, cmdq->eq.backup_db_addr, cmdq->eq.backup_db_dma_addr);
+
 	dprint(DBG_INIT, "destroy cmdq resources finished.\n");
 }
 
@@ -437,6 +471,10 @@ static struct erdma_comp_ctx *__erdma_submit_command_request(struct erdma_cmd_qu
 
 	sqe->hdr.fields.dwqe = 0;
 	ddump("cmd-sq db", (__u8 *)sqe, 8);
+
+	native_store_db(sqe, cmdq->sq.backup_db_addr);
+	/* data should be ready when tlp get down*/
+	mb();
 	kick_cmdq_db(sqe, cmdq->sq.db_addr);
 
 	return comp_ctx;

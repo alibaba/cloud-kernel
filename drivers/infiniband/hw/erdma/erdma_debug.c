@@ -115,6 +115,70 @@ void erdma_print_qp_attr_mask(enum ib_qp_attr_mask attr_mask, char *msg)
 	}
 }
 
+static ssize_t erdma_show_cm_counter(struct file *f, char __user *buf, size_t space,
+			      loff_t *ppos)
+{
+
+	struct erdma_dev        *edev = FDENTRY(f)->d_inode->i_private;
+	char                    *kbuf = NULL;
+	int                     len = 0, n;
+
+	if (*ppos)
+		goto out;
+
+	kbuf = kmalloc(space, GFP_KERNEL);
+	if (!kbuf)
+		goto out;
+
+	len =  snprintf(kbuf, space,
+		"eRDMA CM counters:\n");
+	if (len > space) {
+		len = space;
+		goto out;
+	}
+
+	space -= len;
+	n = snprintf(kbuf + len, space,
+		"connect :  total %d, success %d, failed %d\n",
+		atomic_read(&edev->num_total_connect),
+		atomic_read(&edev->num_success_connect),
+		atomic_read(&edev->num_failed_connect));
+	len += n;
+	space -= n;
+	n = snprintf(kbuf + len, space,
+		"accept :  total %d, success %d, failed %d\n",
+		atomic_read(&edev->num_total_accept),
+		atomic_read(&edev->num_success_accept),
+		atomic_read(&edev->num_failed_accept));
+	len += n;
+	space -= n;
+	n = snprintf(kbuf + len, space,
+		"reject :  total %d\n",
+		atomic_read(&edev->num_reject));
+	len += n;
+	space -= n;
+	n = snprintf(kbuf + len, space,
+		"create listen :  total %d, success %d, failed %d\n",
+		atomic_read(&edev->num_total_listen),
+		atomic_read(&edev->num_success_listen),
+		atomic_read(&edev->num_failed_listen));
+	len += n;
+	space -= n;
+	n = snprintf(kbuf + len, space,
+		"destroy listen :  total %d\n",
+		atomic_read(&edev->num_destroy_listen));
+	len += n;
+	space -= n;
+
+out:
+	if (len)
+		len = simple_read_from_buffer(buf, len, ppos, kbuf, len);
+
+	kfree(kbuf);
+	return len;
+
+};
+
 static ssize_t erdma_show_qps(struct file *f, char __user *buf, size_t space,
 			      loff_t *ppos)
 {
@@ -480,6 +544,11 @@ static const struct file_operations erdma_qp_debug_fops = {
 	.read	= erdma_show_qps
 };
 
+static const struct file_operations erdma_cm_debug_fops = {
+	.owner	= THIS_MODULE,
+	.read	= erdma_show_cm_counter
+};
+
 static const struct file_operations erdma_cep_debug_fops = {
 	.owner	= THIS_MODULE,
 	.read	= erdma_show_ceps
@@ -553,6 +622,11 @@ void erdma_debugfs_add_device(struct erdma_dev *edev)
 
 	edev->debugfs = debugfs_create_dir(edev->ibdev.name, erdma_debugfs);
 	if (edev->debugfs) {
+		entry = debugfs_create_file("cm", 0400, edev->debugfs,
+					    (void *)edev, &erdma_cm_debug_fops);
+		if (!entry)
+			dprint(DBG_DM, ": could not create 'cm' entry\n");
+
 		entry = debugfs_create_file("qp", 0400, edev->debugfs,
 					    (void *)edev, &erdma_qp_debug_fops);
 		if (!entry)

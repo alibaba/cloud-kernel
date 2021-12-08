@@ -51,6 +51,9 @@ struct erdma_create_qp_params {
 
 	__u32 scqn;
 	__u32 rcqn;
+
+	__u64 sq_db_dma_addr;
+	__u64 rq_db_dma_addr;
 };
 
 int erdma_exec_create_qp_cmd(struct erdma_dev *dev,
@@ -71,6 +74,8 @@ struct erdma_modify_qp_params {
 
 	__u32  ts_val;
 	__u32  ts_ecr;
+
+	__u8 cc_method;
 };
 
 int erdma_exec_modify_qp_cmd(struct erdma_dev *dev,
@@ -100,14 +105,19 @@ int erdma_exec_reg_mr_cmd(struct erdma_dev *dev,
 			  struct erdma_reg_mr_params *params);
 
 extern int
-erdma_exec_reg_mr_cmd_no_umem(struct erdma_dev *dev, struct erdma_reg_mr_params *params,
-		struct scatterlist *sg, int sg_nents, unsigned int *sg_offset);
+erdma_exec_alloc_mr_cmd(struct erdma_dev *dev, struct erdma_reg_mr_params *params);
 
 struct erdma_create_cq_params {
 	__u32 cqn;
 	__u32 depth;
 	__u64 queue_addr;
 	__u32 eqn;
+	__u32 page_size;
+	__u64 *mtt_entry;
+	__u32 mtt_cnt;
+	__u32 mtt_type;
+	__u64 host_db_dma_addr;
+	__u32 first_page_offset;
 };
 
 int erdma_exec_create_cq_cmd(struct erdma_dev *dev,
@@ -140,6 +150,7 @@ struct erdma_query_device_result {
 	__u32 max_fmr;
 	__u32 max_mw;
 	__u32 local_dma_key;
+	__u8 default_cc;
 };
 
 int erdma_exec_query_device_cmd(struct erdma_dev *dev,
@@ -150,6 +161,7 @@ struct erdma_create_eq_params {
 	__u16 vector_idx;
 	__u32 depth;
 	__u64 queue_addr;
+	__u64 db_dma_addr;
 };
 
 #define ERDMA_CMD_EQTYPE_AEQ 0

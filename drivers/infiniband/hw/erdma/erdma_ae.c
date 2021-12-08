@@ -124,7 +124,13 @@ int erdma_aeq_init(struct erdma_dev *dev)
 	if (!eq->qbuf)
 		return -ENOMEM;
 
+	eq->backup_db_addr = dma_alloc_coherent(&dev->pdev->dev, 8,
+			&eq->backup_db_dma_addr, GFP_KERNEL);
+	if (!eq->backup_db_addr)
+		return -ENOMEM;
+
 	memset(eq->qbuf, 0, buf_size);
+	memset(eq->backup_db_addr, 0, 8);
 
 	spin_lock_init(&eq->lock);
 	atomic64_set(&eq->event_num, 0);
@@ -142,6 +148,7 @@ int erdma_aeq_init(struct erdma_dev *dev)
 	erdma_reg_write32(dev, ERDMA_REGS_AEQ_ADDR_H_REG, (eq->dma_addr >> 32) & 0xFFFFFFFF);
 	erdma_reg_write32(dev, ERDMA_REGS_AEQ_ADDR_L_REG, eq->dma_addr & 0xFFFFFFFF);
 	erdma_reg_write32(dev, ERDMA_REGS_AEQ_DEPTH_REG, eq->depth);
+	erdma_reg_write64(dev, ERDMA_AEQ_DB_HOST_ADDR, eq->backup_db_dma_addr);
 
 	return 0;
 }
@@ -154,4 +161,5 @@ void erdma_aeq_destroy(struct erdma_dev *dev)
 	dev->aeq.ready = 0;
 
 	dma_free_coherent(&dev->pdev->dev, buf_size, eq->qbuf, eq->dma_addr);
+	dma_free_coherent(&dev->pdev->dev, 8, eq->backup_db_addr, eq->backup_db_dma_addr);
 }

@@ -94,23 +94,30 @@ struct erdma_cep {
 	int			ord;
 	int			ird;
 	int			sk_error; /* not (yet) used XXX */
+	int                     pd_len;
+	void                    *private_storage;
 
 	/* Saved upcalls of socket llp.sock */
 	void    (*sk_state_change)(struct sock *sk);
 	void    (*sk_data_ready)(struct sock *sk);
 	void    (*sk_write_space)(struct sock *sk);
 	void    (*sk_error_report)(struct sock *sk);
+
+	bool is_connecting;
 };
 
 #define MPAREQ_TIMEOUT	(HZ*20)
 #define MPAREP_TIMEOUT	(HZ*10)
+#define CONNECT_TIMEOUT  (HZ*10)
 
 enum erdma_work_type {
 	ERDMA_CM_WORK_ACCEPT	= 1,
 	ERDMA_CM_WORK_READ_MPAHDR,
 	ERDMA_CM_WORK_CLOSE_LLP,		/* close socket */
 	ERDMA_CM_WORK_PEER_CLOSE,		/* socket indicated peer close */
-	ERDMA_CM_WORK_MPATIMEOUT
+	ERDMA_CM_WORK_MPATIMEOUT,
+	ERDMA_CM_WORK_CONNECTED,
+	ERDMA_CM_WORK_CONNECTTIMEOUT
 };
 
 struct erdma_cm_work {

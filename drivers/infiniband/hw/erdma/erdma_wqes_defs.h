@@ -167,6 +167,8 @@ struct erdma_cmdq_create_qp_req {
 	__u64 rq_buf_addr;
 
 	__u64 sq_ci_addr;
+	__u64 sq_db_dma_addr;
+	__u64 rq_db_dma_addr;
 };
 
 struct erdma_cmdq_destroy_qp_req {
@@ -189,8 +191,7 @@ struct erdma_cmdq_modify_qp_req {
 	} hdr;
 
 	__u32 qpn:20,
-	      ts_ok:1,
-	      rsvd:3,
+	      cc_method:4,
 	      state:8;
 
 	__u32 remote_qpn;
@@ -228,9 +229,11 @@ struct erdma_cmdq_query_device_resp {
 	/* DW4 */
 	__u8 max_mw;
 	__u8 max_fmr;
-	__u16 max_qblk;
+	__u16 max_qblk:12,
+		  default_cc:4;
 
 	__u32 local_dma_key;
+
 	/* DW5~DW7 */
 	__u32 rsvd[2];
 };
@@ -244,13 +247,13 @@ struct erdma_cmdq_reg_mr_req {
 
 	__u32 mpt_idx:20,
 	      key:8,
-	      page_size:3,
+	      rsvd0:3,
 	      valid:1;
 
 	__u32 access_mode:2,
 	      access_right:4,
 	      type:2,
-	      rsvd0:4,
+	      rsvd1:4,
 	      pd:20;
 
 	__u64 start_va;
@@ -259,7 +262,8 @@ struct erdma_cmdq_reg_mr_req {
 
 	__u32 mtt_cnt:20,
 	      mtt_type:2,
-	      rsvd1:10;
+	      rsvd2:5,
+	      log_page_size:5;
 
 	__u64 phy_addr[0];
 };
@@ -290,13 +294,22 @@ struct erdma_cmdq_create_cq_req {
 	} hdr;
 
 	__u32 cqn:20,
-	      rsvd0:4,
+	      page_size:4,
 	      cq_depth:8;
 
-	__u64 cq_buf_addr;
+	__u64 cq_buf_addr0;
 
 	__u32 eqn:10,
-	      rsvd2:22;
+	      rsvd0:5,
+	      type:1,
+	      mtt_cnt:16;
+
+	__u32 cq_host_db_addr_l;
+	__u32 cq_host_db_addr_h;
+
+	__u32 first_page_offset;
+	__u64 cq_buf_addr1[3];
+
 };
 #pragma pack(pop)
 
@@ -322,6 +335,8 @@ struct erdma_cmdq_create_eq_req {
 	__u8  eqn;
 	__u8  depth;
 	__u8  qtype;
+	__u32 db_dma_addr_l;
+	__u32 db_dma_addr_h;
 };
 
 struct erdma_cmdq_destroy_eq_req {
