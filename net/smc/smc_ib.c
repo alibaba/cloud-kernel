@@ -680,7 +680,13 @@ int smc_ib_create_queue_pair(struct smc_link *lnk)
 		.sq_sig_type = IB_SIGNAL_REQ_WR,
 		.qp_type = IB_QPT_RC,
 	};
+	struct ib_device *ib_dev = lnk->smcibdev->ibdev;
+	struct ib_port_immutable immutable;
 	int rc;
+
+	ib_dev->ops.get_port_immutable(ib_dev, lnk->ibport, &immutable);
+	if (immutable.core_cap_flags & RDMA_CORE_CAP_PROT_IWARP)
+		qp_attr.create_flags |= IB_QP_CREATE_IWARP_WITHOUT_CM;
 
 	lnk->roce_qp = ib_create_qp(lnk->roce_pd, &qp_attr);
 	rc = PTR_ERR_OR_ZERO(lnk->roce_qp);
