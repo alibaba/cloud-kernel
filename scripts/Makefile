@@ -34,6 +34,10 @@ HOSTCFLAGS_sorttable.o += -DUNWINDER_ORC_ENABLED
 endif
 endif
 
+ifdef CONFIG_FUNCTION_TRACER
+HOSTCFLAGS_sorttable.o += -DMCOUNT_SORT_ENABLED
+endif
+
 always		:= $(hostprogs-y) $(hostprogs-m)
 
 # The following hostprogs-y programs are only build on demand

@@ -200,7 +200,7 @@ static int compare_extable(const void *a, const void *b)
 		return 1;
 	return 0;
 }
-#ifdef CONFIG_FUNCTION_TRACER
+#ifdef MCOUNT_SORT_ENABLED
 struct elf_mcount_loc {
 	Elf_Ehdr *ehdr;
 	Elf_Shdr *init_data_sec;
@@ -284,7 +284,7 @@ static int do_sort(Elf_Ehdr *ehdr,
 	int idx;
 	unsigned int shnum;
 	unsigned int shstrndx;
-#ifdef CONFIG_FUNCTION_TRACER
+#ifdef MCOUNT_SORT_ENABLED
 	struct elf_mcount_loc mstruct;
 	uint_t _start_mcount_loc = 0;
 	uint_t _stop_mcount_loc = 0;
@@ -327,7 +327,7 @@ static int do_sort(Elf_Ehdr *ehdr,
 			symtab_shndx = (Elf32_Word *)((const char *)ehdr +
 						      _r(&s->sh_offset));
 
-#ifdef CONFIG_FUNCTION_TRACER
+#ifdef MCOUNT_SORT_ENABLED
 		/* locate the .init.data section in vmlinux */
 		if (!strcmp(secstrings + idx, ".init.data")) {
 			get_mcount_loc(&_start_mcount_loc, &_stop_mcount_loc);
@@ -380,7 +380,7 @@ static int do_sort(Elf_Ehdr *ehdr,
 	}
 #endif
 
-#ifdef CONFIG_FUNCTION_TRACER
+#ifdef MCOUNT_SORT_ENABLED
 	if (!mstruct.init_data_sec || !_start_mcount_loc || !_stop_mcount_loc) {
 		fprintf(stderr,
 			"incomplete mcount's sort in file: %s\n",
@@ -480,7 +480,7 @@ out:
 	}
 #endif
 
-#ifdef CONFIG_FUNCTION_TRACER
+#ifdef MCOUNT_SORT_ENABLED
 	if (mcount_sort_thread) {
 		void *retval = NULL;
 		/* wait for mcount sort done */
