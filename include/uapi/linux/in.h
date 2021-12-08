@@ -84,9 +84,6 @@ enum {
 };
 #endif
 
-/* SMC protocol, IPv4 */
-#define SMCPROTO_SMC	0
-
 #if __UAPI_DEF_IN_ADDR
 /* Internet address. */
 struct in_addr {

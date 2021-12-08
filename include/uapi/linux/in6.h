@@ -95,8 +95,6 @@ struct in6_flowlabel_req {
 #define IPV6_FL_S_USER		3
 #define IPV6_FL_S_ANY		255
 
-/* SMC protocol, IPv6 */
-#define SMCPROTO_SMC6		1
 
 /*
  *	Bitmask constant declarations to help applications select out the 
