@@ -141,38 +141,6 @@ static void sock_show_fdinfo(struct seq_file *m, struct file *f)
 #define sock_show_fdinfo NULL
 #endif
 
-#if IS_ENABLED(CONFIG_SMC)
-static bool try_tcp2smc_convert(struct net *net, int *family, int type,
-				int *protocol, int kern)
-{
-	int (*f)(struct net *n, char *c) = NULL;
-
-	/* Only convert userspace socket */
-	if (kern)
-		return false;
-
-	if ((*family == AF_INET || *family == AF_INET6) &&
-	    type == SOCK_STREAM &&
-	    (*protocol == IPPROTO_IP || *protocol == IPPROTO_TCP)) {
-		if (net->smc.sysctl_tcp2smc)
-			goto convert;
-
-		rcu_read_lock();
-		f = rcu_dereference(net->smc.smc_conv.smc_conv_match_rcu);
-		if (f && !f(net, current->comm)) {
-			rcu_read_unlock();
-			goto convert;
-		}
-		rcu_read_unlock();
-	}
-	return false;
-convert:
-	*protocol = (*family == AF_INET) ? SMCPROTO_SMC : SMCPROTO_SMC6;
-	*family = AF_SMC;
-	return true;
-}
-#endif
-
 /*
  *	Socket files have a set of 'special' operations as well as the generic file ones. These don't appear
  *	in the operation structures but are done directly via the socketcall() multiplexor.
@@ -1400,7 +1368,12 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 		family = PF_PACKET;
 	}
 #if IS_ENABLED(CONFIG_SMC)
-	try_tcp2smc_convert(net, &family, type, &protocol, kern);
+	if (!kern && (family == AF_INET || family == AF_INET6) &&
+	    type == SOCK_STREAM && (protocol == IPPROTO_IP ||
+	    protocol == IPPROTO_TCP) && net->smc.sysctl_tcp2smc) {
+		protocol = (family == AF_INET) ? SMCPROTO_SMC : SMCPROTO_SMC6;
+		family = AF_SMC;
+	}
 #endif
 
 	err = security_socket_create(family, type, protocol, kern);
