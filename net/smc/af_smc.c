@@ -51,7 +51,6 @@
 #include "smc_rx.h"
 #include "smc_close.h"
 #include "smc_stats.h"
-#include "smc_proc.h"
 
 static DEFINE_MUTEX(smc_server_lgr_pending);	/* serialize link group
 						 * creation on server
@@ -86,13 +85,11 @@ int smc_hash_sk(struct sock *sk)
 	struct smc_hashinfo *h = sk->sk_prot->h.smc_hash;
 	struct hlist_head *head;
 
+	head = &h->ht;
+
 	write_lock_bh(&h->lock);
-
-	head = &h->ht[h->bkt_idx++ & (SMC_HTABLE_SIZE - 1)];
-
 	sk_add_node(sk, head);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, 1);
-
 	write_unlock_bh(&h->lock);
 
 	return 0;
@@ -2569,7 +2566,7 @@ static struct pernet_operations smc_net_stat_ops = {
 
 static int __init smc_init(void)
 {
-	int rc, i;
+	int rc;
 	int max_rshare, max_wshare;
 	unsigned long limit;
 
@@ -2636,22 +2633,13 @@ static int __init smc_init(void)
 		pr_err("%s: sock_register fails with %d\n", __func__, rc);
 		goto out_proto6;
 	}
-
-	for (i = 0; i < SMC_HTABLE_SIZE; i++) {
-		INIT_HLIST_HEAD(&smc_v4_hashinfo.ht[i]);
-		INIT_HLIST_HEAD(&smc_v6_hashinfo.ht[i]);
-	}
-
-	rc = smc_proc_init();
-	if (rc) {
-		pr_err("%s: smc_proc_init fails with %d\n", __func__, rc);
-		goto out_sock;
-	}
+	INIT_HLIST_HEAD(&smc_v4_hashinfo.ht);
+	INIT_HLIST_HEAD(&smc_v6_hashinfo.ht);
 
 	rc = smc_ib_register_client();
 	if (rc) {
 		pr_err("%s: ib_register fails with %d\n", __func__, rc);
-		goto out_proc;
+		goto out_sock;
 	}
 
 	limit = nr_free_buffer_pages() << (PAGE_SHIFT - 7);
@@ -2669,8 +2657,6 @@ static int __init smc_init(void)
 	static_branch_enable(&tcp_have_smc);
 	return 0;
 
-out_proc:
-	smc_proc_exit();
 out_sock:
 	sock_unregister(PF_SMC);
 out_proto6:
@@ -2696,7 +2682,6 @@ out_pernet_subsys:
 static void __exit smc_exit(void)
 {
 	static_branch_disable(&tcp_have_smc);
-	smc_proc_exit();
 	sock_unregister(PF_SMC);
 	smc_core_exit();
 	smc_ib_unregister_client();
