@@ -154,21 +154,13 @@ ifndef CONFIG_X86_GLOBAL_STACKPROTECTOR
         stackseg-flag := -mstack-protector-guard-reg=%gs
         ifeq ($(call cc-option-yn,$(stackseg-flag)),n)
                 # Try to enable global stack cookie if possible
-                ifeq ($(stackglobal), y)
-                        $(warning Cannot use CONFIG_CC_STACKPROTECTOR_* while \
-                                building a position independent kernel. \
-                                Default to global stack protector \
-                                (CONFIG_X86_GLOBAL_STACKPROTECTOR).)
-                        CONFIG_X86_GLOBAL_STACKPROTECTOR := y
-                        KBUILD_CFLAGS += -DCONFIG_X86_GLOBAL_STACKPROTECTOR
-                        KBUILD_AFLAGS += -DCONFIG_X86_GLOBAL_STACKPROTECTOR
-                else
-                        $(error echo Cannot use \
-                                CONFIG_CC_STACKPROTECTOR_(REGULAR|STRONG|AUTO) \
-                                while building a position independent binary. \
-                                Update your compiler or use \
-                                CONFIG_X86_GLOBAL_STACKPROTECTOR)
-                endif
+                $(warning Cannot use CONFIG_CC_STACKPROTECTOR_* while \
+                        building a position independent kernel. \
+                        Default to global stack protector \
+                        (CONFIG_X86_GLOBAL_STACKPROTECTOR).)
+                CONFIG_X86_GLOBAL_STACKPROTECTOR := y
+                KBUILD_CFLAGS += -DCONFIG_X86_GLOBAL_STACKPROTECTOR
+                KBUILD_AFLAGS += -DCONFIG_X86_GLOBAL_STACKPROTECTOR
         else
                 KBUILD_CFLAGS += $(stackseg-flag)
         endif
@@ -185,12 +177,9 @@ endif
 endif
 
 ifdef CONFIG_X86_GLOBAL_STACKPROTECTOR
-        ifeq ($(stackglobal), n)
-                $(error Cannot use CONFIG_X86_GLOBAL_STACKPROTECTOR: \
-                        -mstack-protector-guard=global not supported \
-                        by compiler)
+        ifeq ($(stackglobal), y)
+               KBUILD_CFLAGS += -mstack-protector-guard=global
         endif
-        KBUILD_CFLAGS += -mstack-protector-guard=global
 endif
 
 ifdef CONFIG_X86_X32
