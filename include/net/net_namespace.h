@@ -95,6 +95,7 @@ struct net {
 	struct list_head 	dev_base_head;
 	struct proc_dir_entry 	*proc_net;
 	struct proc_dir_entry 	*proc_net_stat;
+	struct proc_dir_entry	*proc_net_smc;
 
 #ifdef CONFIG_SYSCTL
 	struct ctl_table_set	sysctls;
