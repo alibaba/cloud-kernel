@@ -288,7 +288,7 @@ static int do_sort(Elf_Ehdr *ehdr,
 	struct elf_mcount_loc mstruct;
 	uint_t _start_mcount_loc = 0;
 	uint_t _stop_mcount_loc = 0;
-	pthread_t mcount_sort_thread;
+	pthread_t mcount_sort_thread = 0;
 #endif
 
 #if defined(SORTTABLE_64) && defined(UNWINDER_ORC_ENABLED)
