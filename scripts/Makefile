@@ -28,8 +28,10 @@ HOSTLDLIBS_extract-cert = -lcrypto
 
 ifdef CONFIG_UNWINDER_ORC
 HOSTCFLAGS_sorttable.o += -I$(srctree)/tools/objtool/arch/$(SRCARCH)/include
+ifneq ($(SKIP_STACK_VALIDATION),1)
 HOSTCFLAGS_sorttable.o += -DUNWINDER_ORC_ENABLED
 HOSTLDLIBS_sorttable = -lpthread
+endif
 endif
 
 always		:= $(hostprogs-y) $(hostprogs-m)
