@@ -1797,6 +1797,20 @@ static bool smcd_lgr_match(struct smc_link_group *lgr,
 	return lgr->peer_gid == peer_gid && lgr->smcd == smcismdev;
 }
 
+static void smc_rx_tx_counter_init(struct smc_connection *conn)
+{
+	/* Initialize RX & TX diagnostic inform for each
+	 * connection. These counters mean what smc wants
+	 * net devices "TODO" insead of what has been "DONE"
+	 */
+	conn->rx_cnt = 0;
+	conn->tx_cnt = 0;
+	conn->tx_corked_cnt = 0;
+	conn->rx_bytes = 0;
+	conn->tx_bytes = 0;
+	conn->tx_corked_bytes = 0;
+}
+
 /* create a new SMC connection (and a new link group if necessary) */
 int smc_conn_create(struct smc_sock *smc, struct smc_init_info *ini)
 {
@@ -1874,6 +1888,7 @@ create:
 	conn->local_tx_ctrl.len = SMC_WR_TX_SIZE;
 	conn->urg_state = SMC_URG_READ;
 	init_waitqueue_head(&conn->cdc_pend_tx_wq);
+	smc_rx_tx_counter_init(conn);
 	INIT_WORK(&smc->conn.abort_work, smc_conn_abort_work);
 	if (ini->is_smcd) {
 		conn->rx_off = sizeof(struct smcd_cdc_msg);
