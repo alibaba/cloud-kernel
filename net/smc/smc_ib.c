@@ -198,12 +198,11 @@ int smc_ib_determine_gid(struct smc_ib_device *smcibdev, u8 ibport,
 
 		rcu_read_lock();
 		ndev = rdma_read_gid_attr_ndev_rcu(attr);
-		if ((smcibdev->ibdev->port_data[ibport].immutable.core_cap_flags &
-		    RDMA_CORE_CAP_PROT_IWARP) || (!IS_ERR(ndev) &&
+		if (!IS_ERR(ndev) &&
 		    ((!vlan_id && !is_vlan_dev(ndev)) ||
 		     (vlan_id && is_vlan_dev(ndev) &&
 		      vlan_dev_vlan_id(ndev) == vlan_id)) &&
-		    attr->gid_type == IB_GID_TYPE_ROCE)) {
+		    attr->gid_type == IB_GID_TYPE_ROCE) {
 			rcu_read_unlock();
 			if (gid)
 				memcpy(gid, &attr->gid, SMC_GID_SIZE);
@@ -774,7 +773,7 @@ static int smc_ib_add_dev(struct ib_device *ibdev)
 	u8 port_cnt;
 	int i;
 
-	if (ibdev->node_type != RDMA_NODE_IB_CA && ibdev->node_type != RDMA_NODE_RNIC)
+	if (ibdev->node_type != RDMA_NODE_IB_CA)
 		return -EOPNOTSUPP;
 
 	smcibdev = kzalloc(sizeof(*smcibdev), GFP_KERNEL);
