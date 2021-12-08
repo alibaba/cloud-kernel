@@ -392,6 +392,7 @@ copy:
 			readable--;	/* always stop at urgent Byte */
 		/* not more than what user space asked for */
 		copylen = min_t(size_t, read_remaining, readable);
+		conn->rx_bytes += copylen;
 		/* determine chunks where to read from rcvbuf */
 		/* either unwrapped case, or 1st chunk of wrapped case */
 		chunk_len = min_t(size_t, copylen, conn->rmb_desc->len -
@@ -441,6 +442,7 @@ copy:
 		}
 
 		trace_smc_rx_recvmsg(smc, copylen);
+		++conn->rx_cnt;
 	} while (read_remaining);
 out:
 	return read_done;
