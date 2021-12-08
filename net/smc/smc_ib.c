@@ -229,7 +229,7 @@ static int smc_ib_determine_gid_rcu(const struct net_device *ndev,
 				    u8 gid[], u8 *sgid_index,
 				    struct smc_init_info_smcrv2 *smcrv2)
 {
-	if (!smcrv2 && attr->gid_type == IB_GID_TYPE_ROCE) {
+	if (!smcrv2) {
 		if (gid)
 			memcpy(gid, &attr->gid, SMC_GID_SIZE);
 		if (sgid_index)
@@ -284,10 +284,11 @@ int smc_ib_determine_gid(struct smc_ib_device *smcibdev, u8 ibport,
 
 		rcu_read_lock();
 		ndev = rdma_read_gid_attr_ndev_rcu(attr);
-		if (!IS_ERR(ndev) &&
+		if ((smcibdev->ibdev->port_data[ibport].immutable.core_cap_flags &
+		    RDMA_CORE_CAP_PROT_IWARP) || (!IS_ERR(ndev) &&
 		    ((!vlan_id && !is_vlan_dev(ndev)) ||
 		     (vlan_id && is_vlan_dev(ndev) &&
-		      vlan_dev_vlan_id(ndev) == vlan_id))) {
+		      vlan_dev_vlan_id(ndev) == vlan_id)))) {
 			if (!smc_ib_determine_gid_rcu(ndev, attr, gid,
 						      sgid_index, smcrv2)) {
 				rcu_read_unlock();
@@ -911,7 +912,8 @@ static int smc_ib_add_dev(struct ib_device *ibdev)
 	u8 port_cnt;
 	int i;
 
-	if (ibdev->node_type != RDMA_NODE_IB_CA)
+	if (ibdev->node_type != RDMA_NODE_IB_CA &&
+	    ibdev->node_type != RDMA_NODE_RNIC)
 		return -EOPNOTSUPP;
 
 	smcibdev = kzalloc(sizeof(*smcibdev), GFP_KERNEL);
