@@ -22,6 +22,7 @@
 #include "smc_clc.h"
 #include "smc_stats.h"
 #include "smc_netlink.h"
+#include "smc_conv.h"
 
 const struct nla_policy
 smc_gen_ueid_policy[SMC_NLA_EID_TABLE_MAX + 1] = {
@@ -111,9 +112,25 @@ static const struct genl_ops smc_gen_nl_ops[] = {
 		.flags = GENL_ADMIN_PERM,
 		.doit = smc_nl_disable_seid,
 	},
+	{
+		.cmd = SMC_NETLINK_ADD_TCP2SMC_WLIST,
+		/* can be retrieved by unprivileged users */
+		.doit = smc_nl_add_tcp2smc_wlist,
+	},
+	{
+		.cmd = SMC_NETLINK_DEL_TCP2SMC_WLIST,
+		/* can be retrieved by unprivileged users */
+		.doit = smc_nl_del_tcp2smc_wlist,
+	},
+	{
+		.cmd = SMC_NETLINK_GET_TCP2SMC_WLIST,
+		/* can be retrieved by unprivileged users */
+		.dumpit = smc_nl_get_tcp2smc_wlist,
+	},
 };
 
-static const struct nla_policy smc_gen_nl_policy[2] = {
+static const struct nla_policy smc_gen_nl_policy[SMC_CMD_MAX_ATTR + 1] = {
+	[SMC_CMD_ATTR_TCP2SMC]	= { .type = NLA_NUL_STRING, .len = TASK_COMM_LEN - 1 },
 	[SMC_CMD_MAX_ATTR]	= { .type = NLA_REJECT, },
 };
 
