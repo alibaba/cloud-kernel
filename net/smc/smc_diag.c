@@ -155,8 +155,6 @@ static int __smc_diag_dump(struct sock *sk, struct sk_buff *skb,
 			.role = smc->conn.lgr->role,
 			.lnk[0].ibport = smc->conn.lnk->ibport,
 			.lnk[0].link_id = smc->conn.lnk->link_id,
-			.lnk[0].link_down_cnt_smc = smc->conn.lnk->link_down_cnt_smc,
-			.lnk[0].link_down_cnt_ib = smc->conn.lnk->link_down_cnt_ib,
 		};
 
 		memcpy(linfo.lnk[0].ibname,
