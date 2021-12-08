@@ -1367,14 +1367,6 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 			     current->comm);
 		family = PF_PACKET;
 	}
-#if IS_ENABLED(CONFIG_SMC)
-	if (!kern && (family == AF_INET || family == AF_INET6) &&
-	    type == SOCK_STREAM && (protocol == IPPROTO_IP ||
-	    protocol == IPPROTO_TCP) && net->smc.sysctl_tcp2smc) {
-		protocol = (family == AF_INET) ? SMCPROTO_SMC : SMCPROTO_SMC6;
-		family = AF_SMC;
-	}
-#endif
 
 	err = security_socket_create(family, type, protocol, kern);
 	if (err)

@@ -28,13 +28,6 @@ static struct ctl_table smc_table[] = {
 		.proc_handler   = proc_dointvec_minmax,
 		.extra1         = &min_rcvbuf,
 	},
-	{
-		.procname	= "tcp2smc",
-		.data		= &init_net.smc.sysctl_tcp2smc,
-		.maxlen		= sizeof(init_net.smc.sysctl_tcp2smc),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
 	{  }
 };
 
