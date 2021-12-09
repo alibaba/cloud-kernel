@@ -392,10 +392,6 @@ static int add_break(unsigned long ip, const char *old)
 
 	ftrace_expected = old;
 
-	/* Make sure it is what we expect it to be */
-	if (memcmp(replaced, old, MCOUNT_INSN_SIZE) != 0)
-		return -EINVAL;
-
 	return ftrace_write(ip, &brk, 1);
 }
 

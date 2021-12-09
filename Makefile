@@ -748,7 +748,7 @@ endif
 
 ifdef CONFIG_FUNCTION_TRACER
 ifdef CONFIG_FTRACE_MCOUNT_RECORD
-ifneq ($(ARCH),x86)
+ifneq ($(ARCH),x86_64)
   # gcc 5 supports generating the mcount tables directly
   ifeq ($(call cc-option-yn,-mrecord-mcount),y)
     CC_FLAGS_FTRACE	+= -mrecord-mcount

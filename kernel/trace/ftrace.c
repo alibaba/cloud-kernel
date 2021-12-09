@@ -5625,7 +5625,7 @@ static int ftrace_process_locs(struct module *mod,
 	 * until we are finished with it, and there's no
 	 * reason to cause large interrupt latencies while we do it.
 	 */
-#if defined CONFIG_X86 || defined CONFIG_X86_64
+#ifdef CONFIG_X86_64
 	ret = 0;
 	goto out;
 #endif
