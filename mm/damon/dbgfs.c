@@ -15,10 +15,11 @@
 #include <linux/page_idle.h>
 #include <linux/slab.h>
 
-static struct damon_ctx **dbgfs_ctxs;
-static int dbgfs_nr_ctxs;
+struct damon_ctx **dbgfs_ctxs;
+int dbgfs_nr_ctxs;
 static struct dentry **dbgfs_dirs;
 static DEFINE_MUTEX(damon_dbgfs_lock);
+
 
 /*
  * Returns non-empty string on success, negative error code otherwise.
@@ -779,10 +780,18 @@ static int dbgfs_rm_context(char *name)
 		return -ENOMEM;
 	}
 
-	for (i = 0, j = 0; i < dbgfs_nr_ctxs; i++) {
+	dbgfs_nr_ctxs--;
+	/* Prevent NUMA fault get the wrong value */
+	smp_mb();
+
+	for (i = 0, j = 0; i < dbgfs_nr_ctxs + 1; i++) {
 		if (dbgfs_dirs[i] == dir) {
+			struct damon_ctx *tmp_ctx = dbgfs_ctxs[i];
+
+			rcu_assign_pointer(dbgfs_ctxs[i], NULL);
+			synchronize_rcu();
 			debugfs_remove(dbgfs_dirs[i]);
-			dbgfs_destroy_ctx(dbgfs_ctxs[i]);
+			dbgfs_destroy_ctx(tmp_ctx);
 			continue;
 		}
 		new_dirs[j] = dbgfs_dirs[i];
@@ -794,7 +803,6 @@ static int dbgfs_rm_context(char *name)
 
 	dbgfs_dirs = new_dirs;
 	dbgfs_ctxs = new_ctxs;
-	dbgfs_nr_ctxs--;
 
 	return 0;
 }

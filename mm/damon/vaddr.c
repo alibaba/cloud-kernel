@@ -23,13 +23,6 @@
 #endif
 
 /*
- * 't->id' should be the pointer to the relevant 'struct pid' having reference
- * count.  Caller must put the returned task, unless it is NULL.
- */
-#define damon_get_task_struct(t) \
-	(get_pid_task((struct pid *)t->id, PIDTYPE_PID))
-
-/*
  * Get the mm_struct of the given target
  *
  * Caller _must_ put the mm_struct after use, unless it is NULL.
@@ -364,7 +357,9 @@ void damon_va_update(struct damon_ctx *ctx)
 	damon_for_each_target(t, ctx) {
 		if (damon_va_three_regions(t, three_regions))
 			continue;
+		spin_lock(&t->target_lock);
 		damon_va_apply_three_regions(t, three_regions);
+		spin_unlock(&t->target_lock);
 	}
 }
 

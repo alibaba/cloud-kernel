@@ -34,6 +34,7 @@
 #include <linux/numa.h>
 #include <linux/page_owner.h>
 #include <linux/page_dup.h>
+#include <linux/damon.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -1557,6 +1558,8 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf, pmd_t pmd)
 		count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
 		flags |= TNF_FAULT_LOCAL;
 	}
+
+	damon_numa_fault(page_nid, this_nid, vmf);
 
 	/* See similar comment in do_numa_page for explanation */
 	if (!pmd_savedwrite(pmd))

@@ -11,9 +11,13 @@
 #include <linux/mutex.h>
 #include <linux/time64.h>
 #include <linux/types.h>
+#include <linux/mm.h>
 
 /* Minimal region size.  Every damon_region is aligned by this. */
 #define DAMON_MIN_REGION	PAGE_SIZE
+
+extern struct damon_ctx **dbgfs_ctxs;
+extern int dbgfs_nr_ctxs;
 
 /**
  * struct damon_addr_range - Represents an address region of [@start, @end).
@@ -59,6 +63,7 @@ struct damon_region {
  * @nr_regions:		Number of monitoring target regions of this target.
  * @regions_list:	Head of the monitoring target regions of this target.
  * @list:		List head for siblings.
+ * @target_lock:  Use damon_region lock to avoid race.
  *
  * Each monitoring context could have multiple targets.  For example, a context
  * for virtual memory address spaces could have multiple target processes.  The
@@ -71,6 +76,7 @@ struct damon_target {
 	unsigned int nr_regions;
 	struct list_head regions_list;
 	struct list_head list;
+	spinlock_t target_lock;
 };
 
 /**
@@ -342,6 +348,13 @@ int damon_stop(struct damon_ctx **ctxs, int nr_ctxs);
 
 #ifdef CONFIG_DAMON_VADDR
 
+/*
+ * 't->id' should be the pointer to the relevant 'struct pid' having reference
+ * count.  Caller must put the returned task, unless it is NULL.
+ */
+#define damon_get_task_struct(t) \
+	(get_pid_task((struct pid *)t->id, PIDTYPE_PID))
+
 /* Monitoring primitives for virtual memory address spaces */
 void damon_va_init(struct damon_ctx *ctx);
 void damon_va_update(struct damon_ctx *ctx);
@@ -352,6 +365,9 @@ void damon_va_cleanup(struct damon_ctx *ctx);
 int damon_va_apply_scheme(struct damon_ctx *context, struct damon_target *t,
 		struct damon_region *r, struct damos *scheme);
 void damon_va_set_primitives(struct damon_ctx *ctx);
+void damon_numa_fault(int page_nid, int node_id, struct vm_fault *vmf);
+#else
+static inline void damon_numa_fault(int page_nid, int node_id, struct vm_fault *vmf) { }
 
 #endif	/* CONFIG_DAMON_VADDR */
 

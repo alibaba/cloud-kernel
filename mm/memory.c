@@ -75,6 +75,7 @@
 #include <linux/vmalloc.h>
 #include <linux/khugepaged.h>
 #include <linux/page_dup.h>
+#include <linux/damon.h>
 
 #include <trace/events/kmem.h>
 
@@ -4354,6 +4355,9 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	target_nid = numa_migrate_prep(page, vma, vmf->address, page_nid,
 			&flags);
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
+
+	damon_numa_fault(page_nid, numa_node_id(), vmf);
+
 	if (target_nid == NUMA_NO_NODE) {
 		put_page(page);
 		goto out;
