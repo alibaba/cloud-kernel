@@ -26,7 +26,7 @@ TRACE_EVENT(damon_aggregated,
 	),
 
 	TP_fast_assign(
-		__entry->target_id = t->id;
+		__entry->target_id = pid_vnr((struct pid *) t->id);
 		__entry->nr_regions = nr_regions;
 		__entry->start = r->ar.start;
 		__entry->end = r->ar.end;
@@ -34,7 +34,7 @@ TRACE_EVENT(damon_aggregated,
 		__entry->age = r->age;
 	),
 
-	TP_printk("target_id=%lu nr_regions=%u %lu-%lu: %u %u",
+	TP_printk("target_id=%lu nr_regions=%u %lx-%lx: %u %u",
 			__entry->target_id, __entry->nr_regions,
 			__entry->start, __entry->end,
 			__entry->nr_accesses, __entry->age)
