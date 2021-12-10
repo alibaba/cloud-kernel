@@ -1155,6 +1155,10 @@ static inline int check_free_page(struct page *page)
 	if (likely(page_expected_state(page, PAGE_FLAGS_CHECK_AT_FREE)))
 		return 0;
 
+	/* It's not performance sensitive when reaching here */
+	if (is_kfence_address(page_to_virt(page)))
+		return 0;
+
 	/* Something has gone sideways, find it */
 	check_free_page_bad(page);
 	return 1;
@@ -1278,17 +1282,7 @@ static __always_inline bool free_pages_prepare(struct page *page,
 		page->mapping = NULL;
 	if (memcg_kmem_enabled() && PageKmemcg(page))
 		__memcg_kmem_uncharge_page(page, order);
-	/*
-	 * If debug_pagealloc and kfence enabled at the same time,
-	 * there may be problems at here. check_free_page() will check
-	 * order-0 page, however the order-0 page allocated by kfence is
-	 * marked with PG_reserved.
-	 */
-#if defined(CONFIG_DEBUG_PAGEALLOC) && defined(CONFIG_KFENCE)
-	if (check_free && !is_kfence_address(page_to_virt(page)))
-#else
 	if (check_free)
-#endif
 		bad += check_free_page(page);
 	if (bad)
 		return false;
@@ -1560,6 +1554,9 @@ static void __free_pages_ok(struct page *page, unsigned int order,
 	unsigned long pfn = page_to_pfn(page);
 
 	if (!free_pages_prepare(page, order, true))
+		return;
+
+	if (unlikely(!order && kfence_free_page(page)))
 		return;
 
 	migratetype = get_pfnblock_migratetype(page, pfn);

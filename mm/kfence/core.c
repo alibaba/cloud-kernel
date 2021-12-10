@@ -1079,6 +1079,7 @@ void __init kfence_init(void)
 	}
 
 	WRITE_ONCE(kfence_enabled, true);
+	static_branch_enable(&kfence_once_inited);
 	if (kfence_num_objects > KFENCE_MAX_SIZE_WITH_INTERVAL) {
 		static_branch_enable(&kfence_skip_interval);
 		static_branch_enable(&kfence_allocation_key);
@@ -1097,8 +1098,6 @@ void __init kfence_init(void)
 		else
 			pr_cont("\n");
 	}
-
-	static_branch_enable(&kfence_once_inited);
 
 	return;
 
@@ -1186,7 +1185,7 @@ void kfence_shutdown_cache(struct kmem_cache *s)
 {
 	int node;
 
-	if (!kfence_metadata_node)
+	if (!static_branch_unlikely(&kfence_once_inited))
 		return;
 
 	for_each_node(node)
@@ -1296,7 +1295,12 @@ size_t kfence_ksize(const void *addr)
 
 void *kfence_object_start(const void *addr)
 {
-	const struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
+	struct kfence_metadata *meta;
+
+	if (!static_branch_unlikely(&kfence_once_inited))
+		return NULL;
+
+	meta = addr_to_metadata((unsigned long)addr);
 
 	/*
 	 * Read locklessly -- if there is a race with __kfence_alloc(), this is
@@ -1335,7 +1339,7 @@ bool kfence_handle_page_fault(unsigned long addr, bool is_write, struct pt_regs 
 	enum kfence_error_type error_type;
 	unsigned long flags;
 
-	if (!virt_addr_valid(addr))
+	if (!static_branch_unlikely(&kfence_once_inited) || !virt_addr_valid(addr))
 		return false;
 	node = virt_to_nid(addr);
 	if (!is_kfence_address_node((void *)addr, node))

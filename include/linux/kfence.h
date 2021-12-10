@@ -271,8 +271,12 @@ static __always_inline __must_check bool kfence_free(void *addr)
  */
 static __always_inline __must_check bool kfence_free_page(struct page *page)
 {
-	void *addr = page_to_virt(page);
+	void *addr;
 
+	if (!static_branch_unlikely(&kfence_once_inited))
+		return false;
+
+	addr = page_to_virt(page);
 	if (!is_kfence_address_node(addr, page_to_nid(page)))
 		return false;
 	__kfence_free_page(page, addr);
