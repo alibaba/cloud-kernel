@@ -83,8 +83,10 @@ struct erofs_sb_info {
 	/* pseudo inode to manage cached pages */
 	struct inode *managed_cache;
 #endif	/* CONFIG_EROFS_FS_ZIP */
+	struct path blob_dir;
 	struct file *bootstrap;
 	char *bootstrap_path;
+	char *blob_dir_path;
 	struct erofs_dev_context *devs;
 	u64 total_blocks;
 	u32 primarydevice_blocks;

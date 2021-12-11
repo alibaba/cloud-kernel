@@ -5,6 +5,7 @@
  */
 #include <linux/module.h>
 #include <linux/buffer_head.h>
+#include <linux/namei.h>
 #include <linux/statfs.h>
 #include <linux/parser.h>
 #include <linux/seq_file.h>
@@ -143,7 +144,8 @@ static int erofs_init_devices(struct super_block *sb,
 	else
 		ondisk_extradevs = le16_to_cpu(dsb->extra_devices);
 
-	if (ondisk_extradevs != sbi->devs->extra_devices) {
+	if (ondisk_extradevs != sbi->devs->extra_devices &&
+	    !sbi->blob_dir_path) {
 		erofs_err(sb, "extra devices don't match (ondisk %u, given %u)",
 			  ondisk_extradevs, sbi->devs->extra_devices);
 		return -EINVAL;
@@ -198,6 +200,56 @@ static int erofs_init_devices(struct super_block *sb,
 		sbi->total_blocks += dif->blocks;
 		pos += sizeof(*dis);
 	}
+	/* Add blob files from RAFS v6 blob dir */
+	while (sbi->devs->extra_devices < ondisk_extradevs) {
+		struct file *f;
+		char blob_id[sizeof(dis->u.userdata) + 1];
+		erofs_blk_t blk = erofs_blknr(pos);
+
+		if (!page || page->index != blk) {
+			if (page) {
+				kunmap(page);
+				unlock_page(page);
+				put_page(page);
+			}
+
+			page = erofs_get_meta_page(sb, blk);
+			if (IS_ERR(page)) {
+				up_read(&sbi->devs->rwsem);
+				return PTR_ERR(page);
+			}
+			ptr = kmap(page);
+		}
+		dis = ptr + erofs_blkoff(pos);
+
+		dif = kzalloc(sizeof(*dif), GFP_KERNEL);
+		if (!dif) {
+			err = -ENOMEM;
+			goto err_out;
+		}
+		err = idr_alloc(&sbi->devs->tree, dif, 0, 0, GFP_KERNEL);
+		if (err < 0) {
+			kfree(dif);
+			goto err_out;
+		}
+		strncpy(blob_id, dis->u.userdata, sizeof(blob_id));
+		blob_id[sizeof(blob_id) - 1] = '\0';
+
+		f = file_open_root(sbi->blob_dir.dentry, sbi->blob_dir.mnt,
+				   blob_id, O_RDONLY | O_LARGEFILE, 0);
+		if (IS_ERR(f)) {
+			erofs_err(sb, "failed to open blob file %s", blob_id);
+			err = PTR_ERR(f);
+			goto err_out;
+		}
+		dif->blobfile = f;
+		dif->blocks = le32_to_cpu(dis->blocks);
+		dif->mapped_blkaddr = le32_to_cpu(dis->mapped_blkaddr);
+		sbi->total_blocks += dif->blocks;
+		pos += sizeof(*dis);
+		++sbi->devs->extra_devices;
+	}
+	err = 0;
 err_out:
 	up_read(&sbi->devs->rwsem);
 	if (page) {
@@ -350,6 +402,7 @@ enum {
 	Opt_cache_strategy,
 	Opt_device,
 	Opt_bootstrap_path,
+	Opt_blob_dir_path,
 	Opt_err
 };
 
@@ -361,6 +414,7 @@ static match_table_t erofs_tokens = {
 	{Opt_cache_strategy, "cache_strategy=%s"},
 	{Opt_device, "device=%s"},
 	{Opt_bootstrap_path, "bootstrap_path=%s"},
+	{Opt_blob_dir_path, "blob_dir_path=%s"},
 	{Opt_err, NULL}
 };
 
@@ -438,6 +492,13 @@ static int erofs_parse_options(struct super_block *sb, char *options)
 				return err;
 			}
 			++sbi->devs->extra_devices;
+			break;
+		case Opt_blob_dir_path:
+			kfree(sbi->blob_dir_path);
+			sbi->blob_dir_path = match_strdup(&args[0]);
+			if (!sbi->blob_dir_path)
+				return -ENOMEM;
+			erofs_info(sb, "RAFS blob_dir_path %s", sbi->blob_dir_path);
 			break;
 		case Opt_bootstrap_path:
 			kfree(sbi->bootstrap_path);
@@ -526,7 +587,17 @@ static int rafs_v6_fill_super(struct super_block *sb, void *data)
 			return PTR_ERR(f);
 		sbi->bootstrap = f;
 	}
-	/* TODO: open each blobfiles */
+	if (sbi->blob_dir_path) {
+		int ret = kern_path(sbi->blob_dir_path,
+				LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+				&sbi->blob_dir);
+
+		if (ret) {
+			kfree(sbi->blob_dir_path);
+			sbi->blob_dir_path = NULL;
+			return ret;
+		}
+	}
 	return 0;
 }
 
@@ -659,6 +730,7 @@ static bool erofs_mount_is_rafs_v6(char *options)
 
 		switch (token) {
 		case Opt_bootstrap_path:
+		case Opt_blob_dir_path:
 			kfree(tmpstr);
 			return true;
 		default:
@@ -698,6 +770,10 @@ static void erofs_kill_sb(struct super_block *sb)
 	erofs_free_dev_context(sbi->devs);
 	if (sbi->bootstrap)
 		filp_close(sbi->bootstrap, NULL);
+	if (sbi->blob_dir_path) {
+		path_put(&sbi->blob_dir);
+		kfree(sbi->blob_dir_path);
+	}
 	kfree(sbi->bootstrap_path);
 	kfree(sbi);
 	sb->s_fs_info = NULL;
