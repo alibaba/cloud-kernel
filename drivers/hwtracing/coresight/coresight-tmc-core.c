@@ -12,7 +12,6 @@
 #include <linux/io.h>
 #include <linux/err.h>
 #include <linux/fs.h>
-#include <linux/miscdevice.h>
 #include <linux/mutex.h>
 #include <linux/property.h>
 #include <linux/uaccess.h>
@@ -30,6 +29,12 @@
 DEFINE_CORESIGHT_DEVLIST(etb_devs, "tmc_etb");
 DEFINE_CORESIGHT_DEVLIST(etf_devs, "tmc_etf");
 DEFINE_CORESIGHT_DEVLIST(etr_devs, "tmc_etr");
+
+static DEFINE_IDA(tmc_ida);
+static dev_t tmc_major;
+static struct class *tmc_class;
+
+#define TMC_DEV_MAX	(MINORMASK + 1)
 
 void tmc_wait_for_tmcready(struct tmc_drvdata *drvdata)
 {
@@ -146,8 +151,10 @@ static int tmc_read_unprepare(struct tmc_drvdata *drvdata)
 static int tmc_open(struct inode *inode, struct file *file)
 {
 	int ret;
-	struct tmc_drvdata *drvdata = container_of(file->private_data,
-						   struct tmc_drvdata, miscdev);
+	struct tmc_cdev *cdev = container_of(inode->i_cdev,
+					     struct tmc_cdev, cdev);
+	struct tmc_drvdata *drvdata = container_of(cdev,
+						   struct tmc_drvdata, cdev);
 
 	ret = tmc_read_prepare(drvdata);
 	if (ret)
@@ -178,8 +185,10 @@ static ssize_t tmc_read(struct file *file, char __user *data, size_t len,
 {
 	char *bufp;
 	ssize_t actual;
-	struct tmc_drvdata *drvdata = container_of(file->private_data,
-						   struct tmc_drvdata, miscdev);
+	struct tmc_cdev *cdev = container_of(file->f_inode->i_cdev,
+					     struct tmc_cdev, cdev);
+	struct tmc_drvdata *drvdata = container_of(cdev,
+						   struct tmc_drvdata, cdev);
 	actual = tmc_get_sysfs_trace(drvdata, *ppos, len, &bufp);
 	if (actual <= 0)
 		return 0;
@@ -199,8 +208,10 @@ static ssize_t tmc_read(struct file *file, char __user *data, size_t len,
 static int tmc_release(struct inode *inode, struct file *file)
 {
 	int ret;
-	struct tmc_drvdata *drvdata = container_of(file->private_data,
-						   struct tmc_drvdata, miscdev);
+	struct tmc_cdev *cdev = container_of(inode->i_cdev,
+					     struct tmc_cdev, cdev);
+	struct tmc_drvdata *drvdata = container_of(cdev,
+						   struct tmc_drvdata, cdev);
 
 	ret = tmc_read_unprepare(drvdata);
 	if (ret)
@@ -436,6 +447,7 @@ static int tmc_probe(struct amba_device *adev, const struct amba_id *id)
 {
 	int ret = 0;
 	u32 devid;
+	dev_t devt;
 	void __iomem *base;
 	struct device *dev = &adev->dev;
 	struct coresight_platform_data *pdata = NULL;
@@ -529,14 +541,32 @@ static int tmc_probe(struct amba_device *adev, const struct amba_id *id)
 		goto out;
 	}
 
-	drvdata->miscdev.name = desc.name;
-	drvdata->miscdev.minor = MISC_DYNAMIC_MINOR;
-	drvdata->miscdev.fops = &tmc_fops;
-	ret = misc_register(&drvdata->miscdev);
+	ret = ida_simple_get(&tmc_ida, 0, TMC_DEV_MAX, GFP_KERNEL);
+	if (ret < 0)
+		goto err_coresight_unregister;
+
+	cdev_init(&drvdata->cdev.cdev, &tmc_fops);
+	drvdata->cdev.cdev.owner = THIS_MODULE;
+	devt = MKDEV(MAJOR(tmc_major), ret);
+	ret = cdev_add(&drvdata->cdev.cdev, devt, 1);
 	if (ret)
-		coresight_unregister(drvdata->csdev);
-	else
+		goto err_free_tmc_ida;
+
+	drvdata->cdev.dev = device_create(tmc_class, NULL, devt, &drvdata->cdev, desc.name);
+	if (IS_ERR(drvdata->cdev.dev)) {
+		ret = PTR_ERR(drvdata->cdev.dev);
+		goto err_delete_cdev;
+	} else
 		pm_runtime_put(&adev->dev);
+
+	return 0;
+
+err_delete_cdev:
+	cdev_del(&drvdata->cdev.cdev);
+err_free_tmc_ida:
+	ida_simple_remove(&tmc_ida, MINOR(devt));
+err_coresight_unregister:
+	coresight_unregister(drvdata->csdev);
 out:
 	return ret;
 }
@@ -566,13 +596,11 @@ out:
 static int tmc_remove(struct amba_device *adev)
 {
 	struct tmc_drvdata *drvdata = dev_get_drvdata(&adev->dev);
+	struct device *dev = drvdata->cdev.dev;
 
-	/*
-	 * Since misc_open() holds a refcount on the f_ops, which is
-	 * etb fops in this case, device is there until last file
-	 * handler to this device is closed.
-	 */
-	misc_deregister(&drvdata->miscdev);
+	ida_simple_remove(&tmc_ida, MINOR(dev->devt));
+	device_destroy(tmc_class, dev->devt);
+	cdev_del(&drvdata->cdev.cdev);
 	coresight_unregister(drvdata->csdev);
 
 	return 0;
@@ -603,7 +631,42 @@ static struct amba_driver tmc_driver = {
 	.id_table	= tmc_ids,
 };
 
-module_amba_driver(tmc_driver);
+static int __init tmc_init(void)
+{
+	int ret;
+
+	ret = alloc_chrdev_region(&tmc_major, 0, TMC_DEV_MAX, "tmc");
+	if (ret < 0) {
+		pr_err("tmc: failed to allocate char dev region\n");
+		return ret;
+	}
+
+	tmc_class = class_create(THIS_MODULE, "tmc");
+	if (IS_ERR(tmc_class)) {
+		pr_err("tmc: failed to create class\n");
+		unregister_chrdev_region(tmc_major, TMC_DEV_MAX);
+		return PTR_ERR(tmc_class);
+	}
+
+	ret = amba_driver_register(&tmc_driver);
+	if (ret) {
+		pr_err("tmc: error registering amba driver\n");
+		class_destroy(tmc_class);
+		unregister_chrdev_region(tmc_major, TMC_DEV_MAX);
+	}
+
+	return ret;
+}
+
+static void __exit tmc_exit(void)
+{
+	amba_driver_unregister(&tmc_driver);
+	class_destroy(tmc_class);
+	unregister_chrdev_region(tmc_major, TMC_DEV_MAX);
+}
+
+module_init(tmc_init);
+module_exit(tmc_exit);
 
 MODULE_AUTHOR("Pratik Patel <pratikp@codeaurora.org>");
 MODULE_DESCRIPTION("Arm CoreSight Trace Memory Controller driver");

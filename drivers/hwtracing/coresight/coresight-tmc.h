@@ -7,9 +7,9 @@
 #ifndef _CORESIGHT_TMC_H
 #define _CORESIGHT_TMC_H
 
+#include <linux/cdev.h>
 #include <linux/dma-mapping.h>
 #include <linux/idr.h>
-#include <linux/miscdevice.h>
 #include <linux/mutex.h>
 #include <linux/refcount.h>
 
@@ -162,11 +162,16 @@ struct etr_buf {
 	void				*private;
 };
 
+struct tmc_cdev {
+	struct cdev cdev;
+	struct device *dev;
+};
+
 /**
  * struct tmc_drvdata - specifics associated to an TMC component
  * @base:	memory mapped base address for this component.
  * @csdev:	component vitals needed by the framework.
- * @miscdev:	specifics to handle "/dev/xyz.tmc" entry.
+ * @tmc_cdev:	specifics to handle "/dev/xyz.tmc" entry.
  * @spinlock:	only one at a time pls.
  * @pid:	Process ID of the process being monitored by the session
  *		that is using this component.
@@ -188,7 +193,7 @@ struct etr_buf {
 struct tmc_drvdata {
 	void __iomem		*base;
 	struct coresight_device	*csdev;
-	struct miscdevice	miscdev;
+	struct tmc_cdev		cdev;
 	spinlock_t		spinlock;
 	pid_t			pid;
 	bool			reading;
