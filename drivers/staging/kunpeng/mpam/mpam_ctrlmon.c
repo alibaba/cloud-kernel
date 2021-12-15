@@ -29,8 +29,8 @@
 #include <linux/kernfs.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <asm/mpam.h>
 
+#include <mpam.h>
 #include "mpam_resource.h"
 #include "mpam_internal.h"
 

@@ -32,12 +32,12 @@
 #include <linux/task_work.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
-#include <linux/arm_mpam.h>
-
-#include <asm/mpam_sched.h>
-#include <asm/mpam.h>
 #include <asm/io.h>
+#include <asm/mpam_sched.h>
 
+
+#include <arm_mpam.h>
+#include <mpam.h>
 #include "mpam_device.h"
 #include "mpam_resource.h"
 #include "mpam_internal.h"
@@ -1274,7 +1274,7 @@ int __resctrl_group_move_task(struct task_struct *tsk,
 	 * callback has been invoked.
 	 */
 	atomic_inc(&rdtgrp->waitcount);
-	ret = task_work_add(tsk, &callback->work, TWA_RESUME);
+	ret = task_work_add(tsk, &callback->work, true);
 	if (ret) {
 		/*
 		 * Task is exiting. Drop the refcount and free the callback.

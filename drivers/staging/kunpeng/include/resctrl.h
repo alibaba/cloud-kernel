@@ -1,9 +1,10 @@
 #ifndef _ASM_ARM64_RESCTRL_H
 #define _ASM_ARM64_RESCTRL_H
 
-#include <linux/resctrlfs.h>
+#include <resctrlfs.h>
 #include <asm/mpam_sched.h>
-#include <asm/mpam.h>
+
+#include "mpam.h"
 
 #if defined(CONFIG_RESCTRL) && defined(CONFIG_MPAM)
 

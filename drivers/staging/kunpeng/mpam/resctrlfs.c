@@ -36,12 +36,12 @@
 #include <linux/sched/task.h>
 #include <linux/slab.h>
 #include <linux/user_namespace.h>
-#include <linux/resctrlfs.h>
 
 #include <uapi/linux/magic.h>
 
-#include <asm/resctrl.h>
-#include <asm/mpam.h>
+#include <resctrlfs.h>
+#include <resctrl.h>
+#include <mpam.h>
 
 DEFINE_STATIC_KEY_FALSE(resctrl_enable_key);
 DEFINE_STATIC_KEY_FALSE(resctrl_mon_enable_key);

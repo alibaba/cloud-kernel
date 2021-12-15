@@ -5,7 +5,8 @@
 #include <linux/err.h>
 #include <linux/cpumask.h>
 #include <linux/types.h>
-#include <linux/arm_mpam.h>
+
+#include <arm_mpam.h>
 
 struct mpam_config;
 
