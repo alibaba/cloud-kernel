@@ -1113,6 +1113,7 @@ config RICH_CONTAINER
 	depends on CGROUP_CPUACCT
 	depends on CFS_BANDWIDTH
 	depends on CPUSETS
+	select SCHED_SLI
 	default n
 	help
 	  Make containers feel like VMs. Change the following interface
