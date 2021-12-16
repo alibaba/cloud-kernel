@@ -1255,8 +1255,11 @@ static void smcr_buf_free(struct smc_link_group *lgr, bool is_rmb,
 {
 	int i;
 
-	for (i = 0; i < SMC_LINKS_PER_LGR_MAX; i++)
+	for (i = 0; i < SMC_LINKS_PER_LGR_MAX; i++) {
+		if (lgr->lnk[i].state == SMC_LNK_UNUSED)
+			continue;
 		smcr_buf_unmap_link(buf_desc, is_rmb, &lgr->lnk[i]);
+	}
 
 	if (buf_desc->pages)
 		__free_pages(buf_desc->pages, buf_desc->order);
