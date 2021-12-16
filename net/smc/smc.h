@@ -223,6 +223,7 @@ struct smc_connection {
 	u64			tx_corked_bytes;/* tx size with MSG_MORE flag or corked */
 	u64			peer_token;	/* SMC-D token of peer */
 	u8			killed : 1;	/* abnormal termination */
+	u8			freed : 1;	/* normal termiation */
 	u8			out_of_sync : 1; /* out of sync with peer */
 };
 
