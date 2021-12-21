@@ -418,7 +418,8 @@ static int damon_va_pmd_entry(pmd_t *pmd, unsigned long addr,
 		ptl = pmd_lock(walk->mm, pmd);
 		if (pmd_huge(*pmd)) {
 			damon_pmdp_mkold(pmd, walk->mm, addr);
-			if (nr_online_nodes > 1)
+			if (static_branch_unlikely(&numa_stat_enabled_key) &&
+					nr_online_nodes > 1)
 				result = damon_pmdp_mknone(pmd, walk, addr);
 			spin_unlock(ptl);
 			if (result) {
@@ -439,7 +440,8 @@ static int damon_va_pmd_entry(pmd_t *pmd, unsigned long addr,
 		return 0;
 	}
 	damon_ptep_mkold(pte, walk->mm, addr);
-	if (nr_online_nodes > 1)
+	if (static_branch_unlikely(&numa_stat_enabled_key) &&
+			nr_online_nodes > 1)
 		result = damon_ptep_mknone(pte, walk, addr);
 	pte_unmap_unlock(pte, ptl);
 	if (result)

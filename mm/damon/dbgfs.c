@@ -581,6 +581,49 @@ out:
 	return len;
 }
 
+DEFINE_STATIC_KEY_FALSE(numa_stat_enabled_key);
+
+static ssize_t dbgfs_numa_stat_read(struct file *file,
+		char __user *buf, size_t count, loff_t *ppos)
+{
+	char numa_on_buf[5];
+	bool enable = static_branch_unlikely(&numa_stat_enabled_key);
+	int len;
+
+	len = scnprintf(numa_on_buf, 5, enable ? "on\n" : "off\n");
+
+	return simple_read_from_buffer(buf, count, ppos, numa_on_buf, len);
+}
+
+static ssize_t dbgfs_numa_stat_write(struct file *file,
+		const char __user *buf, size_t count, loff_t *ppos)
+{
+	ssize_t ret = 0;
+	char *kbuf;
+
+	kbuf = user_input_str(buf, count, ppos);
+	if (IS_ERR(kbuf))
+		return PTR_ERR(kbuf);
+
+	/* Remove white space */
+	if (sscanf(kbuf, "%s", kbuf) != 1) {
+		kfree(kbuf);
+		return -EINVAL;
+	}
+
+	if (!strncmp(kbuf, "on", count))
+		static_branch_enable(&numa_stat_enabled_key);
+	else if (!strncmp(kbuf, "off", count))
+		static_branch_disable(&numa_stat_enabled_key);
+	else
+		ret = -EINVAL;
+
+	if (!ret)
+		ret = count;
+	kfree(kbuf);
+	return ret;
+}
+
 static int damon_dbgfs_open(struct inode *inode, struct file *file)
 {
 	file->private_data = inode->i_private;
@@ -617,12 +660,17 @@ static const struct file_operations kdamond_pid_fops = {
 	.read = dbgfs_kdamond_pid_read,
 };
 
+static const struct file_operations numa_stat_ops = {
+	.write = dbgfs_numa_stat_write,
+	.read = dbgfs_numa_stat_read,
+};
+
 static void dbgfs_fill_ctx_dir(struct dentry *dir, struct damon_ctx *ctx)
 {
 	const char * const file_names[] = {"attrs", "schemes", "target_ids",
-		"init_regions", "kdamond_pid"};
+		"init_regions", "kdamond_pid", "numa_stat"};
 	const struct file_operations *fops[] = {&attrs_fops, &schemes_fops,
-		&target_ids_fops, &init_regions_fops, &kdamond_pid_fops};
+		&target_ids_fops, &init_regions_fops, &kdamond_pid_fops, &numa_stat_ops};
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(file_names); i++)

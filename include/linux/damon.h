@@ -15,6 +15,7 @@
 
 /* Minimal region size.  Every damon_region is aligned by this. */
 #define DAMON_MIN_REGION	PAGE_SIZE
+DECLARE_STATIC_KEY_FALSE(numa_stat_enabled_key);
 
 extern struct damon_ctx **dbgfs_ctxs;
 extern int dbgfs_nr_ctxs;

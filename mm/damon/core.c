@@ -854,6 +854,13 @@ static int kdamond_fn(void *data)
 	nr_running_ctxs--;
 	mutex_unlock(&damon_lock);
 
+	/*
+	 * when no kdamond threads are running, the
+	 * 'numa_stat_enabled_key' keeps default value.
+	 */
+	if (!nr_running_ctxs)
+		static_branch_disable(&numa_stat_enabled_key);
+
 	return 0;
 }
 
@@ -910,7 +917,8 @@ void damon_numa_fault(int page_nid, int node_id, struct vm_fault *vmf)
 	struct damon_target *t;
 	struct damon_region *r;
 
-	if (nr_online_nodes > 1) {
+	if (static_branch_unlikely(&numa_stat_enabled_key)
+			&& nr_online_nodes > 1) {
 		t = get_damon_target(current);
 		if (t) {
 			r = get_damon_region(t, vmf->address);
