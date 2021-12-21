@@ -386,6 +386,15 @@ void __put_devmap_managed_page(struct page *page)
 	 * holds a reference on the page.
 	 */
 	if (count == 1) {
+		/*
+		 * The wakeup is only needed in the MEMORY_DEVICE_FSDAX case,
+		 * notify page idle for dax.
+		 */
+		if (page->pgmap->type == MEMORY_DEVICE_FS_DAX) {
+			wake_up_var(&page->_refcount);
+			return;
+		}
+
 		/* Clear Active bit in case of parallel mark_page_accessed */
 		__ClearPageActive(page);
 		__ClearPageWaiters(page);
