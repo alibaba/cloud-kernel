@@ -484,11 +484,11 @@ static ssize_t rafs_v6_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 			 inode->i_size, map.m_pa, delta, size);
 		read = rafs_v6_read_chunk(inode->i_sb, to, map.m_pa + delta,
 					  size, map.m_deviceid);
-		if (read < size) {
+		if (read <= 0 || read < size) {
 			erofs_err(inode->i_sb,
 				  "short read %ld pos %llu size %llu @ nid %llu",
 				  read, pos, size, EROFS_I(inode)->nid);
-			return -EIO;
+			return read < 0 ? read : -EIO;
 		}
 		iocb->ki_pos += read;
 		bytes += read;
