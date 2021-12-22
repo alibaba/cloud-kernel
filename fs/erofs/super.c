@@ -498,15 +498,14 @@ static int erofs_parse_options(struct super_block *sb, char *options)
 			sbi->blob_dir_path = match_strdup(&args[0]);
 			if (!sbi->blob_dir_path)
 				return -ENOMEM;
-			erofs_info(sb, "RAFS blob_dir_path %s", sbi->blob_dir_path);
+			erofs_dbg("RAFS blob_dir_path %s", sbi->blob_dir_path);
 			break;
 		case Opt_bootstrap_path:
 			kfree(sbi->bootstrap_path);
 			sbi->bootstrap_path = match_strdup(&args[0]);
 			if (!sbi->bootstrap_path)
 				return -ENOMEM;
-			erofs_info(sb, "RAFS bootstrap_path %s",
-				   sbi->bootstrap_path);
+			erofs_dbg("RAFS bootstrap_path %s", sbi->bootstrap_path);
 			break;
 		default:
 			erofs_err(sb, "Unrecognized mount option \"%s\" or missing value", p);
