@@ -24,6 +24,7 @@
  * file. Useful because they make it more difficult to inadvertently type in
  * the wrong signature.
  */
+#define ACPI_SIG_AGDI           "AGDI"	/* Arm Generic Diagnostic Dump and Reset Device Interface */
 #define ACPI_SIG_IORT           "IORT"	/* IO Remapping Table */
 #define ACPI_SIG_IVRS           "IVRS"	/* I/O Virtualization Reporting Structure */
 #define ACPI_SIG_LPIT           "LPIT"	/* Low Power Idle Table */
@@ -241,6 +242,25 @@ struct acpi_iort_pmcg {
 	u32 node_reference;
 	u64 page1_base_address;
 };
+
+/*******************************************************************************
+ * AGDI - Arm Generic Diagnostic Dump and Reset Device Interface
+ *
+ * Conforms to "ACPI for Arm Components 1.1, Platform Design Document"
+ * ARM DEN0093 v1.1
+ *
+ ******************************************************************************/
+struct acpi_table_agdi {
+	struct acpi_table_header header;	/* Common ACPI table header */
+	u8 flags;
+	u8 reserved[3];
+	u32 sdei_event;
+	u32 gsiv;
+};
+
+/* Mask for Flags field above */
+
+#define ACPI_AGDI_SIGNALING_MODE (1)
 
 /*******************************************************************************
  *
