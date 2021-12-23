@@ -142,6 +142,9 @@ enum pageflags {
 #ifdef CONFIG_DUPTEXT
 	PG_dup,			/* Page has NUMA replicas */
 #endif
+#ifdef CONFIG_KFENCE
+	PG_kfence,		/* Page in kfence pool */
+#endif
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
@@ -458,6 +461,10 @@ __PAGEFLAG(Reported, reported, PF_NO_COMPOUND)
 #ifdef CONFIG_DUPTEXT
 /* PageDup() is used to track page that has NUMA replicas. */
 PAGEFLAG(Dup, dup, PF_HEAD)
+#endif
+
+#ifdef CONFIG_KFENCE
+__PAGEFLAG(Kfence, kfence, PF_ANY)
 #endif
 
 /*
@@ -856,6 +863,12 @@ static inline void ClearPageSlabPfmemalloc(struct page *page)
 #define __PG_DUP		(1UL << PG_dup)
 #else
 #define __PG_DUP		0
+#endif
+
+#ifdef CONFIG_KFENCE
+#define __PG_KFENCE		(1UL << PG_kfence)
+#else
+#define __PG_KFENCE		0
 #endif
 
 /*

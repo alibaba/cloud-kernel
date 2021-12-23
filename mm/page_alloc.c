@@ -1281,7 +1281,7 @@ static __always_inline bool free_pages_prepare(struct page *page,
 
 	page_cpupid_reset_last(page);
 	kidled_set_page_age(page_pgdat(page), page_to_pfn(page), 0);
-	page->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
+	page->flags &= ~PAGE_FLAGS_CHECK_AT_PREP | __PG_KFENCE;
 	reset_page_owner(page, order);
 
 	if (!PageHighMem(page)) {

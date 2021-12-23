@@ -70,10 +70,7 @@ static __always_inline bool is_kfence_address_node(const void *addr, const int n
  */
 static __always_inline bool is_kfence_address(const void *addr)
 {
-	if (!static_branch_unlikely(&kfence_once_inited) || unlikely(!virt_addr_valid(addr)))
-		return false;
-
-	return unlikely(is_kfence_address_node(addr, page_to_nid(virt_to_page(addr))));
+	return static_branch_unlikely(&kfence_once_inited) && PageKfence(virt_to_page(addr));
 }
 
 /**
@@ -273,12 +270,10 @@ static __always_inline __must_check bool kfence_free_page(struct page *page)
 {
 	void *addr;
 
-	if (!static_branch_unlikely(&kfence_once_inited))
+	if (!static_branch_unlikely(&kfence_once_inited) || !PageKfence(page))
 		return false;
 
 	addr = page_to_virt(page);
-	if (!is_kfence_address_node(addr, page_to_nid(page)))
-		return false;
 	__kfence_free_page(page, addr);
 	return true;
 }

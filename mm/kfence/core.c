@@ -748,6 +748,21 @@ static void rcu_guarded_free(struct rcu_head *h)
 	kfence_guarded_free((void *)meta->addr, meta, false);
 }
 
+static inline void kfence_clear_page_info(unsigned long addr, unsigned long size)
+{
+	unsigned long i;
+
+	for (i = addr; i < addr + size; i += PAGE_SIZE) {
+		struct page *page = virt_to_page(i);
+
+		__ClearPageKfence(page);
+		__ClearPageSlab(page);
+		page->mapping = NULL;
+		atomic_set(&page->_refcount, 1);
+		kfence_unprotect(i);
+	}
+}
+
 static bool __init kfence_init_pool_node(int node)
 {
 	char *__kfence_pool = __kfence_pool_node[node];
@@ -775,6 +790,8 @@ static bool __init kfence_init_pool_node(int node)
 	 * enters __slab_free() slow-path.
 	 */
 	for (i = 0; i < kfence_pool_size / PAGE_SIZE; i++) {
+		__SetPageKfence(&pages[i]);
+
 		if (!i || (i % 2))
 			continue;
 
@@ -826,13 +843,11 @@ static bool __init kfence_init_pool_node(int node)
 
 err:
 	/*
-	 * Only release unprotected pages, and do not try to go back and change
-	 * page attributes due to risk of failing to do so as well. If changing
-	 * page attributes for some pages fails, it is very likely that it also
-	 * fails for the first page, and therefore expect addr==__kfence_pool in
-	 * most failure cases.
+	 * We will support freeing unused kfence pools in the following patches,
+	 * so here we can also free all pages in the pool.
 	 */
-	memblock_free_late(__pa(addr), kfence_pool_size - (addr - (unsigned long)__kfence_pool));
+	kfence_clear_page_info((unsigned long)__kfence_pool, kfence_pool_size);
+	memblock_free_late(__pa(__kfence_pool), kfence_pool_size);
 	memblock_free_late(__pa(kfence_metadata), metadata_size);
 	__kfence_pool_node[node] = NULL;
 	kfence_metadata_node[node] = NULL;
