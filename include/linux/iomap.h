@@ -100,6 +100,10 @@ struct iomap_ops {
 	 */
 	int (*iomap_end)(struct inode *inode, loff_t pos, loff_t length,
 			ssize_t written, unsigned flags, struct iomap *iomap);
+
+	/* Save an object in vma->private_data */
+	void (*iomap_save_private)(struct vm_area_struct *vma,
+				   struct iomap *iomap);
 };
 
 /*

@@ -9,7 +9,6 @@
 #ifndef __EROFS_FS_H
 #define __EROFS_FS_H
 
-#define EROFS_SUPER_MAGIC_V1	0xE0F5E1E2
 #define EROFS_SUPER_OFFSET      1024
 
 #define EROFS_FEATURE_COMPAT_SB_CHKSUM          0x00000001

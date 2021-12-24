@@ -514,6 +514,7 @@ static vm_fault_t rafs_v6_filemap_fault(struct vm_fault *vmf)
 		return VM_FAULT_SIGBUS;
 
 	memcpy(&lower_vma, vmf->vma, sizeof(lower_vma));
+	WARN_ON_ONCE(lower_vma.vm_private_data != vma->vm_private_data);
 
 	/* TODO: check if chunk is available for us to read. */
 	map.m_la = orig_pgoff << PAGE_SHIFT;
@@ -539,8 +540,40 @@ static vm_fault_t rafs_v6_filemap_fault(struct vm_fault *vmf)
 	return ret;
 }
 
+static void rafs_v6_vm_close(struct vm_area_struct *vma)
+{
+	struct inode *inode;
+
+	if (!vma || !vma->vm_file) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+
+	inode = file_inode(vma->vm_file);
+	if (EROFS_I(inode)->lower_vm_ops && EROFS_I(inode)->lower_vm_ops->close)
+		EROFS_I(inode)->lower_vm_ops->close(vma);
+
+	WARN_ON(vma->vm_private_data);
+}
+
+static void rafs_v6_vm_open(struct vm_area_struct *vma)
+{
+	struct inode *inode;
+
+	if (!vma || !vma->vm_file) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+
+	inode = file_inode(vma->vm_file);
+	if (EROFS_I(inode)->lower_vm_ops && EROFS_I(inode)->lower_vm_ops->open)
+		EROFS_I(inode)->lower_vm_ops->open(vma);
+}
+
 static const struct vm_operations_struct rafs_v6_vm_ops = {
 	.fault	= rafs_v6_filemap_fault,
+	.close	= rafs_v6_vm_close,
+	.open	= rafs_v6_vm_open,
 };
 
 static int rafs_v6_file_mmap(struct file *file, struct vm_area_struct *vma)
@@ -548,7 +581,13 @@ static int rafs_v6_file_mmap(struct file *file, struct vm_area_struct *vma)
 	struct inode *inode = file_inode(file);
 	struct erofs_inode *vi = EROFS_I(inode);
 	const struct vm_operations_struct *lower_vm_ops;
+	struct file *realfile = EROFS_I_SB(inode)->bootstrap;
 	int ret;
+
+	if (!realfile || !realfile->f_op->mmap) {
+		pr_err("%s: no bootstrap or mmap\n", __func__);
+		return -EOPNOTSUPP;
+	}
 
 	ret = call_mmap(EROFS_I_SB(inode)->bootstrap, vma);
 	if (ret) {
