@@ -501,9 +501,9 @@ static inline size_t slab_ksize(const struct kmem_cache *s)
 #endif
 }
 
-static inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
-						     struct obj_cgroup **objcgp,
-						     size_t size, gfp_t flags)
+static __always_inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
+							      struct obj_cgroup **objcgp,
+							      size_t size, gfp_t flags)
 {
 	flags &= gfp_allowed_mask;
 
@@ -615,7 +615,7 @@ static inline int cache_random_seq_create(struct kmem_cache *cachep,
 static inline void cache_random_seq_destroy(struct kmem_cache *cachep) { }
 #endif /* CONFIG_SLAB_FREELIST_RANDOM */
 
-static inline bool slab_want_init_on_alloc(gfp_t flags, struct kmem_cache *c)
+static __always_inline bool slab_want_init_on_alloc(gfp_t flags, struct kmem_cache *c)
 {
 	if (static_branch_unlikely(&init_on_alloc)) {
 		if (c->ctor)
@@ -627,7 +627,7 @@ static inline bool slab_want_init_on_alloc(gfp_t flags, struct kmem_cache *c)
 	return flags & __GFP_ZERO;
 }
 
-static inline bool slab_want_init_on_free(struct kmem_cache *c)
+static __always_inline bool slab_want_init_on_free(struct kmem_cache *c)
 {
 	if (static_branch_unlikely(&init_on_free))
 		return !(c->ctor ||
