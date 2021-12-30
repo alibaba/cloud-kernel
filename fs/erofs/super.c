@@ -704,6 +704,7 @@ static void erofs_free_dev_context(struct erofs_dev_context *devs)
 		return;
 	idr_for_each(&devs->tree, &erofs_release_device_info, NULL);
 	idr_destroy(&devs->tree);
+	kfree(devs);
 }
 
 static bool erofs_mount_is_rafs_v6(char *options)
