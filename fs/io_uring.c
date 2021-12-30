@@ -1154,7 +1154,7 @@ static void io_prep_async_work(struct io_kiocb *req)
 	io_req_init_async(req);
 
 	if (req->flags & REQ_F_ISREG) {
-		if (def->hash_reg_file || (req->ctx->flags & IORING_SETUP_IOPOLL))
+		if (def->hash_reg_file)
 			io_wq_hash_work(&req->work, file_inode(req->file));
 	} else {
 		if (def->unbound_nonreg_file)
@@ -3055,16 +3055,12 @@ static int io_read(struct io_kiocb *req, bool force_nonblock)
 	struct kiocb *kiocb = &req->rw.kiocb;
 	struct iov_iter iter;
 	size_t iov_count;
-	unsigned long nr_segs;
 	ssize_t io_size, ret;
 	bool no_async;
 
 	ret = io_import_iovec(READ, req, &iovec, &iter, !force_nonblock);
 	if (ret < 0)
 		return ret;
-
-	iov_count = iov_iter_count(&iter);
-	nr_segs = iter.nr_segs;
 
 	/* Ensure we clear previously set non-block flag */
 	if (!force_nonblock)
@@ -3083,22 +3079,21 @@ static int io_read(struct io_kiocb *req, bool force_nonblock)
 	if (no_async)
 		goto copy_iov;
 
+	iov_count = iov_iter_count(&iter);
 	ret = rw_verify_area(READ, req->file, &kiocb->ki_pos, iov_count);
 	if (!ret) {
+		unsigned long nr_segs = iter.nr_segs;
 		ssize_t ret2 = 0;
 
 		ret2 = io_iter_do_read(req, &iter);
 
 		/* Catch -EAGAIN return for forced non-blocking submission */
 		if (!force_nonblock || (ret2 != -EAGAIN && ret2 != -EIO)) {
-			/* IOPOLL retry should happen for io-wq threads */
-			if ((req->ctx->flags & IORING_SETUP_IOPOLL) && (ret2 == -EAGAIN))
-				goto copy_iov;
 			kiocb_done(kiocb, ret2);
 		} else {
-copy_iov:
 			iter.count = iov_count;
 			iter.nr_segs = nr_segs;
+copy_iov:
 			ret = io_setup_async_rw(req, io_size, iovec,
 						inline_vecs, &iter);
 			if (ret)
@@ -3157,15 +3152,11 @@ static int io_write(struct io_kiocb *req, bool force_nonblock)
 	struct kiocb *kiocb = &req->rw.kiocb;
 	struct iov_iter iter;
 	size_t iov_count;
-	unsigned long nr_segs;
 	ssize_t ret, io_size;
 
 	ret = io_import_iovec(WRITE, req, &iovec, &iter, !force_nonblock);
 	if (ret < 0)
 		return ret;
-
-	iov_count = iov_iter_count(&iter);
-	nr_segs = iter.nr_segs;
 
 	/* Ensure we clear previously set non-block flag */
 	if (!force_nonblock)
@@ -3188,8 +3179,10 @@ static int io_write(struct io_kiocb *req, bool force_nonblock)
 	    (req->flags & REQ_F_ISREG))
 		goto copy_iov;
 
+	iov_count = iov_iter_count(&iter);
 	ret = rw_verify_area(WRITE, req->file, &kiocb->ki_pos, iov_count);
 	if (!ret) {
+		unsigned long nr_segs = iter.nr_segs;
 		ssize_t ret2;
 
 		/*
@@ -3227,14 +3220,11 @@ static int io_write(struct io_kiocb *req, bool force_nonblock)
 		if (ret2 == -EOPNOTSUPP && (kiocb->ki_flags & IOCB_NOWAIT))
 			ret2 = -EAGAIN;
 		if (!force_nonblock || ret2 != -EAGAIN) {
-			/* IOPOLL retry should happen for io-wq threads */
-			if ((req->ctx->flags & IORING_SETUP_IOPOLL) && (ret2 == -EAGAIN))
-				goto copy_iov;
 			kiocb_done(kiocb, ret2);
 		} else {
-copy_iov:
 			iter.count = iov_count;
 			iter.nr_segs = nr_segs;
+copy_iov:
 			ret = io_setup_async_rw(req, io_size, iovec,
 						inline_vecs, &iter);
 			if (ret)
