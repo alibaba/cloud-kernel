@@ -7582,8 +7582,7 @@ unlock:
 static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int target)
 {
 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
-	int core, cpu, id_backup = -1;
-	bool is_expellee, do_clear = true;
+	int core, cpu;
 
 	if (!static_branch_likely(&sched_smt_present))
 		return -1;
@@ -7593,47 +7592,28 @@ static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int 
 
 	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
 
-	is_expellee = is_expellee_task(p);
 	for_each_cpu_wrap(core, cpus, target) {
 		bool idle = true;
-		bool id_idle = true;
 
 		for_each_cpu(cpu, cpu_smt_mask(core)) {
-			bool is_idle = true;
-
-			if (!id_idle_cpu(p, cpu, is_expellee, &is_idle)) {
-				id_idle = false;
+			if (!available_idle_cpu(cpu)) {
+				idle = false;
 				break;
 			}
-
-			if (!is_idle)
-				idle = false;
 		}
 		cpumask_andnot(cpus, cpus, cpu_smt_mask(core));
 
-		if (idle && id_idle)
+		if (idle)
 			return core;
 
-		if (id_idle)
-			id_backup = core;
-
-		/*
-		 * This only happens when a CPU is idle but
-		 * not suitable for underclass task, we
-		 * should not clear the idle info since this
-		 * is still a good idle core for others.
-		 */
-		if (idle)
-			do_clear = false;
 	}
 
 	/*
 	 * Failed to find an idle core; stop looking for one.
 	 */
-	if (do_clear)
-		set_idle_cores(target, 0);
+	set_idle_cores(target, 0);
 
-	return id_backup;
+	return -1;
 }
 
 /*
