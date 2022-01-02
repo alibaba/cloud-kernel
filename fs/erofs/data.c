@@ -55,16 +55,6 @@ static struct page *erofs_read_meta_page(struct super_block *sb, pgoff_t index)
 	return page;
 }
 
-struct page *erofs_get_meta_page(struct super_block *sb, erofs_blk_t blkaddr)
-{
-	struct page *page = erofs_read_meta_page(sb, blkaddr);
-
-	/* should already be PageUptodate */
-	if (!IS_ERR(page))
-		lock_page(page);
-	return page;
-}
-
 void erofs_unmap_metabuf(struct erofs_buf *buf)
 {
 	if (buf->kmap_type == EROFS_KMAP)

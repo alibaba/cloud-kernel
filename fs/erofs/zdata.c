@@ -1300,9 +1300,7 @@ static int z_erofs_readpage(struct file *file, struct page *page)
 	if (err)
 		erofs_err(inode->i_sb, "failed to read, err [%d]", err);
 
-	if (f.map.mpage)
-		put_page(f.map.mpage);
-
+	erofs_put_metabuf(&f.map.buf);
 	/* clean up the remaining free pages */
 	put_pages_list(&pagepool);
 	return err;
@@ -1365,10 +1363,7 @@ static int z_erofs_readpages(struct file *filp, struct address_space *mapping,
 	(void)z_erofs_collector_end(&f.clt);
 
 	z_erofs_runqueue(inode->i_sb, &f, &pagepool, sync);
-
-	if (f.map.mpage)
-		put_page(f.map.mpage);
-
+	erofs_put_metabuf(&f.map.buf);
 	/* clean up the remaining free pages */
 	put_pages_list(&pagepool);
 	return 0;
