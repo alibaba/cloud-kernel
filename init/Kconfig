@@ -802,7 +802,7 @@ config FAIR_GROUP_SCHED
 config GROUP_IDENTITY
 	bool "Group identity for SCHED_OTHER"
 	depends on (CGROUP_SCHED && 64BIT && SMP)
-	default CGROUP_SCHED
+	default n
 	help
 	  This feature introduced identity for cgroup, including:
 	    ID_NORMAL
