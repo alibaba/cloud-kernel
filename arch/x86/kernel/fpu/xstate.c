@@ -1550,6 +1550,7 @@ static int fpstate_realloc(u64 xfeatures, unsigned int ksize,
 
 	if (guest_fpu) {
 		newfps->is_guest = true;
+		newfps->is_confidential = curfps->is_confidential;
 		newfps->in_use = curfps->in_use;
 		guest_fpu->xfeatures |= xfeatures;
 		guest_fpu->uabi_size = usize;
