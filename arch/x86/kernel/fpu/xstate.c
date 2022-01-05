@@ -1552,6 +1552,7 @@ static int fpstate_realloc(u64 xfeatures, unsigned int ksize,
 		newfps->is_guest = true;
 		newfps->in_use = curfps->in_use;
 		guest_fpu->xfeatures |= xfeatures;
+		guest_fpu->uabi_size = usize;
 	}
 
 	fpregs_lock();
