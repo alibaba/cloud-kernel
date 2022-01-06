@@ -43,6 +43,8 @@ extern void __init enable_debug_cgroup(void);
 struct cgroup_pidlist;
 
 struct cgroup_file_ctx {
+	struct cgroup_namespace	*ns;
+
 	struct {
 		void			*trigger;
 	} psi;
