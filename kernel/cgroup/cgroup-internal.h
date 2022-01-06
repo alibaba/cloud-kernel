@@ -40,6 +40,23 @@ extern void __init enable_debug_cgroup(void);
 		}							\
 	} while (0)
 
+struct cgroup_pidlist;
+
+struct cgroup_file_ctx {
+	struct {
+		void			*trigger;
+	} psi;
+
+	struct {
+		bool			started;
+		struct css_task_iter	iter;
+	} procs;
+
+	struct {
+		struct cgroup_pidlist	*pidlist;
+	} procs1;
+};
+
 /*
  * The cgroup filesystem superblock creation/mount context.
  */
