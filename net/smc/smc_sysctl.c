@@ -44,15 +44,6 @@ static struct ctl_table smc_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
-	{
-		.procname	= "allow_different_subnet",
-		.data		= &init_net.smc.sysctl_allow_different_subnet,
-		.maxlen		= sizeof(init_net.smc.sysctl_allow_different_subnet),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
 	{  }
 };
 
