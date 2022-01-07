@@ -17,7 +17,6 @@ struct netns_smc {
 #endif
 	int				sysctl_wmem_default;
 	int				sysctl_rmem_default;
-	int				sysctl_tcp2smc;
 };
 
 #endif
