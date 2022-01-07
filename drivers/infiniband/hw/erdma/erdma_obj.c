@@ -202,6 +202,24 @@ static void erdma_free_qp(struct kref *ref)
 		free_pages_exact(qp->snapshot, 4096);
 #endif
 	atomic_dec(&edev->num_qp);
+
+	if (qp->sendq.qbuf) {
+		dma_free_coherent(&edev->pdev->dev, qp->sendq.size,
+				qp->sendq.qbuf, qp->sendq.dma_addr);
+		qp->sendq.qbuf = NULL;
+	}
+	if (qp->recvq.qbuf) {
+		dma_free_coherent(&edev->pdev->dev, qp->recvq.size,
+				qp->recvq.qbuf, qp->recvq.dma_addr);
+		qp->recvq.qbuf = NULL;
+	}
+	if (qp->sendq.backup_db_addr)
+		dma_free_coherent(&edev->pdev->dev, 8,
+			qp->sendq.backup_db_addr, qp->sendq.backup_db_dma_addr);
+	if (qp->recvq.backup_db_addr)
+		dma_free_coherent(&edev->pdev->dev, 8,
+			qp->recvq.backup_db_addr, qp->recvq.backup_db_dma_addr);
+
 	kfree(qp);
 }
 

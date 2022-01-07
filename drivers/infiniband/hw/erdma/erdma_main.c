@@ -66,7 +66,7 @@
 MODULE_AUTHOR("Alibaba");
 MODULE_DESCRIPTION(DESC);
 MODULE_LICENSE("GPL v2");
-MODULE_VERSION("1.0");
+MODULE_VERSION("2.3");
 
 #define DRV_VER_MAJOR 0
 #define DRV_VER_MINOR 0
@@ -200,6 +200,16 @@ static int erdma_netdev_matched_edev(struct net_device *netdev, struct erdma_dev
 	return 0;
 }
 
+static void erdma_dispatch_ibevent(struct erdma_dev *dev, enum ib_event_type event)
+{
+	struct ib_event ibev = {};
+
+	ibev.device = &dev->ibdev;
+	ibev.element.port_num = 1;
+	ibev.event = event;
+	ib_dispatch_event(&ibev);
+}
+
 static int erdma_netdev_event(struct notifier_block *nb, unsigned long event,
 			      void *arg)
 {
@@ -223,6 +233,7 @@ static int erdma_netdev_event(struct notifier_block *nb, unsigned long event,
 
 		if (edev->is_registered) {
 			edev->state = IB_PORT_ACTIVE;
+			erdma_dispatch_ibevent(edev, IB_EVENT_PORT_ACTIVE);
 			break;
 		}
 
@@ -244,6 +255,7 @@ static int erdma_netdev_event(struct notifier_block *nb, unsigned long event,
 	case NETDEV_DOWN:
 		if (edev && edev->is_registered) {
 			edev->state = IB_PORT_DOWN;
+			erdma_dispatch_ibevent(edev, IB_EVENT_PORT_ERR);
 			break;
 		}
 		break;
@@ -1034,7 +1046,6 @@ static int erdma_ib_device_add(struct pci_dev *pdev)
 	ibdev->phys_port_cnt = 1;
 
 	ibdev->num_comp_vectors = dev->irq_num - 1;
-	ibdev->dev.parent = &pdev->dev;
 
 	ib_set_device_ops(ibdev, &erdma_device_ops);
 

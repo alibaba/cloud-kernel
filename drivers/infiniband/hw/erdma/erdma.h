@@ -357,6 +357,9 @@ struct erdma_qp {
 	void *cq_db;
 	bool without_cm;
 	__u8 cc_method;
+
+	bool sq_shutdown;
+	bool rq_shutdown;
 	u64 reserved;
 
 	spinlock_t rq_lock;

@@ -608,20 +608,6 @@ struct ib_qp *erdma_create_qp(struct ib_pd *ibpd,
 		QP_ID(qp), qp->sendq.qbuf, qp->sendq.dma_addr, qp->sendq.depth,
 		qp->recvq.qbuf, qp->recvq.dma_addr, qp->recvq.depth);
 
-	params.pd = PD_ID(pd);
-	params.qpn = QP_ID(qp);
-	params.rcqn = CQ_ID(rcq);
-	params.rq_buf_addr = qp->recvq.dma_addr;
-	params.rq_depth = qp->recvq.depth;
-	params.scqn = CQ_ID(scq);
-	params.sq_buf_addr = qp->sendq.dma_addr;
-	params.sq_depth = qp->sendq.depth;
-	params.sq_db_dma_addr = qp->sendq.backup_db_dma_addr;
-	params.rq_db_dma_addr = qp->recvq.backup_db_dma_addr;
-	rv = erdma_exec_create_qp_cmd(edev, &params);
-	if (rv)
-		goto err_out_idr;
-
 	if (user_access) {
 		ctx = to_ectx(ibpd->uobject->context);
 		memset(&uresp, 0, sizeof(uresp));
@@ -672,6 +658,20 @@ struct ib_qp *erdma_create_qp(struct ib_pd *ibpd,
 		if (rv)
 			goto err_out_idr;
 	}
+
+	params.pd = PD_ID(pd);
+	params.qpn = QP_ID(qp);
+	params.rcqn = CQ_ID(rcq);
+	params.rq_buf_addr = qp->recvq.dma_addr;
+	params.rq_depth = qp->recvq.depth;
+	params.scqn = CQ_ID(scq);
+	params.sq_buf_addr = qp->sendq.dma_addr;
+	params.sq_depth = qp->sendq.depth;
+	params.sq_db_dma_addr = qp->sendq.backup_db_dma_addr;
+	params.rq_db_dma_addr = qp->recvq.backup_db_dma_addr;
+	rv = erdma_exec_create_qp_cmd(edev, &params);
+	if (rv)
+		goto err_out_idr;
 
 	qp->ibqp.qp_num = QP_ID(qp);
 
@@ -1251,23 +1251,6 @@ int erdma_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 		return err;
 	}
 
-	if (qp->sendq.qbuf) {
-		dma_free_coherent(&edev->pdev->dev, qp->sendq.size,
-				qp->sendq.qbuf, qp->sendq.dma_addr);
-		qp->sendq.qbuf = NULL;
-	}
-	if (qp->recvq.qbuf) {
-		dma_free_coherent(&edev->pdev->dev, qp->recvq.size,
-				qp->recvq.qbuf, qp->recvq.dma_addr);
-		qp->recvq.qbuf = NULL;
-	}
-	if (qp->sendq.backup_db_addr)
-		dma_free_coherent(&edev->pdev->dev, 8,
-			qp->sendq.backup_db_addr, qp->sendq.backup_db_dma_addr);
-	if (qp->recvq.backup_db_addr)
-		dma_free_coherent(&edev->pdev->dev, 8,
-			qp->recvq.backup_db_addr, qp->recvq.backup_db_dma_addr);
-
 	if (qp->cep) {
 		erdma_cep_put(qp->cep);
 		qp->cep = NULL;
@@ -1645,6 +1628,26 @@ static inline enum ib_mtu erdma_mtu_net2ib(unsigned short mtu)
 	return IB_MTU_4096;
 }
 
+static inline enum ib_qp_state query_qp_state(struct erdma_qp *qp)
+{
+	switch (qp->attrs.state) {
+	case ERDMA_QP_STATE_IDLE:
+		return IB_QPS_INIT;
+	case ERDMA_QP_STATE_RTR:
+		return IB_QPS_RTR;
+	case ERDMA_QP_STATE_RTS:
+		return IB_QPS_RTS;
+	case ERDMA_QP_STATE_CLOSING:
+		return IB_QPS_ERR;
+	case ERDMA_QP_STATE_TERMINATE:
+		return IB_QPS_ERR;
+	case ERDMA_QP_STATE_ERROR:
+		return IB_QPS_ERR;
+	default:
+		return IB_QPS_ERR;
+	}
+}
+
 /*
  * Minimum erdma_query_qp() verb interface.
  *
@@ -1678,6 +1681,9 @@ int erdma_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr,
 			IB_ACCESS_REMOTE_WRITE | IB_ACCESS_REMOTE_READ;
 
 	qp_init_attr->cap = qp_attr->cap;
+
+	qp_attr->qp_state = query_qp_state(qp);
+	qp_attr->cur_qp_state = query_qp_state(qp);
 
 	return 0;
 }
@@ -1755,7 +1761,6 @@ int erdma_create_cq(struct ib_cq *ibcq,
 
 		cq->page_size = ib_umem_find_best_pgsz(cq->umem, (SZ_64M - SZ_4K), ureq.qbuf_va);
 		cq->first_page_offset = ureq.qbuf_va & (cq->page_size - 1);
-		cq->mtt_cnt = ib_umem_num_pages(cq->umem);
 		cq->mtt_cnt = ib_umem_num_dma_blocks(cq->umem, cq->page_size);
 
 		dprint(DBG_CTRL, "page size:%u first_page_offset:%u\n",
@@ -2270,9 +2275,10 @@ erdma_wr_reg_mr(struct ib_qp *ibqp,
 }
 
 int
-erdma_post_send(struct ib_qp *qp,
+erdma_post_send_internal(struct ib_qp *qp,
 				const struct ib_send_wr *send_wr,
-				const struct ib_send_wr **bad_send_wr)
+				const struct ib_send_wr **bad_send_wr,
+				bool is_last)
 {
 	struct erdma_qp *eqp = to_eqp(qp);
 	int ret = 0;
@@ -2283,6 +2289,13 @@ erdma_post_send(struct ib_qp *qp,
 		return -EINVAL;
 
 	spin_lock_irqsave(&eqp->lock, flags);  /* loop */
+	if (unlikely(eqp->sq_shutdown)) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (unlikely(is_last))
+		eqp->sq_shutdown = true;
+
 	while (wr) {
 		switch (wr->opcode) {
 		case IB_WR_RDMA_WRITE:
@@ -2328,15 +2341,24 @@ erdma_post_send(struct ib_qp *qp,
 			break;
 		wr = wr->next;
 	}
-
+out:
 	spin_unlock_irqrestore(&eqp->lock, flags);
 	return ret;
 }
 
 int
-erdma_post_recv(struct ib_qp *ibqp,
+erdma_post_send(struct ib_qp *qp,
+				const struct ib_send_wr *send_wr,
+				const struct ib_send_wr **bad_send_wr)
+{
+	return  erdma_post_send_internal(qp, send_wr, bad_send_wr, false);
+}
+
+int
+erdma_post_recv_internal(struct ib_qp *ibqp,
 				const struct ib_recv_wr *recv_wr,
-				const struct ib_recv_wr **bad_recv_wr)
+				const struct ib_recv_wr **bad_recv_wr,
+				bool is_last)
 {
 	struct erdma_qp *qp = to_eqp(ibqp);
 	int ret = 0;
@@ -2351,6 +2373,13 @@ erdma_post_recv(struct ib_qp *ibqp,
 		return -EINVAL;
 
 	spin_lock_irqsave(&qp->rq_lock, flags);
+	if (unlikely(qp->rq_shutdown)) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (unlikely(is_last))
+		qp->rq_shutdown = true;
+
 	while (wr) {
 		rq_pi = qp->rq_pi;
 		idx = rq_pi & (qp->recvq.depth - 1);
@@ -2382,8 +2411,17 @@ erdma_post_recv(struct ib_qp *ibqp,
 next_wr:
 		wr = wr->next;
 	}
+out:
 	spin_unlock_irqrestore(&qp->rq_lock, flags);
 	return ret;
+}
+
+int
+erdma_post_recv(struct ib_qp *qp,
+				const struct ib_recv_wr *recv_wr,
+				const struct ib_recv_wr **bad_recv_wr)
+{
+	return erdma_post_recv_internal(qp, recv_wr, bad_recv_wr, false);
 }
 
 static const struct {
@@ -2454,6 +2492,8 @@ erdma_poll_one_cqe(struct erdma_cq *cq, struct erdma_cqe *cqe, struct ib_wc *wc)
 	*(u32 *)&cqe_hdr = *(u32 *)cqe;
 
 	qp = erdma_qp_id2obj(edev, qpn);
+	if (qp == NULL)
+		return -EINVAL;
 
 	if (cqe_hdr.qtype == ERDMA_CQE_QTYPE_SQ) {
 		id_table = qp->sendq.wr_tbl;
@@ -2490,6 +2530,7 @@ erdma_poll_one_cqe(struct erdma_cq *cq, struct erdma_cqe *cqe, struct ib_wc *wc)
 	wc->vendor_err = map_cqe_status[cqe_hdr.syndrome].vendor;
 	wc->qp = &qp->ibqp;
 
+	erdma_qp_put(qp);
 	return 0;
 }
 
@@ -2497,6 +2538,7 @@ int erdma_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 {
 	struct erdma_cq *cq;
 	struct erdma_cqe *cqe;
+	unsigned long flags;
 	u32 owner;
 	u32 ci;
 	int i, ret;
@@ -2506,6 +2548,9 @@ int erdma_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 		return -EINVAL;
 
 	cq = to_ecq(ibcq);
+
+	spin_lock_irqsave(&cq->lock, flags);
+
 	owner = cq->owner;
 	ci = cq->ci;
 
@@ -2531,6 +2576,8 @@ int erdma_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 	cq->owner = owner;
 	cq->ci = ci;
 
+	spin_unlock_irqrestore(&cq->lock, flags);
+
 	return new;
 }
 
@@ -2549,10 +2596,100 @@ void erdma_disassociate_ucontext(struct ib_ucontext *ibcontext)
 {
 }
 
-void erdma_drain_rq(struct ib_qp *qp)
+struct ib_drain_cqe {
+	struct ib_cqe cqe;
+	struct completion done;
+};
+
+static void ib_drain_qp_done(struct ib_cq *cq, struct ib_wc *wc)
 {
+	struct ib_drain_cqe *cqe = container_of(wc->wr_cqe, struct ib_drain_cqe,
+						cqe);
+
+	complete(&cqe->done);
 }
 
-void erdma_drain_sq(struct ib_qp *qp)
+int erdma_modify_qp_state_to_err(struct erdma_qp *qp)
 {
+	int                           rv;
+	struct erdma_dev              *dev = qp->hdr.edev;
+	struct erdma_modify_qp_params params = {0};
+
+	down_write(&qp->state_lock);
+	qp->attrs.state = ERDMA_QP_STATE_ERROR;
+
+	params.state = ERDMA_QP_STATE_ERROR;
+	params.qpn = QP_ID(qp);
+
+	rv = erdma_exec_modify_qp_cmd(dev, &params);
+	if (rv)
+		dev_err(&dev->pdev->dev,
+			"ERROR: code = %d, exec modify QP command with error.\n", rv);
+
+	up_write(&qp->state_lock);
+	return rv;
+}
+
+void erdma_drain_qp(struct ib_qp *qp)
+{
+	struct ib_drain_cqe sdrain;
+	struct ib_drain_cqe rdrain;
+	struct ib_recv_wr rwr = {};
+	struct ib_rdma_wr swr = {
+		.wr = {
+			.next = NULL,
+			{ .wr_cqe   = &sdrain.cqe, },
+			.opcode = IB_WR_RDMA_WRITE,
+			.send_flags = IB_SEND_SIGNALED,
+		},
+	};
+	int ret;
+
+	rwr.wr_cqe = &rdrain.cqe;
+	rdrain.cqe.done = ib_drain_qp_done;
+	init_completion(&rdrain.done);
+
+	ret = erdma_post_recv_internal(qp, &rwr, NULL, true);
+	if (ret) {
+		WARN_ONCE(ret, "failed to drain recv queue: %d\n", ret);
+		return;
+	}
+
+	sdrain.cqe.done = ib_drain_qp_done;
+	init_completion(&sdrain.done);
+
+	ret = erdma_post_send_internal(qp, &swr.wr, NULL, true);
+	if (ret) {
+		WARN_ONCE(ret, "failed to drain send queue: %d\n", ret);
+		return;
+	}
+
+	ret = erdma_modify_qp_state_to_err(to_eqp(qp));
+	if (ret) {
+		WARN_ONCE(ret, "failed to drain send queue: %d\n", ret);
+		return;
+	}
+
+	while (wait_for_completion_timeout(&sdrain.done, HZ / 10) <= 0)
+		ib_process_cq_direct(qp->send_cq, -1);
+
+	while (wait_for_completion_timeout(&rdrain.done, HZ / 10) <= 0)
+		ib_process_cq_direct(qp->recv_cq, -1);
+
+}
+
+void erdma_drain_rq(struct ib_qp *ibqp)
+{
+	struct erdma_qp *qp = to_eqp(ibqp);
+
+	if (qp->attrs.state != ERDMA_QP_STATE_ERROR)
+		erdma_drain_qp(ibqp);
+}
+
+void erdma_drain_sq(struct ib_qp *ibqp)
+{
+	struct erdma_qp *qp = to_eqp(ibqp);
+
+	if (qp->attrs.state != ERDMA_QP_STATE_ERROR)
+		erdma_drain_qp(ibqp);
 }

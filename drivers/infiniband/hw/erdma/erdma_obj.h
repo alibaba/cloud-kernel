@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
 /*
- * Software iWARP device driver for Linux
+ * ElasticRDMA driver for Linux
  *
  * Copyright (c) 2020-2021 Alibaba Group.
  * Copyright (c) 2008-2016, IBM Corporation
