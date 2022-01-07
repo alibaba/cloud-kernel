@@ -67,10 +67,6 @@ struct workqueue_struct	*smc_close_wq;	/* wq for close work */
 
 static void smc_tcp_listen_work(struct work_struct *);
 static void smc_connect_work(struct work_struct *);
-static void smc_clcsock_state_change(struct sock *clcsk);
-static void smc_clcsock_data_ready(struct sock *clcsk);
-static void smc_clcsock_write_space(struct sock *clcsk);
-static void smc_clcsock_error_report(struct sock *clcsk);
 
 static void smc_set_keepalive(struct sock *sk, int val)
 {
@@ -577,8 +573,6 @@ static void smc_stat_fallback(struct smc_sock *smc)
 
 static void smc_switch_to_fallback(struct smc_sock *smc, int reason_code)
 {
-	struct sock *clcsk = smc->clcsock->sk;
-
 	smc->use_fallback = true;
 	smc->fallback_rsn = reason_code;
 	smc_stat_fallback(smc);
@@ -588,19 +582,6 @@ static void smc_switch_to_fallback(struct smc_sock *smc, int reason_code)
 		smc->clcsock->file->private_data = smc->clcsock;
 		smc->clcsock->wq.fasync_list =
 			smc->sk.sk_socket->wq.fasync_list;
-
-		smc->clcsk_state_change = clcsk->sk_state_change;
-		smc->clcsk_data_ready = clcsk->sk_data_ready;
-		smc->clcsk_write_space = clcsk->sk_write_space;
-		smc->clcsk_error_report = clcsk->sk_error_report;
-
-		clcsk->sk_state_change = smc_clcsock_state_change;
-		clcsk->sk_data_ready = smc_clcsock_data_ready;
-		clcsk->sk_write_space = smc_clcsock_write_space;
-		clcsk->sk_error_report = smc_clcsock_error_report;
-
-		smc->clcsock->sk->sk_user_data =
-			(void *)((uintptr_t)smc | SK_USER_DATA_NOCOPY);
 	}
 }
 
@@ -2099,115 +2080,20 @@ out:
 	sock_put(&lsmc->sk); /* sock_hold in smc_clcsock_data_ready() */
 }
 
-static void smc_wake_up_waitqueue(struct smc_sock *smc, void *key)
+static void smc_clcsock_data_ready(struct sock *listen_clcsock)
 {
-	struct socket_wq *wq;
-	__poll_t flags;
+	struct smc_sock *lsmc;
 
-	rcu_read_lock();
-	wq = rcu_dereference(smc->sk.sk_wq);
-	if (skwq_has_sleeper(wq)) {
-		if (!key) {
-			/* sk_state_change */
-			wake_up_interruptible_all(&wq->wait);
-		} else {
-			flags = key_to_poll(key);
-			if (flags & (EPOLLIN | EPOLLOUT))
-				/* sk_data_ready or sk_write_space */
-				wake_up_interruptible_sync_poll(&wq->wait, flags);
-			else if (flags & EPOLLERR)
-				/* sk_error_report */
-				wake_up_interruptible_poll(&wq->wait, flags);
-		}
+	lsmc = (struct smc_sock *)
+	       ((uintptr_t)listen_clcsock->sk_user_data & ~SK_USER_DATA_NOCOPY);
+	if (!lsmc)
+		return;
+	lsmc->clcsk_data_ready(listen_clcsock);
+	if (lsmc->sk.sk_state == SMC_LISTEN) {
+		sock_hold(&lsmc->sk); /* sock_put in smc_tcp_listen_work() */
+		if (!queue_work(smc_hs_wq, &lsmc->tcp_listen_work))
+			sock_put(&lsmc->sk);
 	}
-	rcu_read_unlock();
-}
-
-static int smc_mark_clcwq_woken(wait_queue_entry_t *wait, unsigned int mode,
-				int sync, void *key)
-{
-	struct smc_wait_private *priv = wait->private;
-
-	priv->woken = true;
-	priv->key = key;
-	return 0;
-}
-
-static void smc_forward_wake_up_waitqueue(struct smc_sock *smc, struct sock *clcsk,
-					  void (*clcsk_callback)(struct sock *sk))
-{
-	struct smc_wait_private wait_priv;
-	struct wait_queue_entry wait;
-
-	init_waitqueue_func_entry(&wait, smc_mark_clcwq_woken);
-	wait_priv.woken = false;
-	wait.private = &wait_priv;
-
-	add_wait_queue(sk_sleep(clcsk), &wait);
-	clcsk_callback(clcsk);
-	remove_wait_queue(sk_sleep(clcsk), &wait);
-
-	if (wait_priv.woken)
-		smc_wake_up_waitqueue(smc, wait_priv.key);
-}
-
-static void smc_clcsock_state_change(struct sock *clcsk)
-{
-	struct smc_sock *smc;
-
-	smc = (struct smc_sock *)
-	      ((uintptr_t)clcsk->sk_user_data & ~SK_USER_DATA_NOCOPY);
-	if (!smc)
-		return;
-
-	smc_forward_wake_up_waitqueue(smc, clcsk, smc->clcsk_state_change);
-}
-
-static void smc_clcsock_data_ready(struct sock *clcsk)
-{
-	struct smc_sock *smc;
-
-	smc = (struct smc_sock *)
-	      ((uintptr_t)clcsk->sk_user_data & ~SK_USER_DATA_NOCOPY);
-	if (!smc)
-		return;
-
-	if (!smc->use_fallback) {
-		/* listening situation */
-		smc->clcsk_data_ready(clcsk);
-		if (smc->sk.sk_state == SMC_LISTEN) {
-			sock_hold(&smc->sk); /* sock_put in smc_tcp_listen_work() */
-			if (!queue_work(smc_hs_wq, &smc->tcp_listen_work))
-				sock_put(&smc->sk);
-		}
-	} else {
-		/* fallback situation */
-		smc_forward_wake_up_waitqueue(smc, clcsk, smc->clcsk_data_ready);
-	}
-}
-
-static void smc_clcsock_write_space(struct sock *clcsk)
-{
-	struct smc_sock *smc;
-
-	smc = (struct smc_sock *)
-	      ((uintptr_t)clcsk->sk_user_data & ~SK_USER_DATA_NOCOPY);
-	if (!smc)
-		return;
-
-	smc_forward_wake_up_waitqueue(smc, clcsk, smc->clcsk_write_space);
-}
-
-static void smc_clcsock_error_report(struct sock *clcsk)
-{
-	struct smc_sock *smc;
-
-	smc = (struct smc_sock *)
-	      ((uintptr_t)clcsk->sk_user_data & ~SK_USER_DATA_NOCOPY);
-	if (!smc)
-		return;
-
-	smc_forward_wake_up_waitqueue(smc, clcsk, smc->clcsk_error_report);
 }
 
 static int smc_listen(struct socket *sock, int backlog)
