@@ -135,12 +135,6 @@ int smc_ib_ready_link(struct smc_link *lnk)
 			      IB_CQ_SOLICITED_MASK);
 	if (rc)
 		goto out;
-
-	rc = ib_req_notify_cq(lnk->smcibdev->roce_cq_send,
-			      IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-	if (rc)
-		goto out;
-
 	rc = smc_wr_rx_post_init(lnk);
 	if (rc)
 		goto out;
