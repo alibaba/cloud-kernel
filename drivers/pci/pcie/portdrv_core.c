@@ -15,6 +15,7 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/aer.h>
+#include <linux/delay.h>
 
 #include "../pci.h"
 #include "portdrv.h"
@@ -193,6 +194,42 @@ legacy_irq:
 	return 0;
 }
 
+static void pcie_port_disable_hp_interrupt(struct pci_dev *dev)
+{
+	u16 slot_status;
+	u32 slot_cap;
+	int timeout = 1000;
+
+	pcie_capability_clear_word(dev, PCI_EXP_SLTCTL,
+			PCI_EXP_SLTCTL_CCIE | PCI_EXP_SLTCTL_HPIE);
+
+	/*
+	 * If the command completed notification is not supported,
+	 * we don't need to wait after writing to the slot ctrl register.
+	 */
+	pcie_capability_read_dword(dev, PCI_EXP_SLTCAP, &slot_cap);
+	if (slot_cap & PCI_EXP_SLTCAP_NCCS)
+		return;
+
+	do {
+		pcie_capability_read_word(dev, PCI_EXP_SLTSTA, &slot_status);
+		if (slot_status == (u16) ~0) {
+			pci_info(dev, "%s: no response from device\n",  __func__);
+			return;
+		}
+
+		if (slot_status & PCI_EXP_SLTSTA_CC) {
+			pcie_capability_write_word(dev, PCI_EXP_SLTSTA, PCI_EXP_SLTSTA_CC);
+			return;
+		}
+
+		usleep_range(1000, 1000);
+		timeout -= 10;
+	} while (timeout >= 0);
+
+	pci_info(dev, "Timeout on hotplug disable interrupt!\n");
+}
+
 /**
  * get_port_device_capability - discover capabilities of a PCI Express port
  * @dev: PCI Express port to examine
@@ -216,8 +253,7 @@ static int get_port_device_capability(struct pci_dev *dev)
 		 * Disable hot-plug interrupts in case they have been enabled
 		 * by the BIOS and the hot-plug service driver is not loaded.
 		 */
-		pcie_capability_clear_word(dev, PCI_EXP_SLTCTL,
-			  PCI_EXP_SLTCTL_CCIE | PCI_EXP_SLTCTL_HPIE);
+		pcie_port_disable_hp_interrupt(dev);
 	}
 
 #ifdef CONFIG_PCIEAER
