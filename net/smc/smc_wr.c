@@ -142,7 +142,6 @@ static inline void smc_wr_tx_process_cqe(struct ib_wc *wc)
 			memset(link->lgr->wr_tx_buf_v2, 0,
 			       sizeof(*link->lgr->wr_tx_buf_v2));
 		}
-		++link->link_down_cnt_ib;
 		/* terminate link */
 		smcr_link_down_cond_sched(link);
 	}
@@ -237,7 +236,6 @@ int smc_wr_tx_get_free_slot(struct smc_link *link,
 			(smc_wr_tx_get_free_slot_index(link, &idx) != -EBUSY),
 			SMC_WR_TX_WAIT_FREE_SLOT_TIME);
 		if (!rc) {
-			++link->link_down_cnt_smc;
 			/* timeout - terminate link */
 			smcr_link_down_cond_sched(link);
 			return -EPIPE;
@@ -347,7 +345,6 @@ int smc_wr_tx_v2_send(struct smc_link *link, struct smc_wr_tx_pend_priv *priv,
 	rc = ib_post_send(link->roce_qp, link->wr_tx_v2_ib, NULL);
 	if (rc) {
 		smc_wr_tx_put_slot(link, priv);
-		++link->link_down_cnt_ib;
 		smcr_link_down_cond_sched(link);
 	}
 	return rc;
@@ -402,7 +399,6 @@ int smc_wr_reg_send(struct smc_link *link, struct ib_mr *mr)
 	if (atomic_dec_and_test(&link->wr_reg_refcnt))
 		wake_up_all(&link->wr_reg_wait);
 	if (!rc) {
-		++link->link_down_cnt_ib;
 		/* timeout - terminate link */
 		smcr_link_down_cond_sched(link);
 		return -EPIPE;
@@ -502,7 +498,6 @@ static inline void smc_wr_rx_process_cqes(struct ib_wc wc[], int num)
 			case IB_WC_RETRY_EXC_ERR:
 			case IB_WC_RNR_RETRY_EXC_ERR:
 			case IB_WC_WR_FLUSH_ERR:
-				++link->link_down_cnt_ib;
 				smcr_link_down_cond_sched(link);
 				break;
 			default:

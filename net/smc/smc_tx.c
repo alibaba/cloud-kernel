@@ -304,10 +304,8 @@ static int smc_tx_rdma_write(struct smc_connection *conn, int peer_rmbe_offset,
 		peer_rmbe_offset;
 	rdma_wr->rkey = lgr->rtokens[conn->rtoken_idx][link->link_idx].rkey;
 	rc = ib_post_send(link->roce_qp, &rdma_wr->wr, NULL);
-	if (rc) {
-		++link->link_down_cnt_ib;
+	if (rc)
 		smcr_link_down_cond_sched(link);
-	}
 	return rc;
 }
 

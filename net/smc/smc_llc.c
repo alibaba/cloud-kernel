@@ -1281,14 +1281,12 @@ static void smc_llc_delete_asym_link(struct smc_link_group *lgr)
 	rc = smc_llc_send_delete_link(lnk_new, lnk_asym->link_id, SMC_LLC_REQ,
 				      true, SMC_LLC_DEL_NO_ASYM_NEEDED);
 	if (rc) {
-		++lnk_new->link_down_cnt_ib;
 		smcr_link_down_cond(lnk_new);
 		goto out_free;
 	}
 	qentry = smc_llc_wait(lgr, lnk_new, SMC_LLC_WAIT_TIME,
 			      SMC_LLC_DELETE_LINK);
 	if (!qentry) {
-		++lnk_new->link_down_cnt_ib;
 		smcr_link_down_cond(lnk_new);
 		goto out_free;
 	}
@@ -2102,7 +2100,6 @@ static void smc_llc_testlink_work(struct work_struct *work)
 	if (!smc_link_active(link))
 		return;		/* link state changed */
 	if (rc <= 0) {
-		++link->link_down_cnt_ib;
 		smcr_link_down_cond_sched(link);
 		return;
 	}

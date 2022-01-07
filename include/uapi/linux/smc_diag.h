@@ -95,8 +95,6 @@ struct smc_diag_linkinfo {
 	__u8 ibport;			/* RDMA device port number */
 	__u8 gid[40];			/* local GID */
 	__u8 peer_gid[40];		/* peer GID */
-	__u64 link_down_cnt_smc;	/* link down caused by SMC-R protocol */
-	__u64 link_down_cnt_ib;		/* link down caused by IB net device */
 };
 
 struct smc_diag_lgrinfo {
