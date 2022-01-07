@@ -27,7 +27,6 @@
 #include <linux/if_vlan.h>
 #include <linux/rcupdate_wait.h>
 #include <linux/ctype.h>
-#include <linux/swap.h>
 
 #include <net/sock.h>
 #include <net/tcp.h>
@@ -244,8 +243,6 @@ static struct sock *smc_sock_alloc(struct net *net, struct socket *sock,
 	sk->sk_state = SMC_INIT;
 	sk->sk_destruct = smc_destruct;
 	sk->sk_protocol = protocol;
-	sk->sk_sndbuf = net->smc.sysctl_wmem_default;
-	sk->sk_rcvbuf = net->smc.sysctl_rmem_default;
 	smc = smc_sk(sk);
 	INIT_WORK(&smc->tcp_listen_work, smc_tcp_listen_work);
 	INIT_WORK(&smc->connect_work, smc_connect_work);
@@ -2733,6 +2730,8 @@ static int smc_create(struct net *net, struct socket *sock, int protocol,
 		sk_common_release(sk);
 		goto out;
 	}
+	smc->sk.sk_sndbuf = max(smc->clcsock->sk->sk_sndbuf, SMC_BUF_MIN_SIZE);
+	smc->sk.sk_rcvbuf = max(smc->clcsock->sk->sk_rcvbuf, SMC_BUF_MIN_SIZE);
 
 out:
 	return rc;
@@ -2748,13 +2747,6 @@ unsigned int smc_net_id;
 
 static __net_init int smc_net_init(struct net *net)
 {
-	if (net != &init_net) {
-		net->smc.sysctl_wmem_default =
-			init_net.smc.sysctl_rmem_default;
-		net->smc.sysctl_rmem_default =
-			init_net.smc.sysctl_rmem_default;
-	}
-
 	return smc_pnet_net_init(net);
 }
 
@@ -2788,8 +2780,6 @@ static struct pernet_operations smc_net_stat_ops = {
 static int __init smc_init(void)
 {
 	int rc;
-	int max_rshare, max_wshare;
-	unsigned long limit;
 
 	rc = register_pernet_subsys(&smc_net_ops);
 	if (rc)
@@ -2863,17 +2853,6 @@ static int __init smc_init(void)
 		goto out_sock;
 	}
 
-	limit = nr_free_buffer_pages() << (PAGE_SHIFT - 7);
-	max_wshare = min(4UL * 1024 * 1024, limit);
-	max_rshare = min(6UL * 1024 * 1024, limit);
-
-	init_net.smc.sysctl_wmem_default = 256 * 1024;
-	init_net.smc.sysctl_rmem_default = 384 * 1024;
-
-#ifdef CONFIG_SYSCTL
-	smc_sysctl_init();
-#endif
-
 	static_branch_enable(&tcp_have_smc);
 	return 0;
 
@@ -2914,9 +2893,6 @@ static void __exit smc_exit(void)
 	smc_clc_exit();
 	unregister_pernet_subsys(&smc_net_stat_ops);
 	unregister_pernet_subsys(&smc_net_ops);
-#ifdef CONFIG_SYSCTL
-	smc_sysctl_exit();
-#endif
 	rcu_barrier();
 }
 

@@ -307,9 +307,4 @@ void smc_fill_gid_list(struct smc_link_group *lgr,
 		       struct smc_gidlist *gidlist,
 		       struct smc_ib_device *known_dev, u8 *known_gid);
 
-#ifdef CONFIG_SYSCTL
-int smc_sysctl_init(void);
-void smc_sysctl_exit(void);
-#endif
-
 #endif	/* __SMC_H */
