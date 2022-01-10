@@ -2597,28 +2597,6 @@ static int smc_setsockopt(struct socket *sock, int level, int optname,
 			rc = -EINVAL;
 		}
 		break;
-	case TCP_NODELAY:
-		if (sk->sk_state != SMC_INIT &&
-		    sk->sk_state != SMC_LISTEN &&
-		    sk->sk_state != SMC_CLOSED) {
-			if (val) {
-				SMC_STAT_INC(smc, ndly_cnt);
-				mod_delayed_work(smc->conn.lgr->tx_wq,
-						 &smc->conn.tx_work, 0);
-			}
-		}
-		break;
-	case TCP_CORK:
-		if (sk->sk_state != SMC_INIT &&
-		    sk->sk_state != SMC_LISTEN &&
-		    sk->sk_state != SMC_CLOSED) {
-			if (!val) {
-				SMC_STAT_INC(smc, cork_cnt);
-				mod_delayed_work(smc->conn.lgr->tx_wq,
-						 &smc->conn.tx_work, 0);
-			}
-		}
-		break;
 	case TCP_DEFER_ACCEPT:
 		smc->sockopt_defer_accept = val;
 		break;
@@ -2958,6 +2936,7 @@ static __net_init int smc_net_init(struct net *net)
 			init_net.smc.sysctl_rmem_default;
 		net->smc.sysctl_tcp2smc = 0;
 		net->smc.sysctl_allow_different_subnet = 0;
+		net->smc.sysctl_autocorking = 1;
 	}
 
 	return smc_pnet_net_init(net);
@@ -3104,6 +3083,7 @@ static int __init smc_init(void)
 	init_net.smc.sysctl_rmem_default = 384 * 1024;
 	init_net.smc.sysctl_tcp2smc = 0;
 	init_net.smc.sysctl_allow_different_subnet = 0;
+	init_net.smc.sysctl_autocorking = 1;
 
 #ifdef CONFIG_SYSCTL
 	smc_sysctl_init();
