@@ -1258,8 +1258,6 @@ int erdma_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 
 	up_write(&qp->state_lock);
 
-	vfree(qp->sendq.wr_tbl);
-	vfree(qp->recvq.wr_tbl);
 	/* Drop references */
 	erdma_cq_put(qp->scq);
 	erdma_cq_put(qp->rcq);

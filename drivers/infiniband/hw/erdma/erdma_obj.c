@@ -220,6 +220,9 @@ static void erdma_free_qp(struct kref *ref)
 		dma_free_coherent(&edev->pdev->dev, 8,
 			qp->recvq.backup_db_addr, qp->recvq.backup_db_dma_addr);
 
+	vfree(qp->sendq.wr_tbl);
+	vfree(qp->recvq.wr_tbl);
+
 	kfree(qp);
 }
 
