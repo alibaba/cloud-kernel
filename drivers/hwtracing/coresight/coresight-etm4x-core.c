@@ -19,6 +19,7 @@
 #include <linux/stat.h>
 #include <linux/clk.h>
 #include <linux/cpu.h>
+#include <linux/acpi.h>
 #include <linux/cpu_pm.h>
 #include <linux/coresight.h>
 #include <linux/coresight-pmu.h>
@@ -2074,6 +2075,7 @@ static const struct amba_id etm4_ids[] = {
 	CS_AMBA_UCI_ID(0x000cc0af, uci_id_etm4),/* Marvell ThunderX2 */
 	CS_AMBA_UCI_ID(0x000b6d01, uci_id_etm4),/* HiSilicon-Hip08 */
 	CS_AMBA_UCI_ID(0x000b6d02, uci_id_etm4),/* HiSilicon-Hip09 */
+	CS_AMBA_UCI_ID(0x000bbd49, uci_id_etm4),/* YiTian710 */
 	{},
 };
 
@@ -2096,12 +2098,18 @@ static const struct of_device_id etm4_sysreg_match[] = {
 	{}
 };
 
+static const struct acpi_device_id etm4_acpi_match[] = {
+	{ "BABA6000", 0 },
+	{ }
+};
+
 static struct platform_driver etm4_platform_driver = {
 	.probe		= etm4_probe_platform_dev,
 	.remove		= etm4_remove_platform_dev,
 	.driver			= {
 		.name			= "coresight-etm4x",
 		.of_match_table		= etm4_sysreg_match,
+		.acpi_match_table = ACPI_PTR(etm4_acpi_match),
 		.suppress_bind_attrs	= true,
 	},
 };
