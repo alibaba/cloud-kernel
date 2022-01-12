@@ -684,3 +684,17 @@ void prepare_ftrace_return(unsigned long self_addr, unsigned long *parent,
 		*parent = old;
 }
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
+
+bool arch_foreign_patched(unsigned long addr)
+{
+	union text_poke_insn replaced;
+
+	BUILD_BUG_ON(POKE_MAX_OPCODE_SIZE != MCOUNT_INSN_SIZE);
+	if (copy_from_kernel_nofault(&replaced.text, (void *)addr, MCOUNT_INSN_SIZE))
+		return false;
+	if (replaced.opcode != 0xe9)
+		return false;
+	if (!is_module_address(replaced.disp + addr + MCOUNT_INSN_SIZE))
+		return false;
+	return true;
+}

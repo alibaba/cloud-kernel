@@ -303,3 +303,16 @@ int ftrace_disable_ftrace_graph_caller(void)
 }
 #endif /* CONFIG_DYNAMIC_FTRACE */
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
+
+bool arch_foreign_patched(unsigned long addr)
+{
+	u32 replaced;
+
+	if (aarch64_insn_read((void *)addr, &replaced))
+		return false;
+	if (!aarch64_insn_is_branch_imm(replaced))
+		return false;
+	if (!is_module_address(addr + aarch64_get_branch_offset(replaced)))
+		return false;
+	return true;
+}

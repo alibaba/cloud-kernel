@@ -58,12 +58,18 @@ struct ftrace_direct_func;
 const char *
 ftrace_mod_address_lookup(unsigned long addr, unsigned long *size,
 		   unsigned long *off, char **modname, char *sym);
+bool foreign_patched(unsigned long addr);
 #else
 static inline const char *
 ftrace_mod_address_lookup(unsigned long addr, unsigned long *size,
 		   unsigned long *off, char **modname, char *sym)
 {
 	return NULL;
+}
+
+static inline bool foreign_patched(unsigned long addr)
+{
+	return false;
 }
 #endif
 

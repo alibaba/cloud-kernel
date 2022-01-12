@@ -7640,3 +7640,27 @@ ftrace_enable_sysctl(struct ctl_table *table, int write,
 	mutex_unlock(&ftrace_lock);
 	return ret;
 }
+
+bool __weak arch_foreign_patched(unsigned long addr)
+{
+	return false;
+}
+
+/*
+ * Check if some foreign mechanism directly patched this address.
+ *
+ * We'd better just reject kprobe_register. We don't want ftrace to mess
+ * with what's foreign to it. Foreign mechanisms either know what they're
+ * doing and don't want ftrace to get invovled, or they're malicious and
+ * we should sense that and remove them. In the latter case, the warning
+ * senses it. And in both cases, we avoid them working together.
+ */
+bool foreign_patched(unsigned long addr)
+{
+	if (arch_foreign_patched(addr)) {
+		WARN_ONCE(1, "0x%lx patched by non ftrace mechanisms. Don't probe it.\n", addr);
+		return true;
+	}
+
+	return false;
+}
