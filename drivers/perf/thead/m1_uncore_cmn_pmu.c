@@ -215,8 +215,8 @@ struct arm_cmn_node {
 	};
 
 	union {
-		u8 event[4];
-		__le32 event_sel;
+		u8 event[8];
+		__le64 event_sel;
 	};
 };
 
@@ -795,9 +795,27 @@ static void arm_cmn_event_start(struct perf_event *event, int flags)
 		}
 	} else for_each_hw_dn(hw, dn, i) {
 		int dtm_idx = arm_cmn_get_index(hw->dtm_idx, i);
-
-		dn->event[dtm_idx] = CMN_EVENT_EVENTID(event);
-		writel_relaxed(le32_to_cpu(dn->event_sel), dn->pmu_base + CMN_PMU_EVENT_SEL);
+		/*
+		 * The pmu_event_sel of each node is 64 bit width register,
+		 * which could specify four PMU events to be counted, 8 bit
+		 * per event.
+		 *
+		 * Most of node only use low 32 bits to specify event id and
+		 * high 32 bits are used to specify other, such as occupancy id:
+		 *	pmu_event<i>_id: bit[8*i+8:8*i]
+		 *
+		 * XP node use the whole 64 bits:
+		 *	pmu_event<i>_id: bit[16*i+8:16*i]
+		 */
+		if (type == CMN_TYPE_XP) {
+			dn->event[2 * dtm_idx] = CMN_EVENT_EVENTID(event);
+			writel_relaxed(le64_to_cpu(dn->event_sel),
+					dn->pmu_base + CMN_PMU_EVENT_SEL);
+		} else {
+			dn->event[dtm_idx] = CMN_EVENT_EVENTID(event);
+			writel_relaxed(le32_to_cpu(dn->event_sel),
+					dn->pmu_base + CMN_PMU_EVENT_SEL);
+		}
 	}
 }
 
@@ -822,8 +840,15 @@ static void arm_cmn_event_stop(struct perf_event *event, int flags)
 	} else for_each_hw_dn(hw, dn, i) {
 		int dtm_idx = arm_cmn_get_index(hw->dtm_idx, i);
 
-		dn->event[dtm_idx] = 0;
-		writel_relaxed(le32_to_cpu(dn->event_sel), dn->pmu_base + CMN_PMU_EVENT_SEL);
+		if (type == CMN_TYPE_XP) {
+			dn->event[2 * dtm_idx] = 0;
+			writel_relaxed(le64_to_cpu(dn->event_sel),
+					dn->pmu_base + CMN_PMU_EVENT_SEL);
+		} else {
+			dn->event[dtm_idx] = 0;
+			writel_relaxed(le32_to_cpu(dn->event_sel),
+					dn->pmu_base + CMN_PMU_EVENT_SEL);
+		}
 	}
 
 	arm_cmn_event_read(event);
