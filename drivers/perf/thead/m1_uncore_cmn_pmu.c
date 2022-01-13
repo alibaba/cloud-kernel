@@ -1119,6 +1119,10 @@ static int arm_cmn_event_add(struct perf_event *event, int flags)
 				dev = dn->id & 3;
 			}
 
+			/* tmp CCLA_RNI workaround */
+			if (type == CMN_TYPE_CCLA_RNI)
+				dev = 0;
+
 			input_sel = CMN__PMEVCNT0_INPUT_SEL_DEV + dtm_idx +
 				    (port << 4) + (dev << 2);
 
