@@ -1385,19 +1385,6 @@ static void arm_cmn_init_node_info(struct arm_cmn *cmn, u32 offset, struct arm_c
 			node->type, node->logid, offset);
 }
 
-/* only needed for haps emu platform */
-static bool is_haps_workaround(u64 reg)
-{
-	u32 addr = reg & CMN_CHILD_NODE_ADDR;
-
-	if ((addr == 0x0E780000) || (addr == 0x0E680000) || (addr == 0x0E580000)
-			|| (addr == 0x0E480000) || (addr == 0x0C380000) || (addr == 0x0C280000)
-			|| (addr == 0x0C180000) || (addr == 0x0C080000) || (addr == 0x0C300000)
-			|| (addr == 0x0C200000) || (addr == 0x0C100000) || (addr == 0x0C000000))
-		return true;
-	return false;
-}
-
 static int arm_cmn_discover(struct arm_cmn *cmn, unsigned int rgn_offset)
 {
 	void __iomem *cfg_region;
@@ -1472,15 +1459,6 @@ static int arm_cmn_discover(struct arm_cmn *cmn, unsigned int rgn_offset)
 			 */
 			if (reg & CMN_CHILD_NODE_EXTERNAL) {
 				dev_dbg(cmn->dev, "ignoring external node %llx\n", reg);
-				continue;
-			}
-
-			/*
-			 * HAPS __ONLY__ workaround for the FPGA implementation limitation,
-			 * will be removed on the product...
-			 */
-			if (is_haps_workaround(reg)) {
-				/* pr_info("haps workaround...\n"); */
 				continue;
 			}
 
