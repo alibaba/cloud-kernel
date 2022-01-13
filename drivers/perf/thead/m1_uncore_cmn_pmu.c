@@ -412,8 +412,8 @@ static umode_t arm_cmn_event_attr_is_visible(struct kobject *kobj,
 	CMN_EVENT_ATTR(sbsx_##_name, CMN_TYPE_SBSX, _event, 0)
 #define CMN_EVENT_RNID(_name, _event)				\
 	CMN_EVENT_ATTR(rnid_##_name, CMN_TYPE_RNI, _event, 0)
-#define CMN_EVENT_CCLA_RNI(_name, _event)			\
-	CMN_EVENT_ATTR(ccla_rni_##_name, CMN_TYPE_CCLA_RNI, _event, 0)
+#define CMN_EVENT_CCLA(_name, _event)			\
+	CMN_EVENT_ATTR(ccla_##_name, CMN_TYPE_CCLA, _event, 0)
 
 #define CMN_EVENT_DVM(_name, _event)				\
 	_CMN_EVENT_DVM(_name, _event, 0)
@@ -553,41 +553,13 @@ static struct attribute *arm_cmn_event_attrs[] = {
 	CMN_EVENT_RNID(rdb_hybrid,	0x13),
 	CMN_EVENT_RNID(rdb_ord,		0x14),
 
-	CMN_EVENT_CCLA_RNI(s0_rdata_beats,		0x01),
-	CMN_EVENT_CCLA_RNI(s1_rdata_beats,		0x02),
-	CMN_EVENT_CCLA_RNI(s2_rdata_beats,		0x03),
-	CMN_EVENT_CCLA_RNI(rxdat_flits,			0x04),
-	CMN_EVENT_CCLA_RNI(txdat_flits,			0x05),
-	CMN_EVENT_CCLA_RNI(txreq_flits_total,	0x06),
-	CMN_EVENT_CCLA_RNI(txreq_flits_retried,	0x07),
-	CMN_EVENT_CCLA_RNI(rrt_occ_ovfl,		0x08),
-	CMN_EVENT_CCLA_RNI(wrt_occ_ovfl,		0x09),
-	CMN_EVENT_CCLA_RNI(txreq_flits_replayed, 0x0a),
-	CMN_EVENT_CCLA_RNI(wrcancel_sent,		0x0b),
-	CMN_EVENT_CCLA_RNI(s0_wdata_beats,		0x0c),
-	CMN_EVENT_CCLA_RNI(s1_wdata_beats,		0x0d),
-	CMN_EVENT_CCLA_RNI(s2_wdata_beats,		0x0e),
-	CMN_EVENT_CCLA_RNI(rrt_alloc,			0x0f),
-	CMN_EVENT_CCLA_RNI(wrt_alloc,			0x10),
-	CMN_EVENT_CCLA_RNI(padb_occ_ovfl,		0x11),
-	CMN_EVENT_CCLA_RNI(rpdb_occ_ovfl,		0x12),
-	CMN_EVENT_CCLA_RNI(rrt_occ_ovfl_s1,		0x13),
-	CMN_EVENT_CCLA_RNI(rrt_occ_ovfl_s2,		0x14),
-	CMN_EVENT_CCLA_RNI(rrt_occ_ovfl_s3,		0x15),
-	CMN_EVENT_CCLA_RNI(wrt_req_throted,		0x16),
-	CMN_EVENT_CCLA_RNI(bkp_chi_ldb_full,	0x17),
-	CMN_EVENT_CCLA_RNI(rrt_nrd_req_occ_ovfl_s0,	0x18),
-	CMN_EVENT_CCLA_RNI(rrt_nrd_req_occ_ovfl_s1,	0x19),
-	CMN_EVENT_CCLA_RNI(rrt_nrd_req_occ_ovfl_s2,	0x1a),
-	CMN_EVENT_CCLA_RNI(rrt_nrd_req_occ_ovfl_s3,	0x1b),
-	CMN_EVENT_CCLA_RNI(rrt_prd_breq_occ_ovfl_s0, 0x1c),
-	CMN_EVENT_CCLA_RNI(rrt_prd_breq_occ_ovfl_s1, 0x1d),
-	CMN_EVENT_CCLA_RNI(rrt_prd_breq_occ_ovfl_s2, 0x1e),
-	CMN_EVENT_CCLA_RNI(rrt_prd_breq_occ_ovfl_s3, 0x1f),
-	CMN_EVENT_CCLA_RNI(rrt_prd_burst_alloc,		0x20),
-	CMN_EVENT_CCLA_RNI(comp_awid_ordering,		0x21),
-	CMN_EVENT_CCLA_RNI(atomic_data_buff_alloc,	0x22),
-	CMN_EVENT_CCLA_RNI(atomic_data_buff_occup,	0x23),
+	CMN_EVENT_CCLA(la_rx_cxs,          0x21),
+	CMN_EVENT_CCLA(la_tx_cxs,          0x22),
+	CMN_EVENT_CCLA(la_rx_cxs_avg_sz,   0x23),
+	CMN_EVENT_CCLA(la_tx_cxs_avg_sz,   0x24),
+	CMN_EVENT_CCLA(la_tx_cxs_lbp,      0x25),
+	CMN_EVENT_CCLA(la_link_crdb_occ,   0x26),
+	CMN_EVENT_CCLA(la_link_crdb_alloc, 0x27),
 	NULL
 };
 
@@ -1119,8 +1091,8 @@ static int arm_cmn_event_add(struct perf_event *event, int flags)
 				dev = dn->id & 3;
 			}
 
-			/* tmp CCLA_RNI workaround */
-			if (type == CMN_TYPE_CCLA_RNI)
+			/* tmp CCLA type node workaround */
+			if (type == CMN_TYPE_CCLA)
 				dev = 0;
 
 			input_sel = CMN__PMEVCNT0_INPUT_SEL_DEV + dtm_idx +
@@ -1354,6 +1326,12 @@ static int arm_cmn_init_dtcs(struct arm_cmn *cmn)
 		/* To the PMU, RN-Ds don't add anything over RN-Is, so smoosh them together */
 		if (dn->type == CMN_TYPE_RND)
 			dn->type = CMN_TYPE_RNI;
+
+		/* overwrites the CCLA_RNI node with CCLA on Yitian SoC */
+		if (dn->type == CMN_TYPE_CCLA_RNI) {
+			dn->type = CMN_TYPE_CCLA;
+			dn->pmu_base += 8;
+		}
 	}
 
 	writel_relaxed(CMN_DT_DTC_CTL_DT_EN, cmn->dtc[0].base + CMN_DT_DTC_CTL);
