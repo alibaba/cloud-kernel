@@ -1117,8 +1117,8 @@ static sector_t dax_iomap_sector(struct iomap *iomap, loff_t pos)
 	return (iomap->addr + (pos & PAGE_MASK) - iomap->offset) >> 9;
 }
 
-static int dax_iomap_pfn(struct iomap *iomap, loff_t pos, size_t size,
-			 pfn_t *pfnp)
+int dax_iomap_pfn(struct iomap *iomap, loff_t pos, size_t size,
+		  pfn_t *pfnp)
 {
 	const sector_t sector = dax_iomap_sector(iomap, pos);
 	pgoff_t pgoff;
@@ -1148,6 +1148,7 @@ out:
 	dax_read_unlock(id);
 	return rc;
 }
+EXPORT_SYMBOL_GPL(dax_iomap_pfn);
 
 /*
  * The user has performed a load from a hole in the file.  Allocating a new
@@ -1860,37 +1861,3 @@ vm_fault_t dax_finish_sync_fault(struct vm_fault *vmf,
 	return dax_insert_pfn_mkwrite(vmf, pe_size, pfn);
 }
 EXPORT_SYMBOL_GPL(dax_finish_sync_fault);
-
-int dax_read_one_pfn(struct inode *inode, pgoff_t index,
-		     pfn_t *pfnp, const struct iomap_ops *ops)
-{
-	pfn_t pfn;
-	struct iomap iomap = { .type = IOMAP_HOLE };
-	struct iomap srcmap = { .type = IOMAP_HOLE };
-	loff_t pos = (loff_t)index << PAGE_SHIFT;
-	unsigned flags = 0; // IOMAP_READ
-	int ret;
-
-	ret = ops->iomap_begin(inode, pos, PAGE_SIZE, flags, &iomap, &srcmap);
-	if (ret)
-		return ret;
-
-	ret = dax_iomap_pfn(&iomap, pos, PAGE_SIZE, &pfn);
-	if (ret < 0)
-		goto out;
-
-	BUG_ON(!pfnp);
-	*pfnp = pfn;
-
-out:
-	if (ops->iomap_end) {
-		int copied = PAGE_SIZE;
-
-		if (ret < 0)
-			copied = 0;
-
-		ops->iomap_end(inode, pos, PAGE_SIZE, copied, flags, &iomap);
-	}
-	return 0;
-}
-EXPORT_SYMBOL_GPL(dax_read_one_pfn);

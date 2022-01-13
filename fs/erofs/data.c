@@ -33,19 +33,29 @@ static void erofs_readendio(struct bio *bio)
 	bio_put(bio);
 }
 
-static struct page *erofs_read_meta_page(struct super_block *sb, pgoff_t index)
+static struct page *erofs_read_meta_page(struct super_block *sb, pgoff_t index,
+					 struct erofs_buf *buf)
 {
 	struct address_space *mapping;
 	struct page *page;
 
+	buf->mapping = NULL;
 	if (EROFS_SB(sb)->bootstrap) {
-		unsigned int            nofs_flag;
+		struct inode	*inode = EROFS_SB(sb)->bootstrap->f_inode;
+		unsigned int	nofs_flag;
 
-		mapping = EROFS_SB(sb)->bootstrap->f_inode->i_mapping;
+		mapping = inode->i_mapping;
 		nofs_flag = memalloc_nofs_save();
-		page = read_cache_page(mapping, index,
-				(filler_t *)mapping->a_ops->readpage,
-				EROFS_SB(sb)->bootstrap);
+		if (IS_DAX(inode)) {
+			page = mapping->a_ops->startpfn(mapping, index,
+					&buf->iomap);
+			if (!IS_ERR(page))
+				buf->mapping = mapping;
+		} else {
+			page = read_cache_page(mapping, index,
+					(filler_t *)mapping->a_ops->readpage,
+					EROFS_SB(sb)->bootstrap);
+		}
 		memalloc_nofs_restore(nofs_flag);
 	} else {
 		mapping = sb->s_bdev->bd_inode->i_mapping;
@@ -67,11 +77,21 @@ void erofs_unmap_metabuf(struct erofs_buf *buf)
 
 void erofs_put_metabuf(struct erofs_buf *buf)
 {
+	pgoff_t index;
+
 	if (!buf->page)
 		return;
 	erofs_unmap_metabuf(buf);
+
+	index = buf->page->index;
 	put_page(buf->page);
 	buf->page = NULL;
+
+	if (buf->mapping) {
+		buf->mapping->a_ops->endpfn(buf->mapping, index,
+				&buf->iomap, 0);
+		buf->mapping = NULL;
+	}
 }
 
 void *erofs_read_metabuf(struct erofs_buf *buf, struct super_block *sb,
@@ -83,7 +103,7 @@ void *erofs_read_metabuf(struct erofs_buf *buf, struct super_block *sb,
 
 	if (!page || page->index != index) {
 		erofs_put_metabuf(buf);
-		page = erofs_read_meta_page(sb, index);
+		page = erofs_read_meta_page(sb, index, buf);
 		if (IS_ERR(page))
 			return page;
 		/* should already be PageUptodate, no need to lock page */

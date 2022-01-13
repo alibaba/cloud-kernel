@@ -17,6 +17,7 @@
 #include <linux/magic.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <linux/iomap.h>
 #include "erofs_fs.h"
 
 /* redefine pr_fmt "erofs: " */
@@ -232,6 +233,8 @@ enum erofs_kmap_type {
 };
 
 struct erofs_buf {
+	struct iomap iomap;
+	struct address_space *mapping;
 	struct page *page;
 	void *base;
 	enum erofs_kmap_type kmap_type;

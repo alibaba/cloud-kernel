@@ -358,12 +358,16 @@ typedef struct {
 typedef int (*read_actor_t)(read_descriptor_t *, struct page *,
 		unsigned long, unsigned long);
 
+struct iomap;
+
 struct address_space_operations {
 	int (*writepage)(struct page *page, struct writeback_control *wbc);
 	int (*readpage)(struct file *, struct page *);
 
-	int (*readpfn)(struct address_space *mapping, pgoff_t index,
-		       pfn_t *pfnp);
+	struct page *(*startpfn)(struct address_space *mapping,
+			pgoff_t index, struct iomap *iomap);
+	void (*endpfn)(struct address_space *mapping, pgoff_t index,
+			struct iomap *iomap, int err);
 
 	/* Write back some dirty pages from this mapping. */
 	int (*writepages)(struct address_space *, struct writeback_control *);

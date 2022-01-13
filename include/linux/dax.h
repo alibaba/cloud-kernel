@@ -206,8 +206,8 @@ vm_fault_t dax_finish_sync_fault(struct vm_fault *vmf,
 int dax_delete_mapping_entry(struct address_space *mapping, pgoff_t index);
 int dax_invalidate_mapping_entry_sync(struct address_space *mapping,
 				      pgoff_t index);
-int dax_read_one_pfn(struct inode *inode, pgoff_t index,
-			    pfn_t *pfnp, const struct iomap_ops *ops);
+int dax_iomap_pfn(struct iomap *iomap, loff_t pos, size_t size,
+		  pfn_t *pfnp);
 
 #ifdef CONFIG_FS_DAX
 int __dax_zero_page_range(struct block_device *bdev,

@@ -821,11 +821,45 @@ out:
 	return ret;
 }
 
-static int fuse_dax_readpfn(struct address_space *mapping, pgoff_t index, pfn_t *pfnp)
+static void fuse_dax_endpfn(struct address_space *mapping,
+		pgoff_t index, struct iomap *iomap, int err)
+{
+	loff_t pos = (loff_t)index << PAGE_SHIFT;
+
+	fuse_iomap_ops.iomap_end(mapping->host, pos, PAGE_SIZE,
+			err ? 0 : PAGE_SIZE, 0, iomap);
+}
+
+static struct page *fuse_dax_startpfn(struct address_space *mapping,
+		pgoff_t index, struct iomap *iomap)
+
 {
 	struct inode *inode = mapping->host;
+	struct iomap srcmap = { .type = IOMAP_HOLE };
+	loff_t pos = (loff_t)index << PAGE_SHIFT;
+	pfn_t pfn;
+	struct page *page;
+	int ret;
 
-	return dax_read_one_pfn(inode, index, pfnp, &fuse_iomap_ops);
+	iomap->type = IOMAP_HOLE;
+	ret = fuse_iomap_ops.iomap_begin(inode, pos, PAGE_SIZE, 0,
+					 iomap, &srcmap);
+	if (ret)
+		return ERR_PTR(ret);
+
+	if (WARN_ON_ONCE(iomap->type != IOMAP_MAPPED))
+		return ERR_PTR(-EIO);
+
+	ret = dax_iomap_pfn(iomap, pos, PAGE_SIZE, &pfn);
+	if (ret < 0) {
+		fuse_dax_endpfn(mapping, index, iomap, 0);
+		return ERR_PTR(ret);
+	}
+
+	page = pfn_t_to_page(pfn);
+	WARN_ON(page_ref_count(page) < 1);
+	get_page(page);
+	return page;
 }
 
 static int fuse_dax_writepages(struct address_space *mapping,
@@ -1450,7 +1484,8 @@ bool fuse_dax_inode_alloc(struct super_block *sb, struct fuse_inode *fi)
 }
 
 static const struct address_space_operations fuse_dax_file_aops  = {
-	.readpfn	= fuse_dax_readpfn,
+	.startpfn	= fuse_dax_startpfn,
+	.endpfn		= fuse_dax_endpfn,
 	.writepages	= fuse_dax_writepages,
 	.direct_IO	= noop_direct_IO,
 	.set_page_dirty	= noop_set_page_dirty,
