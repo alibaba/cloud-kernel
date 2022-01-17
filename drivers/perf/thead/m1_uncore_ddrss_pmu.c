@@ -19,10 +19,17 @@
 #define M1_DRW_PMU_CNT_INIT		0x00000000
 #define M1_DRW_CNT_MAX_PERIOD		0xffffffff
 
+#define M1_DRW_PMU_CYCLE_EVT_ID	0x80
+
 #define M1_DRW_PMU_CNT_CTRL		0xC00
 #define M1_DRW_PMU_CNT_STATE		0xC04
 #define M1_DRW_PMU_TEST_CTRL		0xC08
 #define M1_DRW_PMU_CNT_PRELOAD		0xC0C
+
+#define M1_DRW_PMU_CYCLE_CNT_HIGH_MASK	GENMASK(23, 0)
+#define M1_DRW_PMU_CYCLE_CNT_LOW_MASK	GENMASK(31, 0)
+#define M1_DRW_PMU_CYCLE_CNT_HIGH	0xC10
+#define M1_DRW_PMU_CYCLE_CNT_LOW	0xC14
 
 /* PMU EVENT SEL 0-3, each SEL register's address is 4 offset */
 #define M1_DRW_PMU_EVENT_SEL0		0xC68
@@ -159,6 +166,7 @@ static struct attribute *m1_ddrss_pmu_events_attrs[] = {
 	M1_DDRSS_PMU_EVENT_ATTR(perf_chi_rxdat,			0x3B),
 	M1_DDRSS_PMU_EVENT_ATTR(perf_chi_rxrsp,			0x3C),
 	M1_DDRSS_PMU_EVENT_ATTR(perf_tsz_vio,			0x3D),
+	M1_DDRSS_PMU_EVENT_ATTR(perf_cycle,			0x80),
 	NULL,
 };
 
@@ -223,6 +231,15 @@ static int m1_ddrss_get_counter_idx(struct perf_event *event)
 static u64 m1_ddrss_pmu_read_counter(struct perf_event *event)
 {
 	struct m1_ddrss_pmu *ddrss_pmu = to_m1_ddrss_pmu(event->pmu);
+	u64 cycle_high, cycle_low;
+
+	if (GET_DDRSS_EVENTID(event) == M1_DRW_PMU_CYCLE_EVT_ID) {
+		cycle_high = readl(ddrss_pmu->drw_cfg_base + M1_DRW_PMU_CYCLE_CNT_HIGH)
+							& M1_DRW_PMU_CYCLE_CNT_HIGH_MASK;
+		cycle_low = readl(ddrss_pmu->drw_cfg_base + M1_DRW_PMU_CYCLE_CNT_LOW)
+							& M1_DRW_PMU_CYCLE_CNT_LOW_MASK;
+		return (cycle_high << 32 | cycle_low);
+	}
 
 	return readl(ddrss_pmu->drw_cfg_base + M1_DRW_PMU_COMMON_COUNTERn_OFFSET(event->hw.idx));
 }
@@ -239,7 +256,10 @@ static void m1_ddrss_pmu_event_update(struct perf_event *event)
 
 	/* handle overflow.*/
 	delta = now - prev;
-	delta &= M1_DRW_CNT_MAX_PERIOD;
+	if (GET_DDRSS_EVENTID(event) == M1_DRW_PMU_CYCLE_EVT_ID)
+		delta &= M1_DRW_PMU_OV_INT_MASK;
+	else
+		delta &= M1_DRW_CNT_MAX_PERIOD;
 	local64_add(delta, &event->count);
 }
 
@@ -521,6 +541,11 @@ static void m1_ddrss_pmu_start(struct perf_event *event, int flags)
 
 	event->hw.state = 0;
 
+	if (GET_DDRSS_EVENTID(event) == M1_DRW_PMU_CYCLE_EVT_ID) {
+		writel(0x1, ddrss_pmu->drw_cfg_base + M1_DRW_PMU_CNT_CTRL);
+		return;
+	}
+
 	m1_ddrss_pmu_event_set_period(event);
 	if (flags & PERF_EF_RELOAD) {
 		unsigned long prev_raw_count =
@@ -541,6 +566,9 @@ static void m1_ddrss_pmu_stop(struct perf_event *event, int flags)
 	if (event->hw.state & PERF_HES_STOPPED)
 		return;
 
+	if (GET_DDRSS_EVENTID(event) != M1_DRW_PMU_CYCLE_EVT_ID)
+		m1_ddrss_pmu_disable_counter(event);
+
 	/* bit 1 indicates stop */
 	writel(0x2, ddrss_pmu->drw_cfg_base + M1_DRW_PMU_CNT_CTRL);
 
@@ -557,11 +585,13 @@ static int m1_ddrss_pmu_add(struct perf_event *event, int flags)
 
 	evtid = GET_DDRSS_EVENTID(event);
 
-	idx = m1_ddrss_get_counter_idx(event);
-	if (idx < 0)
-		return idx;
-	ddrss_pmu->events[idx] = event;
-	ddrss_pmu->evtids[idx] = evtid;
+	if (evtid != M1_DRW_PMU_CYCLE_EVT_ID) {
+		idx = m1_ddrss_get_counter_idx(event);
+		if (idx < 0)
+			return idx;
+		ddrss_pmu->events[idx] = event;
+		ddrss_pmu->evtids[idx] = evtid;
+	}
 	hwc->idx = idx;
 
 	hwc->state = PERF_HES_STOPPED | PERF_HES_UPTODATE;
