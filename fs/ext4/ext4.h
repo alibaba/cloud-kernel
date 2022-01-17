@@ -232,21 +232,9 @@ typedef struct ext4_io_end {
 
 struct ext4_io_submit {
 	struct writeback_control *io_wbc;
-	/*
-	 * When dioread_nolock is enabled, we don't submit bios for unwritten
-	 * extent while holding jbd2 handle, which can avoid jbd2 commit thread
-	 * wait io to complete, for this case, we will link bios cover the
-	 * extent to io_bio using bio->bi_private.
-	 */
 	struct bio		*io_bio;
 	ext4_io_end_t		*io_end;
 	sector_t		io_next_block;
-	/*
-	 * If not zero, we have an active bio and can submit this bio or add
-	 * new bh to this bio, if zero, we'll need to allocate a new bio.
-	 */
-	int have_active_bio;
-	int can_submit;
 };
 
 /*

@@ -372,27 +372,15 @@ static void ext4_end_bio(struct bio *bio)
 
 void ext4_io_submit(struct ext4_io_submit *io)
 {
-	struct bio *bio = io->io_bio, *next = NULL;
-	int io_op_flags = io->io_wbc->sync_mode == WB_SYNC_ALL ? REQ_SYNC : 0;
+	struct bio *bio = io->io_bio;
 
-	if (!io->can_submit) {
-		/*
-		 * Caller tries to submit this bio, but currently we can not
-		 * submit this bio, we set have_active_bio to zero, then caller
-		 * will allocate a new bio.
-		 */
-		io->have_active_bio = 0;
-		return;
+	if (bio) {
+		int io_op_flags = io->io_wbc->sync_mode == WB_SYNC_ALL ?
+				  REQ_SYNC : 0;
+		io->io_bio->bi_write_hint = io->io_end->inode->i_write_hint;
+		bio_set_op_attrs(io->io_bio, REQ_OP_WRITE, io_op_flags);
+		submit_bio(io->io_bio);
 	}
-
-	for (bio = io->io_bio; bio; bio = next) {
-		next = bio->bi_private;
-		bio->bi_write_hint = io->io_end->inode->i_write_hint;
-		bio_set_op_attrs(bio, REQ_OP_WRITE, io_op_flags);
-		bio->bi_private = ext4_get_io_end(io->io_end);
-		submit_bio(bio);
-	}
-	io->have_active_bio = 0;
 	io->io_bio = NULL;
 }
 
@@ -402,13 +390,6 @@ void ext4_io_submit_init(struct ext4_io_submit *io,
 	io->io_wbc = wbc;
 	io->io_bio = NULL;
 	io->io_end = NULL;
-	/*
-	 * When dioread_nolock is enabled and submit unwritten extents,
-	 * set can_submit to zero, then we'll accumulate bios for this
-	 * extent and submit these bios after drop jdb2 handle.
-	 */
-	io->can_submit = 1;
-	io->have_active_bio = 0;
 }
 
 static void io_submit_init_bio(struct ext4_io_submit *io,
@@ -425,10 +406,8 @@ static void io_submit_init_bio(struct ext4_io_submit *io,
 	bio->bi_iter.bi_sector = bh->b_blocknr * (bh->b_size >> 9);
 	bio_set_dev(bio, bh->b_bdev);
 	bio->bi_end_io = ext4_end_bio;
-	/* Point to previous bio if there is */
-	bio->bi_private = io->io_bio;
+	bio->bi_private = ext4_get_io_end(io->io_end);
 	io->io_bio = bio;
-	io->have_active_bio = 1;
 	io->io_next_block = bh->b_blocknr;
 	wbc_init_bio(io->io_wbc, bio);
 }
@@ -440,12 +419,12 @@ static void io_submit_add_bh(struct ext4_io_submit *io,
 {
 	int ret;
 
-	if (io->have_active_bio && (bh->b_blocknr != io->io_next_block ||
+	if (io->io_bio && (bh->b_blocknr != io->io_next_block ||
 			   !fscrypt_mergeable_bio_bh(io->io_bio, bh))) {
 submit_and_retry:
 		ext4_io_submit(io);
 	}
-	if (!io->have_active_bio) {
+	if (io->io_bio == NULL) {
 		io_submit_init_bio(io, bh);
 		io->io_bio->bi_write_hint = inode->i_write_hint;
 	}
