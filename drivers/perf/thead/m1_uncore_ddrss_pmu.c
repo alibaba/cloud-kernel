@@ -664,6 +664,10 @@ static int m1_ddrss_pmu_remove(struct platform_device *pdev)
 	struct m1_ddrss_pmu *ddrss_pmu = platform_get_drvdata(pdev);
 	int i;
 
+	/* disable the generation of interrupt by all common counters */
+	for (i = 0; i < M1_DRW_PMU_COMMON_MAX_COUNTERS; i++)
+		writel(1 << (8 + i), ddrss_pmu->drw_cfg_base + M1_DRW_PMU_OV_INT_DISABLE_CTL);
+
 	m1_ddrss_pmu_uninit_irq(ddrss_pmu);
 	perf_pmu_unregister(&ddrss_pmu->pmu);
 
