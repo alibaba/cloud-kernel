@@ -414,7 +414,7 @@ static struct m1_ddrss_pmu_irq *__m1_ddrss_pmu_init_irq(struct platform_device *
 	refcount_set(&irq->refcount, 1);
 
 	ret = devm_request_irq(&pdev->dev, irq_num, m1_ddrss_pmu_isr,
-				IRQF_NOBALANCING | IRQF_NO_THREAD,
+				IRQF_SHARED,	/* FIXME later */
 				dev_name(&pdev->dev), irq);
 	if (ret < 0) {
 		dev_err(&pdev->dev,
