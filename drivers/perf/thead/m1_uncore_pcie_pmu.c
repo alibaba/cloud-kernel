@@ -103,6 +103,7 @@ struct dwc_pcie_info_table {
 	struct pci_dev *pdev;
 	struct dwc_pcie_pmu pcie_pmu;
 	u8 pmu_is_register;
+	struct perf_event *event;
 
 	struct dwc_pcie_event_attr *lane_event_attrs;
 	struct attribute **pcie_pmu_event_attrs;
@@ -694,6 +695,11 @@ static int dwc_pcie_pmu_event_add(struct perf_event *event, int flags)
 	int event_id = DWC_PCIE_EVENT_ID(event);
 	int lane = DWC_PCIE_EVENT_LANE(event);
 
+	if (pcie_info->event)
+		return -ENOSPC;
+
+	pcie_info->event = event;
+
 	hwc->state = PERF_HES_STOPPED | PERF_HES_UPTODATE;
 
 	if (type == DWC_PCIE_LANE_EVENT) {
@@ -719,8 +725,11 @@ static int dwc_pcie_pmu_event_add(struct perf_event *event, int flags)
 
 static void dwc_pcie_pmu_event_del(struct perf_event *event, int flags)
 {
+	struct dwc_pcie_info_table *pcie_info = pmu_to_pcie_info(event->pmu);
+
 	dwc_pcie_pmu_event_stop(event, flags | PERF_EF_UPDATE);
 	perf_event_update_userpage(event);
+	pcie_info->event = NULL;
 }
 
 static void dwc_pcie_pmu_event_read(struct perf_event *event)
