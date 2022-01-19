@@ -54,6 +54,14 @@
 #define DWC_PCIE__TIME_BASED_REPORT_SELECT_MASK	GENMASK(31, 24)
 #define DWC_PCIE__TIME_BASED_DURATION_SHIFT	8
 #define DWC_PCIE__TIME_BASED_DURATION_SELECT	GENMASK(15, 8)
+#define DWC_PCIE_DURATION_MANUAL_CTRL		0x0
+#define DWC_PCIE_DURATION_1MS			0x1
+#define DWC_PCIE_DURATION_10MS			0x2
+#define DWC_PCIE_DURATION_100MS			0x3
+#define DWC_PCIE_DURATION_1S			0x4
+#define DWC_PCIE_DURATION_2S			0x5
+#define DWC_PCIE_DURATION_4S			0x6
+#define DWC_PCIE_DURATION_4US			0xff
 #define DWC_PCIE__TIME_BASED_COUNTER_ENABLE	1
 
 #define DWC_PCIE_TIME_BASED_ANALYSIS_DATA_REG_LOW	0x14
@@ -461,7 +469,7 @@ static int dwc_pcie_pmu_base_time_enable(struct dwc_pcie_info_table *pcie_info,
 }
 
 static int dwc_pcie_pmu_read_event_counter(struct dwc_pcie_info_table
-					   *pcie_info, u32 *counter)
+					   *pcie_info, u64 *counter)
 {
 	u32 ret, val;
 
@@ -476,9 +484,20 @@ static int dwc_pcie_pmu_read_event_counter(struct dwc_pcie_info_table
 }
 
 static int dwc_pcie_pmu_read_base_time_counter(struct dwc_pcie_info_table
-					       *pcie_info, u32 *counter)
+					       *pcie_info, u64 *counter)
 {
 	u32 ret, val;
+
+	ret = dwc_pcie_pmu_read_dword(pcie_info,
+				      DWC_PCIE_TIME_BASED_ANALYSIS_DATA_REG_HIGH,
+				      &val);
+	if (ret) {
+		pci_err(pcie_info->pdev, "PCIe read fail\n");
+		return ret;
+	}
+
+	*counter = val;
+	*counter <<= 32;
 
 	ret = dwc_pcie_pmu_read_dword(pcie_info,
 				      DWC_PCIE_TIME_BASED_ANALYSIS_DATA_REG_LOW,
@@ -488,7 +507,7 @@ static int dwc_pcie_pmu_read_base_time_counter(struct dwc_pcie_info_table
 		return ret;
 	}
 
-	*counter = val;
+	*counter += val;
 
 	return ret;
 }
@@ -532,10 +551,12 @@ static int dwc_pcie_pmu_base_time_add_prepare(struct dwc_pcie_info_table
 	val |= event_id << DWC_PCIE__TIME_BASED_REPORT_SELECT_SHIFT;
 	val &= ~DWC_PCIE__TIME_BASED_DURATION_SELECT;
 
-
-	/* perf count just 1 second */
-	val &= ~(0x0000FF00);
-	val |= 0x00000400;
+	/*
+	 * TIME_BASED_ANALYSIS_DATA_REG is a 64 bit register, we can safely
+	 * use it with any manually controllered duration.
+	 */
+	val &= ~(DWC_PCIE__TIME_BASED_DURATION_SELECT);
+	val |= DWC_PCIE_DURATION_MANUAL_CTRL;
 
 	ret = dwc_pcie_pmu_write_dword(pcie_info,
 				       DWC_PCIE_TIME_BASED_ANALYSIS_CTRL, val);
@@ -559,7 +580,7 @@ static struct dwc_pcie_info_table *pmu_to_pcie_info(struct pmu *pmu)
 
 static void dwc_pcie_pmu_event_update(struct perf_event *event)
 {
-	u32 counter;
+	u64 counter;
 	struct dwc_pcie_info_table *pcie_info = pmu_to_pcie_info(event->pmu);
 	struct hw_perf_event *hwc = &event->hw;
 	enum dwc_pcie_event_type type = DWC_PCIE_EVENT_TYPE(event);
