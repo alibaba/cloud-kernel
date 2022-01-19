@@ -80,6 +80,7 @@ struct fuse_mount_data {
 	enum fuse_dax_mode dax_mode;
 	unsigned max_read;
 	unsigned blksize;
+	unsigned long fs_magic;
 
 	/* DAX device, may be NULL */
 	struct dax_device *dax_dev;
@@ -626,6 +627,9 @@ struct fuse_conn {
 	/** The user namespace for this mount */
 	struct user_namespace *user_ns;
 
+	/** The fs super magic for this mount */
+	unsigned long fs_magic;
+
 	/** Maximum read size */
 	unsigned max_read;
 
@@ -811,6 +815,9 @@ struct fuse_conn {
 
 	/* Does the filesystem support per-file DAX? */
 	unsigned int perfile_dax:1;
+
+	/* Does the filesystem has its own magic? */
+	unsigned int conn_fs_magic:1;
 
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;

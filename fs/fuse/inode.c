@@ -415,9 +415,10 @@ static void fuse_put_super(struct super_block *sb)
 	fuse_conn_put(fc);
 }
 
-static void convert_fuse_statfs(struct kstatfs *stbuf, struct fuse_kstatfs *attr)
+static void convert_fuse_statfs(struct fuse_conn *fc, struct kstatfs *stbuf,
+		   struct fuse_kstatfs *attr)
 {
-	stbuf->f_type    = FUSE_SUPER_MAGIC;
+	stbuf->f_type    = fc->conn_fs_magic ? fc->fs_magic : FUSE_SUPER_MAGIC;
 	stbuf->f_bsize   = attr->bsize;
 	stbuf->f_frsize  = attr->frsize;
 	stbuf->f_blocks  = attr->blocks;
@@ -438,7 +439,7 @@ static int fuse_statfs(struct dentry *dentry, struct kstatfs *buf)
 	int err;
 
 	if (!fuse_allow_current_process(fc)) {
-		buf->f_type = FUSE_SUPER_MAGIC;
+		buf->f_type = fc->conn_fs_magic ? fc->fs_magic : FUSE_SUPER_MAGIC;
 		return 0;
 	}
 
@@ -451,7 +452,7 @@ static int fuse_statfs(struct dentry *dentry, struct kstatfs *buf)
 	args.out.args[0].value = &outarg;
 	err = fuse_simple_request(fc, &args);
 	if (!err)
-		convert_fuse_statfs(buf, &outarg.st);
+		convert_fuse_statfs(fc, buf, &outarg.st);
 	return err;
 }
 
@@ -465,6 +466,7 @@ enum {
 	OPT_ALLOW_OTHER,
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
+	OPT_FS_MAGIC,
 	OPT_DAX,
 	OPT_DAX_ALWAYS,
 	OPT_DAX_NEVER,
@@ -482,12 +484,26 @@ static const match_table_t tokens = {
 	{OPT_ALLOW_OTHER,		"allow_other"},
 	{OPT_MAX_READ,			"max_read=%u"},
 	{OPT_BLKSIZE,			"blksize=%u"},
+	{OPT_FS_MAGIC,			"fs_magic=%u"},
 	{OPT_DAX,			"dax"},
 	{OPT_DAX_ALWAYS,		"dax=always"},
 	{OPT_DAX_NEVER,			"dax=never"},
 	{OPT_DAX_INODE,			"dax=inode"},
 	{OPT_ERR,			NULL}
 };
+
+static int fuse_match_ul(substring_t *s, unsigned long *res)
+{
+	char *buf;
+	int err = -ENOMEM;
+
+	buf = match_strdup(s);
+	if (buf) {
+		err = kstrtoul(buf, 0, res);
+		kfree(buf);
+	}
+	return err;
+}
 
 static int fuse_match_uint(substring_t *s, unsigned int *res)
 {
@@ -507,6 +523,7 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 	memset(d, 0, sizeof(struct fuse_mount_data));
 	d->max_read = ~0;
 	d->blksize = FUSE_DEFAULT_BLKSIZE;
+	d->fs_magic = FUSE_SUPER_MAGIC;
 
 	if (is_virtiofs) {
 		d->rootmode = S_IFDIR;
@@ -518,6 +535,7 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 		int token;
 		int value;
 		unsigned uv;
+		unsigned long ulv;
 		substring_t args[MAX_OPT_ARGS];
 		if (!*p)
 			continue;
@@ -583,6 +601,12 @@ int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 			d->blksize = value;
 			break;
 
+		case OPT_FS_MAGIC:
+			if (fuse_match_ul(&args[0], &ulv))
+				return 0;
+			d->fs_magic = ulv;
+			break;
+
 		case OPT_DAX:
 		case OPT_DAX_ALWAYS:
 			d->dax_mode = FUSE_DAX_ALWAYS;
@@ -628,6 +652,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_printf(m, ",max_read=%u", fc->max_read);
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
 		seq_printf(m, ",blksize=%lu", sb->s_blocksize);
+	if (fc->conn_fs_magic)
+		seq_printf(m, ",fsmagic=%lu", fc->fs_magic);
 #ifdef CONFIG_FUSE_DAX
 	if (fc->dax_mode == FUSE_DAX_ALWAYS)
 		seq_puts(m, ",dax=always");
@@ -693,6 +719,7 @@ void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns,
 	fc->user_ns = get_user_ns(user_ns);
 	fc->max_pages = FUSE_DEFAULT_MAX_PAGES_PER_REQ;
 	fc->max_pages_limit = FUSE_MAX_MAX_PAGES;
+	fc->conn_fs_magic = 0;
 }
 EXPORT_SYMBOL_GPL(fuse_conn_init);
 
@@ -1253,6 +1280,10 @@ int fuse_fill_super_common(struct super_block *sb,
 	fc->user_id = mount_data->user_id;
 	fc->group_id = mount_data->group_id;
 	fc->max_read = max_t(unsigned, 4096, mount_data->max_read);
+
+	fc->fs_magic = mount_data->fs_magic;
+	if (fc->fs_magic != FUSE_SUPER_MAGIC)
+		fc->conn_fs_magic = 1;
 
 	/* Used by get_root_inode() */
 	sb->s_fs_info = fc;
