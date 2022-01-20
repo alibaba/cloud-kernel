@@ -6085,6 +6085,7 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 		update_load_avg(cfs_rq, se, UPDATE_TG);
 
 		cfs_rq->h_nr_running += task_delta;
+		update_nr_expel_immune(cfs_rq, se, &immune, ei_delta);
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
