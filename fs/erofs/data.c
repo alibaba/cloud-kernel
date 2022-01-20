@@ -91,6 +91,7 @@ void erofs_put_metabuf(struct erofs_buf *buf)
 		buf->mapping->a_ops->endpfn(buf->mapping, index,
 				&buf->iomap, 0);
 		buf->mapping = NULL;
+		memset(&buf->iomap, 0, sizeof(buf->iomap));
 	}
 }
 
