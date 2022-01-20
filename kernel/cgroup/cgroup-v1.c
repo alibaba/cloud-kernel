@@ -579,6 +579,15 @@ static ssize_t cgroup_release_agent_write(struct kernfs_open_file *of,
 
 	BUILD_BUG_ON(sizeof(cgrp->root->release_agent_path) < PATH_MAX);
 
+	/*
+	 * Release agent gets called with all capabilities,
+	 * require capabilities to set release agent.
+	 */
+
+	if ((of->file->f_cred->user_ns != &init_user_ns) ||
+	    !capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
 	cgrp = cgroup_kn_lock_live(of->kn, false);
 	if (!cgrp)
 		return -ENODEV;
@@ -1032,7 +1041,8 @@ static int cgroup1_show_options(struct seq_file *seq, struct kernfs_root *kf_roo
 	return 0;
 }
 
-static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
+static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts,
+				  struct user_namespace *user_ns)
 {
 	char *token, *o = data;
 	bool all_ss = false, one_ss = false;
@@ -1084,6 +1094,13 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 			/* Specifying two release agents is forbidden */
 			if (opts->release_agent)
 				return -EINVAL;
+
+			/*
+			 * Release agent gets called with all capabilities,
+			 * require capabilities to set release agent.
+			 */
+			if ((user_ns != &init_user_ns) || !capable(CAP_SYS_ADMIN))
+				return -EPERM;
 			opts->release_agent =
 				kstrndup(token + 14, PATH_MAX - 1, GFP_KERNEL);
 			if (!opts->release_agent)
@@ -1174,11 +1191,17 @@ static int cgroup1_remount(struct kernfs_root *kf_root, int *flags, char *data)
 	struct cgroup_root *root = cgroup_root_from_kf(kf_root);
 	struct cgroup_sb_opts opts;
 	u16 added_mask, removed_mask;
+	struct user_namespace *user_ns;
+	struct super_block *sb;
 
 	cgroup_lock_and_drain_offline(&cgrp_dfl_root.cgrp);
 
+	sb = kernfs_pin_sb(kf_root, NULL);
+	user_ns = get_user_ns(sb->s_user_ns);
 	/* See what subsystems are wanted */
-	ret = parse_cgroupfs_options(data, &opts);
+	ret = parse_cgroupfs_options(data, &opts, user_ns);
+	put_user_ns(user_ns);
+	deactivate_super(sb);
 	if (ret)
 		goto out_unlock;
 
@@ -1245,11 +1268,14 @@ struct dentry *cgroup1_mount(struct file_system_type *fs_type, int flags,
 	struct dentry *dentry;
 	int i, ret;
 	bool new_root = false;
+	struct user_namespace *user_ns;
 
 	cgroup_lock_and_drain_offline(&cgrp_dfl_root.cgrp);
 
+	user_ns = get_user_ns(get_current_cred()->user_ns);
 	/* First find the desired set of subsystems */
-	ret = parse_cgroupfs_options(data, &opts);
+	ret = parse_cgroupfs_options(data, &opts, user_ns);
+	put_user_ns(user_ns);
 	if (ret)
 		goto out_unlock;
 
