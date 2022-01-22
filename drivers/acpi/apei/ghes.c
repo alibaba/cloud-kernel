@@ -1474,7 +1474,7 @@ static struct platform_driver ghes_platform_driver = {
 	.remove		= ghes_remove,
 };
 
-void __init ghes_init(void)
+void __init acpi_ghes_init(void)
 {
 	int rc;
 
