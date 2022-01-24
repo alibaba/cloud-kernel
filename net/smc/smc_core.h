@@ -150,8 +150,6 @@ struct smc_link {
 	struct completion	llc_testlink_resp; /* wait for rx of testlink */
 	int			llc_testlink_time; /* testlink interval */
 	atomic_t		conn_cnt; /* connections on this link */
-	u64			link_down_cnt_smc; /* smc-caused link down counter */
-	u64			link_down_cnt_ib;  /* ib-caused link down counter */
 };
 
 /* For now we just allow one parallel link per link group. The SMC protocol
