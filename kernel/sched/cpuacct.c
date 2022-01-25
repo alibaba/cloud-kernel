@@ -981,8 +981,13 @@ static void __cpuacct_get_usage_result(struct cpuacct *ca, int cpu,
 	tick_sys = kcpustat->cpustat[CPUTIME_SYSTEM];
 	tick_irq = kcpustat->cpustat[CPUTIME_IRQ];
 	tick_softirq = kcpustat->cpustat[CPUTIME_SOFTIRQ];
-	tick_guest = kcpustat->cpustat[CPUTIME_GUEST];
-	tick_guest_nice = kcpustat->cpustat[CPUTIME_GUEST_NICE];
+	/* Typically, the tick_guest should be small or equal than tick_user.
+	 * But the kcpustat could be read/wrote parallelism, the tick_guest may
+	 * newer than tick_user, which will cause the `tick_user - tick_guest`
+	 * become negative
+	 */
+	tick_guest = min(tick_user, kcpustat->cpustat[CPUTIME_GUEST]);
+	tick_guest_nice = min(tick_nice, kcpustat->cpustat[CPUTIME_GUEST_NICE]);
 
 	/* Calculate system run time */
 	cputime.sum_exec_runtime = cpuusage->usages[CPUACCT_STAT_USER] +
