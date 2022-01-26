@@ -25,6 +25,7 @@ struct kfence_pool_area {
 	struct list_head list; /* ready to be added to kfence_pool_root */
 	struct percpu_ref refcnt; /* count in use objects */
 	struct work_struct work; /* use workqueue to free unused area */
+	bool on_rb_tree; /* whether this kpa is on rb tree */
 };
 
 #ifdef CONFIG_KFENCE
