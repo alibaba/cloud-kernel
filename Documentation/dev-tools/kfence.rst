@@ -55,16 +55,98 @@ The total memory dedicated to the KFENCE memory pool can be computed as::
 Using the default config, and assuming a page size of 4 KiB, results in
 dedicating 2 MiB to the KFENCE memory pool.
 
-You can change the KFENCE memory pool size by setting ``kfence.num_objects_pernode``
-in boot command line, and the pool size of each node will be computed and updated
+You can change the KFENCE memory pool size by setting ``kfence.num_objects``
+in boot command line, or writing to
+``/sys/module/kfence/parameters/num_objects`` when kfence is not enabled,
+and the pool size of each node will be computed and updated
 in the same way as above. You can set this value as large as possible, so
-please be careful DO NOT use up all memorys. If this value is larger than 65535,
-sample_interval will be invalid, and KFENCE will alloc pages from its pool at
-all time if possible.
+please be careful DO NOT use up all memorys.
+When enabling KFENCE, ``num_objects`` will be adjusted to make the pool size
+aligned up to 1GiB. That means, ``num_objects`` itself will be aligned up to
+131071 (Unless ``num_objects`` is smaller than it and is regarded as using
+the upstream mode).
+
+You can enable/disable KFENCE dynamically after startup by writing a proper
+number to ``/sys/module/kfence/parameters/sample_interval``. Setting this value
+to 0 means disabling KFENCE, and unused KFENCE pool memory will be
+automatically freed. Otherwise KFENCE will be enabled, it will try to alloc
+enough memory to hold ``num_objects`` the user has set. If this value is a
+negative number, sample_interval will be invalid, and KFENCE will alloc slabs
+and pages from its pool at all time if possible.
+
+You can change KFENCE pool mode by setting ``kfence.pool_mode`` in boot command
+line, or writing to ``/sys/module/kfence/parameters/pool_mode`` when kfence is
+not enabled. If the value is ``global`` (as default), ``num_objects`` becomes a
+global total sum. The total KFENCE pools will hold ``num_objects`` slabs/pages.
+Otherwise if the value is ``node``, ``num_objects`` becomes a per node value,
+KFENCE pools on each node will hold ``num_objects`` slabs/pages separately.
 
 Note: On architectures that support huge pages, KFENCE will ensure that the
 pool is using pages of size ``PAGE_SIZE``. This will result in additional page
 tables being allocated.
+
+TLB revocer issue
+~~~~~~~~~~~~~~~~~
+
+For some arch like x86, kernel virtual address directly mapping to physical
+address is mapped by PUD huge TLB, so that performance can be improved since
+kernel no need to visit PMD and PTE. Each PUD covers an 1GiB area.
+
+However, KFENCE needs to set guarded pages and breaks this design. PUD will be
+splited to PTE, meaning that an 1GiB area will be splited to a large number of
+4KiB (page size) areas. This may impact the performance.
+
+To solve this issue, the size of each kfence pool area is forced to be 1GiB,
+and one area can hold 131071 objects, calculating by::
+
+    1GiB / 4KiB / 2 - 1 = 131071
+
+So the user input kfence.num_objects will be aligned up to 131071 for
+convenience of splitting them to several 1GiB areas.
+
+One KFENCE pool area will be allocated in 1GiB aligned address, ensuring
+only splitting one PUD. When KFENCE is disabled and there is no active
+slabs/pages in this area, it will be freed and the corresponding TLB will
+be recovered to the origin PUD.
+
+An exception is the user input less than 131071 in boot cmdline. See mode 1
+of the following examples.
+
+Examples
+~~~~~~~~
+
+There are mainly three kinds of distributing method.
+
+1. Upstream mode::
+
+    num_objects < 131071
+    pool_mode = global (cannot be node)
+    sample_interval cannot be negative
+
+   In this mode, everything looks like it is in upstream. However, if user
+   enlarges ``num_objects`` after startup, it will be aligned up to 131071
+   and become mode 2.
+
+2. Global mode::
+
+    num_objects >= 131071
+    pool_mode = global
+
+   For example, if num_objects = 131071 * 2, and there are 4 nodes in total.
+   Node 0 and node 1 will separately alloc 1GiB memoty for KFENCE pools, and
+   there is nothing to do with node 2 and node 3. Sampling slabs and pages on
+   these empty nodes (2 and 3) will be mapped to previous nodes (0 and 1).
+
+   If num_objects = 131071 * 6, the memory usage will be [2, 2, 1, 1]GiB on
+   these 4 nodes.
+
+3. Per node mode::
+
+    num_objects >= 131071
+    pool_mode = node
+
+   This mode is easy to understand. If num_objects = 131071 * n, the memory
+   usage will be [n, n, n, n]GiB on 4 nodes.
 
 Error reports
 ~~~~~~~~~~~~~
