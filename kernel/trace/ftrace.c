@@ -5554,7 +5554,7 @@ static int ftrace_process_locs(struct module *mod,
 	 * CONFIG_BUILDTIME_TABLE_SORT, while mcount loc in
 	 * modules can not be sorted at build time.
 	 */
-	if (!IS_ENABLED(CONFIG_BUILDTIME_TABLE_SORT) || mod) {
+	if (!IS_ENABLED(CONFIG_BUILDTIME_MCOUNT_SORT) || mod) {
 		sort(start, count, sizeof(*start),
 		     ftrace_cmp_ips, NULL);
 	}

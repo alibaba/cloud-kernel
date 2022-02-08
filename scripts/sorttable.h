@@ -285,7 +285,7 @@ static int do_sort(Elf_Ehdr *ehdr,
 	unsigned int shnum;
 	unsigned int shstrndx;
 #ifdef MCOUNT_SORT_ENABLED
-	struct elf_mcount_loc mstruct;
+	struct elf_mcount_loc mstruct = {0};
 	uint_t _start_mcount_loc = 0;
 	uint_t _stop_mcount_loc = 0;
 	pthread_t mcount_sort_thread = 0;
