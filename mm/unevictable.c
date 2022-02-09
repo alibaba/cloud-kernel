@@ -514,7 +514,7 @@ static int __init unevictable_init(void)
 	if (!add_pid_file)
 		goto out_dir;
 
-	del_pid_file = proc_create("del_pid", 0600,
+	del_pid_file = proc_create("del_pid", 0200,
 			monitor_dir, &del_proc_fops);
 	if (!del_pid_file)
 		goto out_add_pid;
