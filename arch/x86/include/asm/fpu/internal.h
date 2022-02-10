@@ -80,20 +80,20 @@ static __always_inline __pure bool use_fxsr(void)
 
 extern union fpregs_state init_fpstate;
 
-extern void fpstate_init(struct fpu *fpu);
+extern void fpstate_init(union fpregs_state *state);
 #ifdef CONFIG_MATH_EMULATION
 extern void fpstate_init_soft(struct swregs_state *soft);
 #else
 static inline void fpstate_init_soft(struct swregs_state *soft) {}
 #endif
 
-static inline void fpstate_init_xstate(struct xregs_state *xsave, u64 xcomp_mask)
+static inline void fpstate_init_xstate(struct xregs_state *xsave)
 {
 	/*
 	 * XRSTORS requires these bits set in xcomp_bv, or it will
 	 * trigger #GP:
 	 */
-	xsave->header.xcomp_bv = XCOMP_BV_COMPACTED_FORMAT | xcomp_mask;
+	xsave->header.xcomp_bv = XCOMP_BV_COMPACTED_FORMAT | xfeatures_mask_all;
 }
 
 static inline void fpstate_init_fxstate(struct fxregs_state *fx)
@@ -199,9 +199,9 @@ static inline int copy_user_to_fregs(struct fregs_state __user *fx)
 static inline void copy_fxregs_to_kernel(struct fpu *fpu)
 {
 	if (IS_ENABLED(CONFIG_X86_32))
-		asm volatile("fxsave %[fx]" : [fx] "=m" (fpu->state->fxsave));
+		asm volatile("fxsave %[fx]" : [fx] "=m" (fpu->state.fxsave));
 	else
-		asm volatile("fxsaveq %[fx]" : [fx] "=m" (fpu->state->fxsave));
+		asm volatile("fxsaveq %[fx]" : [fx] "=m" (fpu->state.fxsave));
 }
 
 static inline void fxsave(struct fxregs_state *fx)
@@ -304,8 +304,9 @@ static inline void copy_kernel_to_xregs_booting(struct xregs_state *xstate)
 /*
  * Save processor xstate to xsave area.
  */
-static inline void copy_xregs_to_kernel(struct xregs_state *xstate, u64 mask)
+static inline void copy_xregs_to_kernel(struct xregs_state *xstate)
 {
+	u64 mask = xfeatures_mask_all;
 	u32 lmask = mask;
 	u32 hmask = mask >> 32;
 	int err;
@@ -341,7 +342,7 @@ static inline void copy_kernel_to_xregs(struct xregs_state *xstate, u64 mask)
  */
 static inline int copy_xregs_to_user(struct xregs_state __user *buf)
 {
-	u64 mask = current->thread.fpu.state_mask;
+	u64 mask = xfeatures_mask_user();
 	u32 lmask = mask;
 	u32 hmask = mask >> 32;
 	int err;
@@ -410,10 +411,8 @@ static inline void __copy_kernel_to_fpregs(union fpregs_state *fpstate, u64 mask
 	}
 }
 
-static inline void copy_kernel_to_fpregs(struct fpu *fpu)
+static inline void copy_kernel_to_fpregs(union fpregs_state *fpstate)
 {
-	union fpregs_state *fpstate = fpu->state;
-
 	/*
 	 * AMD K7/K8 CPUs don't save/restore FDP/FIP/FOP unless an exception is
 	 * pending. Clear the x87 state here by setting it to fixed values.
@@ -498,7 +497,7 @@ static inline void __fpregs_load_activate(void)
 		return;
 
 	if (!fpregs_state_valid(fpu, cpu)) {
-		copy_kernel_to_fpregs(fpu);
+		copy_kernel_to_fpregs(&fpu->state);
 		fpregs_activate(fpu);
 		fpu->last_cpu = cpu;
 	}
@@ -544,58 +543,11 @@ static inline void switch_fpu_prepare(struct fpu *old_fpu, int cpu)
  * Misc helper functions:
  */
 
-/* The first-use detection helpers: */
-
-static inline void xdisable_setbits(u64 value)
-{
-	wrmsrl_safe(MSR_IA32_XFD, value);
-}
-
-static inline u64 xdisable_getbits(void)
-{
-	u64 value;
-
-	rdmsrl_safe(MSR_IA32_XFD, &value);
-	return value;
-}
-
-static inline u64 xfirstuse_enabled(void)
-{
-	/* All the dynamic user components are first-use enabled. */
-	return xfeatures_mask_user_dynamic;
-}
-
-/*
- * Convert fpu->state_mask to the xdisable configuration to be written to
- * MSR IA32_XFD.  So, xdisable_setbits() only uses this outcome.
- */
-static inline u64 xfirstuse_not_detected(struct fpu *fpu)
-{
-	u64 firstuse_bv = (fpu->state_mask & xfirstuse_enabled());
-
-	/*
-	 * If first-use is not detected, set the bit. If the detection is
-	 * not enabled, the bit is always zero in firstuse_bv. So, make
-	 * following conversion:
-	 */
-	return  (xfirstuse_enabled() ^ firstuse_bv);
-}
-
-/* Update MSR IA32_XFD with xfirstuse_not_detected() if needed. */
-static inline void xdisable_switch(struct fpu *prev, struct fpu *next)
-{
-	if (!static_cpu_has(X86_FEATURE_XFD) || !xfirstuse_enabled())
-		return;
-
-	if (unlikely(prev->state_mask != next->state_mask))
-		xdisable_setbits(xfirstuse_not_detected(next));
-}
-
 /*
  * Load PKRU from the FPU context if available. Delay loading of the
  * complete FPU state until the return to userland.
  */
-static inline void switch_fpu_finish(struct fpu *old_fpu, struct fpu *new_fpu)
+static inline void switch_fpu_finish(struct fpu *new_fpu)
 {
 	u32 pkru_val = init_pkru_value;
 	struct pkru_state *pk;
@@ -604,8 +556,6 @@ static inline void switch_fpu_finish(struct fpu *old_fpu, struct fpu *new_fpu)
 		return;
 
 	set_thread_flag(TIF_NEED_FPU_LOAD);
-
-	xdisable_switch(old_fpu, new_fpu);
 
 	if (!cpu_feature_enabled(X86_FEATURE_OSPKE))
 		return;
@@ -623,7 +573,7 @@ static inline void switch_fpu_finish(struct fpu *old_fpu, struct fpu *new_fpu)
 		 * in memory is not valid. This means pkru_val has to be
 		 * set to 0 and not to init_pkru_value.
 		 */
-		pk = get_xsave_addr(new_fpu, XFEATURE_PKRU);
+		pk = get_xsave_addr(&new_fpu->state.xsave, XFEATURE_PKRU);
 		pkru_val = pk ? pk->pkru : 0;
 	}
 	__write_pkru(pkru_val);

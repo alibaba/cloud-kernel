@@ -96,18 +96,6 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 	return fpu__copy(dst, src);
 }
 
-void arch_thread_struct_whitelist(unsigned long *offset, unsigned long *size)
-{
-	*offset = offsetof(struct thread_struct, fpu.__default_state);
-	/* The buffer embedded in thread_struct has the minimum size. */
-	*size = get_xstate_config(XSTATE_MIN_SIZE);
-}
-
-void arch_release_task_struct(struct task_struct *tsk)
-{
-	free_xstate_buffer(&tsk->thread.fpu);
-}
-
 /*
  * Free thread data structures etc..
  */

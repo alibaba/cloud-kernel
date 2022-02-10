@@ -13,8 +13,6 @@
 
 #define XSTATE_CPUID		0x0000000d
 
-#define TILE_CPUID		0x0000001d
-
 #define FXSAVE_SIZE	512
 
 #define XSAVE_HDR_SIZE	    64
@@ -25,17 +23,16 @@
 
 #define XSAVE_ALIGNMENT     64
 
-/* All currently enabled user features */
-#define XFEATURE_MASK_USER_ENABLED (XFEATURE_MASK_FP | \
-				    XFEATURE_MASK_SSE | \
-				    XFEATURE_MASK_YMM | \
-				    XFEATURE_MASK_OPMASK | \
-				    XFEATURE_MASK_ZMM_Hi256 | \
-				    XFEATURE_MASK_Hi16_ZMM	 | \
-				    XFEATURE_MASK_PKRU | \
-				    XFEATURE_MASK_BNDREGS | \
-				    XFEATURE_MASK_BNDCSR | \
-				    XFEATURE_MASK_XTILE)
+/* All currently supported user features */
+#define XFEATURE_MASK_USER_SUPPORTED (XFEATURE_MASK_FP | \
+				      XFEATURE_MASK_SSE | \
+				      XFEATURE_MASK_YMM | \
+				      XFEATURE_MASK_OPMASK | \
+				      XFEATURE_MASK_ZMM_Hi256 | \
+				      XFEATURE_MASK_Hi16_ZMM	 | \
+				      XFEATURE_MASK_PKRU | \
+				      XFEATURE_MASK_BNDREGS | \
+				      XFEATURE_MASK_BNDCSR)
 
 /* All currently supported supervisor features */
 #define XFEATURE_MASK_SUPERVISOR_SUPPORTED (XFEATURE_MASK_PASID | \
@@ -60,7 +57,7 @@
  * - Don't set the bit corresponding to the dynamic supervisor feature in
  *   IA32_XSS at run time, since it has been set at boot time.
  */
-#define XFEATURE_MASK_SUPERVISOR_DYNAMIC (XFEATURE_MASK_LBR)
+#define XFEATURE_MASK_DYNAMIC (XFEATURE_MASK_LBR)
 
 /*
  * Unsupported supervisor features. When a supervisor feature in this mask is
@@ -70,7 +67,7 @@
 
 /* All supervisor states including supported and unsupported states. */
 #define XFEATURE_MASK_SUPERVISOR_ALL (XFEATURE_MASK_SUPERVISOR_SUPPORTED | \
-				      XFEATURE_MASK_SUPERVISOR_DYNAMIC | \
+				      XFEATURE_MASK_DYNAMIC | \
 				      XFEATURE_MASK_SUPERVISOR_UNSUPPORTED)
 
 #ifdef CONFIG_X86_64
@@ -88,46 +85,31 @@ static inline u64 xfeatures_mask_supervisor(void)
 
 static inline u64 xfeatures_mask_user(void)
 {
-	return xfeatures_mask_all & ~(XFEATURE_MASK_SUPERVISOR_ALL);
+	return xfeatures_mask_all & XFEATURE_MASK_USER_SUPPORTED;
 }
 
-static inline u64 xfeatures_mask_supervisor_dynamic(void)
+static inline u64 xfeatures_mask_dynamic(void)
 {
 	if (!boot_cpu_has(X86_FEATURE_ARCH_LBR))
-		return XFEATURE_MASK_SUPERVISOR_DYNAMIC & ~XFEATURE_MASK_LBR;
+		return XFEATURE_MASK_DYNAMIC & ~XFEATURE_MASK_LBR;
 
-	return XFEATURE_MASK_SUPERVISOR_DYNAMIC;
+	return XFEATURE_MASK_DYNAMIC;
 }
-
-extern u64 xfeatures_mask_user_dynamic;
 
 extern u64 xstate_fx_sw_bytes[USER_XSTATE_FX_SW_WORDS];
 
 extern void __init update_regset_xstate_info(unsigned int size,
 					     u64 xstate_mask);
 
-enum xstate_config {
-	XSTATE_MIN_SIZE,
-	XSTATE_MAX_SIZE,
-	XSTATE_USER_SIZE
-};
-
-extern unsigned int get_xstate_config(enum xstate_config cfg);
-void set_xstate_config(enum xstate_config cfg, unsigned int value);
-
-void *get_xsave_addr(struct fpu *fpu, int xfeature_nr);
-unsigned int get_xstate_size(u64 mask);
-int alloc_xstate_buffer(struct fpu *fpu, u64 mask);
-void free_xstate_buffer(struct fpu *fpu);
-
+void *get_xsave_addr(struct xregs_state *xsave, int xfeature_nr);
 const void *get_xsave_field_ptr(int xfeature_nr);
 int using_compacted_format(void);
 int xfeature_size(int xfeature_nr);
 struct membuf;
-void copy_xstate_to_kernel(struct membuf to, struct fpu *fpu);
-int copy_kernel_to_xstate(struct fpu *fpu, const void *kbuf);
-int copy_user_to_xstate(struct fpu *fpu, const void __user *ubuf);
-void copy_supervisor_to_kernel(struct fpu *fpu);
+void copy_xstate_to_kernel(struct membuf to, struct xregs_state *xsave);
+int copy_kernel_to_xstate(struct xregs_state *xsave, const void *kbuf);
+int copy_user_to_xstate(struct xregs_state *xsave, const void __user *ubuf);
+void copy_supervisor_to_kernel(struct xregs_state *xsave);
 void copy_dynamic_supervisor_to_kernel(struct xregs_state *xstate, u64 mask);
 void copy_kernel_to_dynamic_supervisor(struct xregs_state *xstate, u64 mask);
 

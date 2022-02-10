@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 all:
 
-top_srcdir = ../../../..
-
 include ../lib.mk
 
 .PHONY: all all_32 all_64 warn_32bit_failure clean
@@ -19,7 +17,7 @@ TARGETS_C_BOTHBITS := single_step_syscall sysret_ss_attrs syscall_nt test_mremap
 TARGETS_C_32BIT_ONLY := entry_from_vm86 test_syscall_vdso unwind_vdso \
 			test_FCMOV test_FCOMI test_FISTTP \
 			vdso_restorer
-TARGETS_C_64BIT_ONLY := fsgsbase sysret_rip syscall_numbering amx
+TARGETS_C_64BIT_ONLY := fsgsbase sysret_rip syscall_numbering
 # Some selftests require 32bit support enabled also on 64bit systems
 TARGETS_C_32BIT_NEEDED := ldt_gdt ptrace_syscall
 
@@ -35,8 +33,7 @@ BINARIES_64 := $(TARGETS_C_64BIT_ALL:%=%_64)
 BINARIES_32 := $(patsubst %,$(OUTPUT)/%,$(BINARIES_32))
 BINARIES_64 := $(patsubst %,$(OUTPUT)/%,$(BINARIES_64))
 
-INCLUDES := -I$(top_srcdir)/tools/include
-CFLAGS := -O2 -g -std=gnu99 -pthread -Wall $(INCLUDES)
+CFLAGS := -O2 -g -std=gnu99 -pthread -Wall
 
 # call32_from_64 in thunks.S uses absolute addresses.
 ifeq ($(CAN_BUILD_WITH_NOPIE),1)

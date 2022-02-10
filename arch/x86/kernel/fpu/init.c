@@ -5,7 +5,6 @@
 #include <asm/fpu/internal.h>
 #include <asm/tlbflush.h>
 #include <asm/setup.h>
-#include <asm/cmdline.h>
 
 #include <linux/sched.h>
 #include <linux/sched/task.h>
@@ -32,12 +31,10 @@ static void fpu__init_cpu_generic(void)
 		cr0 |= X86_CR0_EM;
 	write_cr0(cr0);
 
-	current->thread.fpu.state = &current->thread.fpu.__default_state;
-
 	/* Flush out any pending x87 state: */
 #ifdef CONFIG_MATH_EMULATION
 	if (!boot_cpu_has(X86_FEATURE_FPU))
-		fpstate_init_soft(&current->thread.fpu.state->soft);
+		fpstate_init_soft(&current->thread.fpu.state.soft);
 	else
 #endif
 		asm volatile ("fninit");
@@ -127,10 +124,19 @@ static void __init fpu__init_system_generic(void)
 	 * Set up the legacy init FPU context. (xstate init might overwrite this
 	 * with a more modern format, if the CPU supports it.)
 	 */
-	fpstate_init(NULL);
+	fpstate_init(&init_fpstate);
 
 	fpu__init_system_mxcsr();
 }
+
+/*
+ * Size of the FPU context state. All tasks in the system use the
+ * same context size, regardless of what portion they use.
+ * This is inherent to the XSAVE architecture which puts all state
+ * components into a single, continuous memory block:
+ */
+unsigned int fpu_kernel_xstate_size;
+EXPORT_SYMBOL_GPL(fpu_kernel_xstate_size);
 
 /* Get alignment of the TYPE. */
 #define TYPE_ALIGN(TYPE) offsetof(struct { char x; TYPE test; }, test)
@@ -161,10 +167,8 @@ static void __init fpu__init_task_struct_size(void)
 	/*
 	 * Add back the dynamically-calculated register state
 	 * size.
-	 *
-	 * Use the minimum size as embedded to task_struct.
 	 */
-	task_size += get_xstate_config(XSTATE_MIN_SIZE);
+	task_size += fpu_kernel_xstate_size;
 
 	/*
 	 * We dynamically size 'struct fpu', so we require that
@@ -173,7 +177,7 @@ static void __init fpu__init_task_struct_size(void)
 	 * you hit a compile error here, check the structure to
 	 * see if something got added to the end.
 	 */
-	CHECK_MEMBER_AT_END_OF(struct fpu, __default_state);
+	CHECK_MEMBER_AT_END_OF(struct fpu, state);
 	CHECK_MEMBER_AT_END_OF(struct thread_struct, fpu);
 	CHECK_MEMBER_AT_END_OF(struct task_struct, thread);
 
@@ -189,7 +193,6 @@ static void __init fpu__init_task_struct_size(void)
 static void __init fpu__init_system_xstate_size_legacy(void)
 {
 	static int on_boot_cpu __initdata = 1;
-	unsigned int size;
 
 	WARN_ON_FPU(!on_boot_cpu);
 	on_boot_cpu = 0;
@@ -200,63 +203,28 @@ static void __init fpu__init_system_xstate_size_legacy(void)
 	 */
 
 	if (!boot_cpu_has(X86_FEATURE_FPU)) {
-		size = sizeof(struct swregs_state);
+		fpu_kernel_xstate_size = sizeof(struct swregs_state);
 	} else {
 		if (boot_cpu_has(X86_FEATURE_FXSR))
-			size = sizeof(struct fxregs_state);
+			fpu_kernel_xstate_size =
+				sizeof(struct fxregs_state);
 		else
-			size = sizeof(struct fregs_state);
+			fpu_kernel_xstate_size =
+				sizeof(struct fregs_state);
 	}
 
-	set_xstate_config(XSTATE_MIN_SIZE, size);
-	set_xstate_config(XSTATE_MAX_SIZE, size);
-	set_xstate_config(XSTATE_USER_SIZE, size);
+	fpu_user_xstate_size = fpu_kernel_xstate_size;
 }
 
 /*
  * Find supported xfeatures based on cpu features and command-line input.
  * This must be called after fpu__init_parse_early_param() is called and
- * xfeatures_mask_all is enumerated.
+ * xfeatures_mask is enumerated.
  */
-
-static u64 xstate_enable;
-static u64 xstate_disable;
-
 u64 __init fpu__get_supported_xfeatures_mask(void)
 {
-	u64 mask = XFEATURE_MASK_USER_ENABLED | XFEATURE_MASK_SUPERVISOR_SUPPORTED;
-
-	if (!IS_ENABLED(CONFIG_X86_64)) {
-		mask  &= ~(XFEATURE_MASK_XTILE);
-	} else if (xstate_enable || xstate_disable) {
-		u64 custom = mask;
-		u64 unknown;
-
-		custom |= xstate_enable;
-		custom &= ~xstate_disable;
-
-		unknown = custom & ~mask;
-		if (unknown) {
-			/*
-			 * User should fully understand the result of using undocumented
-			 * xstate component.
-			 */
-			add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
-			pr_warn("x86/fpu: Attempt to enable unknown xstate features 0x%llx\n",
-				unknown);
-			WARN_ON_FPU(1);
-		}
-
-		if ((custom & XFEATURE_MASK_XTILE) != XFEATURE_MASK_XTILE) {
-			pr_warn("x86/fpu: Error in xstate.disable. Additionally disabling 0x%x components.\n",
-				XFEATURE_MASK_XTILE);
-			custom &= ~(XFEATURE_MASK_XTILE);
-		}
-
-		mask = custom;
-	}
-
-	return mask;
+	return XFEATURE_MASK_USER_SUPPORTED |
+	       XFEATURE_MASK_SUPERVISOR_SUPPORTED;
 }
 
 /* Legacy code to initialize eager fpu mode. */
@@ -269,34 +237,11 @@ static void __init fpu__init_system_ctx_switch(void)
 }
 
 /*
- * Longest parameter of 'xstate.enable=' is 22 octal number characters with '0' prefix and
- * an extra '\0' for termination.
- */
-#define MAX_XSTATE_MASK_CHARS	24
-/*
- * We parse xstate parameters early because fpu__init_system() is executed before
- * parse_early_param().
- */
-static void __init fpu__init_parse_early_param(void)
-{
-	char arg[MAX_XSTATE_MASK_CHARS];
-
-	if (cmdline_find_option(boot_command_line, "xstate.enable", arg, sizeof(arg)) &&
-	    !kstrtoull(arg, 0, &xstate_enable))
-		xstate_enable &= XFEATURE_MASK_CONFIGURABLE;
-
-	if (cmdline_find_option(boot_command_line, "xstate.disable", arg, sizeof(arg)) &&
-	    !kstrtoull(arg, 0, &xstate_disable))
-		xstate_disable &= XFEATURE_MASK_CONFIGURABLE;
-}
-
-/*
  * Called on the boot CPU once per system bootup, to set up the initial
  * FPU state that is later cloned into all processes:
  */
 void __init fpu__init_system(struct cpuinfo_x86 *c)
 {
-	fpu__init_parse_early_param();
 	fpu__init_system_early_generic(c);
 
 	/*

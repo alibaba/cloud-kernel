@@ -1143,49 +1143,9 @@ DEFINE_IDTENTRY(exc_spurious_interrupt_bug)
 	 */
 }
 
-static __always_inline bool handle_xfirstuse_event(struct fpu *fpu)
-{
-	bool handled = false;
-	u64 event_mask;
-
-	/* Check whether the first-use detection is running. */
-	if (!static_cpu_has(X86_FEATURE_XFD) || !xfirstuse_enabled())
-		return handled;
-
-	rdmsrl_safe(MSR_IA32_XFD_ERR, &event_mask);
-
-	/* The trap event should happen to one of first-use enabled features */
-	WARN_ON(!(event_mask & xfirstuse_enabled()));
-
-	/* If IA32_XFD_ERR is empty, the current trap has nothing to do with. */
-	if (!event_mask)
-		return handled;
-
-	/*
-	 * The first-use event is presumed to be from userspace, so it should have
-	 * nothing to do with interrupt context.
-	 */
-	if (WARN_ON(in_interrupt()))
-		return handled;
-
-	if (alloc_xstate_buffer(fpu, event_mask))
-		return handled;
-
-	xdisable_setbits(xfirstuse_not_detected(fpu));
-
-	/* Clear the trap record. */
-	wrmsrl_safe(MSR_IA32_XFD_ERR, 0);
-	handled = true;
-
-	return handled;
-}
-
 DEFINE_IDTENTRY(exc_device_not_available)
 {
 	unsigned long cr0 = read_cr0();
-
-	if (handle_xfirstuse_event(&current->thread.fpu))
-		return;
 
 #ifdef CONFIG_MATH_EMULATION
 	if (!boot_cpu_has(X86_FEATURE_FPU) && (cr0 & X86_CR0_EM)) {

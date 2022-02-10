@@ -121,8 +121,6 @@ enum xfeature {
 	XFEATURE_UINTR,
 	XFEATURE_LBR,
 	XFEATURE_RSRVD_COMP_16,
-	XFEATURE_XTILE_CFG,
-	XFEATURE_XTILE_DATA,
 
 	XFEATURE_MAX,
 };
@@ -140,21 +138,11 @@ enum xfeature {
 #define XFEATURE_MASK_PASID		(1 << XFEATURE_PASID)
 #define XFEATURE_MASK_UINTR		(1 << XFEATURE_UINTR)
 #define XFEATURE_MASK_LBR		(1 << XFEATURE_LBR)
-#define XFEATURE_MASK_XTILE_CFG	(1 << XFEATURE_XTILE_CFG)
-#define XFEATURE_MASK_XTILE_DATA	(1 << XFEATURE_XTILE_DATA)
 
 #define XFEATURE_MASK_FPSSE		(XFEATURE_MASK_FP | XFEATURE_MASK_SSE)
 #define XFEATURE_MASK_AVX512		(XFEATURE_MASK_OPMASK \
 					 | XFEATURE_MASK_ZMM_Hi256 \
 					 | XFEATURE_MASK_Hi16_ZMM)
-#define XFEATURE_MASK_XTILE		(XFEATURE_MASK_XTILE_DATA \
-					 | XFEATURE_MASK_XTILE_CFG)
-
-#define XFEATURE_REGION_MASK(max_bit, min_bit) \
-	((BIT_ULL((max_bit) - (min_bit) + 1) - 1) << (min_bit))
-
-#define XFEATURE_MASK_CONFIGURABLE \
-	XFEATURE_REGION_MASK(XFEATURE_XTILE_DATA, XFEATURE_XTILE_CFG)
 
 #define FIRST_EXTENDED_XFEATURE	XFEATURE_YMM
 
@@ -166,9 +154,6 @@ struct reg_256_bit {
 };
 struct reg_512_bit {
 	u8	regbytes[512/8];
-};
-struct reg_1024_byte {
-	u8	regbytes[1024];
 };
 
 /*
@@ -289,23 +274,6 @@ struct arch_lbr_state {
 	u64 ler_to;
 	u64 ler_info;
 	struct lbr_entry		entries[];
-};
-
-/*
- * State component 17: 64-byte tile configuration register.
- */
-struct xtile_cfg {
-	u64				tcfg[8];
-} __packed;
-
-/*
- * State component 18: 1KB tile data register.
- * Each register represents 16 64-byte rows of the matrix
- * data. But the number of registers depends on the actual
- * implementation.
- */
-struct xtile_data {
-	struct reg_1024_byte		tmm;
 } __packed;
 
 /*
@@ -388,37 +356,15 @@ struct fpu {
 	unsigned long			avx512_timestamp;
 
 	/*
-	 * @state_mask:
-	 *
-	 * The bitmap represents state components reserved to be saved in ->state.
-	 */
-	u64				state_mask;
-
-	/*
 	 * @state:
 	 *
-	 * A pointer to indicate the in-memory copy of all FPU registers that are
-	 * saved/restored over context switches.
-	 *
-	 * Initially @state points to @__default_state. When dynamic states get
-	 * used, a memory is allocated for the larger state copy and @state is
-	 * updated to point to it. Then, the state in ->state supersedes and
-	 * invalidates the state in @__default_state.
-	 *
-	 * In general, if the task is using the FPU then the registers in the FPU
-	 * are more recent than the state copy. If the task context-switches away
-	 * then they get saved in ->state and represent the FPU state.
+	 * In-memory copy of all FPU registers that we save/restore
+	 * over context switches. If the task is using the FPU then
+	 * the registers in the FPU are more recent than this state
+	 * copy. If the task context-switches away then they get
+	 * saved here and represent the FPU state.
 	 */
-	union fpregs_state		*state;
-
-	/*
-	 * @__default_state:
-	 *
-	 * Initial in-memory copy of all FPU registers that saved/restored
-	 * over context switches. When the task is switched to dynamic states,
-	 * this copy is replaced with the new in-memory copy in ->state.
-	 */
-	union fpregs_state		__default_state;
+	union fpregs_state		state;
 	/*
 	 * WARNING: 'state' is dynamically-sized.  Do not put
 	 * anything after it here.
