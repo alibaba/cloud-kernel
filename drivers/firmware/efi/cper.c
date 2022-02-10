@@ -584,6 +584,20 @@ err_section_too_small:
 	pr_err(FW_WARN "error section length is too small\n");
 }
 
+static char *cper_raw_err_type_str(u64 type)
+{
+	switch (type) {
+	case 0x40:	return "GENERIC";
+	case 0x41:	return "CORE";
+	case 0x42:	return "GIC";
+	case 0x43:	return "CMN";
+	case 0x44:	return "SMMU";
+	case 0x50:	return "DDR";
+	case 0x60:	return "PCI";
+	default:	return "Reserved";
+	}
+}
+
 void cper_estatus_print(const char *pfx,
 			const struct acpi_hest_generic_status *estatus)
 {
@@ -618,7 +632,8 @@ void cper_estatus_print(const char *pfx,
 	if (!r_data_header->ras_count)
 		return;
 
-	printk("%s type: 0x%x, ras_count: %d\n", pfx, r_data_header->type,
+	printk("%s type: %s (0x%x), ras_count:%d\n", pfx,
+	       cper_raw_err_type_str(r_data_header->type), r_data_header->type,
 	       r_data_header->ras_count);
 
 	apei_estatus_for_each_raw_reg_common(r_data_header, reg_common) {
