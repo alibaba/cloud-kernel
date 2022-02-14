@@ -74,7 +74,10 @@
 #define TCMU_TIME_OUT (30 * MSEC_PER_SEC)
 
 /* For cmd area, the size is fixed 8MB */
-#define CMDR_SIZE (8 * 1024 * 1024)
+#define MB_CMDR_SIZE_DEF (8 * 1024 * 1024)
+/* Offset of cmd ring is size of mailbox */
+#define CMDR_OFF ((__u32)sizeof(struct tcmu_mailbox))
+#define CMDR_SIZE_DEF (MB_CMDR_SIZE_DEF - CMDR_OFF)
 
 /*
  * For data area, the block size is PAGE_SIZE and
@@ -174,8 +177,6 @@ struct tcmu_dev {
 };
 
 #define TCMU_DEV(_se_dev) container_of(_se_dev, struct tcmu_dev, se_dev)
-
-#define CMDR_OFF sizeof(struct tcmu_mailbox)
 
 struct tcmu_cmd {
 	struct se_cmd *se_cmd;
@@ -1400,6 +1401,7 @@ static struct se_device *tcmu_alloc_device(struct se_hba *hba, const char *name)
 	udev->hba = hba;
 	udev->cmd_time_out = TCMU_TIME_OUT;
 	udev->qfull_time_out = -1;
+	udev->cmdr_size = CMDR_SIZE_DEF;
 
 	udev->max_blocks = DATA_BLOCK_BITS_DEF;
 	mutex_init(&udev->cmdr_lock);
@@ -1883,15 +1885,14 @@ static int tcmu_configure_device(struct se_device *dev)
 		goto err_bitmap_alloc;
 	}
 
-	udev->mb_addr = vzalloc(CMDR_SIZE);
+	udev->mb_addr = vzalloc(udev->cmdr_size + CMDR_OFF);
 	if (!udev->mb_addr) {
 		ret = -ENOMEM;
 		goto err_vzalloc;
 	}
 
 	/* mailbox fits in first part of CMDR space */
-	udev->cmdr_size = CMDR_SIZE - CMDR_OFF;
-	udev->data_off = CMDR_SIZE;
+	udev->data_off = udev->cmdr_size + CMDR_OFF;
 	udev->data_size = udev->max_blocks * DATA_BLOCK_SIZE;
 	udev->dbi_thresh = 0; /* Default in Idle state */
 
@@ -1910,7 +1911,7 @@ static int tcmu_configure_device(struct se_device *dev)
 
 	info->mem[0].name = "tcm-user command & data buffer";
 	info->mem[0].addr = (phys_addr_t)(uintptr_t)udev->mb_addr;
-	info->mem[0].size = udev->ring_size = udev->data_size + CMDR_SIZE;
+	info->mem[0].size = udev->ring_size = udev->data_size + udev->cmdr_size + CMDR_OFF;
 	info->mem[0].memtype = UIO_MEM_NONE;
 
 	info->irqcontrol = tcmu_irqcontrol;
@@ -2075,7 +2076,8 @@ static void tcmu_reset_ring(struct tcmu_dev *udev, u8 err_level)
 
 enum {
 	Opt_dev_config, Opt_dev_size, Opt_hw_block_size, Opt_hw_max_sectors,
-	Opt_nl_reply_supported, Opt_max_data_area_mb, Opt_err,
+	Opt_nl_reply_supported, Opt_max_data_area_mb, Opt_cmd_ring_size_mb,
+	Opt_err,
 };
 
 static match_table_t tokens = {
@@ -2085,6 +2087,7 @@ static match_table_t tokens = {
 	{Opt_hw_max_sectors, "hw_max_sectors=%d"},
 	{Opt_nl_reply_supported, "nl_reply_supported=%d"},
 	{Opt_max_data_area_mb, "max_data_area_mb=%d"},
+	{Opt_cmd_ring_size_mb, "cmd_ring_size_mb=%d"},
 	{Opt_err, NULL}
 };
 
@@ -2143,6 +2146,41 @@ unlock:
 	return ret;
 }
 
+static int tcmu_set_cmd_ring_size(struct tcmu_dev *udev, substring_t *arg)
+{
+	int val, ret;
+
+	ret = match_int(arg, &val);
+	if (ret < 0) {
+		pr_err("match_int() failed for cmd_ring_size_mb=. Error %d.\n",
+		       ret);
+		return ret;
+	}
+
+	if (val <= 0) {
+		pr_err("Invalid cmd_ring_size_mb %d.\n", val);
+		return -EINVAL;
+	}
+
+	mutex_lock(&udev->cmdr_lock);
+	if (udev->data_bitmap) {
+		pr_err("Cannot set cmd_ring_size_mb after it has been enabled.\n");
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	udev->cmdr_size = (val << 20) - CMDR_OFF;
+	if (val > (MB_CMDR_SIZE_DEF >> 20)) {
+		pr_err("%d is too large. Adjusting cmd_ring_size_mb to global limit of %u\n",
+		       val, (MB_CMDR_SIZE_DEF >> 20));
+		udev->cmdr_size = CMDR_SIZE_DEF;
+	}
+
+unlock:
+	mutex_unlock(&udev->cmdr_lock);
+	return ret;
+}
+
 static ssize_t tcmu_set_configfs_dev_params(struct se_device *dev,
 		const char *page, ssize_t count)
 {
@@ -2194,6 +2232,9 @@ static ssize_t tcmu_set_configfs_dev_params(struct se_device *dev,
 		case Opt_max_data_area_mb:
 			ret = tcmu_set_max_blocks_param(udev, &args[0]);
 			break;
+		case Opt_cmd_ring_size_mb:
+			ret = tcmu_set_cmd_ring_size(udev, &args[0]);
+			break;
 		default:
 			break;
 		}
@@ -2214,8 +2255,10 @@ static ssize_t tcmu_show_configfs_dev_params(struct se_device *dev, char *b)
 	bl = sprintf(b + bl, "Config: %s ",
 		     udev->dev_config[0] ? udev->dev_config : "NULL");
 	bl += sprintf(b + bl, "Size: %llu ", udev->dev_size);
-	bl += sprintf(b + bl, "MaxDataAreaMB: %u\n",
+	bl += sprintf(b + bl, "MaxDataAreaMB: %u ",
 		      TCMU_BLOCKS_TO_MBS(udev->max_blocks));
+	bl += sprintf(b + bl, "CmdRingSizeMB: %lu\n",
+		      (udev->cmdr_size + CMDR_OFF) >> 20);
 
 	return bl;
 }
@@ -2313,6 +2356,17 @@ static ssize_t tcmu_max_data_area_mb_show(struct config_item *item, char *page)
 			TCMU_BLOCKS_TO_MBS(udev->max_blocks));
 }
 CONFIGFS_ATTR_RO(tcmu_, max_data_area_mb);
+
+static ssize_t tcmu_cmd_ring_size_mb_show(struct config_item *item, char *page)
+{
+	struct se_dev_attrib *da = container_of(to_config_group(item),
+						struct se_dev_attrib, da_group);
+	struct tcmu_dev *udev = TCMU_DEV(da->da_dev);
+
+	return snprintf(page, PAGE_SIZE, "%lu\n",
+			(udev->cmdr_size + CMDR_OFF) >> 20);
+}
+CONFIGFS_ATTR_RO(tcmu_, cmd_ring_size_mb);
 
 static ssize_t tcmu_dev_config_show(struct config_item *item, char *page)
 {
@@ -2592,6 +2646,7 @@ static struct configfs_attribute *tcmu_attrib_attrs[] = {
 	&tcmu_attr_cmd_time_out,
 	&tcmu_attr_qfull_time_out,
 	&tcmu_attr_max_data_area_mb,
+	&tcmu_attr_cmd_ring_size_mb,
 	&tcmu_attr_dev_config,
 	&tcmu_attr_dev_size,
 	&tcmu_attr_emulate_write_cache,
