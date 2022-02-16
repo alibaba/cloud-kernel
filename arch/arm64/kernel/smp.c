@@ -77,6 +77,7 @@ enum ipi_msg_type {
 	NR_IPI
 };
 
+static bool ipi_crash_stop_nmi;
 static int ipi_irq_base __read_mostly;
 static int nr_ipi __read_mostly = NR_IPI;
 static struct irq_desc *ipi_desc[NR_IPI] __read_mostly;
@@ -92,7 +93,6 @@ static inline int op_cpu_kill(unsigned int cpu)
 	return -ENOSYS;
 }
 #endif
-
 
 /*
  * Boot a secondary CPU, and assign it the specified idle task.
@@ -961,6 +961,9 @@ static void ipi_setup(int cpu)
 	if (WARN_ON_ONCE(!ipi_irq_base))
 		return;
 
+	if (system_uses_irq_prio_masking() && ipi_crash_stop_nmi)
+		prepare_percpu_nmi(ipi_irq_base + IPI_CPU_CRASH_STOP);
+
 	for (i = 0; i < nr_ipi; i++)
 		enable_percpu_irq(ipi_irq_base + i, 0);
 }
@@ -975,6 +978,9 @@ static void ipi_teardown(int cpu)
 
 	for (i = 0; i < nr_ipi; i++)
 		disable_percpu_irq(ipi_irq_base + i);
+
+	if (system_uses_irq_prio_masking() && ipi_crash_stop_nmi)
+		teardown_percpu_nmi(ipi_irq_base + IPI_CPU_CRASH_STOP);
 }
 #endif
 
@@ -988,8 +994,20 @@ void __init set_smp_ipi_range(int ipi_base, int n)
 	for (i = 0; i < nr_ipi; i++) {
 		int err;
 
-		err = request_percpu_irq(ipi_base + i, ipi_handler,
-					 "IPI", &cpu_number);
+		if (system_uses_irq_prio_masking() &&
+			(i == IPI_CPU_CRASH_STOP)) {
+			err = request_percpu_nmi(ipi_base + i, ipi_handler,
+						 "IPI", &cpu_number);
+			if (err)
+				err = request_percpu_irq(ipi_base + i, ipi_handler,
+							 "IPI", &cpu_number);
+			else
+				ipi_crash_stop_nmi = true;
+		} else {
+			err = request_percpu_irq(ipi_base + i, ipi_handler,
+						 "IPI", &cpu_number);
+		}
+
 		WARN_ON(err);
 
 		ipi_desc[i] = irq_to_desc(ipi_base + i);
