@@ -825,6 +825,7 @@ struct nft_expr_ops {
 	int				(*offload)(struct nft_offload_ctx *ctx,
 						   struct nft_flow_rule *flow,
 						   const struct nft_expr *expr);
+	bool				(*offload_action)(const struct nft_expr *expr);
 	u32				offload_flags;
 	const struct nft_expr_type	*type;
 	void				*data;
