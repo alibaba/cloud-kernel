@@ -137,6 +137,7 @@ void save_fpregs_to_fpstate(struct fpu *fpu)
 	asm volatile("fnsave %[fp]; fwait" : [fp] "=m" (fpu->fpstate->regs.fsave));
 	frstor(&fpu->fpstate->regs.fsave);
 }
+EXPORT_SYMBOL_GPL(save_fpregs_to_fpstate);
 
 void restore_fpregs_from_fpstate(struct fpstate *fpstate, u64 mask)
 {
@@ -191,6 +192,7 @@ void restore_fpregs_from_fpstate(struct fpstate *fpstate, u64 mask)
 			frstor(&fpstate->regs.fsave);
 	}
 }
+EXPORT_SYMBOL_GPL(restore_fpregs_from_fpstate);
 
 void fpu_reset_from_exception_fixup(void)
 {
