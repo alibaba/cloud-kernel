@@ -159,7 +159,7 @@ static void print_diff_canary(unsigned long address, size_t bytes_to_show,
 
 	/* Do not show contents of object nor read into following guard page. */
 	end = (const u8 *)(address < meta->addr ? min(show_until_addr, meta->addr)
-						: static_branch_likely(&kfence_skip_interval) ?
+						: static_branch_likely(&kfence_short_canary) ?
 						  min(show_until_addr,
 						      ALIGN(meta->addr + meta->size + 1,
 							    L1_CACHE_BYTES)) :

@@ -77,6 +77,7 @@ static unsigned long kfence_nr_areas_per_node;
 /* The static key to set up a KFENCE allocation. */
 DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
 #endif
+DEFINE_STATIC_KEY_FALSE(kfence_short_canary);
 DEFINE_STATIC_KEY_FALSE(kfence_skip_interval);
 DEFINE_STATIC_KEY_FALSE(kfence_once_inited);
 EXPORT_SYMBOL(kfence_once_inited);
@@ -358,7 +359,7 @@ static __always_inline void for_each_canary(const struct kfence_metadata *meta, 
 	unsigned long addr, start = pageaddr, end = pageaddr + PAGE_SIZE;
 
 	/* this func will take most cost so we shrink it when no interval limit */
-	if (static_branch_likely(&kfence_skip_interval)) {
+	if (static_branch_likely(&kfence_short_canary)) {
 		start = max(ALIGN_DOWN(meta->addr - 1, L1_CACHE_BYTES), start);
 		end = min(ALIGN(meta->addr + meta->size + 1, L1_CACHE_BYTES), end);
 	}
@@ -863,9 +864,11 @@ static void __start_kfence(void)
 	WRITE_ONCE(kfence_enabled, true);
 	static_branch_enable(&kfence_once_inited);
 	if (kfence_sample_interval < 0) {
+		static_branch_enable(&kfence_short_canary);
 		static_branch_enable(&kfence_skip_interval);
 		static_branch_enable(&kfence_allocation_key);
 	} else {
+		static_branch_disable(&kfence_skip_interval);
 		queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
 	}
 }
