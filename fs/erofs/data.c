@@ -371,9 +371,7 @@ submit_bio_retry:
 			memcpy(vto, vsrc + blkoff, map.m_plen);
 			memset(vto + map.m_plen, 0, PAGE_SIZE - map.m_plen);
 			kunmap_atomic(vto);
-			kunmap_atomic(vsrc);
 			flush_dcache_page(page);
-
 			SetPageUptodate(page);
 
 			erofs_put_metabuf(&buf);
