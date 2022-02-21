@@ -1054,6 +1054,8 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_X86_MSR_FILTER 189
 #define KVM_CAP_ENFORCE_PV_FEATURE_CPUID 190
 
+#define KVM_CAP_XSAVE2 208
+
 #ifdef KVM_CAP_IRQ_ROUTING
 
 struct kvm_irq_routing_irqchip {
@@ -1520,6 +1522,9 @@ struct kvm_enc_region {
 /* Available with  KVM_CAP_S390_VCPU_RESETS */
 #define KVM_S390_NORMAL_RESET	_IO(KVMIO,   0xc3)
 #define KVM_S390_CLEAR_RESET	_IO(KVMIO,   0xc4)
+
+/* Available with KVM_CAP_XSAVE2 */
+#define KVM_GET_XSAVE2	_IOR(KVMIO,  0xcf, struct kvm_xsave)
 
 struct kvm_s390_pv_sec_parm {
 	__u64 origin;
