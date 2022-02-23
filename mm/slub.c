@@ -5445,6 +5445,28 @@ STAT_ATTR(CPU_PARTIAL_NODE, cpu_partial_node);
 STAT_ATTR(CPU_PARTIAL_DRAIN, cpu_partial_drain);
 #endif	/* CONFIG_SLUB_STATS */
 
+#if defined(CONFIG_SLUB) && defined(CONFIG_KFENCE)
+static ssize_t kfence_enable_show(struct kmem_cache *s, char *buf)
+{
+	return sprintf(buf, "%d\n", s->kfence_enabled);
+}
+
+static ssize_t kfence_enable_store(struct kmem_cache *s, const char *buf, size_t length)
+{
+	bool res;
+	int err;
+
+	err = kstrtobool(buf, &res);
+	if (err)
+		return err;
+
+	s->kfence_enabled = res;
+
+	return length;
+}
+SLAB_ATTR(kfence_enable);
+#endif
+
 static struct attribute *slab_attrs[] = {
 	&slab_size_attr.attr,
 	&object_size_attr.attr,
@@ -5512,6 +5534,9 @@ static struct attribute *slab_attrs[] = {
 #endif
 #ifdef CONFIG_FAILSLAB
 	&failslab_attr.attr,
+#endif
+#if defined(CONFIG_SLUB) && defined(CONFIG_KFENCE)
+	&kfence_enable_attr.attr,
 #endif
 	&usersize_attr.attr,
 

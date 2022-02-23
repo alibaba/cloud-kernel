@@ -1929,6 +1929,11 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags, int node)
 	    (s->flags & (SLAB_CACHE_DMA | SLAB_CACHE_DMA32)))
 		return NULL;
 
+#ifdef CONFIG_SLUB
+	if (!s->kfence_enabled)
+		return NULL;
+#endif
+
 	if (static_branch_likely(&kfence_skip_interval))
 		goto alloc;
 

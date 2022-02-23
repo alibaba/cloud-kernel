@@ -252,6 +252,9 @@ static struct kmem_cache *create_cache(const char *name,
 	s->ctor = ctor;
 	s->useroffset = useroffset;
 	s->usersize = usersize;
+#if defined(CONFIG_SLUB) && defined(CONFIG_KFENCE)
+	s->kfence_enabled = true;
+#endif
 
 	err = __kmem_cache_create(s, flags);
 	if (err)
@@ -560,6 +563,9 @@ void __init create_boot_cache(struct kmem_cache *s, const char *name,
 
 	s->useroffset = useroffset;
 	s->usersize = usersize;
+#if defined(CONFIG_SLUB) && defined(CONFIG_KFENCE)
+	s->kfence_enabled = true;
+#endif
 
 	err = __kmem_cache_create(s, flags);
 
