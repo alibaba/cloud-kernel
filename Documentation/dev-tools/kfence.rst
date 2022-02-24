@@ -148,6 +148,17 @@ There are mainly three kinds of distributing method.
    This mode is easy to understand. If num_objects = 131071 * n, the memory
    usage will be [n, n, n, n]GiB on 4 nodes.
 
+Monitoring specific slabs
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If users want to enable or disable KFENCE for specific slabs, setting via
+per_slab switch at ``/sys/kernel/slab/<cache>/kfence_enable``. The default
+switch is ON for all slabs.
+
+Users can also switch monitoring order0 pages by
+setting ``kfence.order0_page`` in boot command line,
+or writing to ``/sys/module/kfence/parameters/order0_page``.
+
 Error reports
 ~~~~~~~~~~~~~
 

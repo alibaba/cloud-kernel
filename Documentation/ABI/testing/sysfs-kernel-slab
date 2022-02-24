@@ -496,3 +496,10 @@ Contact:	Pekka Enberg <penberg@cs.helsinki.fi>,
 Description:
 		Writing to the validate file causes SLUB to traverse all of its
 		cache's objects and check the validity of metadata.
+
+What:		/sys/kernel/slab/<cache>/kfence_enable
+Date:		Feb 2022
+KernelVersion:	5.10.84
+Contact:	Tianchen Ding <dtcccc@linux.alibaba.com>
+Description:
+		Per-slab switch of KFENCE. Default 1 (enabled).
