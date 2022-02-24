@@ -38,6 +38,7 @@ extern atomic_t kfence_allocation_gate;
 #endif
 DECLARE_STATIC_KEY_FALSE(kfence_once_inited);
 #define GFP_KFENCE_NOT_ALLOC ((GFP_ZONEMASK & ~__GFP_HIGHMEM) | __GFP_NOKFENCE | __GFP_THISNODE)
+DECLARE_STATIC_KEY_TRUE(kfence_order0_page);
 
 /**
  * is_kfence_address_area() - check if an address belongs to KFENCE pool in given area
@@ -189,10 +190,12 @@ static __always_inline void *kfence_alloc_node(struct kmem_cache *s, size_t size
 static __always_inline struct page *kfence_alloc_page(unsigned int order, int node, gfp_t flags)
 {
 #ifdef CONFIG_KFENCE_STATIC_KEYS
-	if (static_branch_unlikely(&kfence_allocation_key) && !order &&
+	if (static_branch_unlikely(&kfence_allocation_key) &&
+	    static_branch_likely(&kfence_order0_page) && !order &&
 	    !((flags & GFP_KFENCE_NOT_ALLOC) || (flags & GFP_USER) == GFP_USER))
 #else
-	if (unlikely(!atomic_read(&kfence_allocation_gate)) && !order &&
+	if (unlikely(!atomic_read(&kfence_allocation_gate)) &&
+	    static_branch_likely(&kfence_order0_page) && !order &&
 	    !((flags & GFP_KFENCE_NOT_ALLOC) || (flags & GFP_USER) == GFP_USER))
 #endif
 		return __kfence_alloc_page(node, flags);
