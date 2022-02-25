@@ -3046,8 +3046,9 @@ retry:
 		    is_wmark_ok(sc->target_mem_cgroup, false))
 			break;
 
-		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
-				sc->priority);
+		if (!current_is_kswapd())
+			vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
+					sc->priority);
 		sc->nr_scanned = 0;
 		shrink_zones(zonelist, sc);
 
