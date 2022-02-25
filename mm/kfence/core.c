@@ -894,7 +894,9 @@ static void __start_kfence(void)
 	if (kfence_sample_interval < 0) {
 		static_branch_enable(&kfence_short_canary);
 		static_branch_enable(&kfence_skip_interval);
+#ifdef CONFIG_KFENCE_STATIC_KEYS
 		static_branch_enable(&kfence_allocation_key);
+#endif
 	} else {
 		static_branch_disable(&kfence_skip_interval);
 		queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
@@ -1859,6 +1861,8 @@ void kfence_disable(void)
 	mutex_lock(&kfence_mutex);
 
 #ifdef CONFIG_KFENCE_STATIC_KEYS
+	atomic_set(&kfence_allocation_gate, 1);
+	wake_up(&allocation_wait);
 	static_branch_disable(&kfence_allocation_key);
 #endif
 
