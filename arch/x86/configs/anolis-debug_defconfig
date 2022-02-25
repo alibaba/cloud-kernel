@@ -1044,6 +1044,15 @@ CONFIG_MEMSLI=y
 CONFIG_MAPPING_DIRTY_HELPERS=y
 CONFIG_DUPTEXT=y
 CONFIG_SECRETMEM=y
+
+#
+# Data Access Monitoring
+#
+CONFIG_DAMON=y
+CONFIG_DAMON_VADDR=y
+CONFIG_DAMON_PADDR=y
+CONFIG_DAMON_DBGFS=y
+# end of Data Access Monitoring
 # end of Memory Management options
 
 CONFIG_NET=y
