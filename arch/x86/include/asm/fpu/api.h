@@ -124,9 +124,14 @@ extern int fpu_enable_guest_xfd_features(struct fpu_guest *guest_fpu, u64 xfeatu
 #ifdef CONFIG_X86_64
 extern void fpu_update_guest_xfd(struct fpu_guest *guest_fpu, u64 xfd);
 extern void fpu_sync_guest_vmexit_xfd_state(void);
+extern int xstate_request_perm(unsigned long idx, bool guest);
 #else
 static inline void fpu_update_guest_xfd(struct fpu_guest *guest_fpu, u64 xfd) { }
 static inline void fpu_sync_guest_vmexit_xfd_state(void) { }
+static inline int xstate_request_perm(unsigned long idx, bool guest)
+{
+	return -EPERM;
+}
 #endif
 
 extern void fpu_copy_guest_fpstate_to_uabi(struct fpu_guest *gfpu, void *buf, unsigned int size, u32 pkru);

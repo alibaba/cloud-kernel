@@ -1657,7 +1657,7 @@ static const u64 xstate_prctl_req[XFEATURE_MAX] = {
 	[XFEATURE_XTILE_DATA] = XFEATURE_MASK_XTILE_DATA,
 };
 
-static int xstate_request_perm(unsigned long idx, bool guest)
+int xstate_request_perm(unsigned long idx, bool guest)
 {
 	u64 permitted, requested;
 	int ret;
@@ -1694,6 +1694,7 @@ static int xstate_request_perm(unsigned long idx, bool guest)
 	spin_unlock_irq(&current->sighand->siglock);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(xstate_request_perm);
 
 int __xfd_enable_feature(u64 xfd_err, struct fpu_guest *guest_fpu)
 {
@@ -1743,13 +1744,7 @@ int xfd_enable_feature(u64 xfd_err)
 {
 	return __xfd_enable_feature(xfd_err, NULL);
 }
-
-#else /* CONFIG_X86_64 */
-static inline int xstate_request_perm(unsigned long idx, bool guest)
-{
-	return -EPERM;
-}
-#endif  /* !CONFIG_X86_64 */
+#endif  /* CONFIG_X86_64 */
 
 u64 xstate_get_guest_group_perm(void)
 {
