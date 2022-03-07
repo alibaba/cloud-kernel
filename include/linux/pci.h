@@ -301,6 +301,16 @@ struct pci_cap_saved_state {
 	struct pci_cap_saved_data	cap;
 };
 
+/* The structure describes the regs to be saved for yitian710 SoC. */
+struct pci_saved_regs {
+	u8		mps;
+	u8		mrrs;
+	u8		comp_timeout_val;
+	u8		comp_timeout_dis;
+	u32		acs_cap_ctrl;
+	u32		slot_ctrl_status;	/* should be the last register to restore */
+};
+
 struct irq_affinity;
 struct pcie_link_state;
 struct pci_vpd;
@@ -454,6 +464,7 @@ struct pci_dev {
 	unsigned int	link_active_reporting:1;/* Device capable of reporting link active */
 	unsigned int	no_vf_scan:1;		/* Don't scan for VFs after IOV enablement */
 	unsigned int	no_command_memory:1;	/* No PCI_COMMAND_MEMORY */
+	unsigned int	broken_bus_reset:1;	/* Abnormal bus reset */
 	pci_dev_flags_t dev_flags;
 	atomic_t	enable_cnt;	/* pci_enable_device has been called */
 

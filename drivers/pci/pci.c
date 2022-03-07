@@ -4874,6 +4874,65 @@ void pci_bridge_wait_for_secondary_bus(struct pci_dev *dev)
 	}
 }
 
+static void pci_save_yitian710_regs(struct pci_dev *dev,
+				    struct pci_saved_regs *saved)
+{
+	int i;
+	u16 ctrl, ctrl2;
+
+	/* if not yitian 710, should return here */
+	if (!dev->broken_bus_reset)
+		return;
+
+	/* save pcie type1 config space header*/
+	for (i = 0; i < 16; i++)
+		pci_read_config_dword(dev, i * 4, &dev->saved_config_space[i]);
+
+	pci_read_config_word(dev, PCI_EXP_DEVCTL, &ctrl);
+	pci_read_config_word(dev, PCI_EXP_DEVCTL2, &ctrl2);
+
+	saved->mps = (ctrl & PCI_EXP_DEVCTL_PAYLOAD) >> 5;
+	saved->mrrs = (ctrl & PCI_EXP_DEVCTL_READRQ) >> 12;
+	saved->comp_timeout_val = ctrl2 & PCI_EXP_DEVCTL2_COMP_TIMEOUT;
+	saved->comp_timeout_dis = (ctrl2 & PCI_EXP_DEVCTL2_COMP_TMOUT_DIS) >> 4;
+	if (dev->acs_cap)
+		pci_read_config_dword(dev, dev->acs_cap + PCI_ACS_CAP,
+				      &saved->acs_cap_ctrl);
+
+	pci_read_config_dword(dev, PCI_EXP_SLTCTL, &saved->slot_ctrl_status);
+}
+
+static void pci_restore_yitian710_regs(struct pci_dev *dev,
+				       struct pci_saved_regs *saved)
+{
+	u16 regval;
+
+	if (!dev->broken_bus_reset)
+		return;
+
+	/* restore pcie type1 config space header */
+	pci_restore_config_space_range(dev, 0, 15, 0, false);
+
+	regval = (saved->mps) << 5;
+	pcie_capability_clear_and_set_word(dev, PCI_EXP_DEVCTL,
+					   PCI_EXP_DEVCTL_PAYLOAD, regval);
+	regval = (saved->mrrs) << 12;
+	pcie_capability_clear_and_set_word(dev, PCI_EXP_DEVCTL,
+					   PCI_EXP_DEVCTL_READRQ, regval);
+	regval = saved->comp_timeout_val;
+	pcie_capability_clear_and_set_word(dev, PCI_EXP_DEVCTL2,
+					   PCI_EXP_DEVCTL2_COMP_TIMEOUT, regval);
+	regval = (saved->comp_timeout_dis) << 4;
+	pcie_capability_clear_and_set_word(dev, PCI_EXP_DEVCTL2,
+					   PCI_EXP_DEVCTL2_COMP_TMOUT_DIS, regval);
+
+	if (dev->acs_cap)
+		pci_write_config_dword(dev, dev->acs_cap + PCI_ACS_CAP,
+				       saved->acs_cap_ctrl);
+
+	pci_write_config_dword(dev, PCI_EXP_SLTCTL, saved->slot_ctrl_status);
+}
+
 void pci_reset_secondary_bus(struct pci_dev *dev)
 {
 	u16 ctrl;
@@ -4915,9 +4974,18 @@ void __weak pcibios_reset_secondary_bus(struct pci_dev *dev)
  */
 int pci_bridge_secondary_bus_reset(struct pci_dev *dev)
 {
-	pcibios_reset_secondary_bus(dev);
+	int rc;
+	struct pci_saved_regs saved = { };
 
-	return pci_dev_wait(dev, "bus reset", PCIE_RESET_READY_POLL_MS);
+	/* save key regs for yitian710 during bus rest*/
+	pci_save_yitian710_regs(dev, &saved);
+
+	pcibios_reset_secondary_bus(dev);
+	rc = pci_dev_wait(dev, "bus reset", PCIE_RESET_READY_POLL_MS);
+
+	/* restore regs for yitian710*/
+	pci_restore_yitian710_regs(dev, &saved);
+	return rc;
 }
 EXPORT_SYMBOL_GPL(pci_bridge_secondary_bus_reset);
 

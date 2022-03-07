@@ -5762,3 +5762,19 @@ static void nvidia_ion_ahci_fixup(struct pci_dev *pdev)
 	pdev->dev_flags |= PCI_DEV_FLAGS_HAS_MSI_MASKING;
 }
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_NVIDIA, 0x0ab8, nvidia_ion_ahci_fixup);
+
+/*
+ * On Alibaba yitian710 Soc, the Hardware does always clear pcie config space
+ * and some key registers between resetting the secondary bus. This results in
+ * the OS cannot recover the fatal pcie error, which causes unexpected system
+ * error finally.
+ *
+ * Luckily, it seems a simple save/restore of these regs during the bus reset
+ * can fix the issues.
+ */
+static void quirk_save_yitian710_regs(struct pci_dev *dev)
+{
+	dev->broken_bus_reset = 1;
+}
+DECLARE_PCI_FIXUP_CLASS_EARLY(PCI_VENDOR_ID_ALIBABA, 0x8000,
+			      PCI_CLASS_BRIDGE_PCI, 8, quirk_save_yitian710_regs);
