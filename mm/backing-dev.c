@@ -872,16 +872,8 @@ void wb_memcg_offline(struct mem_cgroup *memcg)
 	struct bdi_writeback *wb, *next;
 
 	spin_lock_irq(&cgwb_lock);
-	list_for_each_entry_safe(wb, next, memcg_cgwb_list, memcg_node) {
-		percpu_ref_get(&wb->refcnt);
+	list_for_each_entry_safe(wb, next, memcg_cgwb_list, memcg_node)
 		cgwb_kill(wb);
-		if (wb->memcg_css) {
-			css_put(wb->memcg_css);
-			wb->memcg_css = &root_mem_cgroup->css;
-			css_get(wb->memcg_css);
-		}
-		percpu_ref_put(&wb->refcnt);
-	}
 	memcg_cgwb_list->next = NULL;	/* prevent new wb's */
 	spin_unlock_irq(&cgwb_lock);
 }
@@ -897,16 +889,8 @@ void wb_blkcg_offline(struct blkcg *blkcg)
 	struct bdi_writeback *wb, *next;
 
 	spin_lock_irq(&cgwb_lock);
-	list_for_each_entry_safe(wb, next, &blkcg->cgwb_list, blkcg_node) {
-		percpu_ref_get(&wb->refcnt);
+	list_for_each_entry_safe(wb, next, &blkcg->cgwb_list, blkcg_node)
 		cgwb_kill(wb);
-		if (wb->memcg_css) {
-			css_put(wb->memcg_css);
-			wb->memcg_css = &root_mem_cgroup->css;
-			css_get(wb->memcg_css);
-		}
-		percpu_ref_put(&wb->refcnt);
-	}
 	blkcg->cgwb_list.next = NULL;	/* prevent new wb's */
 	spin_unlock_irq(&cgwb_lock);
 }
