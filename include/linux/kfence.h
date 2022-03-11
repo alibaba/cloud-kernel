@@ -76,7 +76,18 @@ static __always_inline bool is_kfence_address_area(const void *addr,
  */
 static __always_inline bool is_kfence_address(const void *addr)
 {
+#ifdef CONFIG_KASAN
+	/*
+	 * KASAN functions such as kasan_record_aux_stack(),
+	 * kasan_poison_shadow(), or kasan_unpoison_shadow()
+	 * may give an invalid kaddr (direct mapping kernel address).
+	 * We must add a check here.
+	 */
+	return static_branch_unlikely(&kfence_once_inited) &&
+		virt_addr_valid(addr) && PageKfence(virt_to_page(addr));
+#else
 	return static_branch_unlikely(&kfence_once_inited) && PageKfence(virt_to_page(addr));
+#endif
 }
 
 /**
