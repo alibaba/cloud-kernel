@@ -91,15 +91,15 @@ void clear_page_mlock(struct page *page)
  */
 void mlock_vma_page(struct page *page)
 {
+	/* TODO Do not mlock slave duplicated page */
+	if (page_dup_slave(page))
+		return;
+
 	/* Serialize with page migration */
 	BUG_ON(!PageLocked(page));
 
 	VM_BUG_ON_PAGE(PageTail(page), page);
 	VM_BUG_ON_PAGE(PageCompound(page) && PageDoubleMap(page), page);
-
-	/* TODO Do not mlock slave duplicated page */
-	if (page_dup_slave(page))
-		return;
 
 	if (!TestSetPageMlocked(page)) {
 		int nr_pages = thp_nr_pages(page);
