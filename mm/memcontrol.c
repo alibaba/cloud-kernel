@@ -2657,7 +2657,8 @@ static void reclaim_wmark(struct mem_cgroup *memcg)
 	psi_memstall_leave(&pflags);
 	duration = ktime_get_ns() - start;
 
-	css_get(&memcg->css);
+	if (!css_tryget_online(&memcg->css))
+		return;
 	for (iter = memcg; iter; iter = parent_mem_cgroup(iter))
 		this_cpu_add(iter->exstat_cpu->item[MEMCG_WMARK_RECLAIM],
 			     duration);
