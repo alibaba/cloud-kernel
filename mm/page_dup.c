@@ -394,6 +394,8 @@ static void truncate_dup_pages(void)
 				__dedup_page(page, false);
 				unlock_page(page);
 				put_page(page);
+
+				cond_resched();
 			}
 		}
 	}
