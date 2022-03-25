@@ -94,7 +94,8 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 			buddy_pfn = __find_buddy_pfn(pfn, order);
 			buddy = page + (buddy_pfn - pfn);
 
-			if (!is_migrate_isolate_page(buddy)) {
+			if (pfn_valid_within(buddy_pfn) &&
+			    !is_migrate_isolate_page(buddy)) {
 				__isolate_free_page(page, order);
 				isolated_page = true;
 			}
@@ -249,6 +250,10 @@ __test_page_isolated_in_pageblock(unsigned long pfn, unsigned long end_pfn,
 	struct page *page;
 
 	while (pfn < end_pfn) {
+		if (!pfn_valid_within(pfn)) {
+			pfn++;
+			continue;
+		}
 		page = pfn_to_page(pfn);
 		if (PageBuddy(page))
 			/*
