@@ -867,7 +867,6 @@ static int kdamond_fn(void *data)
 static struct damon_target *get_damon_target(struct task_struct *task)
 {
 	int i;
-	unsigned long id1, id2;
 	struct damon_target *t;
 
 	rcu_read_lock();
@@ -879,13 +878,15 @@ static struct damon_target *get_damon_target(struct task_struct *task)
 		damon_for_each_target(t, dbgfs_ctxs[i]) {
 			struct task_struct *ts = damon_get_task_struct(t);
 
-			if (ts) {
-				id1 = (unsigned long)pid_vnr((struct pid *)t->id);
-				id2 = (unsigned long)pid_vnr(get_task_pid(task, PIDTYPE_PID));
+			if (!ts)
+				continue;
+
+			if (ts->tgid == task->tgid) {
 				put_task_struct(ts);
-				if (id1 == id2)
-					return t;
+				rcu_read_unlock();
+				return t;
 			}
+			put_task_struct(ts);
 		}
 	}
 	rcu_read_unlock();
