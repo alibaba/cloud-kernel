@@ -1179,7 +1179,7 @@ size_t ksize(const void *objp)
 	if (unlikely(ZERO_OR_NULL_PTR(objp)) || !__kasan_check_read(objp, 1))
 		return 0;
 
-	size = kfence_ksize(objp) ?: __ksize(objp);
+	size = is_kfence_address(objp) ? kfence_ksize(objp) : __ksize(objp);
 	/*
 	 * We assume that ksize callers could use whole allocated area,
 	 * so we need to unpoison this area.

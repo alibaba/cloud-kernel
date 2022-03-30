@@ -2035,12 +2035,7 @@ alloc:
 
 size_t kfence_ksize(const void *addr)
 {
-	struct kfence_metadata *meta;
-
-	if (!static_branch_unlikely(&kfence_once_inited))
-		return 0;
-
-	meta = addr_to_metadata((unsigned long)addr);
+	struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 
 	/*
 	 * Read locklessly -- if there is a race with __kfence_alloc(), this is

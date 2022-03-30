@@ -590,7 +590,7 @@ static struct kmemleak_object *create_object(unsigned long ptr, size_t size,
 	atomic_set(&object->use_count, 1);
 	object->flags = OBJECT_ALLOCATED;
 	object->pointer = ptr;
-	object->size = kfence_ksize((void *)ptr) ?: size;
+	object->size = is_kfence_address((void *)ptr) ? kfence_ksize((void *)ptr) : size;
 	object->excess_ref = 0;
 	object->min_count = min_count;
 	object->count = 0;			/* white color initially */

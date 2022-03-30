@@ -76,7 +76,7 @@ static __always_inline bool is_kfence_address_area(const void *addr,
  */
 static __always_inline bool is_kfence_address(const void *addr)
 {
-#ifdef CONFIG_KASAN
+#if defined(CONFIG_KASAN) || defined(CONFIG_DEBUG_KMEMLEAK)
 	/*
 	 * KASAN functions such as kasan_record_aux_stack(),
 	 * kasan_poison_shadow(), or kasan_unpoison_shadow()
