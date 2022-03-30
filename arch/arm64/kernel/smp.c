@@ -43,6 +43,7 @@
 #include <linux/irq_work.h>
 #include <linux/kexec.h>
 #include <linux/perf/arm_pmu.h>
+#include <linux/crash_dump.h>
 
 #include <asm/alternative.h>
 #include <asm/atomic.h>
@@ -515,6 +516,33 @@ static int __init smp_cpu_setup(int cpu)
 static bool bootcpu_valid __initdata;
 static unsigned int cpu_count = 1;
 
+#ifdef CONFIG_ARCH_PHYTIUM
+/*
+ * On phytium S2500 server, the vmcore cannot be saved because the storage
+ * device and the cpu brought up by the kdump kernel are on two different
+ * sockets(for example, SAS controller and disks where vmcore will save is
+ * installed on socket1 and second kernel brings up 2 CPUs both on socket0).
+ *
+ * To avoid this problem, need to ensure that the kdump kernel can bring up
+ * cpu on each socket. Bypass other non-cpu0 to ensure that each cpu0 on each
+ * socket can bootup and handle interrupt when booting the second kernel.
+ */
+static bool __init is_kump_bypass_cpu(u64 hwid)
+{
+	if ((read_cpuid_id() & MIDR_CPU_MODEL_MASK) != MIDR_FT_2500)
+		return false;
+
+	/* Ensure kdump kernel can bring up each cpu0 on each socket,
+	 * so bypass other non-cpu0 when booting kdump kernel
+	 */
+	if (is_kdump_kernel() &&
+	    (hwid & MPIDR_HWID_BITMASK) !=
+		    (cpu_logical_map(0) & MPIDR_HWID_BITMASK))
+		return true;
+	return false;
+}
+#endif
+
 #ifdef CONFIG_ACPI
 static struct acpi_madt_generic_interrupt cpu_madt_gicc[NR_CPUS];
 
@@ -563,6 +591,11 @@ acpi_map_gic_cpu_interface(struct acpi_madt_generic_interrupt *processor)
 
 	if (cpu_count >= NR_CPUS)
 		return;
+
+#ifdef CONFIG_ARCH_PHYTIUM
+	if (is_kump_bypass_cpu(hwid))
+		return;
+#endif
 
 	/* map the logical cpu id to cpu MPIDR */
 	cpu_logical_map(cpu_count) = hwid;
