@@ -1222,7 +1222,9 @@ static void do_mem_cgroup_account_oom_skip(struct mem_cgroup *memcg,
 void mem_cgroup_account_oom_skip(struct task_struct *task,
 		struct oom_control *oc)
 {
+	rcu_read_lock();
 	do_mem_cgroup_account_oom_skip(mem_cgroup_from_task(task), oc);
+	rcu_read_unlock();
 }
 
 static struct mem_cgroup *
