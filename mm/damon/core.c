@@ -881,7 +881,7 @@ static struct damon_target *get_damon_target(struct task_struct *task)
 			if (!ts)
 				continue;
 
-			if (ts->tgid == task->tgid) {
+			if (ts->mm == task->mm) {
 				put_task_struct(ts);
 				rcu_read_unlock();
 				return t;
