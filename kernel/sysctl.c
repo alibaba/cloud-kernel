@@ -519,6 +519,11 @@ static struct ctl_table kern_table[] = {
 #endif
 #ifdef CONFIG_GROUP_IDENTITY
 	{
+		/*
+		 * Variable 'sysctl_sched_bvt_place_epsilon' is derived from
+		 * https://gist.github.com/leverich/5913713.
+		 * Author: Jacob Leverich
+		 */
 		.procname	= "sched_bvt_place_epsilon",
 		.data		= &sysctl_sched_bvt_place_epsilon,
 		.maxlen		= sizeof(unsigned int),

@@ -112,6 +112,10 @@ unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
 
 #ifdef CONFIG_GROUP_IDENTITY
 /*
+ * Variable 'sysctl_sched_bvt_place_epsilon' is derived from
+ * https://gist.github.com/leverich/5913713.
+ * Author: Jacob Leverich
+ *
  * Waking batch tasks are placed sched_bvt_place_epsilon
  * nanoseconds relative to min_vruntime.
  *
@@ -5290,6 +5294,10 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 
 #ifdef CONFIG_GROUP_ENTITY
 	/*
+	 * The logic of punishing underclass is derived from
+	 * https://gist.github.com/leverich/5913713.
+	 * Author: Jacob Leverich
+	 *
 	 * The runtime penalty for underclass wakee to make sure
 	 * they won't interrupt other's execution too much.
 	 */

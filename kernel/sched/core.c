@@ -7087,7 +7087,30 @@ static struct cftype cpu_legacy_files[] = {
 	},
 #endif
 #ifdef CONFIG_GROUP_IDENTITY
-	/* legacy bvt interface */
+	/* legacy bvt interface
+	 *
+	 * BVT(Borrowed Virtual Time) is derived from paper:
+	 * "Borrowed-virtual-time (BVT) scheduling: supporting
+	 * latency-sensitive threads in a general-purpose scheduler"
+	 * Link: https://dl.acm.org/doi/abs/10.1145/319344.319169
+	 *
+	 * Jacob Leverich implemented the idea of this paper, and
+	 * 'bvt_warp_ns' interface is derived from Leverich's code.
+	 * Link: https://gist.github.com/leverich/5913713.
+	 *
+	 * Now we have reformed the whole idea, and only reserved
+	 * the name of 'bvt_warp_ns' to be compalitible.
+	 *
+	 * 'bvt_warp_ns' will be converted into identity when written.
+	 * The correspondence of bvt_warp_ns and identity follows:
+	 * bvt	identity value	identity
+	 * -2	9		ID_UNDERCLASS | ID_IDLE_SAVER
+	 * -1	9		ID_UNDERCLASS | ID_IDLE_SAVER
+	 * 0	0		ID_NORMAL
+	 * 1	18		ID_HIGHCLASS | ID_IDLE_SEEKER
+	 * 2	22		ID_HIGHCLASS | ID_IDLE_SEEKER | ID_SMT_EXPELLER
+	 *
+	 */
 	{
 		.name = "bvt_warp_ns",
 		.read_s64 = cpu_bvt_warp_ns_read_s64,
