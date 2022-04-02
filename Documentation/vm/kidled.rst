@@ -20,6 +20,9 @@ node or flags field of page descriptor (struct page). So the maximal age is
 files (``memory.idle_page_stats``). The statistics could be used to evaluate
 the working-set size of that memory cgroup or the hierarchy.
 
+Note: The implementation of kidled had referred to Michel Lespinasse's patch:
+https://lore.kernel.org/lkml/20110922161448.91a2e2b2.akpm@google.com/T/
+Thanks for Michel Lespinasse's idea about page age and buckets!
 
 Usage
 =====

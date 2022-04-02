@@ -780,6 +780,18 @@ typedef struct pglist_data {
 	unsigned long node_spanned_pages; /* total size of physical page
 					     range, including holes */
 #ifdef CONFIG_KIDLED
+	/*
+	 * Michel Lespinasse's patch allocates idle age through vmalloc(),
+	 * this makes code easy, we borrowed it.
+	 *
+	 * However it'll lead memory overhead (1/4096 of node_spanned_pages),
+	 * especially when there exist large memory holes. Another better
+	 * way is to store the 8 bits page age in page's flag field, that is
+	 * the default choice if unused bits in page's flag is enough.
+	 * And it'll fallback to this vmalloc() way if flag's bits are
+	 * scarce. See KIDLED_AGE_NOT_IN_PAGE_FLAGS in page-flags-layout.h
+	 * for more details.
+	 */
 	unsigned long node_idle_scan_pfn;
 	u8 *node_page_age;
 #endif

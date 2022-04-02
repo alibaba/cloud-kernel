@@ -13,7 +13,52 @@
 #include <linux/kidled.h>
 #include <uapi/linux/sched/types.h>
 
+/*
+ * Why do we use a kernel thread to scan pages instead of use Vladimir Davydov's
+ * idle page tracking directly?
+ *
+ * We can collect the hot/cold information based on Vladimir's idle page
+ * tracking feature which was already merged in mainline source tree.
+ * However, Vladimir's patch is to encourage a clever memory manager
+ * to scan pages from userspace, but we found it's difficult to use
+ * in production environment, the reasons are as below:
+ * 1). The idle bitmap is indexed by pfn, which means users have to translate
+ *     the virtual address to physical address at first(e.g. through
+ *     /proc/PID/pagemap), this may lead high CPU utilization due to many
+ *     context switch between user and kernel mode;
+ * 2). To get a cgroup's idle page information, users can access
+ *     /proc/kpagecgroup to identify which cgroup the page was charged to,
+ *     it's also not convenient;
+ * 3). It's not easy to handle share mappings, e.g. a child process forked
+ *     from parent (COW) or share memory files mapped by different process.
+ *     It's easy to influence each other when there exist more than one
+ *     scanner. So it's better to have a global scanner to do this job.
+ *
+ * We named this global scanner *kidled* because it's based on the
+ * *idle* page tracking feature.
+ *
+ * We also found that Michel Lespinasse had developed a similar feature which
+ * was called kstaled:
+ *
+ * https://lore.kernel.org/lkml/20110922161448.91a2e2b2.akpm@google.com/T/
+ *
+ * In Michel Lespinasse's patch, each page has a corresponding 8 bits attribute
+ * which was called ide_page_age, and use buckets to do histogram sampling.
+ * This is a good idea! Since Michel's patch was developed on a early kernel
+ * version 3.0 and we decided to use Vladimir Davydov's idle page tracking API
+ * to check and clear page's reference, so we didn't cherry pick the original
+ * kstaled's patch directly. Thanks!
+ */
+
 struct kidled_scan_period kidled_scan_period;
+/*
+ * These bucket values are copied from Michel Lespinasse's patch, they are
+ * the default buckets to do histogram sampling.
+ *
+ * Kidled also supports each memory cgroup has it's own sampling buckets by
+ * configuring memory.idle_page_stats file, and the child memcg will inherit
+ * parent's bucket values. See Documentation/vm/kidled.rst for more details.
+ */
 const int kidled_default_buckets[NUM_KIDLED_BUCKETS] = {
 	1, 2, 5, 15, 30, 60, 120, 240 };
 static DECLARE_WAIT_QUEUE_HEAD(kidled_wait);
@@ -545,6 +590,11 @@ static int kidled(void *dummy)
 		}
 
 		/*
+		 * This code snippet of emergency throttle was borrowed from
+		 * Michel Lespinasse's patch. And we also set the scheduler
+		 * policy of kidled as SCHED_IDLE to make sure it won't disturb
+		 * neighbors (e.g. cause spike latency).
+		 *
 		 * We hope kidled can scan specified pages which depends on
 		 * scan_period in each slice, and supposed to finish each
 		 * slice in one second:
