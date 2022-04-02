@@ -6166,6 +6166,11 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.read_u64 = mem_cgroup_read_u64,
 	},
 #ifdef CONFIG_KIDLED
+	/*
+	 * This sysfs name was extracted from Michel Lespinasse's patch,
+	 * but the contents have a big difference. See
+	 * Documentation/vm/kidled.rst for more details.
+	 */
 	{
 		.name = "idle_page_stats",
 		.seq_show = mem_cgroup_idle_page_stats_show,
